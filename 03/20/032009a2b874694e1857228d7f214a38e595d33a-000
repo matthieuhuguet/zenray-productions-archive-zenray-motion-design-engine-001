@@ -1,0 +1,346 @@
+# 12 October 2026 (F1 18:10 CEST: --bulk pass to 480 families, licence files): rebuild the free font base of the zrmd engine (idempotent).
+# FR : reconstruit la base de polices libres du moteur zrmd ; relancer ne retélécharge rien d'existant.
+# Sources: google/fonts (ofl/ only, SIL Open Font License) via the GitHub contents API and raw files,
+# Fontshare (ITF Free Font License) zips, and the official Inter release (Inter Display statics).
+# Downloaded files are only read as data (fontTools / zipfile), never executed.
+from __future__ import annotations
+
+import io
+import json
+import os
+import subprocess
+import sys
+import urllib.request
+import zipfile
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+FILES = HERE / "files"
+DATE = "12 October 2026"
+UA = "zrmd-font-fetch/1.0"
+
+# Google Fonts directories (ofl/<slug>) -> family name used for the folder.
+GOOGLE = {
+    "manrope": "Manrope", "plusjakartasans": "Plus Jakarta Sans", "figtree": "Figtree", "outfit": "Outfit",
+    "onest": "Onest", "geist": "Geist", "instrumentsans": "Instrument Sans", "albertsans": "Albert Sans",
+    "urbanist": "Urbanist", "dmsans": "DM Sans", "worksans": "Work Sans", "publicsans": "Public Sans",
+    "hankengrotesk": "Hanken Grotesk", "schibstedgrotesk": "Schibsted Grotesk", "hostgrotesk": "Host Grotesk",
+    "funneldisplay": "Funnel Display", "funnelsans": "Funnel Sans", "redhatdisplay": "Red Hat Display",
+    "redhattext": "Red Hat Text", "sora": "Sora", "spacegrotesk": "Space Grotesk", "archivo": "Archivo",
+    "rubik": "Rubik", "karla": "Karla", "mulish": "Mulish", "nunitosans": "Nunito Sans",
+    "montserrat": "Montserrat", "poppins": "Poppins", "bevietnampro": "Be Vietnam Pro", "golostext": "Golos Text",
+    "wixmadefordisplay": "Wix Madefor Display", "wixmadefortext": "Wix Madefor Text", "intertight": "Inter Tight",
+    "lexend": "Lexend", "lexenddeca": "Lexend Deca", "inter": "Inter", "instrumentserif": "Instrument Serif",
+    "fraunces": "Fraunces", "newsreader": "Newsreader", "ibmplexsans": "IBM Plex Sans", "ibmplexmono": "IBM Plex Mono",
+    "jetbrainsmono": "JetBrains Mono", "geistmono": "Geist Mono", "spacemono": "Space Mono",
+    "epilogue": "Epilogue", "syne": "Syne", "unbounded": "Unbounded", "bricolagegrotesque": "Bricolage Grotesque",
+    "familjengrotesk": "Familjen Grotesk", "readexpro": "Readex Pro", "chivo": "Chivo", "heebo": "Heebo",
+    "monasans": "Mona Sans", "hubotsans": "Hubot Sans", "overpass": "Overpass", "sourcesans3": "Source Sans 3",
+    "jost": "Jost", "leaguespartan": "League Spartan", "cabin": "Cabin", "encodesans": "Encode Sans",
+    "gabarito": "Gabarito", "afacad": "Afacad", "redditsans": "Reddit Sans", "parkinsans": "Parkinsans",
+    "opensans": "Open Sans", "roboto": "Roboto", "raleway": "Raleway", "josefinsans": "Josefin Sans",
+    "quicksand": "Quicksand", "exo2": "Exo 2", "anybody": "Anybody", "alexandria": "Alexandria",
+    "sourceserif4": "Source Serif 4", "playfairdisplay": "Playfair Display", "dmserifdisplay": "DM Serif Display",
+    "dmmono": "DM Mono", "robotomono": "Roboto Mono", "splinesans": "Spline Sans",
+    "rethinksans": "Rethink Sans", "ysabeau": "Ysabeau", "kumbhsans": "Kumbh Sans", "lato": "Lato",
+}
+# Fontshare slugs (ITF Free Font License, free for commercial use).
+FONTSHARE = {
+    "general-sans": "General Sans", "satoshi": "Satoshi", "switzer": "Switzer", "cabinet-grotesk": "Cabinet Grotesk",
+    "clash-display": "Clash Display", "clash-grotesk": "Clash Grotesk", "supreme": "Supreme", "synonym": "Synonym",
+    "author": "Author", "chillax": "Chillax", "sentient": "Sentient", "zodiak": "Zodiak", "gambetta": "Gambetta",
+    "erode": "Erode", "excon": "Excon", "outfit": None,
+}
+FONTSHARE = {k: v for k, v in FONTSHARE.items() if v}
+INTER_RELEASE = "https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip"
+FONT_EXT = (".ttf", ".otf")
+
+
+def token() -> str | None:
+    tok = os.environ.get("GITHUB_TOKEN")
+    if tok:
+        return tok
+    try:
+        return subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, timeout=10).stdout.strip() or None
+    except Exception:
+        return None
+
+
+TOKEN = token()
+
+
+def get(url: str, api: bool = False) -> bytes:
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    if api and TOKEN:
+        req.add_header("Authorization", f"Bearer {TOKEN}")
+    with urllib.request.urlopen(req, timeout=120) as r:
+        return r.read()
+
+
+def pick_google(names: list[str]) -> list[str]:
+    """Prefer upright variable fonts; fall back to upright statics. Italics are skipped (captions are roman)."""
+    fonts = [n for n in names if n.lower().endswith(FONT_EXT) and "italic" not in n.lower()]
+    variable = [n for n in fonts if "[" in n]
+    return variable or fonts
+
+
+def fetch_google(slug: str, family: str) -> dict:
+    out = FILES / family.replace(" ", "")
+    try:
+        listing = json.loads(get(f"https://api.github.com/repos/google/fonts/contents/ofl/{slug}", api=True))
+    except Exception as exc:
+        return {"family": family, "ok": False, "error": f"listing: {exc}"}
+    out.mkdir(parents=True, exist_ok=True)
+    got = []
+    for name in pick_google([e["name"] for e in listing]):
+        dest = out / name
+        if not dest.exists():
+            dest.write_bytes(get(f"https://raw.githubusercontent.com/google/fonts/main/ofl/{slug}/{name}"))
+        got.append(name)
+    meta = {"family": family, "license": "SIL Open Font License 1.1",
+            "source": f"https://github.com/google/fonts/tree/main/ofl/{slug}", "date": DATE}
+    (out / "source.json").write_text(json.dumps(meta, indent=1))
+    return {"family": family, "ok": bool(got), "files": got}
+
+
+def extract_fonts(data: bytes, out: Path, prefer_variable: bool = True, only: str | None = None) -> list[str]:
+    """Write font members of a zip (basename only, so no path can escape out/)."""
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        members = [m for m in zf.namelist() if m.lower().endswith(FONT_EXT) and "italic" not in m.lower()
+                   and "__macosx" not in m.lower() and (only is None or only in m)]
+        ttf = [m for m in members if m.lower().endswith(".ttf")]
+        pool = ttf or members
+        variable = [m for m in pool if "variable" in m.lower() or "[" in m]
+        chosen = variable if (prefer_variable and variable) else pool
+        got = []
+        for m in chosen:
+            name = Path(m).name
+            dest = out / name
+            if not dest.exists():
+                dest.write_bytes(zf.read(m))
+            got.append(name)
+        return sorted(set(got))
+
+
+def fetch_fontshare(slug: str, family: str) -> dict:
+    out = FILES / family.replace(" ", "")
+    if out.exists() and any(p.suffix.lower() in FONT_EXT for p in out.iterdir()):
+        return {"family": family, "ok": True, "files": sorted(p.name for p in out.iterdir() if p.suffix.lower() in FONT_EXT)}
+    try:
+        data = get(f"https://api.fontshare.com/v2/fonts/download/{slug}")
+    except Exception as exc:
+        return {"family": family, "ok": False, "error": str(exc)}
+    out.mkdir(parents=True, exist_ok=True)
+    got = extract_fonts(data, out)
+    meta = {"family": family, "license": "ITF Free Font License (Fontshare, free for commercial use)",
+            "source": f"https://www.fontshare.com/fonts/{slug}", "date": DATE}
+    (out / "source.json").write_text(json.dumps(meta, indent=1))
+    return {"family": family, "ok": bool(got), "files": got}
+
+
+def fetch_inter_display() -> dict:
+    family = "Inter Display"
+    out = FILES / "InterDisplay"
+    if not (out.exists() and any(p.suffix == ".ttf" for p in out.iterdir())):
+        try:
+            data = get(INTER_RELEASE)
+        except Exception as exc:
+            return {"family": family, "ok": False, "error": str(exc)}
+        out.mkdir(parents=True, exist_ok=True)
+        extract_fonts(data, out, prefer_variable=False, only="InterDisplay-")
+    meta = {"family": family, "license": "SIL Open Font License 1.1",
+            "source": INTER_RELEASE, "date": DATE}
+    (out / "source.json").write_text(json.dumps(meta, indent=1))
+    files = sorted(p.name for p in out.iterdir() if p.suffix.lower() in FONT_EXT)
+    return {"family": family, "ok": bool(files), "files": files}
+
+
+def licence_class(name: str | None) -> str:
+    """'open' for OFL and Apache (redistributable, publishable), 'free-restricted' for the Fontshare ITF FFL
+    (free for commercial use but not an open licence: kept for private measurement only), 'unknown' otherwise.
+    12 October 2026."""
+    n = (name or "").lower()
+    if "open font" in n or "apache" in n:
+        return "open"
+    if "itf" in n:
+        return "free-restricted"
+    return "unknown"
+
+
+def build_index() -> list[dict]:
+    from fontTools.ttLib import TTFont
+    entries = []
+    for fam_dir in sorted(p for p in FILES.iterdir() if p.is_dir()):
+        src = json.loads((fam_dir / "source.json").read_text()) if (fam_dir / "source.json").exists() else {}
+        for f in sorted(fam_dir.iterdir()):
+            if f.suffix.lower() not in FONT_EXT:
+                continue
+            try:
+                tt = TTFont(str(f), lazy=True)
+                name = tt["name"]
+                style = name.getDebugName(17) or name.getDebugName(2) or ""
+                axes = [{"tag": a.axisTag, "name": name.getDebugName(a.axisNameID), "min": a.minValue,
+                         "max": a.maxValue, "default": a.defaultValue} for a in tt["fvar"].axes] if "fvar" in tt else []
+                weight = tt["OS/2"].usWeightClass if "OS/2" in tt else None
+                tt.close()
+            except Exception as exc:
+                print(f"skip {f}: {exc}", file=sys.stderr)
+                continue
+            entries.append({"family": src.get("family", fam_dir.name), "style": style, "weight_class": weight,
+                            "variable": bool(axes), "file": str(f), "axes": axes,
+                            "license": src.get("license"), "source": src.get("source"), "date": DATE,
+                            "category": src.get("category"), "licence_class": licence_class(src.get("license"))})
+    (HERE / "index.json").write_text(json.dumps(entries, indent=1, ensure_ascii=False))
+    return entries
+
+
+# ---------------------------------------------------------------- bulk Google Fonts (F1, 12 October 2026)
+# The curated GOOGLE dict above stays; the bulk pass adds every Latin, non-Noto Google family that ships a variable
+# font, then the most popular static families, until BULK["target_families"] is reached. Listing costs three
+# GitHub API calls (root tree, ofl and apache subtrees, cached in _listing/), files come from raw URLs (no quota).
+# Only ofl/ (SIL OFL 1.1) and apache/ (Apache 2.0) are read; ufl/ is skipped. Each family keeps its licence file.
+BULK = {
+    "target_families": 480,          # total families in the dataset after the pass
+    "statics_per_family": 9,         # upright static files kept when a family has no variable font
+    "max_file_bytes": 4_000_000,     # larger files are CJK or icon fonts, out of scope
+    "metadata_url": "https://fonts.google.com/metadata/fonts",
+    "licence_files": {"ofl": ["OFL.txt"], "apache": ["LICENSE.txt"]},
+    "licence_names": {"ofl": "SIL Open Font License 1.1", "apache": "Apache License 2.0"},
+}
+LISTING = HERE / "_listing"
+
+
+def _slug(family: str) -> str:
+    import re
+    return re.sub("[^a-z0-9]", "", family.lower())
+
+
+def google_listing() -> tuple[list[dict], dict]:
+    """Family metadata (fonts.google.com, cached) and {dir: {lic, files: {name: size}}} from the git trees."""
+    LISTING.mkdir(parents=True, exist_ok=True)
+    meta_file = LISTING / "metadata.json"
+    if not meta_file.exists():
+        raw = get(BULK["metadata_url"]).decode("utf-8")
+        meta_file.write_text(raw[raw.index("{"):], encoding="utf-8")
+    meta = json.loads(meta_file.read_text(encoding="utf-8"))["familyMetadataList"]
+    dirs: dict = {}
+    for lic in ("ofl", "apache"):
+        tree_file = LISTING / f"tree-{lic}.json"
+        if not tree_file.exists():
+            root = json.loads(get("https://api.github.com/repos/google/fonts/git/trees/main", api=True))
+            sha = next(e["sha"] for e in root["tree"] if e["path"] == lic)
+            tree_file.write_bytes(get(f"https://api.github.com/repos/google/fonts/git/trees/{sha}?recursive=1", api=True))
+        tree = json.loads(tree_file.read_text())
+        if tree.get("truncated"):
+            raise RuntimeError(f"git tree listing of {lic}/ is truncated; the bulk pass would miss families")
+        for e in tree["tree"]:
+            parts = e["path"].split("/")
+            if len(parts) == 2 and e["type"] == "blob":
+                dirs.setdefault(parts[0], {"lic": lic, "files": {}})["files"][parts[1]] = e.get("size", 0)
+    return meta, dirs
+
+
+def bulk_plan(existing: set[str]) -> list[dict]:
+    """Families to add: Latin, non-Noto, present in ofl/ or apache/; variable first (by popularity), then statics."""
+    meta, dirs = google_listing()
+    rows = []
+    for f in meta:
+        if f.get("isNoto") or "latin" not in f.get("subsets", []):
+            continue
+        slug = _slug(f["family"])
+        if slug not in dirs or f["family"] in existing:
+            continue
+        d = dirs[slug]
+        names = [n for n, size in d["files"].items() if n.lower().endswith(FONT_EXT) and "italic" not in n.lower()
+                 and size <= BULK["max_file_bytes"]]
+        var = [n for n in names if "[" in n]
+        if not names:
+            continue
+        lic_files = [n for n in BULK["licence_files"][d["lic"]] if n in d["files"]]
+        if not lic_files:
+            # 12 October 2026: a family whose directory ships no licence file is skipped (M PLUS Rounded 1c had
+            # none upstream); the dataset rule is one licence file per family.
+            continue
+        files = var or sorted(names)[:BULK["statics_per_family"]]
+        rows.append({"family": f["family"], "slug": slug, "lic": d["lic"], "variable": bool(var), "files": files,
+                     "category": f.get("category"), "popularity": f.get("popularity", 10**6),
+                     "licence_files": [n for n in BULK["licence_files"][d["lic"]] if n in d["files"]]})
+    rows.sort(key=lambda r: (not r["variable"], r["popularity"]))
+    room = max(0, BULK["target_families"] - len({json.loads(p.read_text()).get("family")
+                                                     for p in FILES.glob("*/source.json")}))
+    return rows[:room]
+
+
+def fetch_bulk_family(row: dict) -> dict:
+    out = FILES / row["family"].replace(" ", "")
+    out.mkdir(parents=True, exist_ok=True)
+    base = f"https://raw.githubusercontent.com/google/fonts/main/{row['lic']}/{row['slug']}"
+    try:
+        for name in row["files"] + row["licence_files"]:
+            dest = out / name
+            if not dest.exists():
+                dest.write_bytes(get(f"{base}/{name}"))
+    except Exception as exc:
+        return {"family": row["family"], "ok": False, "error": str(exc)}
+    meta = {"family": row["family"], "license": BULK["licence_names"][row["lic"]],
+            "licence_files": row["licence_files"], "category": row["category"],
+            "source": f"https://github.com/google/fonts/tree/main/{row['lic']}/{row['slug']}", "date": DATE}
+    (out / "source.json").write_text(json.dumps(meta, indent=1))
+    return {"family": row["family"], "ok": True, "files": row["files"]}
+
+
+def fetch_licence_files() -> list[str]:
+    """Add the licence file to curated Google families fetched before F1 (they kept only source.json)."""
+    _, dirs = google_listing()
+    added = []
+    for slug, family in GOOGLE.items():
+        out = FILES / family.replace(" ", "")
+        d = dirs.get(slug)
+        if not out.exists() or not d:
+            continue
+        for name in BULK["licence_files"][d["lic"]]:
+            if name in d["files"] and not (out / name).exists():
+                (out / name).write_bytes(get(f"https://raw.githubusercontent.com/google/fonts/main/{d['lic']}/{slug}/{name}"))
+                added.append(f"{family}/{name}")
+    return added
+
+
+def main_bulk() -> None:
+    # Families moved to _excluded/ (no licence file) are not fetched again.
+    excluded = {json.loads(p.read_text()).get("family") for p in (HERE / "_excluded").glob("*/source.json")}
+    existing = {json.loads(p.read_text()).get("family") for p in FILES.glob("*/source.json")} | excluded
+    plan = bulk_plan(existing)
+    with ThreadPoolExecutor(16) as pool:
+        results = list(pool.map(fetch_bulk_family, plan))
+        licences = pool.submit(fetch_licence_files).result()
+    for r in results:
+        if not r["ok"]:
+            print(f"FAILED {r['family']}: {r.get('error')}", file=sys.stderr)
+    entries = build_index()
+    print(json.dumps({"added": sum(r["ok"] for r in results), "failed": [r["family"] for r in results if not r["ok"]],
+                      "licence_files_added": len(licences), "families": len({e["family"] for e in entries}),
+                      "files": len(entries)}))
+
+
+def main() -> None:
+    if "--bulk" in sys.argv:
+        return main_bulk()
+    FILES.mkdir(parents=True, exist_ok=True)
+    jobs = []
+    with ThreadPoolExecutor(16) as pool:
+        jobs += [pool.submit(fetch_google, s, f) for s, f in GOOGLE.items()]
+        jobs += [pool.submit(fetch_fontshare, s, f) for s, f in FONTSHARE.items()]
+        jobs.append(pool.submit(fetch_inter_display))
+        results = [j.result() for j in jobs]
+    for r in results:
+        if not r["ok"]:
+            print(f"FAILED {r['family']}: {r.get('error', 'no font file')}", file=sys.stderr)
+    entries = build_index()
+    fams = {e["family"] for e in entries}
+    print(json.dumps({"families": len(fams), "files": len(entries),
+                      "failed": [r["family"] for r in results if not r["ok"]]}))
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,29 @@
+# Base de polices libres du moteur zrmd (12 October 2026)
+
+Cette base sert au comparateur de glyphes `zrmd/analyze/fontmatch.py`, qui identifie la police d'une légende mesurée dans une vidéo de référence et propose la police libre la plus proche pour la reproduire. (12 October 2026)
+
+## Contenu (12 October 2026)
+
+- 98 familles et 139 fichiers, dont 89 fichiers variables ; environ 34 Mo dans `files/<Famille>/`. (12 October 2026)
+- Google Fonts, uniquement le dossier `ofl/` du dépôt `google/fonts`, donc sous SIL Open Font License 1.1 : grotesques, néo-grotesques et géométriques (Manrope, Plus Jakarta Sans, Figtree, Outfit, Onest, Geist, Instrument Sans, Albert Sans, Urbanist, DM Sans, Work Sans, Public Sans, Hanken Grotesk, Schibsted Grotesk, Host Grotesk, Funnel Display, Red Hat Display, Sora, Space Grotesk, Archivo, Rubik, Karla, Mulish, Nunito Sans, Montserrat, Poppins, Be Vietnam Pro, Golos Text, Wix Madefor Display, Inter, Inter Tight, Lexend, et d'autres), ainsi que des serifs et des monos de display (Instrument Serif, Fraunces, Newsreader, IBM Plex Sans et Mono, JetBrains Mono, Geist Mono, Space Mono, DM Mono, Roboto Mono). (12 October 2026)
+- Fontshare, sous ITF Free Font License, libre pour un usage commercial : General Sans, Satoshi, Switzer, Cabinet Grotesk, Clash Display, Clash Grotesk, Supreme, Synonym, Author, Chillax, Sentient, Zodiak, Gambetta, Erode, Excon. (12 October 2026)
+- Inter Display, en statiques, tiré de l'archive officielle `rsms/inter` v4.1 (OFL). (12 October 2026)
+- Les italiques sont écartés, car les légendes mesurées sont romaines ; une famille sans fichier variable est prise en statiques. Aucune police commerciale ou système n'y figure. (12 October 2026)
+
+## Index (12 October 2026)
+
+`index.json` décrit chaque fichier : famille, style, classe de graisse, caractère variable, chemin absolu, axes lus par fontTools (étiquette, nom, minimum, maximum, défaut), licence, adresse source et date. Chaque dossier de famille porte un `source.json` qui en garde la licence et la provenance. (12 October 2026)
+
+## Reconstruction (12 October 2026)
+
+```bash
+/Users/zenray/.venvs/zenray-motion/bin/python -I datasets/fonts/Fetch.py
+```
+
+Le script est idempotent : un fichier déjà présent ne se retélécharge pas, et l'index se régénère à chaque passage. Il liste les dossiers Google par l'API GitHub (jeton lu dans `GITHUB_TOKEN` ou par `gh auth token`, faute de quoi la limite anonyme de soixante requêtes par heure s'applique), télécharge les fichiers bruts, décompresse les archives Fontshare en ne gardant que les fichiers de police par leur nom de base, et n'exécute jamais rien de téléchargé. Une famille en échec est signalée sur la sortie d'erreur et dans le résumé JSON final. Pour ajouter une famille, il suffit d'inscrire son identifiant dans `GOOGLE` ou `FONTSHARE`, puis de relancer. (12 October 2026)
+
+## Extension F1 (12 October 2026)
+
+- La base compte désormais 480 familles et 661 fichiers, dont 412 variables : 465 familles sous licence ouverte (OFL ou Apache, dépôt `google/fonts`) et 15 sous ITF Free Font License (Fontshare), chaque dossier gardant son fichier de licence et son `source.json`. Les fichiers écartés de l'index sont rangés dans `_excluded/`, avec leur raison dans son `README.txt`. (12 October 2026)
+- `features.jsonl` porte un enregistrement mesuré par fichier, construit par `Scripts/BuildFontFeatures.py` avec `zrmd/vector/metrics.py` sur le spécimen fixe « Hamburgefonstiv » : rapports de hauteur d'x et de capitale (déclarés et mesurés à l'encre), épaisseurs de trait et contraste, chasse par glyphe, ouvertures de c et e, histogramme des terminaisons, aspect et axe d'accentuation du o, courbe épaisseur contre `wght`, et signature géométrique ou humaniste. `features-index.json` regroupe les fichiers par famille. (12 October 2026)
+- Le comparateur (`zrmd/vector/fontfit.py`) et le créateur paramétrique (`zrmd/vector/fontcreate.py`) s'appuient sur ces deux fichiers ; mode d'emploi et mesures dans `docs/build/F1-fonts.md` du chantier. (12 October 2026)

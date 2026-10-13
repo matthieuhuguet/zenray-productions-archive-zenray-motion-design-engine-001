@@ -1,0 +1,52 @@
+{
+ "schema": "zrmd/assets-sources@1",
+ "date": "13 October 2026",
+ "doc": "What ZenRay Assets archives for the project zenray-motion-design (definition; applied by Scripts/AssetsLink.mjs). Rights: reference videos and audio are never in the workshop (they live in the reference cache, outside every source); the 1:1 reproductions are private. First pass (13 October 2026): code, parameters, scores, documents and light renders; audio files (*.wav, *.mp3) and separated stems are left out because they are regenerated from params.json, and go in a second pass after Matthieu validates their size. Scope rules of the service have no globs and no extension filter: `exclude` entries are folder names or path prefixes, `excludeExtensions` is expanded into an explicit include list by AssetsLink.mjs register (re-run it when new folders appear).",
+ "projectId": "zenray-motion-design",
+ "sources": [
+  {
+   "id": "engine",
+   "localPath": "/Users/zenray/Create/Build/Productions/GithubProductions/ZenRayMotionDesign",
+   "namespace": "tmp",
+   "exclude": [
+    "__pycache__",
+    "datasets/fonts/files",
+    "zrmd.egg-info",
+    "tooling/node_modules"
+   ],
+   "excludeExtensions": [
+    ".wav",
+    ".mp3",
+    ".flac",
+    ".mp4",
+    ".mov"
+   ]
+  },
+  {
+   "id": "workshop",
+   "localPath": "/Users/zenray/.claude/tmp/tmp-zenray-motion-design",
+   "namespace": "tmp",
+   "exclude": [
+    "__pycache__",
+    "ZenRayMotionDesign",
+    "jobs",
+    "stems",
+    "16x9",
+    "1x1",
+    "9x16",
+    "node_modules",
+    "egg-info"
+   ],
+   "excludeExtensions": [
+    ".wav",
+    ".mp3",
+    ".flac"
+   ]
+  },
+  {
+   "id": "project-notes",
+   "localPath": "/Users/zenray/.claude/Memory1/Projects/zenray-motion-design",
+   "namespace": "memory"
+  }
+ ]
+}
