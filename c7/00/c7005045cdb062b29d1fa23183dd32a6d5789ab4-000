@@ -1,0 +1,116 @@
+{
+  "id": "conic_gradient3",
+  "family": "gradient",
+  "description": "Cyclic conic (angular) gradient c0, c1, c2 and back to c0 around a centre, seamless. Colour block. (12 October 2026)",
+  "params": [
+    {
+      "name": "center",
+      "type": "vec2",
+      "default": [
+        0.5,
+        0.5
+      ],
+      "min": [
+        0.25,
+        0.25
+      ],
+      "max": [
+        0.75,
+        0.75
+      ],
+      "unit": "uv"
+    },
+    {
+      "name": "offset",
+      "type": "float",
+      "default": 0.0,
+      "min": -180.0,
+      "max": 180.0,
+      "unit": "degrees"
+    },
+    {
+      "name": "c0",
+      "type": "color",
+      "default": [
+        0.95,
+        0.4,
+        0.6
+      ],
+      "min": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "unit": "sRGB 0..1"
+    },
+    {
+      "name": "c1",
+      "type": "color",
+      "default": [
+        0.4,
+        0.5,
+        1.0
+      ],
+      "min": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "unit": "sRGB 0..1"
+    },
+    {
+      "name": "c2",
+      "type": "color",
+      "default": [
+        0.3,
+        0.95,
+        0.8
+      ],
+      "min": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "unit": "sRGB 0..1"
+    },
+    {
+      "name": "aspect",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.5,
+      "max": 2.0,
+      "unit": "width / height"
+    }
+  ],
+  "source_url": "",
+  "licence": "original (written from the mathematics), same licence as the engine",
+  "attribution": "ZenRay Motion Design, 12 October 2026",
+  "tags": [
+    "gradient",
+    "conic",
+    "angular",
+    "sweep",
+    "hue-wheel",
+    "colour"
+  ],
+  "looks": [
+    "conic-glow",
+    "hue-ring",
+    "border-sweep"
+  ]
+}

@@ -1,0 +1,301 @@
+{
+ "schema": "zrmd/look-coverage@1",
+ "date": "12 October 2026",
+ "source": "datasets/shaders/looks-onekey.json",
+ "written_by": "S4 critic (docs/build/S4-critic.md)",
+ "looks": [
+  {
+   "id": "void-black-grain",
+   "screen_time_s": 27.68,
+   "blocks": [
+    "solid_color"
+   ],
+   "structural_gaps": [],
+   "note": "Pure digital black, no grain on 3D and graphic shots (S1): one flat layer."
+  },
+  {
+   "id": "low-key-cool-grade",
+   "screen_time_s": 23.5,
+   "blocks": [
+    "grade_lift_gamma_gain",
+    "grade_exposure_saturation",
+    "vignette_radial",
+    "grain_film",
+    "tonemap_neutral"
+   ],
+   "structural_gaps": [
+    "filter layer in compose (grade an existing composite)"
+   ],
+   "note": "Grades act on a procedural source only; live footage itself is out of shader scope."
+  },
+  {
+   "id": "depth-of-field-blur",
+   "screen_time_s": 23.37,
+   "blocks": [
+    "dof_bokeh_field",
+    "blur_rect_gaussian",
+    "blur_disc_gaussian",
+    "blur_motion_bar"
+   ],
+   "structural_gaps": [
+    "image-space blur of an arbitrary composite (render to texture)"
+   ],
+   "note": "Analytic blurs cover procedural shapes only."
+  },
+  {
+   "id": "screen-ui-emission",
+   "screen_time_s": 19.35,
+   "blocks": [
+    "gradient_stops6",
+    "ramp_oklab4",
+    "linear_ramp4",
+    "sdf_rounded_rect",
+    "glow_rounded_rect",
+    "bloom_rect"
+   ],
+   "structural_gaps": [],
+   "note": "Ramps measured in S1 map onto gradient_stops6 or ramp_oklab4."
+  },
+  {
+   "id": "copper-metal-rim",
+   "screen_time_s": 14.45,
+   "blocks": [
+    "metal_ring_tint",
+    "rim_light_rect",
+    "fresnel_rim_disc",
+    "specular_band_curved",
+    "gradient_stops6"
+   ],
+   "structural_gaps": [
+    "mesh lighting stays in templates/device3d (three.js)"
+   ],
+   "note": ""
+  },
+  {
+   "id": "bloom-halo",
+   "screen_time_s": 8.92,
+   "blocks": [
+    "halo_tail3",
+    "glow_gaussian",
+    "bloom_disc",
+    "bloom_rect",
+    "bloom_spots"
+   ],
+   "structural_gaps": [],
+   "note": "halo_tail3 defaults are the measured three-sigma tail (3, 15, 60 px at 1080p)."
+  },
+  {
+   "id": "text-card-fade",
+   "screen_time_s": 8.11,
+   "blocks": [
+    "transition_crossfade",
+    "ease_power_ramp",
+    "blur_rect_gaussian",
+    "colorkeys_oklab"
+   ],
+   "structural_gaps": [
+    "glyph mask (text comes from the typography layer)"
+   ],
+   "note": ""
+  },
+  {
+   "id": "logo-colour-fade",
+   "screen_time_s": 6.0,
+   "blocks": [
+    "colorkeys_oklab",
+    "gradient_stops6"
+   ],
+   "structural_gaps": [
+    "glyph or SVG mask of our own mark"
+   ],
+   "note": "Only the colour timeline is a shader look."
+  },
+  {
+   "id": "dark-device-fresnel-rim",
+   "screen_time_s": 5.97,
+   "blocks": [
+    "rim_light_rect",
+    "fresnel_rim_disc",
+    "sdf_rounded_rect",
+    "solid_color"
+   ],
+   "structural_gaps": [],
+   "note": ""
+  },
+  {
+   "id": "strata-landscape-wallpaper",
+   "screen_time_s": 5.68,
+   "blocks": [
+    "strata_contour_bands",
+    "noise_domain_warp",
+    "noise_fbm",
+    "noise_warp_palette"
+   ],
+   "structural_gaps": [],
+   "note": ""
+  },
+  {
+   "id": "smoke-letters-volumetric",
+   "screen_time_s": 4.0,
+   "blocks": [
+    "fog_band_noise",
+    "noise_domain_warp",
+    "noise_fbm",
+    "glow_gaussian",
+    "gradient_stops6"
+   ],
+   "structural_gaps": [
+    "glyph mask",
+    "true volumetric march (out of scope)"
+   ],
+   "note": ""
+  },
+  {
+   "id": "reflective-floor-fog",
+   "screen_time_s": 4.0,
+   "blocks": [
+    "horizon_floor_reflect",
+    "fog_band_noise"
+   ],
+   "structural_gaps": [
+    "mirror of an arbitrary composite (render to texture)"
+   ],
+   "note": ""
+  },
+  {
+   "id": "brushed-aluminium-studio",
+   "screen_time_s": 3.92,
+   "blocks": [
+    "brushed_metal_aniso",
+    "bilinear_gradient4",
+    "dof_bokeh_field"
+   ],
+   "structural_gaps": [],
+   "note": ""
+  },
+  {
+   "id": "chip-emissive-iridescent",
+   "screen_time_s": 3.72,
+   "blocks": [
+    "thin_film_iridescence",
+    "bloom_rect",
+    "halo_tail3",
+    "sdf_rounded_rect"
+   ],
+   "structural_gaps": [],
+   "note": ""
+  },
+  {
+   "id": "arch-glow-wallpaper",
+   "screen_time_s": 3.53,
+   "blocks": [
+    "arch_glow_field",
+    "sdf_circle",
+    "solid_color",
+    "glow_ring",
+    "gradient_stops6",
+    "halo_tail3"
+   ],
+   "structural_gaps": [
+    "second warm field for the lower flanks (see S4 fit)"
+   ],
+   "note": "Fitted in S4: RMS 32.5, 28.7, 25.8 on frames 10, 48, 92 (old archglow.py 41.3, 39.4, 39.7)."
+  },
+  {
+   "id": "studio-bluegrey-backdrop",
+   "screen_time_s": 2.97,
+   "blocks": [
+    "bilinear_gradient4",
+    "vignette_radial",
+    "grain_film"
+   ],
+   "structural_gaps": [],
+   "note": ""
+  },
+  {
+   "id": "blue-light-sweep",
+   "screen_time_s": 2.27,
+   "blocks": [
+    "sdf_arc",
+    "glow_segment",
+    "light_sweep",
+    "chroma_aberration_ring",
+    "halo_tail3"
+   ],
+   "structural_gaps": [
+    "path animation along a floor curve is a parameter track, not a block"
+   ],
+   "note": ""
+  },
+  {
+   "id": "title-luminance-ramp",
+   "screen_time_s": 2.03,
+   "blocks": [
+    "ease_power_ramp",
+    "colorkeys_oklab"
+   ],
+   "structural_gaps": [],
+   "note": "Luma rises linearly: a time track on the text colour."
+  },
+  {
+   "id": "green-light-beams",
+   "screen_time_s": 2.0,
+   "blocks": [
+    "beam_lines_field",
+    "glow_segment",
+    "halo_tail3"
+   ],
+   "structural_gaps": [],
+   "note": ""
+  },
+  {
+   "id": "neon-ring-glow",
+   "screen_time_s": 1.48,
+   "blocks": [
+    "sdf_arc",
+    "glow_ring",
+    "conic_gradient3",
+    "halo_tail3"
+   ],
+   "structural_gaps": [],
+   "note": ""
+  },
+  {
+   "id": "orb-radial-glow",
+   "screen_time_s": 1.45,
+   "blocks": [
+    "radial_gradient3",
+    "radial_oklab2",
+    "sdf_circle",
+    "glow_ring",
+    "glow_gaussian",
+    "halo_tail3"
+   ],
+   "structural_gaps": [],
+   "note": ""
+  },
+  {
+   "id": "grazing-glass-reflection",
+   "screen_time_s": 1.35,
+   "blocks": [
+    "ramp_linear_light2",
+    "horizon_floor_reflect",
+    "specular_band_curved",
+    "fresnel_rim_disc"
+   ],
+   "structural_gaps": [],
+   "note": ""
+  },
+  {
+   "id": "dip-to-black-transitions",
+   "screen_time_s": null,
+   "blocks": [
+    "transition_crossfade",
+    "solid_color",
+    "ease_expo_ramp"
+   ],
+   "structural_gaps": [],
+   "note": ""
+  }
+ ]
+}

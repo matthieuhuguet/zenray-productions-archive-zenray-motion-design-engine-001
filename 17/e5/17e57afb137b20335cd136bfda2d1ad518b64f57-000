@@ -1,0 +1,2467 @@
+{
+ "meta": {
+  "date": "12 October 2026",
+  "purpose": "ZenRay Motion Design audio engine: recipes, descriptors, segmentation, classification, fit, music, mix, verification",
+  "note": "Single parameter interface (HDA). Taken from the R03 lab LabParams.json, extended to 18 recipes and the full pipeline. No value is written twice."
+ },
+ "audio": {
+  "sampleRate": 48000,
+  "preRollSeconds": 0.04,
+  "tailSeconds": 0.06,
+  "floorAmplitude": 1e-07
+ },
+ "synthesis": {
+  "stftFft": 1024,
+  "stftHop": 256,
+  "clickSeconds": 0.09,
+  "tickSeconds": 0.03,
+  "levelWindowMs": 5.0,
+  "longLevelSmoothMs": 30.0,
+  "fadeMs": 2.0,
+  "reverbSeed": 9001,
+  "subHarmonicRatio": 0.5,
+  "clickBurstMs": 3.0,
+  "bellRatios": [
+   1.0,
+   2.0,
+   2.4,
+   3.0,
+   4.2,
+   5.4,
+   6.8,
+   8.1
+  ],
+  "glitchSources": [
+   "click",
+   "blip",
+   "noise"
+  ],
+  "keyboardClickSeconds": 0.04,
+  "keyboardNoiseQ": 1.5,
+  "shimmerDelaysMs": [
+   37.0,
+   61.0,
+   89.0
+  ],
+  "shimmerDelayGain": 0.45,
+  "sawHarmonicsMax": 24,
+  "riserLpOrderSoftness": 0.35
+ },
+ "analysis": {
+  "fMax": 16000.0,
+  "long": {
+   "nFft": 1024,
+   "hop": 240,
+   "envWindowMs": 5.0,
+   "envHopMs": 1.0,
+   "timeBins": 8,
+   "smoothMs": 30.0,
+   "smoothSpanFraction": 0.15,
+   "melBands": 40,
+   "fMin": 40.0
+  },
+  "short": {
+   "nFft": 256,
+   "hop": 48,
+   "envWindowMs": 1.0,
+   "envHopMs": 0.25,
+   "timeBins": 4,
+   "melBands": 16,
+   "fMin": 100.0
+  },
+  "shortEventSeconds": 0.12,
+  "onsetFraction": 0.15,
+  "spanDb": 20.0,
+  "melFloorDb": 50.0,
+  "swellAttackMs": 30.0,
+  "mrstftSizes": [
+   256,
+   1024,
+   4096
+  ],
+  "mrstftEps": 1e-07,
+  "tonalFft": 16384,
+  "tonalNeighbourOct": 0.3333,
+  "tonalNeighbourMinBins": 6,
+  "tonalRampDb": 3.0,
+  "tonalThresholdDb": 15.0,
+  "levelWindowMs": 5.0,
+  "tonalFMin": 40.0,
+  "tonalSegment": 4096,
+  "swellCenterDb": 6.0,
+  "minBinMs": 10.0,
+  "lowBandHz": 120.0,
+  "subAttackDb": 10.0,
+  "subAttackMinGapMs": 25.0,
+  "mfccCount": 13,
+  "subAttackWindowMs": 4.0,
+  "mfccMels": 40,
+  "harmonicTolerance": 0.03,
+  "harmonicCount": 8,
+  "harmonicThreshold": 0.5
+ },
+ "jnd": {
+  "levelDb": 1.0,
+  "anchorMs": 10.0,
+  "attackRatio": 0.25,
+  "durationRatio": 0.1,
+  "centroidRatio": 0.05,
+  "melShapeDb": 2.0,
+  "pitchCents": 10.0,
+  "kindMismatchE": 3.0,
+  "attackMinMs": 5.0,
+  "durationMinMs": 3.0,
+  "anchorAttackFraction": 0.1
+ },
+ "score": {
+  "base": 0.99,
+  "passThreshold": 99.0,
+  "spreadCapJnd": 1.0,
+  "spreadCapNote": "12 October 2026: caps the tolerance widening of compare_cloud; without it a very random recipe (glitch) hid biases of several JND inside its own spread"
+ },
+ "recipes": {
+  "whoosh": {
+   "duration": {
+    "min": 0.25,
+    "max": 1.2,
+    "scale": "log",
+    "default": 0.6
+   },
+   "peakPos": {
+    "min": 0.25,
+    "max": 0.75,
+    "scale": "lin",
+    "default": 0.5
+   },
+   "fStart": {
+    "min": 200.0,
+    "max": 4000.0,
+    "scale": "log",
+    "default": 900.0
+   },
+   "fEnd": {
+    "min": 200.0,
+    "max": 8000.0,
+    "scale": "log",
+    "default": 2500.0
+   },
+   "bandwidthOct": {
+    "min": 0.5,
+    "max": 3.0,
+    "scale": "log",
+    "default": 1.5
+   },
+   "envCurve": {
+    "min": 0.6,
+    "max": 3.0,
+    "scale": "log",
+    "default": 1.5
+   },
+   "sweepCurve": {
+    "min": 0.4,
+    "max": 2.5,
+    "scale": "log",
+    "default": 1.0
+   },
+   "gainDb": {
+    "min": -40.0,
+    "max": 0.0,
+    "scale": "lin",
+    "default": -12.0
+   }
+  },
+  "swoosh": {
+   "duration": {
+    "min": 0.12,
+    "max": 0.4,
+    "scale": "log",
+    "default": 0.25
+   },
+   "peakPos": {
+    "min": 0.25,
+    "max": 0.75,
+    "scale": "lin",
+    "default": 0.45
+   },
+   "fStart": {
+    "min": 400.0,
+    "max": 6000.0,
+    "scale": "log",
+    "default": 1500.0
+   },
+   "fEnd": {
+    "min": 400.0,
+    "max": 10000.0,
+    "scale": "log",
+    "default": 4000.0
+   },
+   "bandwidthOct": {
+    "min": 0.5,
+    "max": 3.0,
+    "scale": "log",
+    "default": 1.2
+   },
+   "q": {
+    "min": 4.0,
+    "max": 12.0,
+    "scale": "log",
+    "default": 7.0
+   },
+   "resMix": {
+    "min": 0.0,
+    "max": 0.6,
+    "scale": "lin",
+    "default": 0.3
+   },
+   "gainDb": {
+    "min": -40.0,
+    "max": 0.0,
+    "scale": "lin",
+    "default": -12.0
+   }
+  },
+  "swipe": {
+   "duration": {
+    "min": 0.06,
+    "max": 0.25,
+    "scale": "log",
+    "default": 0.12
+   },
+   "fStart": {
+    "min": 1500.0,
+    "max": 10000.0,
+    "scale": "log",
+    "default": 3000.0
+   },
+   "fEnd": {
+    "min": 1500.0,
+    "max": 12000.0,
+    "scale": "log",
+    "default": 7000.0
+   },
+   "bandwidthOct": {
+    "min": 0.5,
+    "max": 3.0,
+    "scale": "log",
+    "default": 1.5
+   },
+   "envCurve": {
+    "min": 0.6,
+    "max": 3.0,
+    "scale": "log",
+    "default": 1.2
+   },
+   "gainDb": {
+    "min": -40.0,
+    "max": 0.0,
+    "scale": "lin",
+    "default": -12.0
+   },
+   "pan0": {
+    "min": -1.0,
+    "max": 1.0,
+    "scale": "lin",
+    "default": -0.5,
+    "fit": false
+   },
+   "pan1": {
+    "min": -1.0,
+    "max": 1.0,
+    "scale": "lin",
+    "default": 0.5,
+    "fit": false
+   }
+  },
+  "click": {
+   "fMode": {
+    "min": 1000.0,
+    "max": 8000.0,
+    "scale": "log",
+    "default": 3000.0
+   },
+   "decayModeMs": {
+    "min": 1.0,
+    "max": 30.0,
+    "scale": "log",
+    "default": 6.0
+   },
+   "noiseMix": {
+    "min": 0.0,
+    "max": 1.0,
+    "scale": "lin",
+    "default": 0.4
+   },
+   "decayNoiseMs": {
+    "min": 0.3,
+    "max": 5.0,
+    "scale": "log",
+    "default": 1.2
+   },
+   "noiseHp": {
+    "min": 500.0,
+    "max": 8000.0,
+    "scale": "log",
+    "default": 2000.0
+   },
+   "gainDb": {
+    "min": -40.0,
+    "max": 0.0,
+    "scale": "lin",
+    "default": -12.0
+   }
+  },
+  "tick": {
+   "fMode": {
+    "min": 3000.0,
+    "max": 10000.0,
+    "scale": "log",
+    "default": 5000.0
+   },
+   "decayModeMs": {
+    "min": 0.5,
+    "max": 5.0,
+    "scale": "log",
+    "default": 1.5
+   },
+   "noiseMix": {
+    "min": 0.0,
+    "max": 0.2,
+    "scale": "lin",
+    "default": 0.05
+   },
+   "gainDb": {
+    "min": -40.0,
+    "max": 0.0,
+    "scale": "lin",
+    "default": -12.0
+   },
+   "count": {
+    "min": 1,
+    "max": 16,
+    "scale": "lin",
+    "default": 1,
+    "fit": false,
+    "integer": true
+   },
+   "periodMs": {
+    "min": 30.0,
+    "max": 500.0,
+    "scale": "log",
+    "default": 120.0,
+    "fit": false
+   }
+  },
+  "pop": {
+   "fStart": {
+    "min": 200.0,
+    "max": 800.0,
+    "scale": "log",
+    "default": 400.0
+   },
+   "fEnd": {
+    "min": 600.0,
+    "max": 2500.0,
+    "scale": "log",
+    "default": 1200.0
+   },
+   "duration": {
+    "min": 0.03,
+    "max": 0.12,
+    "scale": "log",
+    "default": 0.06
+   },
+   "attackMs": {
+    "min": 0.3,
+    "max": 3.0,
+    "scale": "log",
+    "default": 1.0
+   },
+   "gainDb": {
+    "min": -40.0,
+    "max": 0.0,
+    "scale": "lin",
+    "default": -12.0
+   }
+  },
+  "blip": {
+   "freq": {
+    "min": 400.0,
+    "max": 3000.0,
+    "scale": "log",
+    "default": 1000.0
+   },
+   "shape": {
+    "min": 0.0,
+    "max": 1.0,
+    "scale": "lin",
+    "default": 0.0
+   },
+   "intervalSemis": {
+    "min": 0.0,
+    "max": 12.0,
+    "scale": "lin",
+    "default": 7.0
+   },
+   "secondLevel": {
+    "min": 0.0,
+    "max": 1.0,
+    "scale": "lin",
+    "default": 0.0
+   },
+   "duration": {
+    "min": 0.04,
+    "max": 0.2,
+    "scale": "log",
+    "default": 0.09
+   },
+   "attackMs": {
+    "min": 0.5,
+    "max": 5.0,
+    "scale": "log",
+    "default": 1.5
+   },
+   "gainDb": {
+    "min": -40.0,
+    "max": 0.0,
+    "scale": "lin",
+    "default": -12.0
+   }
+  },
+  "impact": {
+   "fStart": {
+    "min": 80.0,
+    "max": 200.0,
+    "scale": "log",
+    "default": 130.0
+   },
+   "fEnd": {
+    "min": 30.0,
+    "max": 60.0,
+    "scale": "log",
+    "default": 42.0
+   },
+   "tail": {
+    "min": 0.2,
+    "max": 1.5,
+    "scale": "log",
+    "default": 0.6
+   },
+   "reverbMix": {
+    "min": 0.0,
+    "max": 0.5,
+    "scale": "lin",
+    "default": 0.15
+   },
+   "clickLevel": {
+    "min": 0.0,
+    "max": 1.0,
+    "scale": "lin",
+    "default": 0.4
+   },
+   "noiseLevel": {
+    "min": 0.0,
+    "max": 1.0,
+    "scale": "lin",
+    "default": 0.3
+   },
+   "noiseLp": {
+    "min": 300.0,
+    "max": 6000.0,
+    "scale": "log",
+    "default": 1500.0
+   },
+   "gainDb": {
+    "min": -40.0,
+    "max": 0.0,
+    "scale": "lin",
+    "default": -12.0
+   }
+  },
+  "boom": {
+   "duration": {
+    "min": 0.8,
+    "max": 3.0,
+    "scale": "log",
+    "default": 1.5
+   },
+   "fStart": {
+    "min": 35.0,
+    "max": 80.0,
+    "scale": "log",
+    "default": 55.0
+   },
+   "dropRatio": {
+    "min": 0.4,
+    "max": 1.0,
+    "scale": "lin",
+    "default": 0.7
+   },
+   "subLevel": {
+    "min": 0.0,
+    "max": 1.0,
+    "scale": "lin",
+    "default": 0.4
+   },
+   "noiseLevel": {
+    "min": 0.0,
+    "max": 0.6,
+    "scale": "lin",
+    "default": 0.15
+   },
+   "driveDb": {
+    "min": 0.0,
+    "max": 6.0,
+    "scale": "lin",
+    "default": 2.0
+   },
+   "gainDb": {
+    "min": -40.0,
+    "max": 0.0,
+    "scale": "lin",
+    "default": -12.0
+   }
+  },
+  "subdrop": {
+   "fStart": {
+    "min": 60.0,
+    "max": 150.0,
+    "scale": "log",
+    "default": 90.0
+   },
+   "fEnd": {
+    "min": 25.0,
+    "max": 50.0,
+    "scale": "log",
+    "default": 35.0
+   },
+   "duration": {
+    "min": 0.5,
+    "max": 2.0,
+    "scale": "log",
+    "default": 1.0
+   },
+   "sweepCurve": {
+    "min": 0.5,
+    "max": 2.0,
+    "scale": "log",
+    "default": 1.0
+   },
+   "gainDb": {
+    "min": -40.0,
+    "max": 0.0,
+    "scale": "lin",
+    "default": -12.0
+   }
+  },
+  "riser": {
+   "duration": {
+    "min": 1.0,
+    "max": 8.0,
+    "scale": "log",
+    "default": 2.5
+   },
+   "cutoffStart": {
+    "min": 200.0,
+    "max": 2000.0,
+    "scale": "log",
+    "default": 500.0
+   },
+   "cutoffEnd": {
+    "min": 4000.0,
+    "max": 16000.0,
+    "scale": "log",
+    "default": 10000.0
+   },
+   "pitchStart": {
+    "min": 100.0,
+    "max": 800.0,
+    "scale": "log",
+    "default": 220.0
+   },
+   "pitchRiseSemis": {
+    "min": 0.0,
+    "max": 24.0,
+    "scale": "lin",
+    "default": 12.0
+   },
+   "sawMix": {
+    "min": 0.0,
+    "max": 1.0,
+    "scale": "lin",
+    "default": 0.3
+   },
+   "envCurve": {
+    "min": 0.5,
+    "max": 4.0,
+    "scale": "log",
+    "default": 2.0
+   },
+   "gainDb": {
+    "min": -40.0,
+    "max": 0.0,
+    "scale": "lin",
+    "default": -12.0
+   }
+  },
+  "downlifter": {
+   "duration": {
+    "min": 1.0,
+    "max": 8.0,
+    "scale": "log",
+    "default": 2.0
+   },
+   "cutoffStart": {
+    "min": 4000.0,
+    "max": 16000.0,
+    "scale": "log",
+    "default": 10000.0
+   },
+   "cutoffEnd": {
+    "min": 200.0,
+    "max": 2000.0,
+    "scale": "log",
+    "default": 500.0
+   },
+   "pitchStart": {
+    "min": 100.0,
+    "max": 800.0,
+    "scale": "log",
+    "default": 440.0
+   },
+   "pitchDropSemis": {
+    "min": 0.0,
+    "max": 24.0,
+    "scale": "lin",
+    "default": 12.0
+   },
+   "sawMix": {
+    "min": 0.0,
+    "max": 1.0,
+    "scale": "lin",
+    "default": 0.3
+   },
+   "envCurve": {
+    "min": 0.5,
+    "max": 4.0,
+    "scale": "log",
+    "default": 2.0
+   },
+   "gainDb": {
+    "min": -40.0,
+    "max": 0.0,
+    "scale": "lin",
+    "default": -12.0
+   }
+  },
+  "glitch": {
+   "duration": {
+    "min": 0.1,
+    "max": 1.0,
+    "scale": "log",
+    "default": 0.35
+   },
+   "grains": {
+    "min": 4,
+    "max": 40,
+    "scale": "lin",
+    "default": 12,
+    "integer": true
+   },
+   "grainMs": {
+    "min": 5.0,
+    "max": 40.0,
+    "scale": "log",
+    "default": 15.0
+   },
+   "bits": {
+    "min": 3.0,
+    "max": 10.0,
+    "scale": "lin",
+    "default": 5.0
+   },
+   "hold": {
+    "min": 1.0,
+    "max": 16.0,
+    "scale": "log",
+    "default": 4.0
+   },
+   "toneHz": {
+    "min": 200.0,
+    "max": 4000.0,
+    "scale": "log",
+    "default": 900.0
+   },
+   "gainDb": {
+    "min": -40.0,
+    "max": 0.0,
+    "scale": "lin",
+    "default": -12.0
+   }
+  },
+  "keyboard": {
+   "duration": {
+    "min": 0.3,
+    "max": 3.0,
+    "scale": "log",
+    "default": 1.0
+   },
+   "rate": {
+    "min": 6.0,
+    "max": 14.0,
+    "scale": "lin",
+    "default": 9.0
+   },
+   "jitterMs": {
+    "min": 10.0,
+    "max": 40.0,
+    "scale": "lin",
+    "default": 20.0
+   },
+   "levelVarDb": {
+    "min": 0.0,
+    "max": 4.0,
+    "scale": "lin",
+    "default": 2.0
+   },
+   "fMode": {
+    "min": 1000.0,
+    "max": 3000.0,
+    "scale": "log",
+    "default": 1800.0
+   },
+   "noiseBand": {
+    "min": 1000.0,
+    "max": 6000.0,
+    "scale": "log",
+    "default": 2500.0
+   },
+   "gainDb": {
+    "min": -40.0,
+    "max": 0.0,
+    "scale": "lin",
+    "default": -12.0
+   }
+  },
+  "trigger": {
+   "riserDuration": {
+    "min": 0.2,
+    "max": 1.0,
+    "scale": "log",
+    "default": 0.5
+   },
+   "cutoffEnd": {
+    "min": 3000.0,
+    "max": 14000.0,
+    "scale": "log",
+    "default": 8000.0
+   },
+   "fStart": {
+    "min": 80.0,
+    "max": 200.0,
+    "scale": "log",
+    "default": 120.0
+   },
+   "fEnd": {
+    "min": 30.0,
+    "max": 60.0,
+    "scale": "log",
+    "default": 40.0
+   },
+   "tail": {
+    "min": 0.2,
+    "max": 1.2,
+    "scale": "log",
+    "default": 0.5
+   },
+   "balance": {
+    "min": 0.1,
+    "max": 0.9,
+    "scale": "lin",
+    "default": 0.5
+   },
+   "gainDb": {
+    "min": -40.0,
+    "max": 0.0,
+    "scale": "lin",
+    "default": -12.0
+   }
+  },
+  "ding": {
+   "f0": {
+    "min": 500.0,
+    "max": 3000.0,
+    "scale": "log",
+    "default": 1200.0
+   },
+   "decay": {
+    "min": 0.2,
+    "max": 2.0,
+    "scale": "log",
+    "default": 0.8
+   },
+   "modes": {
+    "min": 3,
+    "max": 8,
+    "scale": "lin",
+    "default": 5,
+    "integer": true
+   },
+   "highDamp": {
+    "min": 0.5,
+    "max": 4.0,
+    "scale": "log",
+    "default": 1.5
+   },
+   "strikeMs": {
+    "min": 0.5,
+    "max": 5.0,
+    "scale": "log",
+    "default": 1.0
+   },
+   "inharm": {
+    "min": 0.0,
+    "max": 1.0,
+    "scale": "lin",
+    "default": 1.0
+   },
+   "tiltDb": {
+    "min": -12.0,
+    "max": 6.0,
+    "scale": "lin",
+    "default": -6.0
+   },
+   "air": {
+    "min": 0.0,
+    "max": 0.6,
+    "scale": "lin",
+    "default": 0.0
+   },
+   "airHp": {
+    "min": 1000.0,
+    "max": 10000.0,
+    "scale": "log",
+    "default": 4000.0
+   },
+   "gainDb": {
+    "min": -40.0,
+    "max": 0.0,
+    "scale": "lin",
+    "default": -12.0
+   }
+  },
+  "shimmer": {
+   "duration": {
+    "min": 0.5,
+    "max": 4.0,
+    "scale": "log",
+    "default": 1.5
+   },
+   "fCenter": {
+    "min": 2000.0,
+    "max": 10000.0,
+    "scale": "log",
+    "default": 5000.0
+   },
+   "rateHz": {
+    "min": 2.0,
+    "max": 12.0,
+    "scale": "log",
+    "default": 6.0
+   },
+   "spreadOct": {
+    "min": 0.2,
+    "max": 1.5,
+    "scale": "log",
+    "default": 0.6
+   },
+   "noiseMix": {
+    "min": 0.0,
+    "max": 0.6,
+    "scale": "lin",
+    "default": 0.2
+   },
+   "envCurve": {
+    "min": 0.5,
+    "max": 3.0,
+    "scale": "log",
+    "default": 1.0
+   },
+   "gainDb": {
+    "min": -40.0,
+    "max": 0.0,
+    "scale": "lin",
+    "default": -12.0
+   },
+   "partials": {
+    "min": 4,
+    "max": 12,
+    "scale": "lin",
+    "default": 8,
+    "fit": false,
+    "integer": true
+   }
+  },
+  "reverse": {
+   "duration": {
+    "min": 0.3,
+    "max": 3.0,
+    "scale": "log",
+    "default": 1.0
+   },
+   "tau": {
+    "min": 0.1,
+    "max": 1.5,
+    "scale": "log",
+    "default": 0.4
+   },
+   "lowpass": {
+    "min": 1000.0,
+    "max": 16000.0,
+    "scale": "log",
+    "default": 6000.0
+   },
+   "highpass": {
+    "min": 40.0,
+    "max": 1000.0,
+    "scale": "log",
+    "default": 150.0
+   },
+   "gainDb": {
+    "min": -40.0,
+    "max": 0.0,
+    "scale": "lin",
+    "default": -12.0
+   }
+  }
+ },
+ "perturbations": {
+  "whoosh": [
+   {
+    "name": "fStart x1.26",
+    "param": "fStart",
+    "mul": 1.26
+   },
+   {
+    "name": "duration x1.3",
+    "param": "duration",
+    "mul": 1.3
+   }
+  ],
+  "swoosh": [
+   {
+    "name": "fEnd x1.26",
+    "param": "fEnd",
+    "mul": 1.26
+   },
+   {
+    "name": "duration x1.3",
+    "param": "duration",
+    "mul": 1.3
+   }
+  ],
+  "swipe": [
+   {
+    "name": "fEnd x1.26",
+    "param": "fEnd",
+    "mul": 1.26
+   },
+   {
+    "name": "duration x1.3",
+    "param": "duration",
+    "mul": 1.3
+   }
+  ],
+  "click": [
+   {
+    "name": "fMode x1.06",
+    "param": "fMode",
+    "mul": 1.06
+   },
+   {
+    "name": "noiseMix +0.3",
+    "param": "noiseMix",
+    "add": 0.3
+   }
+  ],
+  "tick": [
+   {
+    "name": "fMode x1.06",
+    "param": "fMode",
+    "mul": 1.06
+   },
+   {
+    "name": "decayMode x2",
+    "param": "decayModeMs",
+    "mul": 2.0
+   }
+  ],
+  "pop": [
+   {
+    "name": "fEnd x1.26",
+    "param": "fEnd",
+    "mul": 1.26
+   },
+   {
+    "name": "duration x1.4",
+    "param": "duration",
+    "mul": 1.4
+   }
+  ],
+  "blip": [
+   {
+    "name": "freq x1.06",
+    "param": "freq",
+    "mul": 1.06
+   },
+   {
+    "name": "duration x1.3",
+    "param": "duration",
+    "mul": 1.3
+   }
+  ],
+  "impact": [
+   {
+    "name": "tail x1.5",
+    "param": "tail",
+    "mul": 1.5
+   },
+   {
+    "name": "fStart x1.26",
+    "param": "fStart",
+    "mul": 1.26
+   }
+  ],
+  "boom": [
+   {
+    "name": "duration x1.4",
+    "param": "duration",
+    "mul": 1.4
+   },
+   {
+    "name": "fStart x1.26",
+    "param": "fStart",
+    "mul": 1.26
+   }
+  ],
+  "subdrop": [
+   {
+    "name": "fStart x1.26",
+    "param": "fStart",
+    "mul": 1.26
+   },
+   {
+    "name": "duration x1.3",
+    "param": "duration",
+    "mul": 1.3
+   }
+  ],
+  "riser": [
+   {
+    "name": "duration x1.3",
+    "param": "duration",
+    "mul": 1.3
+   },
+   {
+    "name": "cutoffEnd /1.6",
+    "param": "cutoffEnd",
+    "mul": 0.625
+   }
+  ],
+  "downlifter": [
+   {
+    "name": "duration x1.3",
+    "param": "duration",
+    "mul": 1.3
+   },
+   {
+    "name": "cutoffStart /1.6",
+    "param": "cutoffStart",
+    "mul": 0.625
+   }
+  ],
+  "glitch": [
+   {
+    "name": "duration x1.4",
+    "param": "duration",
+    "mul": 1.4
+   },
+   {
+    "name": "toneHz x1.5",
+    "param": "toneHz",
+    "mul": 1.5
+   }
+  ],
+  "keyboard": [
+   {
+    "name": "duration x1.4",
+    "param": "duration",
+    "mul": 1.4
+   },
+   {
+    "name": "fMode x1.4",
+    "param": "fMode",
+    "mul": 1.4
+   }
+  ],
+  "trigger": [
+   {
+    "name": "riserDuration x1.4",
+    "param": "riserDuration",
+    "mul": 1.4
+   },
+   {
+    "name": "tail x1.5",
+    "param": "tail",
+    "mul": 1.5
+   }
+  ],
+  "ding": [
+   {
+    "name": "f0 x1.06",
+    "param": "f0",
+    "mul": 1.06
+   },
+   {
+    "name": "decay x1.5",
+    "param": "decay",
+    "mul": 1.5
+   }
+  ],
+  "shimmer": [
+   {
+    "name": "fCenter x1.26",
+    "param": "fCenter",
+    "mul": 1.26
+   },
+   {
+    "name": "duration x1.3",
+    "param": "duration",
+    "mul": 1.3
+   }
+  ],
+  "reverse": [
+   {
+    "name": "duration x1.3",
+    "param": "duration",
+    "mul": 1.3
+   },
+   {
+    "name": "lowpass /1.6",
+    "param": "lowpass",
+    "mul": 0.625
+   }
+  ]
+ },
+ "ceiling": {
+  "truths": 3,
+  "truthSeed": 20261012,
+  "truthUnitMargin": 0.15,
+  "targetSeed": 101,
+  "evalSeeds": [
+   303,
+   304,
+   305,
+   306
+  ],
+  "workers": 16,
+  "renderSeeds": [
+   401,
+   402,
+   403,
+   404,
+   405,
+   406,
+   407,
+   408,
+   409,
+   410,
+   411,
+   412,
+   413,
+   414,
+   415,
+   416,
+   417,
+   418,
+   419,
+   420,
+   421,
+   422,
+   423,
+   424,
+   425,
+   426,
+   427,
+   428,
+   429,
+   430,
+   431,
+   432
+  ],
+  "floors": {
+   "default": 95.0,
+   "glitch": 0.0,
+   "keyboard": 40.0
+  },
+  "floorsNote": "12 October 2026: shipped-draw identity floors used by the green test; glitch and keyboard are realisation-bound (their sound is the particular grain or key pattern, which 32 seeds rarely reproduce)"
+ },
+ "segment": {
+  "hopMs": 5.0,
+  "nFft": 2048,
+  "transientStems": [
+   "drums",
+   "other"
+  ],
+  "swellStems": [
+   "other"
+  ],
+  "flux": {
+   "lag": 2,
+   "maxSize": 3,
+   "delta": 0.35,
+   "waitMs": 40.0,
+   "minDb": -45.0
+  },
+  "swell": {
+   "bandHz": [
+    300.0,
+    10000.0
+   ],
+   "medianSeconds": 2.0,
+   "excessFactor": 1.5,
+   "verticalFrames": 9,
+   "smoothFrames": 25,
+   "pickPreMs": 300.0,
+   "pickAvgMs": 1500.0,
+   "deltaDb": 8.0,
+   "waitMs": 750.0,
+   "onsetFraction": 0.15
+  },
+  "grid": {
+   "subdivision": 4,
+   "guardMs": 25.0,
+   "keepIfExcessDb": 3.0,
+   "beatsPerBar": 4,
+   "repeatBars": [
+    -2,
+    -1,
+    1,
+    2
+   ],
+   "repeatWindowS": 0.1,
+   "repeatWindowTransientS": 0.03
+  },
+  "mergeMs": 40.0,
+  "windowPreSeconds": 0.03,
+  "windowMaxSeconds": 3.0,
+  "windowTailSeconds": 0.08,
+  "endDb": 30.0,
+  "minEventDb": -40.0,
+  "maxEvents": 64,
+  "transientMaxSeconds": 0.5
+ },
+ "classify": {
+  "transientAttackMs": 5.0,
+  "swellAttackMs": 30.0,
+  "tonalDb": 15.0,
+  "flatNoise": 0.25,
+  "lowShare": 0.5,
+  "lowShareImpact": 0.25,
+  "centroidSlopeUp": 0.35,
+  "centroidSlopeDown": -0.35,
+  "clickMaxSeconds": 0.05,
+  "tickMaxSeconds": 0.02,
+  "tickMinHz": 3000.0,
+  "popMaxSeconds": 0.12,
+  "blipMaxSeconds": 0.2,
+  "seriesMinAttacks": 4,
+  "keyboardRateHz": [
+   5.0,
+   16.0
+  ],
+  "glitchMinAttacks": 6,
+  "swipeMaxSeconds": 0.1,
+  "swooshMaxSeconds": 0.25,
+  "riserMinSeconds": 1.0,
+  "boomMinSeconds": 0.8,
+  "subdropMinSeconds": 0.5,
+  "dingMinSeconds": 0.2,
+  "shimmerMinCentroidHz": 3500.0,
+  "reverseLatePeak": 0.75,
+  "triggerPeakFraction": 0.6,
+  "subdropFlatMax": 0.05,
+  "periodicCv": 0.15,
+  "alternatives": {
+   "whoosh": [
+    "swoosh",
+    "reverse"
+   ],
+   "swoosh": [
+    "whoosh",
+    "swipe"
+   ],
+   "swipe": [
+    "swoosh",
+    "whoosh"
+   ],
+   "riser": [
+    "reverse",
+    "whoosh"
+   ],
+   "downlifter": [
+    "whoosh",
+    "impact"
+   ],
+   "reverse": [
+    "whoosh",
+    "riser"
+   ],
+   "click": [
+    "tick",
+    "blip"
+   ],
+   "tick": [
+    "click",
+    "blip"
+   ],
+   "pop": [
+    "blip",
+    "click"
+   ],
+   "blip": [
+    "pop",
+    "click"
+   ],
+   "glitch": [
+    "keyboard",
+    "tick"
+   ],
+   "keyboard": [
+    "glitch",
+    "tick"
+   ],
+   "impact": [
+    "trigger",
+    "boom"
+   ],
+   "boom": [
+    "subdrop",
+    "impact"
+   ],
+   "subdrop": [
+    "boom",
+    "impact"
+   ],
+   "trigger": [
+    "impact",
+    "riser"
+   ],
+   "ding": [
+    "blip",
+    "shimmer"
+   ],
+   "shimmer": [
+    "ding",
+    "whoosh"
+   ]
+  },
+  "musicalNote": {
+   "stems": [
+    "other",
+    "bass"
+   ],
+   "centsTolerance": 50.0,
+   "scales": {
+    "major": [
+     0,
+     2,
+     4,
+     5,
+     7,
+     9,
+     11
+    ],
+    "minor": [
+     0,
+     2,
+     3,
+     5,
+     7,
+     8,
+     10
+    ]
+   },
+   "phraseSeconds": 4.0,
+   "minDistinctNotes": 2,
+   "noteMinFrames": 5,
+   "pyinSr": 16000,
+   "pyinFmin": 80.0,
+   "pyinFmax": 2000.0,
+   "pyinFrame": 1024,
+   "pyinHop": 160
+  }
+ },
+ "fit": {
+  "workers": 16,
+  "fitSeeds": [
+   202,
+   203,
+   204,
+   205
+  ],
+  "evalSeeds": [
+   303,
+   304,
+   305,
+   306
+  ],
+  "targetSeed": 101,
+  "cmaBudget": 360,
+  "cmaSigma0": 0.2,
+  "cmaSeeds": [
+   7,
+   8
+  ],
+  "nelderMeadEval": 120,
+  "starts": [
+   "descriptors",
+   "centre",
+   "cma"
+  ],
+  "polishTol": 0.001,
+  "maxEventsFit": 64,
+  "offsetRange": [
+   -0.04,
+   0.12
+  ],
+  "tryAlternatives": true,
+  "alternativeBudgetFraction": 0.5,
+  "stopScore": 99.5,
+  "renderSeeds": [
+   101,
+   102,
+   103,
+   104,
+   105,
+   106,
+   107,
+   108,
+   109,
+   110,
+   111,
+   112,
+   113,
+   114,
+   115,
+   116,
+   117,
+   118,
+   119,
+   120,
+   121,
+   122,
+   123,
+   124,
+   125,
+   126,
+   127,
+   128,
+   129,
+   130,
+   131,
+   132
+  ],
+  "useBackground": false,
+  "warmMatchMs": 50.0,
+  "allKindsBelow": 95.0,
+  "allKindsBudgetFraction": 0.5,
+  "objective": "bestDraw",
+  "bestDrawSeeds": [
+   202,
+   203,
+   204,
+   205,
+   206,
+   207,
+   208,
+   209
+  ],
+  "fitter": "dfit",
+  "_fitterDoc": "12 October 2026 (A4): fitter of SFX events. 'dfit' (default) fits each event 1:1 on its reference window and stem with chains of datasets/sound-bank blocks (zrmd/audio/fit.run_dfit); 'recipes' keeps the B1 path (18 recipes, CMA-ES, descriptor score). Select per run with --set fit.fitter=\"recipes\".",
+  "sfxDfit": {
+   "_doc": "12 October 2026 (A4): staged discrete search around dfit for SFX events (screen, chains, grow, full, seed). score: 'ploss' (spectrogram 1:1), 'b1' (descriptor score of V_017) or 'min'. keepRecipeCandidate lets the previous version's recipe compete under the same score.",
+   "workers": 16,
+   "excludeFamilies": [
+    "stereo"
+   ],
+   "excludeBlocks": [],
+   "effects": [
+    "reverb_fdn",
+    "reverb_noise_tail",
+    "saturation",
+    "peak_eq",
+    "lowpass_sweep",
+    "highpass_sweep",
+    "bandpass_sweep",
+    "compressor",
+    "transient_shaper",
+    "delay_echo"
+   ],
+   "screenOverrides": {
+    "screenSamples": 48,
+    "starts": 1,
+    "steps": 40,
+    "polishRounds": 0,
+    "scanRounds": 0,
+    "blurWeight": 1.0,
+    "cmaSigmas": []
+   },
+   "pairOverrides": {
+    "screenSamples": 160,
+    "starts": 3,
+    "steps": 350,
+    "patience": 60,
+    "polishRounds": 2,
+    "polishSteps": 150,
+    "targetScore": 99.5,
+    "scanRounds": 1,
+    "cmaSigmas": [
+     0.2
+    ],
+    "cmaIters": 60
+   },
+   "fullOverrides": {
+    "scanRounds": 2,
+    "cmaIters": 100
+   },
+   "screenTop": 8,
+   "pairTop": 4,
+   "effectTop": 2,
+   "growTop": 2,
+   "growSources": 4,
+   "maxBlocks": 3,
+   "fullTop": 4,
+   "seedChoices": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "score": "ploss",
+   "keepRecipeCandidate": true,
+   "reportCandidates": 12
+  }
+ },
+ "music": {
+  "hopMs": 10.0,
+  "minBpm": 60.0,
+  "maxBpm": 180.0,
+  "lowPassHz": 150.0,
+  "sectionSeconds": 1.0,
+  "sectionKernelBeats": 8,
+  "sectionMinBeats": 8,
+  "sectionMax": 8,
+  "energyWindowS": 3.0,
+  "energyHopS": 0.5,
+  "keyHarmonicStems": [
+   "bass",
+   "other"
+  ],
+  "krumhanslMajor": [
+   6.35,
+   2.23,
+   3.48,
+   2.33,
+   4.38,
+   4.09,
+   2.52,
+   5.19,
+   2.39,
+   3.66,
+   2.29,
+   2.88
+  ],
+  "krumhanslMinor": [
+   6.33,
+   2.68,
+   3.52,
+   5.38,
+   2.6,
+   3.53,
+   2.54,
+   4.75,
+   3.98,
+   2.69,
+   3.34,
+   3.17
+  ],
+  "progressions": {
+   "major": [
+    [
+     0,
+     7,
+     9,
+     5
+    ],
+    [
+     0,
+     5,
+     7,
+     5
+    ],
+    [
+     9,
+     5,
+     0,
+     7
+    ]
+   ],
+   "minor": [
+    [
+     0,
+     8,
+     3,
+     10
+    ],
+    [
+     0,
+     5,
+     8,
+     7
+    ],
+    [
+     0,
+     10,
+     8,
+     10
+    ]
+   ]
+  },
+  "beatsPerBar": 4,
+  "barsPerChord": 1,
+  "seed": 4242,
+  "kick": {
+   "fStart": 160.0,
+   "fEnd": 48.0,
+   "dropMs": 35.0,
+   "decayMs": 260.0,
+   "clickLevel": 0.15,
+   "level": 0.9
+  },
+  "hat": {
+   "decayMs": 25.0,
+   "hpHz": 7000.0,
+   "level": 0.12,
+   "steps": [
+    2,
+    6,
+    10,
+    14
+   ]
+  },
+  "snare": {
+   "decayMs": 140.0,
+   "toneHz": 190.0,
+   "noiseLp": 7000.0,
+   "level": 0.35,
+   "steps": [
+    4,
+    12
+   ]
+  },
+  "bass": {
+   "octave": 1,
+   "decayMs": 400.0,
+   "level": 0.32,
+   "drive": 1.5,
+   "lpHz": 900.0
+  },
+  "pad": {
+   "octave": 4,
+   "detuneCents": 9.0,
+   "voices": 3,
+   "lpHz": 3500.0,
+   "level": 0.11,
+   "gateSteps": 2,
+   "gateDuty": 0.6
+  },
+  "pump": {
+   "depth": 0.75,
+   "releaseMs": 220.0
+  },
+  "energyGainRangeDb": 18.0,
+  "sectionsNoKickBelowEnergy": 0.0,
+  "kickPresenceDb": -18.0,
+  "scoreTempoJndPct": 1.0,
+  "scoreBoundaryBeats": 2.0,
+  "beatTopPercentile": 95.0,
+  "kickMatchMs": 30.0,
+  "shapePoints": 24,
+  "shapeStems": [
+   "bass",
+   "other"
+  ],
+  "shapeFloor": 0.02,
+  "useMeasuredShapes": true,
+  "drumSteps": {
+   "use": true,
+   "delta": 0.07,
+   "matchMs": 30.0,
+   "lowHz": [
+    30.0,
+    150.0
+   ],
+   "midHz": [
+    150.0,
+    3000.0
+   ],
+   "highHz": [
+    5000.0,
+    16000.0
+   ],
+   "measureMs": 40.0,
+   "kickLowShare": 0.5,
+   "hatHighShare": 0.5,
+   "minDbBelowMax": 30.0
+  },
+  "bassRegister": {
+   "use": true,
+   "fMin": 30.0,
+   "fMax": 400.0
+  },
+  "kickDecay": {
+   "use": true,
+   "dropDb": 12.0,
+   "windowMs": 10.0,
+   "maxMs": 600.0
+  }
+ },
+ "mix": {
+  "targetFromReference": true,
+  "fallbackLufs": -14.0,
+  "truePeakCeilingDbtp": -1.0,
+  "oversample": 4,
+  "lookaheadMs": 5.0,
+  "releaseMs": 80.0,
+  "duckDepthDb": 4.0,
+  "duckAttackMs": 5.0,
+  "duckReleaseMs": 150.0,
+  "shortTermWindowS": 3.0,
+  "shortTermHopS": 0.5,
+  "sfxOverMusicDefaultDb": -6.0,
+  "maxIterations": 6,
+  "lufsJnd": 1.0,
+  "stemNames": [
+   "drums",
+   "bass",
+   "other"
+  ],
+  "sectionRampS": 0.25,
+  "sectionGainMaxDb": 12.0,
+  "duckKinds": [
+   "impact",
+   "boom",
+   "trigger",
+   "subdrop"
+  ],
+  "duckMeasureS": 0.12,
+  "duckMaxDb": 12.0,
+  "momentaryWindowS": 0.4,
+  "momentaryHopS": 0.1,
+  "panLaw": "constantPower"
+ },
+ "verify": {
+  "frameSeconds": 0.016667,
+  "timingSlackMs": 1.0,
+  "matchWindowMs": 120.0,
+  "missingScore": 0.0,
+  "mixTarget": 0.99,
+  "sfxWeights": "loudness",
+  "windowMinMomentaryPoints": 4
+ },
+ "bank": {
+  "_doc": "12 October 2026: differentiable procedural sound bank (A0). Directory relative to this file.",
+  "dir": "sound-bank",
+  "sampleRate": 48000,
+  "demoSeconds": 1.0,
+  "noiseSeedDefault": 0,
+  "verify": {
+   "recoverMin": 99.5,
+   "wrongMax": 90.0,
+   "randomSets": 2,
+   "seed": 77,
+   "seconds": 1.0,
+   "workers": 16,
+   "demoTolerance": 1e-06,
+   "redTargets": {
+    "_doc": "12 October 2026: graded red targets, chosen outside the overlap of the blocks (fm_bell with a vanishing index is a sine; a sine with a small glide is an FM tone with index 0). Cross fits on the random sets are reported as overlap information only.",
+    "sine_env": {
+     "glide_st": -12.0,
+     "glide_s": 0.08,
+     "decay_s": 0.8
+    },
+    "fm_bell": {
+     "ratio": 1.4,
+     "index": 5.0,
+     "index_decay_s": 1.0
+    },
+    "filtered_noise_burst": {},
+    "_docA2": "12 October 2026 (A2): the defaults of three effects are mild on the fixed test exciter and sit inside the overlap of another effect (a peak EQ imitates 18 dB of saturation on a harmonic tone at 98.6, a lowpass imitates 6:1 compression at 92.5, a tremolo of depth near 0 imitates a 9 dB bell boost at 97.6): their red targets are set where the effect does what no contrast block can (heavy flattening and intermodulation, heavy pumping, a narrow resonant boost). The peak EQ red target sits on the third partial of the exciter (660 Hz): a first try at 3000 Hz only touched its noise layer and a tremolo still imitated it at 98.0.",
+    "saturation": {
+     "drive_db": 34.0,
+     "bias": 0.3,
+     "mix": 1.0,
+     "out_db": -24.0
+    },
+    "compressor": {
+     "threshold_db": -42.0,
+     "ratio": 16.0,
+     "knee_db": 2.0,
+     "time_ms": 3.0,
+     "makeup_db": 16.0
+    },
+    "peak_eq": {
+     "freq_hz": 4000.0,
+     "gain_db": 18.0,
+     "q": 0.7,
+     "out_db": -12.0
+    },
+    "drum_step_pattern": {
+     "b2_db": 0.0,
+     "n2_db": -40.0,
+     "b4_db": 0.0,
+     "n4_db": -40.0
+    },
+    "gated_tone": {
+     "depth_db": 40.0,
+     "duty": 0.3,
+     "rate_hz": 8.0
+    },
+    "pumped_bass": {
+     "depth_db": 24.0,
+     "release_s": 0.2
+    },
+    "marimba_bar": {
+     "upper_db": 0.0,
+     "damp": 0.0,
+     "mallet_db": -8.0,
+     "decay_s": 1.5
+    },
+    "highpass_sweep": {
+     "start_hz": 40.0,
+     "end_hz": 4000.0,
+     "sweep_s": 0.12,
+     "q": 8.0
+    },
+    "hit_sequence": {
+     "count": 12.0,
+     "rate_hz": 14.0,
+     "accel": 1.8,
+     "crescendo_db": 12.0,
+     "bright_spread_oct": 1.5,
+     "body_db": -40.0
+    },
+    "stepped_glitch": {
+     "pitch_spread_st": 30.0,
+     "buzz": 1.0,
+     "noise_db": -40.0,
+     "step_hz": 30.0,
+     "density": 0.6
+    },
+    "modal_pop": {
+     "stretch": 1.6,
+     "drop_st": 18.0,
+     "drop_ms": 40.0,
+     "tilt_db_oct": -6.0
+    },
+    "chip_blip": {
+     "step1_st": 7.0,
+     "step2_st": -5.0,
+     "notes": 3.0,
+     "step_s": 0.05,
+     "duty": 0.12
+    },
+    "noise_path": {
+     "c0_hz": 300.0,
+     "c1_hz": 6000.0,
+     "c2_hz": 500.0,
+     "c3_hz": 8000.0,
+     "bw0_oct": 0.4,
+     "bw1_oct": 0.4
+    },
+    "click_body": {
+     "click_hz": 8000.0,
+     "click_bw_oct": 0.5,
+     "click_db": 10.0,
+     "body_hz": 80.0,
+     "drop_st": 24.0
+    },
+    "shimmer_partials": {
+     "detune_cents": 40.0,
+     "am_hz": 12.0,
+     "am_depth": 0.9,
+     "stretch": 1.3
+    }
+   },
+   "cross": "contrast",
+   "redFitsPerTarget": 2,
+   "_crossDoc": "12 October 2026 (A1): cross contrast fits each target with its own block and each red target with the wrong blocks in contrast[id] (else the first redFitsPerTarget blocks of other families); cross all is the A0 all-against-all run.",
+   "contrast": {
+    "_doc": "12 October 2026 (A1): wrong blocks that must stay at or under wrongMax on the red target of each block, chosen outside its overlap.",
+    "sine_env": [
+     "fm_bell",
+     "filtered_noise_burst"
+    ],
+    "fm_bell": [
+     "sine_env",
+     "filtered_noise_burst"
+    ],
+    "filtered_noise_burst": [
+     "sine_env",
+     "fm_bell"
+    ],
+    "kick": [
+     "hihat_closed",
+     "whoosh"
+    ],
+    "sub_drop": [
+     "hihat_closed",
+     "paper_rustle"
+    ],
+    "snare": [
+     "sine_env",
+     "sub_drop"
+    ],
+    "clap": [
+     "ui_tick",
+     "sub_drop"
+    ],
+    "hihat_closed": [
+     "kick",
+     "thud"
+    ],
+    "hihat_open": [
+     "tom_drum",
+     "sub_drop"
+    ],
+    "crash_cymbal": [
+     "kick",
+     "ui_tick"
+    ],
+    "impact_layered": [
+     "ui_click",
+     "hihat_closed"
+    ],
+    "thud": [
+     "hihat_closed",
+     "ui_tick"
+    ],
+    "tom_drum": [
+     "hihat_open",
+     "static_crackle"
+    ],
+    "wood_knock": [
+     "room_tone",
+     "whoosh"
+    ],
+    "ui_click": [
+     "sub_drop",
+     "wind"
+    ],
+    "ui_tick": [
+     "room_tone",
+     "cloth_swish"
+    ],
+    "key_press": [
+     "sub_drop",
+     "wind"
+    ],
+    "keyboard_typing": [
+     "sine_env",
+     "sub_drop"
+    ],
+    "shaker": [
+     "kick",
+     "ui_tick"
+    ],
+    "whoosh": [
+     "kick",
+     "ui_tick"
+    ],
+    "swoosh_tonal": [
+     "snare",
+     "ui_click"
+    ],
+    "riser": [
+     "kick",
+     "ui_click"
+    ],
+    "downlifter": [
+     "kick",
+     "ui_tick"
+    ],
+    "reverse_swell": [
+     "ui_click",
+     "kick"
+    ],
+    "glitch_stutter": [
+     "room_tone",
+     "thud"
+    ],
+    "static_crackle": [
+     "sine_env",
+     "sub_drop"
+    ],
+    "paper_rustle": [
+     "sub_drop",
+     "ui_tick"
+    ],
+    "cloth_swish": [
+     "ui_tick",
+     "hihat_closed"
+    ],
+    "room_tone": [
+     "kick",
+     "ui_tick"
+    ],
+    "wind": [
+     "ui_click",
+     "kick"
+    ],
+    "modal_ding": [
+     "filtered_noise_burst",
+     "sine_env"
+    ],
+    "chime_bar": [
+     "filtered_noise_burst",
+     "sine_env"
+    ],
+    "bell_modal": [
+     "filtered_noise_burst",
+     "sine_env"
+    ],
+    "marimba_bar": [
+     "filtered_noise_burst",
+     "sine_env"
+    ],
+    "fm_epiano": [
+     "filtered_noise_burst",
+     "sine_env"
+    ],
+    "pluck_ks": [
+     "filtered_noise_burst",
+     "sine_env"
+    ],
+    "supersaw": [
+     "filtered_noise_burst",
+     "sine_env"
+    ],
+    "pad_saw": [
+     "filtered_noise_burst",
+     "sine_env"
+    ],
+    "pulse_lead": [
+     "filtered_noise_burst",
+     "sine_env"
+    ],
+    "bass_saw": [
+     "filtered_noise_burst",
+     "sine_env"
+    ],
+    "additive_harmonic": [
+     "filtered_noise_burst",
+     "sine_env"
+    ],
+    "notify_two_tone": [
+     "filtered_noise_burst",
+     "sine_env"
+    ],
+    "notify_arpeggio": [
+     "filtered_noise_burst",
+     "sine_env"
+    ],
+    "sub_808": [
+     "filtered_noise_burst",
+     "fm_bell"
+    ],
+    "tone_glide": [
+     "filtered_noise_burst",
+     "fm_bell"
+    ],
+    "notify_chirp": [
+     "filtered_noise_burst",
+     "fm_bell"
+    ],
+    "ui_blip_tri": [
+     "filtered_noise_burst",
+     "fm_bell"
+    ],
+    "lowpass_sweep": [
+     "sine_env",
+     "tremolo"
+    ],
+    "highpass_sweep": [
+     "sine_env",
+     "tremolo"
+    ],
+    "bandpass_sweep": [
+     "sine_env",
+     "tremolo"
+    ],
+    "peak_eq": [
+     "sine_env",
+     "tremolo"
+    ],
+    "reverb_noise_tail": [
+     "sine_env",
+     "saturation"
+    ],
+    "reverb_fdn": [
+     "sine_env",
+     "saturation"
+    ],
+    "delay_echo": [
+     "sine_env",
+     "reverb_noise_tail"
+    ],
+    "saturation": [
+     "sine_env",
+     "peak_eq"
+    ],
+    "transient_shaper": [
+     "sine_env",
+     "lowpass_sweep"
+    ],
+    "compressor": [
+     "sine_env",
+     "lowpass_sweep"
+    ],
+    "chorus": [
+     "sine_env",
+     "lowpass_sweep"
+    ],
+    "tremolo": [
+     "sine_env",
+     "lowpass_sweep"
+    ],
+    "stereo_pan": [
+     "sine_env",
+     "fm_bell"
+    ],
+    "stereo_width": [
+     "sine_env",
+     "fm_bell"
+    ],
+    "_docA2": "12 October 2026 (A2): tonal blocks are contrasted with a noise block and a single-partial block (fm_bell instead of sine_env when the target glides, since sine_env glides too); effect blocks with a pure tone and an effect of another family that cannot imitate them (not a gain-only effect for stereo_pan, whose mono view is a gain).",
+    "drum_step_pattern": [
+     "kick",
+     "keyboard_typing"
+    ],
+    "gated_tone": [
+     "additive_harmonic",
+     "pulse_lead"
+    ],
+    "pumped_bass": [
+     "sub_808",
+     "sine_env"
+    ],
+    "hit_sequence": [
+     "keyboard_typing",
+     "drum_step_pattern"
+    ],
+    "stepped_glitch": [
+     "glitch_stutter",
+     "gated_tone"
+    ],
+    "modal_pop": [
+     "modal_ding",
+     "sine_env"
+    ],
+    "chip_blip": [
+     "ui_blip_tri",
+     "pulse_lead"
+    ],
+    "noise_path": [
+     "whoosh",
+     "swoosh_tonal"
+    ],
+    "click_body": [
+     "kick",
+     "ui_click"
+    ],
+    "shimmer_partials": [
+     "modal_ding",
+     "additive_harmonic"
+    ]
+   },
+   "_a4RedDoc": "12 October 2026 (A4): red targets of marimba_bar, highpass_sweep and peak_eq moved out of the reach of their contrast blocks after the A2 full run (verify-full2.json: imitated at 91.3, 98.2 and 92.8); previous values: {\"marimba_bar\": null, \"highpass_sweep\": null, \"peak_eq\": {\"freq_hz\": 660.0, \"gain_db\": 17.0, \"q\": 6.0, \"out_db\": -12.0}}. Red targets and contrasts added for the seven A4 blocks. peak_eq moved again to a broad +18 dB boost at 4 kHz (the 220 Hz cut was imitated by tremolo at 94.99, verify-new1.json)."
+  }
+ },
+ "ploss": {
+  "_doc": "12 October 2026: perceptual loss of dfit, in JND units so that score = 100 * score.base ** E2 exactly as describe.compare and verify.py. Each term is a weighted mean dB difference divided by its JND (dB terms) or a time error divided by jnd.anchorMs (onset).",
+  "stftSizes": [
+   256,
+   1024,
+   4096
+  ],
+  "hopFraction": 0.25,
+  "stftJndDb": 2.0,
+  "melFft": 1024,
+  "melBands": 64,
+  "melFMin": 30.0,
+  "melJndDb": 2.0,
+  "envWindowMs": 10.0,
+  "envHopMs": 5.0,
+  "envJndDb": 1.0,
+  "floorDb": 60.0,
+  "absSmoothDb": 0.05,
+  "onsetTemperatureDb": 2.0,
+  "onsetWindowMs": 30.0,
+  "_onsetWindowDoc": "12 October 2026 (A2 resume): the onset term only looks at the frames within onsetWindowMs of the strongest rise of the target, so the rises of a second note or an echo no longer pull the soft-argmax (two tones 313 ms apart: 0.2 ms of onset cost 4 JND globally, 0 locally). 0 restores the global soft-argmax of A0.",
+  "weights": {
+   "stft": 1.0,
+   "mel": 1.0,
+   "envelope": 1.0,
+   "onset": 1.0
+  },
+  "blurBinsPerOct": 24,
+  "stochastic": {
+   "_doc": "12 October 2026 (A3): seed-invariant variant of the loss, off by default (the official loss stays the A0 one). Chosen on a grid (scratch measurement, reported in docs/build/A3-calibration.md): two seeds of the same noise block score >= 99 (filtered_noise_burst 99.58, wind 99.1, room_tone 99.4), while a decay x1.3, +3 dB, a 15 ms onset shift, a +50 cent sine and a wrong block stay under 99. Pitch errors under about 40 cents are not resolved by this variant.",
+   "enabled": false,
+   "sigmaOct": {
+    "256": 0.1667,
+    "1024": 0.0833,
+    "4096": 0.0208
+   },
+   "binsPerOct": 48,
+   "timeSmoothMs": 30.0,
+   "envWindowMs": 30.0,
+   "tolDb": 1.5,
+   "envTolDb": 0.5,
+   "tolSharpness": 4.0,
+   "onsetMinRiseDb": 6.0
+  }
+ },
+ "dfit": {
+  "_doc": "12 October 2026: gradient fitter of the sound bank (A0). Random pre-screen in the unconstrained space, then Adam from the best starts.",
+  "device": "auto",
+  "screenSamples": 384,
+  "starts": 8,
+  "steps": 500,
+  "lr": 0.06,
+  "lrMin": 0.004,
+  "patience": 80,
+  "minDelta": 0.0001,
+  "targetScore": 99.95,
+  "seed": 1234,
+  "gainPerBlock": false,
+  "blurStartOct": 0.25,
+  "blurEndOct": 0.02,
+  "blurFraction": 0.6,
+  "blurWeight": 1.0,
+  "blurLevels": 12,
+  "screenBlurOct": 0.15,
+  "polishRounds": 6,
+  "polishSigma": 0.3,
+  "polishSteps": 250,
+  "polishBlurStartOct": 0.06,
+  "polishLr": 0.03,
+  "scanRounds": 3,
+  "scanPoints": 33,
+  "scanZoomPoints": 17,
+  "screenBlurMs": 0.0,
+  "blurStartMs": 0.0,
+  "blurEndMs": 1.0,
+  "_scanDoc": "12 October 2026 (A1): coordinate scan after the Adam starts (scanRounds sweeps of every parameter over scanPoints values, best under the official E2 and under the guide each zoomed over scanZoomPoints values); screenBlurMs and blurStartMs/blurEndMs add a time blur to the guide (0 = off, A0 behaviour); a block may override any dfit key through its class attribute FIT.",
+  "esIters": 14,
+  "esSamples": 40,
+  "esRadius": 0.25,
+  "esShrink": 0.7,
+  "esOfficialBelow": 0.03,
+  "scanGroups": null,
+  "_esDoc": "12 October 2026 (A1): joint (1 + lambda) evolution strategy at the start of every scan round: esIters iterations of esSamples Gaussian points of radius esRadius (unit cube) shrinking by esShrink, ranked by the blurred guide until the radius falls under esOfficialBelow, then by the official E2; scanGroups null means one group of every parameter, a block FIT hint may list coupled groups.",
+  "pairPoints": [
+   25,
+   13
+  ],
+  "pairZoom": 9,
+  "scanPairs": null,
+  "_pairDoc": "12 October 2026 (A1): joint 2-D scan of the coupled pairs a block lists in its FIT scanPairs: pairPoints grid under the official E2 and the guide, best of each zoomed on a pairZoom square.",
+  "scanLevelParam": "amp_db",
+  "scanLevelMatch": true,
+  "cmaSigmas": [
+   0.05,
+   0.2
+  ],
+  "cmaIters": 150,
+  "cmaPopulation": 12,
+  "_cmaDoc": "12 October 2026 (A1): scans are level matched (energy gain, then scanLevelParam shifted on an accepted move); after the scan rounds a CMA-ES (cmaIters generations of cmaPopulation, one run per sigma in cmaSigmas) walks rotated valleys; each stage keeps a state only if the official E2 drops."
+ },
+ "calibrate": {
+  "_doc": "12 October 2026: calibration of the sound bank on CC0 sound effects (task A3). Paths live outside the workshop (refcache); only scores and chains are reported.",
+  "dir": "/Users/zenray/.claude/tmp/tmp-zenray-motion-design-refcache/sound-calibration",
+  "targetsDir": "/Users/zenray/.claude/tmp/tmp-zenray-motion-design-refcache/onekey-pro-2/sound-targets",
+  "stemsDir": "/Users/zenray/.claude/tmp/tmp-zenray-motion-design-refcache/onekey-pro-2/stems/out/htdemucs/mix",
+  "eventsJson": "/Users/zenray/.claude/tmp/tmp-zenray-motion-design/sound/onekey-pro-2/V_017/events.json",
+  "trimDb": 50.0,
+  "minSeconds": 0.15,
+  "maxSeconds": 1.0,
+  "peakDb": -6.0,
+  "perClass": 12,
+  "maxSounds": 180,
+  "pairsFromBest": 2,
+  "maxChainBlocks": 2,
+  "passScore": 99.0,
+  "workers": 16,
+  "dfitOverrides": {
+   "screenSamples": 160,
+   "starts": 3,
+   "steps": 350,
+   "patience": 60,
+   "polishRounds": 2,
+   "polishSteps": 150,
+   "targetScore": 99.5,
+   "scanRounds": 1,
+   "cmaSigmas": [
+    0.2
+   ],
+   "cmaIters": 60
+  },
+  "_dfitCmaDoc": "12 October 2026 (A3 run 2): calibration full fits keep the A1 CMA-ES stage with one sigma (0.2) and 60 generations (720 renders instead of 3600); one full fit measured 198 s on one thread at load 88, so the global setting would have cost about 6 hours for 180 sounds.",
+  "fullFromScreen": 4,
+  "screenOverrides": {
+   "screenSamples": 48,
+   "starts": 1,
+   "steps": 40,
+   "polishRounds": 0,
+   "scanRounds": 0,
+   "blurWeight": 1.0,
+   "cmaSigmas": []
+  },
+  "_screenCmaDoc": "12 October 2026 (A3 run 2): the screen stays a random pre-screen plus 40 Adam steps; the A1 CMA-ES stage (dfit.cmaSigmas, about 3600 renders per fit) is switched off for screens only, full, pair and fx fits keep it.",
+  "fxTrials": [
+   "reverb_fdn",
+   "saturation",
+   "peak_eq"
+  ],
+  "metric": "stochastic",
+  "_metricDoc": "12 October 2026 (A3): metric the calibration fits and scores with: official (A0 ploss) or stochastic (ploss.stochastic, seed-invariant). The official score of every best render is reported beside it.",
+  "_screenDoc": "12 October 2026 (A3): screen = 48 random starts then 40 Adam steps on the blur guide, no scan, no polish (5 s per fit). Measured on 3 sounds x 47 sources against full fits: with 1 step and no blur the best full block was never in the top 3; with 40 steps it was once in 3 and the best of the top 3 lost at most 3 points; top 4 are fitted in full.",
+  "_dfitDoc": "12 October 2026 (A3): full calibration fits run one coordinate scan round instead of the global three (the scan cost about 2400 forward renders per round on an 8 parameter block; the machine was shared with other jobs, load above 120).",
+  "pinned": {
+   "dfit": {
+    "_doc": "12 October 2026: gradient fitter of the sound bank (A0). Random pre-screen in the unconstrained space, then Adam from the best starts.",
+    "device": "auto",
+    "screenSamples": 384,
+    "starts": 8,
+    "steps": 500,
+    "lr": 0.06,
+    "lrMin": 0.004,
+    "patience": 80,
+    "minDelta": 0.0001,
+    "targetScore": 99.95,
+    "seed": 1234,
+    "gainPerBlock": false,
+    "blurStartOct": 0.25,
+    "blurEndOct": 0.02,
+    "blurFraction": 0.6,
+    "blurWeight": 1.0,
+    "blurLevels": 12,
+    "screenBlurOct": 0.15,
+    "polishRounds": 6,
+    "polishSigma": 0.3,
+    "polishSteps": 250,
+    "polishBlurStartOct": 0.06,
+    "polishLr": 0.03,
+    "scanRounds": 3,
+    "scanPoints": 33,
+    "scanZoomPoints": 17,
+    "screenBlurMs": 0.0,
+    "blurStartMs": 0.0,
+    "blurEndMs": 1.0,
+    "_scanDoc": "12 October 2026 (A1): coordinate scan after the Adam starts (scanRounds sweeps of every parameter over scanPoints values, best under the official E2 and under the guide each zoomed over scanZoomPoints values); screenBlurMs and blurStartMs/blurEndMs add a time blur to the guide (0 = off, A0 behaviour); a block may override any dfit key through its class attribute FIT.",
+    "esIters": 14,
+    "esSamples": 40,
+    "esRadius": 0.25,
+    "esShrink": 0.7,
+    "esOfficialBelow": 0.03,
+    "scanGroups": null,
+    "_esDoc": "12 October 2026 (A1): joint (1 + lambda) evolution strategy at the start of every scan round: esIters iterations of esSamples Gaussian points of radius esRadius (unit cube) shrinking by esShrink, ranked by the blurred guide until the radius falls under esOfficialBelow, then by the official E2; scanGroups null means one group of every parameter, a block FIT hint may list coupled groups.",
+    "pairPoints": [
+     25,
+     13
+    ],
+    "pairZoom": 9,
+    "scanPairs": null,
+    "_pairDoc": "12 October 2026 (A1): joint 2-D scan of the coupled pairs a block lists in its FIT scanPairs: pairPoints grid under the official E2 and the guide, best of each zoomed on a pairZoom square.",
+    "scanLevelParam": "amp_db",
+    "scanLevelMatch": true,
+    "cmaSigmas": [
+     0.05,
+     0.2
+    ],
+    "cmaIters": 150,
+    "cmaPopulation": 12,
+    "_cmaDoc": "12 October 2026 (A1): scans are level matched (energy gain, then scanLevelParam shifted on an accepted move); after the scan rounds a CMA-ES (cmaIters generations of cmaPopulation, one run per sigma in cmaSigmas) walks rotated valleys; each stage keeps a state only if the official E2 drops."
+   },
+   "ploss": {
+    "_doc": "12 October 2026: perceptual loss of dfit, in JND units so that score = 100 * score.base ** E2 exactly as describe.compare and verify.py. Each term is a weighted mean dB difference divided by its JND (dB terms) or a time error divided by jnd.anchorMs (onset).",
+    "stftSizes": [
+     256,
+     1024,
+     4096
+    ],
+    "hopFraction": 0.25,
+    "stftJndDb": 2.0,
+    "melFft": 1024,
+    "melBands": 64,
+    "melFMin": 30.0,
+    "melJndDb": 2.0,
+    "envWindowMs": 10.0,
+    "envHopMs": 5.0,
+    "envJndDb": 1.0,
+    "floorDb": 60.0,
+    "absSmoothDb": 0.05,
+    "onsetTemperatureDb": 2.0,
+    "onsetWindowMs": 30.0,
+    "_onsetWindowDoc": "12 October 2026 (A2 resume): the onset term only looks at the frames within onsetWindowMs of the strongest rise of the target, so the rises of a second note or an echo no longer pull the soft-argmax (two tones 313 ms apart: 0.2 ms of onset cost 4 JND globally, 0 locally). 0 restores the global soft-argmax of A0.",
+    "weights": {
+     "stft": 1.0,
+     "mel": 1.0,
+     "envelope": 1.0,
+     "onset": 1.0
+    },
+    "blurBinsPerOct": 24,
+    "stochastic": {
+     "_doc": "12 October 2026 (A3): seed-invariant variant of the loss, off by default (the official loss stays the A0 one). Chosen on a grid (scratch measurement, reported in docs/build/A3-calibration.md): two seeds of the same noise block score >= 99 (filtered_noise_burst 99.58, wind 99.1, room_tone 99.4), while a decay x1.3, +3 dB, a 15 ms onset shift, a +50 cent sine and a wrong block stay under 99. Pitch errors under about 40 cents are not resolved by this variant.",
+     "enabled": false,
+     "sigmaOct": {
+      "256": 0.1667,
+      "1024": 0.0833,
+      "4096": 0.0208
+     },
+     "binsPerOct": 48,
+     "timeSmoothMs": 30.0,
+     "envWindowMs": 30.0,
+     "tolDb": 1.5,
+     "envTolDb": 0.5,
+     "tolSharpness": 4.0,
+     "onsetMinRiseDb": 6.0
+    }
+   }
+  },
+  "_pinnedDoc": "13 October 2026 (A3): frozen copy of the global dfit and ploss sections used by calibration fits and by the cache key, so edits by A1 and A2 to the global sections no longer re-key the 36,000 cached fits. Copied from the globals at the run 2 and run 3 settings hash a60932b0b3369813. Refresh on purpose only."
+ }
+}

@@ -1,0 +1,19 @@
+{
+  "id": "linear_ramp4",
+  "family": "gradient",
+  "description": "Four-stop linear colour ramp along an angle, covering the unit square; two inner stop positions. Colour block, alpha 1. (12 October 2026)",
+  "params": [
+    {"name": "angle", "type": "float", "default": 90.0, "min": -180.0, "max": 180.0, "unit": "degrees (0 = left to right, 90 = top to bottom)"},
+    {"name": "c0", "type": "color", "default": [0.02, 0.02, 0.06], "min": [0, 0, 0], "max": [1, 1, 1], "unit": "sRGB 0..1"},
+    {"name": "c1", "type": "color", "default": [0.12, 0.10, 0.45], "min": [0, 0, 0], "max": [1, 1, 1], "unit": "sRGB 0..1"},
+    {"name": "c2", "type": "color", "default": [0.85, 0.35, 0.55], "min": [0, 0, 0], "max": [1, 1, 1], "unit": "sRGB 0..1"},
+    {"name": "c3", "type": "color", "default": [1.0, 0.85, 0.6], "min": [0, 0, 0], "max": [1, 1, 1], "unit": "sRGB 0..1"},
+    {"name": "s1", "type": "float", "default": 0.35, "min": 0.0, "max": 1.0, "unit": "ramp position"},
+    {"name": "s2", "type": "float", "default": 0.75, "min": 0.0, "max": 1.0, "unit": "ramp position"}
+  ],
+  "source_url": "",
+  "licence": "original (written from the mathematics of piecewise linear interpolation), same licence as the engine",
+  "attribution": "ZenRay Motion Design, 12 October 2026",
+  "tags": ["gradient", "ramp", "background", "sky", "colour"],
+  "looks": ["background-gradient", "sky", "glow-base"]
+}

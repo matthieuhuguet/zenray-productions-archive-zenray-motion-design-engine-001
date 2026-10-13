@@ -1,0 +1,60 @@
+# 12 October 2026: drum_hit, one drum piece for the music resynthesis (task M2): a sine body whose pitch falls
+# exponentially from tone_start_hz to tone_end_hz, plus a noise layer through a highpass and a lowpass, with optional
+# pre-bursts (claps: two short bursts burst_gap_s apart before the main hit), then a tanh drive. Kicks, snares, claps
+# and hats are the same block at different settings. Same contract as a sound-bank block.
+# Derived from the mathematics (RBJ cookbook magnitudes for the noise filters), no code copied.
+# FR : piece de batterie (corps a hauteur descendante, bruit filtre, salves de clap, saturation) pour M2.
+import torch
+
+from zrmd.audio import fxdsp as F
+from zrmd.audio.bank import Block, db_to_amp, envelope, phase_from_freq, stft_filter
+from zrmd.audio.fxdsp import param as P
+
+META = {"family": "drum", "kind": "source",
+        "description": "Drum piece: pitch-dropping sine body, high and low passed noise layer, clap pre-bursts, tanh drive. Kicks, snares, claps, hats. (12 October 2026)",
+        "tags": ["drum", "kick", "snare", "clap", "hat", "noise", "transient"],
+        "sources": [F.RBJ], "licence": "original"}
+
+NOTE_PARAMS = ["amp_db", "onset_s"]
+
+
+class DrumHit(Block):
+    ID = "drum_hit"
+    PARAMS = [
+        P("tone_start_hz", "Hz", 30, 3000, 150, "log", "body pitch at the hit"),
+        P("tone_end_hz", "Hz", 25, 1500, 50, "log", "body pitch after the drop"),
+        P("pitch_tau_s", "s", 0.002, 0.3, 0.03, "log", "pitch drop time constant"),
+        P("tone_t60", "s", 0.02, 3.0, 0.4, "log", "body time to fall 60 dB"),
+        P("tone_db", "dB re hit", -60, 0, -6, "lin", "body level"),
+        P("noise_hp_hz", "Hz", 20, 16000, 800, "log", "noise highpass cutoff"),
+        P("noise_lp_hz", "Hz", 200, 20000, 12000, "log", "noise lowpass cutoff"),
+        P("noise_t60", "s", 0.01, 2.0, 0.15, "log", "noise time to fall 60 dB"),
+        P("noise_db", "dB re hit", -60, 0, -12, "lin", "noise level"),
+        P("burst_gap_s", "s", 0.002, 0.04, 0.01, "log", "gap between clap pre-bursts"),
+        P("burst_db", "dB re noise", -60, 0, -60, "lin", "level of the two pre-bursts"),
+        P("attack_s", "s", 0.0002, 0.02, 0.001, "log", "linear attack"),
+        P("drive_db", "dB", 0.0, 24.0, 0.0, "lin", "tanh drive"),
+        P("amp_db", "dBFS", -60, 0, -12, "lin", "peak level"),
+        P("onset_s", "s", 0.0, 0.25, 0.02, "lin", "start time in the window"),
+    ]
+
+    def synth(self, v, t, sr):
+        o = v["onset_s"]
+        on = (t >= o).float()
+        u = torch.clamp(t - o, min=0.0)
+        f = v["tone_end_hz"] + (v["tone_start_hz"] - v["tone_end_hz"]) * torch.exp(-u / v["pitch_tau_s"])
+        body = torch.sin(phase_from_freq(f * on, sr)) * envelope(t, o, v["attack_s"], v["tone_t60"])
+        nz = self.noise(t.shape[0], t.device)
+        nz = stft_filter(nz, lambda fr, tm: F.biquad_mag("highpass", fr, v["noise_hp_hz"], torch.tensor(0.707), sr=sr)
+                         * F.biquad_mag("lowpass", fr, v["noise_lp_hz"], torch.tensor(0.707), sr=sr), 1024, 256, sr)
+        g = v["burst_gap_s"]
+        short = torch.tensor(0.012, device=t.device)
+        bursts = envelope(t, o - 2.0 * g, v["attack_s"], short) * (t < o).float() + envelope(t, o - g, v["attack_s"], short) * (t < o).float()
+        nenv = envelope(t, o, v["attack_s"], v["noise_t60"]) + db_to_amp(v["burst_db"]) * bursts
+        y = db_to_amp(v["tone_db"]) * body + db_to_amp(v["noise_db"]) * nz * nenv
+        d = db_to_amp(v["drive_db"])
+        y = torch.tanh(d * y) / torch.tanh(d)
+        return db_to_amp(v["amp_db"]) * y
+
+
+BLOCK = DrumHit

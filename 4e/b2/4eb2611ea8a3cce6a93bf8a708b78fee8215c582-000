@@ -1,0 +1,49 @@
+# 12 October 2026: room_reverb, a bus reverb for the music resynthesis (task M2): fixed-seed noise impulse response
+# with an exponential 60 dB decay (t60_s), a predelay, a damping lowpass and a low cut, energy-normalised, convolved by
+# FFT and mixed with the dry signal. Linear, so applying it once on a stem bus equals applying it to every note.
+# Same contract as a sound-bank effect block (fxdsp.EffectBlock, KIND "effect").
+# FR : reverberation de bus (reponse impulsionnelle de bruit a decroissance exponentielle), lineaire.
+import math
+
+import torch
+
+from zrmd.audio import fxdsp as F
+from zrmd.audio.fxdsp import param as P
+
+META = {"family": "space", "kind": "effect",
+        "description": "Bus reverb: exponentially decaying fixed-seed noise impulse response with predelay, damping lowpass and low cut, wet and dry levels. (12 October 2026)",
+        "tags": ["effect", "reverb", "space", "room", "hall"],
+        "sources": [F.RBJ], "licence": "original"}
+
+IR_SEED = 31
+MAX_IR_S = 6.0
+
+
+class RoomReverb(F.EffectBlock):
+    ID = "room_reverb"
+    PARAMS = [
+        P("t60_s", "s", 0.05, 5.0, 0.8, "log", "reverb time"),
+        P("wet_db", "dB", -60, 0, -18, "lin", "wet level"),
+        P("dry_db", "dB", -24, 0, 0, "lin", "dry level"),
+        P("predelay_s", "s", 0.0, 0.08, 0.01, "lin", "predelay"),
+        P("damp_hz", "Hz", 500, 16000, 6000, "log", "damping lowpass of the tail"),
+        P("lowcut_hz", "Hz", 20, 1000, 120, "log", "low cut of the tail"),
+    ]
+
+    def fx(self, v, x, t, sr):
+        n = x.shape[-1]
+        L = min(n, int(math.ceil((min(float(v["t60_s"].detach()), MAX_IR_S) * 1.1 + 0.1) * sr)))
+        tau = torch.arange(L, device=x.device, dtype=torch.float32) / sr
+        ir = F.seeded_noise(L, IR_SEED, x.device) * torch.pow(10.0, -3.0 * tau / v["t60_s"])
+        N = F.next_pow2(2 * L)
+        freqs = torch.fft.rfftfreq(N, 1.0 / sr).to(x.device)
+        H = (F.biquad_mag("lowpass", freqs, v["damp_hz"], torch.tensor(0.707), sr=sr)
+             * F.biquad_mag("highpass", freqs, v["lowcut_hz"], torch.tensor(0.707), sr=sr))
+        w = 2.0 * math.pi * freqs / sr
+        Hc = H * F.delay_phase(w, v["predelay_s"] * sr)
+        ir = torch.fft.irfft(torch.fft.rfft(ir, N) * Hc, N)[:L]
+        ir = ir / torch.sqrt((ir * ir).sum() + 1e-12)
+        return F.db_to_amp(v["dry_db"]) * x + F.db_to_amp(v["wet_db"]) * F.fft_conv(x, ir)
+
+
+BLOCK = RoomReverb

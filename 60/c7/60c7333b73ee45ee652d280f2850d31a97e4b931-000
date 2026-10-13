@@ -1,0 +1,647 @@
+{
+ "_doc": "12 October 2026: HDA interface of the music resynthesis (task M2, zrmd/audio/resynth.py). Every threshold, budget and window of the fit, the render, the mix bus and the scorer lives here once; --set a.b=json or ZRMD_RESYNTH_OVERRIDES override one value for a run.",
+ "sampleRate": 44100,
+ "workers": 16,
+ "paths": {
+  "score": "/Users/zenray/.claude/tmp/tmp-zenray-motion-design/sound/onekey-pro-2/music-bench/score.json",
+  "bench": "/Users/zenray/.claude/tmp/tmp-zenray-motion-design/sound/onekey-pro-2/music-bench",
+  "stems": "/Users/zenray/.claude/tmp/tmp-zenray-motion-design-refcache/onekey-pro-2/stems/out/htdemucs/mix",
+  "referenceVideo": "/Users/zenray/.claude/tmp/tmp-zenray-motion-design-refcache/onekey-pro-2/onekey-pro-2 [2108559602300383233].mp4",
+  "cache": "/Users/zenray/.claude/tmp/tmp-zenray-motion-design-refcache/onekey-pro-2/music-bench-cache",
+  "instruments": "music-instruments"
+ },
+ "roles": {
+  "_doc": "12 October 2026: one role per drum class and per tonal voice of score.json; bankTags select ready bank blocks whose tags intersect, own lists the M2 instruments always tried.",
+  "kick": {
+   "stem": "drums",
+   "kind": "drum",
+   "bankTags": [
+    "kick"
+   ],
+   "bankIds": [
+    "kick",
+    "sub_808"
+   ],
+   "own": [
+    "drum_hit"
+   ],
+   "windowS": 0.32
+  },
+  "snare": {
+   "stem": "drums",
+   "kind": "drum",
+   "bankTags": [
+    "snare"
+   ],
+   "bankIds": [
+    "snare"
+   ],
+   "own": [
+    "drum_hit"
+   ],
+   "windowS": 0.28
+  },
+  "clap": {
+   "stem": "drums",
+   "kind": "drum",
+   "bankTags": [
+    "clap"
+   ],
+   "bankIds": [
+    "clap"
+   ],
+   "own": [
+    "drum_hit"
+   ],
+   "windowS": 0.28
+  },
+  "hatClosed": {
+   "stem": "drums",
+   "kind": "drum",
+   "bankTags": [
+    "hat",
+    "hihat"
+   ],
+   "bankIds": [
+    "hihat_closed",
+    "filtered_noise_burst"
+   ],
+   "own": [
+    "drum_hit"
+   ],
+   "windowS": 0.15
+  },
+  "hatOpen": {
+   "stem": "drums",
+   "kind": "drum",
+   "bankTags": [
+    "hat",
+    "hihat",
+    "cymbal"
+   ],
+   "bankIds": [
+    "hihat_open",
+    "filtered_noise_burst"
+   ],
+   "own": [
+    "drum_hit"
+   ],
+   "windowS": 0.3
+  },
+  "tom": {
+   "stem": "drums",
+   "kind": "drum",
+   "bankTags": [
+    "tom"
+   ],
+   "bankIds": [
+    "tom_drum"
+   ],
+   "own": [
+    "drum_hit"
+   ],
+   "windowS": 0.3
+  },
+  "perc": {
+   "stem": "drums",
+   "kind": "drum",
+   "bankTags": [
+    "perc"
+   ],
+   "bankIds": [
+    "wood_knock"
+   ],
+   "own": [
+    "drum_hit"
+   ],
+   "windowS": 0.25
+  },
+  "bass": {
+   "stem": "bass",
+   "kind": "tonal",
+   "bankTags": [
+    "bass"
+   ],
+   "bankIds": [
+    "bass_saw",
+    "sub_808",
+    "sine_env"
+   ],
+   "own": [
+    "synth_voice"
+   ],
+   "windowS": 0.9,
+   "tailS": 0.25
+  },
+  "otherLow": {
+   "stem": "other",
+   "kind": "tonal",
+   "bankTags": [
+    "pad",
+    "keys",
+    "pluck"
+   ],
+   "bankIds": [
+    "pad_saw",
+    "fm_epiano",
+    "pluck_ks",
+    "supersaw"
+   ],
+   "own": [
+    "synth_voice"
+   ],
+   "windowS": 0.8,
+   "tailS": 0.3
+  },
+  "otherMid": {
+   "stem": "other",
+   "kind": "tonal",
+   "bankTags": [
+    "pad",
+    "keys",
+    "pluck",
+    "lead"
+   ],
+   "bankIds": [
+    "pad_saw",
+    "fm_epiano",
+    "pluck_ks",
+    "pulse_lead"
+   ],
+   "own": [
+    "synth_voice"
+   ],
+   "windowS": 0.8,
+   "tailS": 0.3
+  },
+  "otherHigh": {
+   "stem": "other",
+   "kind": "tonal",
+   "bankTags": [
+    "lead",
+    "bell",
+    "pluck",
+    "keys"
+   ],
+   "bankIds": [
+    "pulse_lead",
+    "fm_bell",
+    "pluck_ks",
+    "fm_epiano"
+   ],
+   "own": [
+    "synth_voice"
+   ],
+   "windowS": 0.7,
+   "tailS": 0.3
+  },
+  "vocals": {
+   "stem": "vocals",
+   "kind": "tonal",
+   "bankTags": [
+    "lead"
+   ],
+   "bankIds": [
+    "pulse_lead",
+    "fm_epiano"
+   ],
+   "own": [
+    "synth_voice"
+   ],
+   "windowS": 0.7,
+   "tailS": 0.3
+  }
+ },
+ "pitchParams": [
+  "f0_hz",
+  "freq_hz",
+  "carrier_hz",
+  "pitch_hz",
+  "root_hz",
+  "fundamental_hz"
+ ],
+ "exemplars": {
+  "_doc": "12 October 2026: isolated notes picked per role: the K least overlapped among the louder half, window starting preS before the transcribed onset; the fitted attack stays within [preS - onsetEarlyS, preS + onsetLateS] (V_004 on; V_003 used preS 0.02 and [0, 0.07]).",
+  "count": 3,
+  "preS": 0.05,
+  "loudFraction": 0.5,
+  "overlapGuardS": 0.03,
+  "pitchSpreadSemi": 0.6,
+  "onsetEarlyS": 0.015,
+  "onsetLateS": 0.04
+ },
+ "fit": {
+  "_doc": "12 October 2026: dfit overrides for the exemplar fits (budget per fit), and the stage switches of each version.",
+  "dfit": {
+   "screenSamples": 160,
+   "starts": 4,
+   "steps": 320,
+   "patience": 60,
+   "polishRounds": 2,
+   "polishSteps": 150,
+   "targetScore": 99.5
+  },
+  "reverbInFit": false,
+  "reverbBlocks": [
+   "room_reverb"
+  ],
+  "maxCandidatesPerRole": 4
+ },
+ "render": {
+  "_doc": "12 October 2026: per-note render: window = pre + gate + tail, tail from the T60 parameters, capped.",
+  "maxTailS": 2.5,
+  "minTailS": 0.15,
+  "seedBase": 1000
+ },
+ "eq": {
+  "_doc": "12 October 2026: per-section third-octave equaliser fitted as the dB ratio reference / ours of each stem (mid channel), smoothed over neighbouring bands, clipped. span: section or bar (12 October 2026: bar measured better on the mix tfBands, 96.07 against 95.93).",
+  "use": false,
+  "fMin": 25.0,
+  "bandsPerOct": 3,
+  "maxDb": 24.0,
+  "smoothBands": 1,
+  "rampS": 0.25,
+  "silentDb": -70.0,
+  "nFft": 4096,
+  "hop": 1024,
+  "span": "bar"
+ },
+ "automation": {
+  "_doc": "12 October 2026: gain riding of each stem toward the score's automation lanes (fader automation, the fitted dynamics).",
+  "use": false,
+  "maxDb": 18.0,
+  "silentDb": -65.0,
+  "smoothFrames": 2
+ },
+ "stereo": {
+  "_doc": "12 October 2026: side channel built by a fixed-seed decorrelator, scaled per third-octave band to the side/mid ratio measured on the reference stem.",
+  "use": false,
+  "seed": 77,
+  "decorrelatorMs": 25.0,
+  "maxRatio": 1.0
+ },
+ "mixBus": {
+  "_doc": "12 October 2026: bus processing fitted to the reference mix: residual per-section equaliser, compressor chosen on a grid, integrated loudness, true-peak limiter at the measured reference ceiling.",
+  "use": false,
+  "eq": true,
+  "compressorGrid": {
+   "thresholdDbRelLufs": [
+    -2.0,
+    2.0,
+    6.0,
+    100.0
+   ],
+   "ratio": [
+    1.5,
+    2.5,
+    4.0
+   ]
+  },
+  "compressorAttackMs": 10.0,
+  "compressorReleaseMs": 120.0,
+  "lufsMatch": true,
+  "limiter": true,
+  "ceilingMaxDbtp": -1.05,
+  "lufsPasses": 3
+ },
+ "score": {
+  "_doc": "12 October 2026: scorer settings: per-bar ploss windows, per-section spectral envelope (64 mel bands, 2 dB JND), waveform-free measures at the M1 analysis rate.",
+  "analysisSr": 22050,
+  "melBands": 64,
+  "sectionJndDb": 2.0,
+  "sectionFloorDb": 60.0,
+  "barPlossMaxBars": 40,
+  "stable": {
+   "_doc": "12 October 2026: stable scores (resynth.score_stable): ploss on single-event windows [t - eventPreS, t + eventPostS] for at most maxEvents evenly spaced events per stem, ploss per bar without its onset term, and third-octave band levels on tfNFft/tfHop frames scored with a tfJndDb JND.",
+   "maxEvents": 80,
+   "eventPreS": 0.02,
+   "eventPostS": 0.3,
+   "tfNFft": 4096,
+   "tfHop": 2048,
+   "tfFMin": 30.0,
+   "tfFMax": 16000.0,
+   "tfJndDb": 2.0,
+   "tfFloorDb": 60.0
+  }
+ },
+ "variation": {
+  "_doc": "12 October 2026: the variation proof: tempo, key and one voice timbre changed by parameters only.",
+  "bpm": 96.0,
+  "transposeSemitones": 2,
+  "voice": "bass",
+  "timbre": {
+   "cutoff_mult": 3.0,
+   "drive_db": 9.0
+  },
+  "macrosSms": {
+   "tiltDbOct": 4.0,
+   "releaseS": 0.6,
+   "gainDb": 2.0
+  }
+ },
+ "phrase": {
+  "_doc": "12 October 2026: phrase refinement: bars [first, last] of each window (score bar index), Adam steps and learning rate on the shared timbres of every role of a stem.",
+  "windows": [
+   [
+    2,
+    2
+   ],
+   [
+    9,
+    9
+   ],
+   [
+    17,
+    17
+   ],
+   [
+    21,
+    21
+   ]
+  ],
+  "steps": 100,
+  "lr": 0.03,
+  "preRollS": 2.5
+ },
+ "sms": {
+  "_doc": "12 October 2026: measured timbre models (zrmd/audio/sms.py, spectral modelling synthesis after Serra 1989). tonal: additive harmonics whose dB table [bands x knots] is the median over the role's notes, relative to the note level; drum: band power table [bands x knots] of fixed-seed noise plus a measured pitch-swept sine for toneRoles. refine moves transcribed onsets to the strongest rise within searchS. Calibration: calibrationRounds rounds of render, measure, table += calibrationStep * clip(reference - ours, maxStepDb).",
+  "tonal": {
+   "nFft": 4096,
+   "hop": 256,
+   "fMin": 25.0,
+   "fMax": 8000.0,
+   "bandsPerOct": 6,
+   "knotsS": [
+    0.0,
+    0.02,
+    0.05,
+    0.1,
+    0.18,
+    0.3,
+    0.45,
+    0.7,
+    1.0
+   ],
+   "knotAfterGateS": 0.0,
+   "harmonics": 40,
+   "peakCents": 40.0,
+   "minObs": 3,
+   "floorDb": -110.0,
+   "minGateS": 0.05,
+   "tiltPivotHz": 1000.0,
+   "randomPhase": 1.0,
+   "attackS": 0.003,
+   "tableFit": "median",
+   "nnlsFloorDb": 50.0,
+   "nnlsRounds": 3
+  },
+  "drum": {
+   "nFft": 512,
+   "hop": 128,
+   "fMin": 30.0,
+   "fMax": 18000.0,
+   "bandsPerOct": 3,
+   "knotsS": [
+    0.0,
+    0.003,
+    0.006,
+    0.01,
+    0.015,
+    0.022,
+    0.032,
+    0.045,
+    0.065,
+    0.09,
+    0.13,
+    0.18,
+    0.25,
+    0.35
+   ],
+   "floorDb": -140.0,
+   "toneNFft": 2048,
+   "toneBandHz": [
+    30.0,
+    250.0
+   ],
+   "toneAttackS": 0.001,
+   "tiltPivotHz": 1000.0,
+   "toneNoiseMaxHz": 300.0,
+   "tableFit": "nnls",
+   "nnlsFloorDb": 50.0,
+   "nnlsRounds": 3,
+   "nnlsCalibrationRounds": 2,
+   "nnlsCalibration": "median"
+  },
+  "roleSettings": {
+   "bass": {
+    "fMax": 3000.0,
+    "nFft": 4096,
+    "tableFit": "nnls"
+   },
+   "otherLow": {
+    "nFft": 2048
+   },
+   "otherMid": {
+    "nFft": 2048
+   },
+   "otherHigh": {
+    "nFft": 2048
+   },
+   "hatOpen": {
+    "knotsS": [
+     0.0,
+     0.003,
+     0.006,
+     0.01,
+     0.015,
+     0.022,
+     0.032,
+     0.045,
+     0.065,
+     0.09,
+     0.13,
+     0.18,
+     0.25,
+     0.35,
+     0.5,
+     0.7
+    ]
+   },
+   "vocals": {
+    "nFft": 2048
+   }
+  },
+  "toneRoles": [
+   "kick",
+   "tom"
+  ],
+  "macroDefaults": {},
+  "calibrationRounds": 6,
+  "calibrationStep": 0.8,
+  "maxStepDb": 12.0,
+  "refine": {
+   "refineHopMs": 2.0,
+   "searchS": 0.03,
+   "minRiseDb": 3.0,
+   "drums": true,
+   "tonalBands": {
+    "bass": [
+     20.0,
+     300.0
+    ],
+    "vocals": [
+     120.0,
+     4000.0
+    ]
+   }
+  },
+  "levels": {
+   "_doc": "12 October 2026: per-event level re-measurement (sms.refine_levels) from calibration round fromRound on; drums on [t, t + drumWindowS], tonal notes on min(dur, tonalMaxWindowS).",
+   "use": false,
+   "fromRound": 1,
+   "nFft": 1024,
+   "hop": 256,
+   "drumWindowS": 0.06,
+   "tonalMaxWindowS": 0.3,
+   "step": 0.7,
+   "maxStepDb": 6.0,
+   "maxTotalDb": 15.0
+  },
+  "calibrationRoundsByStem": {
+   "bass": 2
+  },
+  "activations": {
+   "_doc": "12 October 2026: score-informed activations (sms.fit_activations): one gain per event by bounded sparse least squares on band power, alternated rounds times with postCalibrationRounds table calibrations; gains in [minGainDb, maxGainDb] dB of power.",
+   "use": false,
+   "stems": [
+    "drums",
+    "bass",
+    "other"
+   ],
+   "rounds": 2,
+   "postCalibrationRounds": 1,
+   "nFft": 1024,
+   "hop": 256,
+   "fMin": 30.0,
+   "fMax": 16000.0,
+   "bandsPerOct": 3,
+   "floorDb": 50.0,
+   "supportDb": 40.0,
+   "preS": 0.02,
+   "maxEventS": 1.5,
+   "minGainDb": -30.0,
+   "maxGainDb": 12.0,
+   "maxIter": 200
+  }
+ },
+ "residual": {
+  "_doc": "12 October 2026: stochastic residual bed per stem and section (resynth.measure_residual / render_residual): positive power difference reference minus our dry render beyond marginDb, rebuilt as fixed-seed noise following the score's stem lane when followLane. Drums are left out by default: measured worse (V_011 drums tfBands 80.6 against 85.0 without, 12 October 2026). Drums only get a bed where the score left a span (section or bar) empty: sectionGateDb.drums (12 October 2026).",
+  "use": true,
+  "stems": [
+   "drums",
+   "bass",
+   "other"
+  ],
+  "nFft": 4096,
+  "hop": 1024,
+  "marginDb": 0.0,
+  "followLane": true,
+  "sectionGateDb": {
+   "drums": 20.0
+  }
+ },
+ "eventDev": {
+  "_doc": "12 October 2026 (task M3): per-event timbre deviation (zrmd/audio/eventdev.py): for every note and hit, a dB table on coarse bands (bandsPerOct) x segments after the onset (drums: drumEdgesS; notes: tonalAttackEdgesS, body chunks of bodyStepS up to the gate, then tailEdgesS after it), moved for rounds rounds by step * clip(reference share / our event power) where the event's own share is at least shareMin. Stage 'dev' of Scripts/ResynthMusic.py. stems: which stems get it. Defaults measured on the dry stems of V_025 (12 October 2026): bass 88.5 to 96.9 (4 rounds, half octave), drums 87.3 to 95.0 (3 rounds, half octave), other 82.2 to 85.8 (2 rounds, octave).",
+  "stems": [
+   "drums",
+   "bass",
+   "other"
+  ],
+  "fMin": 31.25,
+  "fMax": 16000.0,
+  "bandsPerOct": 2,
+  "nFft": 2048,
+  "hop": 512,
+  "drumEdgesS": [
+   0.0,
+   0.02,
+   0.05,
+   0.1,
+   0.18,
+   0.3,
+   0.5
+  ],
+  "tonalAttackEdgesS": [
+   0.0,
+   0.05,
+   0.15
+  ],
+  "bodyStepS": 0.25,
+  "tailEdgesS": [
+   0.1,
+   0.3
+  ],
+  "minGateS": 0.05,
+  "capAtNext": true,
+  "minSpanS": 0.03,
+  "capSlackS": 0.02,
+  "preS": 0.03,
+  "rounds": 4,
+  "step": 0.8,
+  "maxStepDb": 12.0,
+  "maxTotalDb": 24.0,
+  "shareMin": 0.4,
+  "minEventDb": 50.0,
+  "stemSettings": {
+   "bass": {
+    "nFft": 4096,
+    "hop": 512
+   },
+   "other": {
+    "rounds": 3
+   }
+  },
+  "resume": false,
+  "_docResume": "12 October 2026 (M3 resume): resume true starts from the dev tables already in the base version's score (a second pass of rounds) instead of zero."
+ },
+ "gapFill": {
+  "_doc": "12 October 2026 (task M3): drum transcription gap fill (zrmd/audio/gapfill.py), stage 'gap' of Scripts/ResynthMusic.py. Onsets of the reference drum stem (librosa, hop) shifted by onsetLagS (median measured lag of the detector on matched hits, 9.0 ms), kept when farther than matchS from every hit and louder than peak - minDb; class = nearest level-normalised third-octave centroid (window winS) within maxDistDb, else (fallbackByPeakBand) the class whose centroid peaks in the same band (within peakBandTol bands). Then the per-event deviation runs (resume keeps the tables of the base version).",
+  "hop": 256,
+  "onsetLagS": -0.009,
+  "matchS": 0.04,
+  "winS": 0.06,
+  "fMin": 40.0,
+  "fMax": 12000.0,
+  "minClassHits": 5,
+  "minDb": 30.0,
+  "maxDistDb": 5.0,
+  "fallbackByPeakBand": true,
+  "peakBandTol": 1
+ },
+ "retag": {
+  "_doc": "12 October 2026 (task M3): drum class retagging by measured pitch (zrmd/audio/retag.py), stage 'retag' of Scripts/ResynthMusic.py. A hit of fromClass whose median strongest-bin frequency in bandHz, on Hann frames of nFft centred at t + offsetsS on the reference drum stem, is >= minHz moves to toClass (its deviation table is dropped when dropDev). Measured on V_031 (12 October 2026): the real kicks glide to 43 to 60 Hz, the intro hits (2.2 to 3.8 s) and the fill (16.0 to 21.2 s) hold 75 to 175 Hz; minHz 72 leaves the borderline 41.04 s kick (69.5 Hz) a kick.",
+  "fromClass": "kick",
+  "toClass": "tom",
+  "bandHz": [
+   35.0,
+   300.0
+  ],
+  "nFft": 2048,
+  "offsetsS": [
+   0.06,
+   0.09,
+   0.12,
+   0.15
+  ],
+  "minHz": 72.0,
+  "dropDev": true,
+  "smsRoles": [
+   "kick",
+   "snare",
+   "clap",
+   "hatClosed",
+   "hatOpen",
+   "tom"
+  ]
+ }
+}

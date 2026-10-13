@@ -1,0 +1,170 @@
+{
+ "schema": "zrmd/references@1",
+ "date": "13 October 2026",
+ "doc": "Definition of the reference videos. State (file, bible, stems, scores) is computed by zrmd.registry.status(), never stored here. Order = order of work: unseen videos first, music first (Matthieu, 13 October 2026). onekey-pro-2 is the training reference, already worked.",
+ "order": [
+  "claude-opus-5-5",
+  "flora-agents-on-canvas",
+  "memo",
+  "motion-opus-5-5",
+  "kardashev-0-7",
+  "paper-mono-code",
+  "interface",
+  "x-anabology-2105325733312884869",
+  "x-anabology-2106157622986748377",
+  "yt-4Q-o_ylnVnc",
+  "arkadata-music-02",
+  "onekey-pro-2",
+  "fin-4"
+ ],
+ "references": [
+  {
+   "slug": "claude-opus-5-5",
+   "title": "Claude Opus 5.5 — first model in the Claude 5.5 family",
+   "page_url": "https://whatships.com/videos/claude-opus-5-5/",
+   "source_post_url": "https://x.com/claudeai/status/2102435511222890900",
+   "origin": "whatships",
+   "duration_s": 20.053,
+   "has_audio": true,
+   "brand": "Anthropic",
+   "focus": "first unseen video for music generalisation (13 October 2026)"
+  },
+  {
+   "slug": "fin-4",
+   "title": "Introducing Fin 4",
+   "page_url": "https://whatships.com/videos/fin-4/",
+   "source_post_url": "https://x.com/destraynor/status/2107925197210951788",
+   "origin": "whatships",
+   "duration_s": 7.867,
+   "has_audio": false,
+   "brand": "Intercom",
+   "focus": "muted at the source (no audio track)"
+  },
+  {
+   "slug": "flora-agents-on-canvas",
+   "title": "Flora AI — agents now live on the canvas",
+   "page_url": "https://whatships.com/videos/flora-agents-on-canvas/",
+   "source_post_url": "https://x.com/weberwongwong/status/2090590073540481107",
+   "origin": "whatships",
+   "duration_s": 51.502,
+   "has_audio": true,
+   "brand": "Flora AI",
+   "focus": "hard focus sound (12 October 2026 first prompt)"
+  },
+  {
+   "slug": "interface",
+   "title": "Interface, the primary hardware for the agent era",
+   "page_url": "https://whatships.com/videos/interface/",
+   "source_post_url": "https://x.com/carloAI/status/2108226291107602580",
+   "origin": "whatships",
+   "duration_s": 90.091,
+   "has_audio": true,
+   "brand": "Interface",
+   "focus": "later (first prompt: note for when the engine reaches 99 percent)"
+  },
+  {
+   "slug": "kardashev-0-7",
+   "title": "Introducing Kardashev-0.7",
+   "page_url": "https://whatships.com/videos/kardashev-0-7/",
+   "source_post_url": "https://x.com/MLCatttt/status/2107147690450817259",
+   "origin": "whatships",
+   "duration_s": 67.417,
+   "has_audio": true,
+   "brand": "Banbury Road",
+   "focus": "later (first prompt: note for when the engine reaches 99 percent)"
+  },
+  {
+   "slug": "memo",
+   "title": "Introducing Memo: ai for walkie talkies",
+   "page_url": "https://whatships.com/videos/memo/",
+   "source_post_url": "https://x.com/fdotinc/status/2107970008601219104",
+   "origin": "whatships",
+   "duration_s": 44.536,
+   "has_audio": true,
+   "brand": "Memo",
+   "focus": "later (first prompt: note for when the engine reaches 99 percent)"
+  },
+  {
+   "slug": "motion-opus-5-5",
+   "title": "Claude Opus 5.5 for launch videos",
+   "page_url": "https://whatships.com/videos/motion-opus-5-5/",
+   "source_post_url": "https://x.com/motion_so/status/2103956233107787982",
+   "origin": "whatships",
+   "duration_s": 30.047,
+   "has_audio": true,
+   "brand": "Motion",
+   "focus": "later (first prompt: note for when the engine reaches 99 percent)"
+  },
+  {
+   "slug": "onekey-pro-2",
+   "title": "This is OneKey Pro 2. Everything a cold wallet can be.",
+   "page_url": "https://whatships.com/videos/onekey-pro-2/",
+   "source_post_url": "https://x.com/OneKeyHQ/status/2108560486098944441",
+   "origin": "whatships",
+   "duration_s": 68.053,
+   "has_audio": true,
+   "brand": "OneKey",
+   "focus": "first reference, hard focus SFX and image (12 October 2026 first prompt)"
+  },
+  {
+   "slug": "paper-mono-code",
+   "title": "How the whole Paper Mono launch video was made",
+   "page_url": "https://whatships.com/videos/paper-mono-code/",
+   "source_post_url": "https://x.com/agusegui/status/2108251509830140401",
+   "origin": "whatships",
+   "duration_s": 60.587,
+   "has_audio": true,
+   "brand": "Agu Seguí",
+   "focus": "later (first prompt: note for when the engine reaches 99 percent)"
+  },
+  {
+   "slug": "x-anabology-2105325733312884869",
+   "title": "anabology - Gave Claude another 12 hours to one up this..  Woke up to.. The Clody... #1",
+   "page_url": "https://x.com/anabology/status/2105325733312884869",
+   "source_post_url": "https://x.com/anabology/status/2105325733312884869",
+   "origin": "x",
+   "duration_s": 191.637,
+   "has_audio": true,
+   "brand": "anabology",
+   "focus": "later (first prompt: note for when the engine reaches 99 percent)"
+  },
+  {
+   "slug": "x-anabology-2106157622986748377",
+   "title": "anabology - I gave Claude another 18 hours.. and I think this one is the best one... #1",
+   "page_url": "https://x.com/anabology/status/2106157622986748377",
+   "source_post_url": "https://x.com/anabology/status/2106157622986748377",
+   "origin": "x",
+   "duration_s": 181.355,
+   "has_audio": true,
+   "brand": "anabology",
+   "focus": "later (first prompt: note for when the engine reaches 99 percent)"
+  },
+  {
+   "slug": "yt-4Q-o_ylnVnc",
+   "title": "Claude Opus 5.5 Music Video - Ignore Previous Instructions",
+   "page_url": "https://www.youtube.com/watch?v=4Q-o_ylnVnc",
+   "source_post_url": null,
+   "origin": "youtube",
+   "duration_s": 181.821,
+   "has_audio": true,
+   "brand": "Seguramente",
+   "focus": "downloaded as 1080p with yt-dlp (first prompt)"
+  },
+  {
+   "slug": "arkadata-music-02",
+   "title": "ARKADATA Yasuo Montage 2 \"THE UNFORGIVEN\"",
+   "page_url": "https://www.youtube.com/watch?v=pDd5OJM2Q8k",
+   "source_post_url": null,
+   "origin": "youtube",
+   "duration_s": 253,
+   "has_audio": true,
+   "brand": null,
+   "focus": "music-only test of another session (13 October 2026), result judged mediocre by Matthieu: use it to prove music generalisation"
+  }
+ ],
+ "harvest": {
+  "catalogue": "references/whatships-catalogue.json in the workshop",
+  "count": 2454,
+  "status": "later (first prompt: only when the skill works at 99 percent)"
+ }
+}

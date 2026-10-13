@@ -1,0 +1,81 @@
+# 12 October 2026: synth_voice, a gated subtractive voice for the music resynthesis (task M2): two detuned polyBLEP
+# saws, a polyBLEP pulse and a sine, mixed by weight, plus a sub sine one octave down and a noise layer, through a
+# resonant lowpass whose cutoff follows the pitch (cutoff_mult) and opens by env_oct octaves on the attack, then a
+# tanh drive, then an ADSR amplitude envelope held for gate_s seconds (sustained notes need a gate, the bank one-shots
+# have none). A pitch glide from f0 * 2^(glide_st / 12) to f0 (time constant glide_s) carries the transcribed glides.
+# Same contract as a sound-bank block (META, PARAMS, BLOCK), so it can be promoted into the bank unchanged.
+# Derived from the mathematics (polyBLEP: Valimaki and Huovilainen 2007; RBJ cookbook lowpass), no code copied.
+# FR : voix soustractive tenue (gate), filtre qui suit la hauteur, enveloppe ADSR, glissade ; pour la resynthese M2.
+import torch
+
+from zrmd.audio import fxdsp as F
+from zrmd.audio.bank import Block, db_to_amp, phase_from_freq, stft_filter
+from zrmd.audio.fxdsp import param as P
+
+META = {"family": "voice", "kind": "source",
+        "description": "Gated subtractive voice: detuned saws, pulse, sine, sub and noise, pitch-tracking resonant lowpass with filter envelope, tanh drive, ADSR held for gate_s. Pads, keys, leads, basses. (12 October 2026)",
+        "tags": ["tonal", "gated", "subtractive", "pad", "keys", "lead", "bass", "saw", "pulse"],
+        "sources": [{"what": "polyBLEP oscillators", "url": None, "reference": "Valimaki and Huovilainen 2007", "licence": F.SOURCE}, F.RBJ],
+        "licence": "original"}
+
+# 12 October 2026: parameters a note sets from the score (pitch, length, glide, level, start), the rest is timbre.
+# FR : parametres poses par la note ; tout le reste est le timbre.
+NOTE_PARAMS = ["f0_hz", "gate_s", "glide_st", "glide_s", "amp_db", "onset_s"]
+
+
+class SynthVoice(Block):
+    ID = "synth_voice"
+    PARAMS = [
+        P("f0_hz", "Hz", 20, 4000, 220, "log", "pitch"),
+        P("gate_s", "s", 0.02, 4.0, 0.3, "log", "note length (key held)"),
+        P("glide_st", "semitones", -24, 24, 0, "lin", "start pitch relative to f0 (glide from there to f0)"),
+        P("glide_s", "s", 0.002, 0.5, 0.03, "log", "glide time constant"),
+        P("saw_mix", "", 0.0, 1.0, 0.6, "lin", "weight of the two detuned saws"),
+        P("pulse_mix", "", 0.0, 1.0, 0.1, "lin", "weight of the pulse"),
+        P("sine_mix", "", 0.0, 1.0, 0.4, "lin", "weight of the sine"),
+        P("pulse_width", "", 0.05, 0.5, 0.5, "lin", "pulse duty cycle"),
+        P("detune_cents", "cents", 0.1, 40.0, 6.0, "log", "detune of the second saw"),
+        P("sub_db", "dB re voice", -60, 0, -40, "lin", "sine one octave down"),
+        P("noise_db", "dB re voice", -60, 0, -50, "lin", "noise layer"),
+        P("cutoff_mult", "x f0", 0.5, 64.0, 8.0, "log", "lowpass cutoff as a multiple of the pitch"),
+        P("env_oct", "oct", 0.0, 6.0, 1.5, "lin", "extra cutoff at the attack, in octaves"),
+        P("filter_decay_s", "s", 0.005, 2.0, 0.15, "log", "filter envelope time constant"),
+        P("q", "Q", 0.5, 8.0, 1.0, "log", "filter resonance"),
+        P("drive_db", "dB", 0.0, 24.0, 0.0, "lin", "tanh drive before the amplifier"),
+        P("attack_s", "s", 0.0005, 1.0, 0.005, "log", "linear attack"),
+        P("decay_s", "s (T60)", 0.01, 6.0, 0.4, "log", "fall toward the sustain level"),
+        P("sustain", "", 0.0, 1.0, 0.6, "lin", "sustain level"),
+        P("release_s", "s (T60)", 0.005, 4.0, 0.2, "log", "fall after the gate"),
+        P("amp_db", "dBFS", -60, 0, -18, "lin", "peak level"),
+        P("onset_s", "s", 0.0, 0.25, 0.02, "lin", "start time in the window"),
+    ]
+
+    def synth(self, v, t, sr):
+        on = (t >= v["onset_s"]).float()
+        u = torch.clamp(t - v["onset_s"], min=0.0)
+        f = v["f0_hz"] * torch.pow(2.0, (v["glide_st"] / 12.0) * torch.exp(-u / v["glide_s"]))
+        f = f * on + v["f0_hz"] * (1.0 - on)
+        det = torch.pow(2.0, v["detune_cents"] / 1200.0)
+        saws = 0.5 * (F.saw(f, sr) + F.saw(f * det, sr, 0.37))
+        sine = torch.sin(phase_from_freq(f, sr))
+        pul = F.pulse(f, sr, v["pulse_width"])
+        w = v["saw_mix"] + v["pulse_mix"] + v["sine_mix"] + 1e-3
+        y = (v["saw_mix"] * saws + v["pulse_mix"] * pul + v["sine_mix"] * sine) / w
+        y = y + db_to_amp(v["sub_db"]) * torch.sin(phase_from_freq(0.5 * f, sr))
+        y = y + db_to_amp(v["noise_db"]) * self.noise(t.shape[0], t.device)
+
+        def mask(fr, tm):
+            k = torch.exp(-torch.clamp(tm - v["onset_s"], min=0.0) / v["filter_decay_s"])
+            fc = v["f0_hz"] * v["cutoff_mult"] * torch.pow(2.0, v["env_oct"] * k)
+            return F.biquad_mag("lowpass", fr, fc, v["q"], sr=sr)
+
+        y = stft_filter(y, mask, 1024, 256, sr)
+        g = db_to_amp(v["drive_db"])
+        y = torch.tanh(g * y) / torch.tanh(g)
+        rise = torch.clamp(u / v["attack_s"], 0.0, 1.0)
+        held = v["sustain"] + (1.0 - v["sustain"]) * torch.pow(10.0, -3.0 * torch.clamp(u - v["attack_s"], min=0.0) / v["decay_s"])
+        rel = torch.pow(10.0, -3.0 * torch.clamp(u - v["gate_s"], min=0.0) / v["release_s"])
+        return db_to_amp(v["amp_db"]) * rise * held * rel * on * y
+
+
+BLOCK = SynthVoice

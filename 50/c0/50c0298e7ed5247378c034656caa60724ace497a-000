@@ -1,0 +1,102 @@
+{
+  "id": "bilinear_gradient4",
+  "family": "gradient",
+  "description": "Four-corner bilinear gradient (top left, top right, bottom left, bottom right). Colour block. (12 October 2026)",
+  "params": [
+    {
+      "name": "c_tl",
+      "type": "color",
+      "default": [
+        0.15,
+        0.1,
+        0.4
+      ],
+      "min": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "unit": "sRGB 0..1"
+    },
+    {
+      "name": "c_tr",
+      "type": "color",
+      "default": [
+        0.9,
+        0.3,
+        0.5
+      ],
+      "min": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "unit": "sRGB 0..1"
+    },
+    {
+      "name": "c_bl",
+      "type": "color",
+      "default": [
+        0.05,
+        0.3,
+        0.5
+      ],
+      "min": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "unit": "sRGB 0..1"
+    },
+    {
+      "name": "c_br",
+      "type": "color",
+      "default": [
+        1.0,
+        0.8,
+        0.4
+      ],
+      "min": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "unit": "sRGB 0..1"
+    }
+  ],
+  "source_url": "",
+  "licence": "original (written from the mathematics), same licence as the engine",
+  "attribution": "ZenRay Motion Design, 12 October 2026",
+  "tags": [
+    "gradient",
+    "bilinear",
+    "corner",
+    "mesh-gradient",
+    "background",
+    "colour"
+  ],
+  "looks": [
+    "background-gradient",
+    "mesh-gradient"
+  ]
+}

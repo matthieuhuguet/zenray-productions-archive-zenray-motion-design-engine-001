@@ -1,0 +1,458 @@
+{
+  "date": "12 October 2026, 11:48",
+  "seconds": 11.1,
+  "threshold": 99.0,
+  "classes": {
+    "whoosh": {
+      "identityMedian": 99.315,
+      "identityMin": 96.61,
+      "identity": [
+        99.4,
+        96.61,
+        99.48,
+        99.23
+      ],
+      "perturbed": {
+        "fStart x1.26": {
+          "median": 93.6,
+          "max": 95.23,
+          "fail99": 4,
+          "n": 4
+        },
+        "duration x1.3": {
+          "median": 74.06,
+          "max": 78.12,
+          "fail99": 4,
+          "n": 4
+        }
+      },
+      "redOk": true
+    },
+    "swoosh": {
+      "identityMedian": 98.565,
+      "identityMin": 98.22,
+      "identity": [
+        98.74,
+        99.09,
+        98.22,
+        98.39
+      ],
+      "perturbed": {
+        "fEnd x1.26": {
+          "median": 90.955,
+          "max": 91.6,
+          "fail99": 4,
+          "n": 4
+        },
+        "duration x1.3": {
+          "median": 83.455,
+          "max": 91.09,
+          "fail99": 4,
+          "n": 4
+        }
+      },
+      "redOk": true
+    },
+    "swipe": {
+      "identityMedian": 98.9,
+      "identityMin": 98.7,
+      "identity": [
+        99.58,
+        98.7,
+        98.93,
+        98.87
+      ],
+      "perturbed": {
+        "fEnd x1.26": {
+          "median": 93.88499999999999,
+          "max": 95.05,
+          "fail99": 4,
+          "n": 4
+        },
+        "duration x1.3": {
+          "median": 87.03,
+          "max": 94.82,
+          "fail99": 4,
+          "n": 4
+        }
+      },
+      "redOk": true
+    },
+    "riser": {
+      "identityMedian": 99.565,
+      "identityMin": 99.5,
+      "identity": [
+        99.58,
+        99.96,
+        99.55,
+        99.5
+      ],
+      "perturbed": {
+        "duration x1.3": {
+          "median": 75.215,
+          "max": 83.68,
+          "fail99": 4,
+          "n": 4
+        },
+        "cutoffEnd /1.6": {
+          "median": 88.225,
+          "max": 94.69,
+          "fail99": 4,
+          "n": 4
+        }
+      },
+      "redOk": true
+    },
+    "downlifter": {
+      "identityMedian": 99.375,
+      "identityMin": 99.19,
+      "identity": [
+        99.19,
+        99.41,
+        99.57,
+        99.34
+      ],
+      "perturbed": {
+        "duration x1.3": {
+          "median": 52.605000000000004,
+          "max": 69.96,
+          "fail99": 4,
+          "n": 4
+        },
+        "cutoffStart /1.6": {
+          "median": 70.41499999999999,
+          "max": 80.4,
+          "fail99": 4,
+          "n": 4
+        }
+      },
+      "redOk": true
+    },
+    "reverse": {
+      "identityMedian": 99.675,
+      "identityMin": 99.35,
+      "identity": [
+        99.81,
+        99.78,
+        99.57,
+        99.35
+      ],
+      "perturbed": {
+        "duration x1.3": {
+          "median": 83.175,
+          "max": 88.65,
+          "fail99": 4,
+          "n": 4
+        },
+        "lowpass /1.6": {
+          "median": 51.55,
+          "max": 57.08,
+          "fail99": 4,
+          "n": 4
+        }
+      },
+      "redOk": true
+    },
+    "click": {
+      "identityMedian": 99.45,
+      "identityMin": 98.9,
+      "identity": [
+        99.28,
+        99.77,
+        99.62,
+        98.9
+      ],
+      "perturbed": {
+        "fMode x1.06": {
+          "median": 36.0,
+          "max": 36.31,
+          "fail99": 4,
+          "n": 4
+        },
+        "noiseMix +0.3": {
+          "median": 73.465,
+          "max": 87.19,
+          "fail99": 4,
+          "n": 4
+        }
+      },
+      "redOk": true
+    },
+    "tick": {
+      "identityMedian": 99.83,
+      "identityMin": 99.62,
+      "identity": [
+        99.89,
+        99.77,
+        99.89,
+        99.62
+      ],
+      "perturbed": {
+        "fMode x1.06": {
+          "median": 36.765,
+          "max": 38.92,
+          "fail99": 4,
+          "n": 4
+        },
+        "decayMode x2": {
+          "median": 97.17,
+          "max": 97.53,
+          "fail99": 4,
+          "n": 4
+        }
+      },
+      "redOk": true
+    },
+    "pop": {
+      "identityMedian": 100.0,
+      "identityMin": 100.0,
+      "identity": [
+        100.0,
+        100.0,
+        100.0,
+        100.0
+      ],
+      "perturbed": {
+        "fEnd x1.26": {
+          "median": 97.625,
+          "max": 98.32,
+          "fail99": 4,
+          "n": 4
+        },
+        "duration x1.4": {
+          "median": 79.92500000000001,
+          "max": 86.42,
+          "fail99": 4,
+          "n": 4
+        }
+      },
+      "redOk": true
+    },
+    "blip": {
+      "identityMedian": 100.0,
+      "identityMin": 100.0,
+      "identity": [
+        100.0,
+        100.0,
+        100.0,
+        100.0
+      ],
+      "perturbed": {
+        "freq x1.06": {
+          "median": 34.71,
+          "max": 34.99,
+          "fail99": 4,
+          "n": 4
+        },
+        "duration x1.3": {
+          "median": 91.63999999999999,
+          "max": 91.84,
+          "fail99": 4,
+          "n": 4
+        }
+      },
+      "redOk": true
+    },
+    "glitch": {
+      "identityMedian": 56.28,
+      "identityMin": 2.78,
+      "identity": [
+        46.61,
+        2.78,
+        65.95,
+        76.55
+      ],
+      "perturbed": {
+        "duration x1.4": {
+          "median": 36.555,
+          "max": 57.57,
+          "fail99": 4,
+          "n": 4
+        },
+        "toneHz x1.5": {
+          "median": 19.035,
+          "max": 61.9,
+          "fail99": 4,
+          "n": 4
+        }
+      },
+      "redOk": true
+    },
+    "keyboard": {
+      "identityMedian": 86.275,
+      "identityMin": 51.92,
+      "identity": [
+        51.92,
+        96.42,
+        97.79,
+        76.13
+      ],
+      "perturbed": {
+        "duration x1.4": {
+          "median": 32.56,
+          "max": 64.29,
+          "fail99": 4,
+          "n": 4
+        },
+        "fMode x1.4": {
+          "median": 23.665,
+          "max": 84.14,
+          "fail99": 4,
+          "n": 4
+        }
+      },
+      "redOk": true
+    },
+    "impact": {
+      "identityMedian": 96.53,
+      "identityMin": 95.36,
+      "identity": [
+        98.73,
+        95.36,
+        95.93,
+        97.13
+      ],
+      "perturbed": {
+        "tail x1.5": {
+          "median": 48.86,
+          "max": 67.5,
+          "fail99": 4,
+          "n": 4
+        },
+        "fStart x1.26": {
+          "median": 46.11,
+          "max": 88.8,
+          "fail99": 4,
+          "n": 4
+        }
+      },
+      "redOk": true
+    },
+    "boom": {
+      "identityMedian": 99.88,
+      "identityMin": 99.85,
+      "identity": [
+        99.96,
+        99.85,
+        99.89,
+        99.87
+      ],
+      "perturbed": {
+        "duration x1.4": {
+          "median": 37.7,
+          "max": 62.11,
+          "fail99": 4,
+          "n": 4
+        },
+        "fStart x1.26": {
+          "median": 0.0,
+          "max": 0.0,
+          "fail99": 4,
+          "n": 4
+        }
+      },
+      "redOk": true
+    },
+    "subdrop": {
+      "identityMedian": 100.0,
+      "identityMin": 100.0,
+      "identity": [
+        100.0,
+        100.0,
+        100.0,
+        100.0
+      ],
+      "perturbed": {
+        "fStart x1.26": {
+          "median": 0.0,
+          "max": 0.0,
+          "fail99": 4,
+          "n": 4
+        },
+        "duration x1.3": {
+          "median": 65.03999999999999,
+          "max": 67.63,
+          "fail99": 4,
+          "n": 4
+        }
+      },
+      "redOk": true
+    },
+    "trigger": {
+      "identityMedian": 97.495,
+      "identityMin": 95.6,
+      "identity": [
+        98.81,
+        95.6,
+        97.31,
+        97.68
+      ],
+      "perturbed": {
+        "riserDuration x1.4": {
+          "median": 42.795,
+          "max": 49.4,
+          "fail99": 4,
+          "n": 4
+        },
+        "tail x1.5": {
+          "median": 22.740000000000002,
+          "max": 84.98,
+          "fail99": 4,
+          "n": 4
+        }
+      },
+      "redOk": true
+    },
+    "ding": {
+      "identityMedian": 99.93,
+      "identityMin": 99.85,
+      "identity": [
+        100.0,
+        99.85,
+        99.89,
+        99.97
+      ],
+      "perturbed": {
+        "f0 x1.06": {
+          "median": 33.335,
+          "max": 34.91,
+          "fail99": 4,
+          "n": 4
+        },
+        "decay x1.5": {
+          "median": 30.255000000000003,
+          "max": 60.0,
+          "fail99": 4,
+          "n": 4
+        }
+      },
+      "redOk": true
+    },
+    "shimmer": {
+      "identityMedian": 99.35499999999999,
+      "identityMin": 96.75,
+      "identity": [
+        99.82,
+        99.72,
+        98.99,
+        96.75
+      ],
+      "perturbed": {
+        "fCenter x1.26": {
+          "median": 1.01,
+          "max": 55.88,
+          "fail99": 4,
+          "n": 4
+        },
+        "duration x1.3": {
+          "median": 77.5,
+          "max": 83.37,
+          "fail99": 4,
+          "n": 4
+        }
+      },
+      "redOk": true
+    }
+  },
+  "ok": true
+}

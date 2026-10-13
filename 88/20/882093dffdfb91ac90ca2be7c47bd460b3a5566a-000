@@ -1,0 +1,2682 @@
+{
+  "schema": "zrmd/shader-bank@1",
+  "updated": "12 October 2026",
+  "count": 88,
+  "blocks": [
+    {
+      "id": "arch_glow_field",
+      "family": "gradient",
+      "description": "Arch glow wallpaper: dark power-curve arch va(x) = apex + k |x|^p (x in [-1, 1] across the canvas), then, by normal distance to the arch in canvas heights, a ramp rim, core, outer, top, with rim and core colours drifting to side variants toward the flanks (or toward the bottom, side_axis 1). Colour block. (12 October 2026) Limit: Normal distance is first order (exact on straight flanks, approximate near a sharp apex); the droplet is a separate sdf_circle and glow_ring.",
+      "tags": [
+        "arch",
+        "glow",
+        "wallpaper",
+        "distance-ramp",
+        "colour"
+      ],
+      "looks": [
+        "arch-glow-wallpaper",
+        "arch-glow"
+      ],
+      "params": [
+        "cx",
+        "apex",
+        "k",
+        "p",
+        "soft",
+        "w_rim",
+        "w_core",
+        "w_out",
+        "c_rim",
+        "c_rim_side",
+        "c_core",
+        "c_core_side",
+        "c_out",
+        "c_top",
+        "c_in",
+        "side",
+        "side_axis",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "33eeee2694f83061"
+    },
+    {
+      "id": "arch_ramp_grid",
+      "family": "A",
+      "description": "Power-curve arch with a 8 x 4 colour grid over (normal distance outside the arch, height), smoothstep bilinear; colours are linear in the image, so they are solved exactly by least squares. Colour block. (12 October 2026)",
+      "tags": [
+        "arch",
+        "gradient",
+        "wallpaper",
+        "fit"
+      ],
+      "looks": [
+        "arch-glow-wallpaper"
+      ],
+      "params": [
+        "cx",
+        "apex",
+        "k",
+        "p",
+        "t0",
+        "t1",
+        "aspect",
+        "c_0_0",
+        "c_1_0",
+        "c_2_0",
+        "c_3_0",
+        "c_4_0",
+        "c_5_0",
+        "c_6_0",
+        "c_7_0",
+        "c_0_1",
+        "c_1_1",
+        "c_2_1",
+        "c_3_1",
+        "c_4_1",
+        "c_5_1",
+        "c_6_1",
+        "c_7_1",
+        "c_0_2",
+        "c_1_2",
+        "c_2_2",
+        "c_3_2",
+        "c_4_2",
+        "c_5_2",
+        "c_6_2",
+        "c_7_2",
+        "c_0_3",
+        "c_1_3",
+        "c_2_3",
+        "c_3_3",
+        "c_4_3",
+        "c_5_3",
+        "c_6_3",
+        "c_7_3"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "original",
+      "sha256_16": "23b8d8857a0ffd09"
+    },
+    {
+      "id": "arch_stack_grid",
+      "family": "A",
+      "description": "Stack of nested power arches (inner, middle, outer control arches, parameters interpolated), level found by bisection, 14 x 8 colour grid over (level, height). Colour block. (12 October 2026)",
+      "tags": [
+        "arch",
+        "contours",
+        "gradient",
+        "wallpaper",
+        "fit"
+      ],
+      "looks": [
+        "arch-glow-wallpaper"
+      ],
+      "params": [
+        "cx",
+        "apex0",
+        "k0",
+        "p0",
+        "apex1",
+        "k1",
+        "p1",
+        "apex2",
+        "k2",
+        "p2",
+        "c_0_0",
+        "c_1_0",
+        "c_2_0",
+        "c_3_0",
+        "c_4_0",
+        "c_5_0",
+        "c_6_0",
+        "c_7_0",
+        "c_8_0",
+        "c_9_0",
+        "c_10_0",
+        "c_11_0",
+        "c_12_0",
+        "c_13_0",
+        "c_0_1",
+        "c_1_1",
+        "c_2_1",
+        "c_3_1",
+        "c_4_1",
+        "c_5_1",
+        "c_6_1",
+        "c_7_1",
+        "c_8_1",
+        "c_9_1",
+        "c_10_1",
+        "c_11_1",
+        "c_12_1",
+        "c_13_1",
+        "c_0_2",
+        "c_1_2",
+        "c_2_2",
+        "c_3_2",
+        "c_4_2",
+        "c_5_2",
+        "c_6_2",
+        "c_7_2",
+        "c_8_2",
+        "c_9_2",
+        "c_10_2",
+        "c_11_2",
+        "c_12_2",
+        "c_13_2",
+        "c_0_3",
+        "c_1_3",
+        "c_2_3",
+        "c_3_3",
+        "c_4_3",
+        "c_5_3",
+        "c_6_3",
+        "c_7_3",
+        "c_8_3",
+        "c_9_3",
+        "c_10_3",
+        "c_11_3",
+        "c_12_3",
+        "c_13_3",
+        "c_0_4",
+        "c_1_4",
+        "c_2_4",
+        "c_3_4",
+        "c_4_4",
+        "c_5_4",
+        "c_6_4",
+        "c_7_4",
+        "c_8_4",
+        "c_9_4",
+        "c_10_4",
+        "c_11_4",
+        "c_12_4",
+        "c_13_4",
+        "c_0_5",
+        "c_1_5",
+        "c_2_5",
+        "c_3_5",
+        "c_4_5",
+        "c_5_5",
+        "c_6_5",
+        "c_7_5",
+        "c_8_5",
+        "c_9_5",
+        "c_10_5",
+        "c_11_5",
+        "c_12_5",
+        "c_13_5",
+        "c_0_6",
+        "c_1_6",
+        "c_2_6",
+        "c_3_6",
+        "c_4_6",
+        "c_5_6",
+        "c_6_6",
+        "c_7_6",
+        "c_8_6",
+        "c_9_6",
+        "c_10_6",
+        "c_11_6",
+        "c_12_6",
+        "c_13_6",
+        "c_0_7",
+        "c_1_7",
+        "c_2_7",
+        "c_3_7",
+        "c_4_7",
+        "c_5_7",
+        "c_6_7",
+        "c_7_7",
+        "c_8_7",
+        "c_9_7",
+        "c_10_7",
+        "c_11_7",
+        "c_12_7",
+        "c_13_7"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "original",
+      "sha256_16": "851264b5e470577d"
+    },
+    {
+      "id": "beam_lines_field",
+      "family": "glow",
+      "description": "Light beams: parallel lines at a spacing along an angle; each line is lit when its hash is below `coverage` (animate it to switch beams on), drawn as a gaussian core plus an exponential glow. Colour block, use with add. (12 October 2026)",
+      "tags": [
+        "beams",
+        "lines",
+        "laser",
+        "glow",
+        "colour"
+      ],
+      "looks": [
+        "green-light-beams",
+        "energy-lines"
+      ],
+      "params": [
+        "angle",
+        "spacing",
+        "width",
+        "glow",
+        "core_color",
+        "color",
+        "coverage",
+        "seed",
+        "phase",
+        "intensity",
+        "aspect"
+      ],
+      "licence": "original (pcg2d hash implemented from Jarzynski and Olano, Hash Functions for GPU Rendering, JCGT 2020; algorithm, no code copied), same licence as the engine",
+      "source_url": "https://jcgt.org/published/0009/03/02/",
+      "sha256_16": "396620cc45feb7f2"
+    },
+    {
+      "id": "bilinear_gradient4",
+      "family": "gradient",
+      "description": "Four-corner bilinear gradient (top left, top right, bottom left, bottom right). Colour block. (12 October 2026)",
+      "tags": [
+        "gradient",
+        "bilinear",
+        "corner",
+        "mesh-gradient",
+        "background",
+        "colour"
+      ],
+      "looks": [
+        "background-gradient",
+        "mesh-gradient"
+      ],
+      "params": [
+        "c_tl",
+        "c_tr",
+        "c_bl",
+        "c_br"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "9dc0ea9159ac6b1c"
+    },
+    {
+      "id": "bloom_disc",
+      "family": "bloom",
+      "description": "One-pass bloom of a bright disc: core coverage plus a gaussian falloff of the outside distance, scaled by the energy above a threshold. Colour block. (12 October 2026) Limit: A real bloom blurs the thresholded image; here the blur of a disc is approximated by a gaussian of the distance outside it (exact only far from the shape).",
+      "tags": [
+        "bloom",
+        "glow",
+        "threshold",
+        "light",
+        "colour"
+      ],
+      "looks": [
+        "sun",
+        "orb-glow",
+        "light-source"
+      ],
+      "params": [
+        "center",
+        "radius",
+        "soft",
+        "core_color",
+        "glow_color",
+        "core_level",
+        "threshold",
+        "glow_radius",
+        "intensity",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "c723dded72d0550f"
+    },
+    {
+      "id": "bloom_rect",
+      "family": "bloom",
+      "description": "One-pass bloom of a bright rounded rectangle (screen, card): core plus two-lobe falloff (gaussian and exponential). Colour block. (12 October 2026) Limit: Gaussian blur of a rounded rectangle approximated by functions of its exterior distance; corners slightly over-bright compared with a true blur.",
+      "tags": [
+        "bloom",
+        "glow",
+        "screen",
+        "card",
+        "colour"
+      ],
+      "looks": [
+        "device-screen-glow",
+        "card-glow",
+        "ui-glow"
+      ],
+      "params": [
+        "center",
+        "half_size",
+        "corner",
+        "core_color",
+        "glow_color",
+        "glow_radius",
+        "wide",
+        "intensity",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "ee76fa86c4ca3ead"
+    },
+    {
+      "id": "bloom_spots",
+      "family": "bloom",
+      "description": "Scattered point lights on a jittered grid; each spot above the threshold blooms with a gaussian (3 x 3 neighbourhood). Colour block. (12 October 2026) Limit: Glow is truncated at the 3 x 3 neighbourhood: keep glow_sigma under about 0.3 cell or distant glows are cut.",
+      "tags": [
+        "bloom",
+        "threshold",
+        "lights",
+        "sparkle",
+        "colour"
+      ],
+      "looks": [
+        "city-lights",
+        "sparkles",
+        "stars"
+      ],
+      "params": [
+        "scale",
+        "seed",
+        "peak",
+        "threshold",
+        "core_radius",
+        "glow_sigma",
+        "intensity",
+        "core_color",
+        "glow_color",
+        "aspect"
+      ],
+      "licence": "original (pcg2d hash implemented from Jarzynski and Olano, Hash Functions for GPU Rendering, JCGT 2020; algorithm, no code copied), same licence as the engine",
+      "source_url": "https://jcgt.org/published/0009/03/02/",
+      "sha256_16": "ebfa14404637c4ed"
+    },
+    {
+      "id": "blur_disc_gaussian",
+      "family": "blur",
+      "description": "Gaussian-blurred disc approximated by the erf of the signed distance (exact for straight edges). Mask block. (12 October 2026) Limit: Error grows when sigma exceeds about radius / 3 (curvature ignored); centre coverage then stays near 1 instead of dropping.",
+      "tags": [
+        "blur",
+        "gaussian",
+        "disc",
+        "defocus",
+        "mask"
+      ],
+      "looks": [
+        "soft-orb",
+        "out-of-focus"
+      ],
+      "params": [
+        "center",
+        "radius",
+        "sigma",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "17200e44c40e1b49"
+    },
+    {
+      "id": "blur_motion_bar",
+      "family": "blur",
+      "description": "Exact box motion blur of a rotated bar along its own axis: overlap of the shutter window with the bar, soft across. Mask block. (12 October 2026) Limit: Exact box shutter along the bar axis; motion oblique to the bar axis is not modelled.",
+      "tags": [
+        "blur",
+        "motion-blur",
+        "directional",
+        "speed",
+        "mask"
+      ],
+      "looks": [
+        "speed-lines",
+        "swipe-motion",
+        "text-motion-blur"
+      ],
+      "params": [
+        "center",
+        "half_size",
+        "angle",
+        "blur_len",
+        "soft",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "cd8d9ea6791cca67"
+    },
+    {
+      "id": "blur_rect_gaussian",
+      "family": "blur",
+      "description": "Exact anisotropic gaussian blur of an axis-aligned rectangle: product of erf differences per axis (sigma.x, sigma.y). Mask block. (12 October 2026) Limit: Exact for an axis-aligned rectangle (separable). Rotated shapes need blur_motion_bar or blur_disc_gaussian.",
+      "tags": [
+        "blur",
+        "gaussian",
+        "erf",
+        "exact",
+        "mask"
+      ],
+      "looks": [
+        "soft-card",
+        "out-of-focus-ui",
+        "shadow"
+      ],
+      "params": [
+        "center",
+        "half_size",
+        "sigma",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "d3791056cfe712de"
+    },
+    {
+      "id": "brushed_metal_aniso",
+      "family": "lighting",
+      "description": "Brushed metal: value noise stretched along the brushing angle (fine streaks), over a neutral ramp, with one sharp specular strip across the brushing. Colour block. (12 October 2026)",
+      "tags": [
+        "metal",
+        "brushed",
+        "anisotropic",
+        "aluminium",
+        "specular",
+        "colour"
+      ],
+      "looks": [
+        "brushed-aluminium-studio"
+      ],
+      "params": [
+        "angle",
+        "c_dark",
+        "c_light",
+        "scale",
+        "seed",
+        "streak",
+        "strip",
+        "strip_color",
+        "aspect"
+      ],
+      "licence": "original (pcg2d hash implemented from Jarzynski and Olano, Hash Functions for GPU Rendering, JCGT 2020; algorithm, no code copied), same licence as the engine",
+      "source_url": "https://jcgt.org/published/0009/03/02/",
+      "sha256_16": "05a5bbdf69850c11"
+    },
+    {
+      "id": "chroma_aberration_rect",
+      "family": "chromatic",
+      "description": "Lateral chromatic aberration of a filled rounded rectangle (card, screen, title plate). Colour block. (12 October 2026)",
+      "tags": [
+        "chromatic-aberration",
+        "lens",
+        "card",
+        "rgb-split",
+        "colour"
+      ],
+      "looks": [
+        "lens-fringe",
+        "glitch-rgb",
+        "card-edge"
+      ],
+      "params": [
+        "optic",
+        "center",
+        "half_size",
+        "corner",
+        "soft",
+        "strength",
+        "color",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "601b79bec5785867"
+    },
+    {
+      "id": "chroma_aberration_ring",
+      "family": "chromatic",
+      "description": "Lateral chromatic aberration of a ring: red, green and blue sample the shape at radially scaled positions around the optical centre. Colour block. (12 October 2026)",
+      "tags": [
+        "chromatic-aberration",
+        "lens",
+        "ring",
+        "rgb-split",
+        "colour"
+      ],
+      "looks": [
+        "lens-fringe",
+        "glitch-rgb",
+        "hud-ring"
+      ],
+      "params": [
+        "optic",
+        "center",
+        "radius",
+        "width",
+        "soft",
+        "strength",
+        "color",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "d77493a8ccd7e2f1"
+    },
+    {
+      "id": "colorkeys_oklab",
+      "family": "colour-time",
+      "description": "Flat colour animated through four keyframes (times 0, k1, k2, 1) interpolated in OKLab, eased per segment. Colour block. (12 October 2026)",
+      "tags": [
+        "colour",
+        "keyframes",
+        "oklab",
+        "animated",
+        "time",
+        "transition"
+      ],
+      "looks": [
+        "colour-transition",
+        "background-pulse",
+        "mood-shift"
+      ],
+      "params": [
+        "time",
+        "c0",
+        "c1",
+        "c2",
+        "c3",
+        "k1",
+        "k2",
+        "ease"
+      ],
+      "licence": "original (implemented from the published OKLab matrices of Bjorn Ottosson, 2020, https://bottosson.github.io/posts/oklab/; numeric constants, no code copied), same licence as the engine",
+      "source_url": "https://bottosson.github.io/posts/oklab/",
+      "sha256_16": "d4ec81cb90ae1fcc"
+    },
+    {
+      "id": "conic_gradient3",
+      "family": "gradient",
+      "description": "Cyclic conic (angular) gradient c0, c1, c2 and back to c0 around a centre, seamless. Colour block. (12 October 2026)",
+      "tags": [
+        "gradient",
+        "conic",
+        "angular",
+        "sweep",
+        "hue-wheel",
+        "colour"
+      ],
+      "looks": [
+        "conic-glow",
+        "hue-ring",
+        "border-sweep"
+      ],
+      "params": [
+        "center",
+        "offset",
+        "c0",
+        "c1",
+        "c2",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "860a84f2516e6ab5"
+    },
+    {
+      "id": "dither_bayer_ramp",
+      "family": "dither",
+      "description": "Ordered 8 x 8 Bayer dithering of a two-colour ramp quantised to N levels (retro, print, banding-free). Colour block. (12 October 2026)",
+      "tags": [
+        "dither",
+        "bayer",
+        "ordered",
+        "retro",
+        "quantise",
+        "colour"
+      ],
+      "looks": [
+        "retro-dither",
+        "debanding",
+        "print-look"
+      ],
+      "params": [
+        "angle",
+        "c0",
+        "c1",
+        "levels",
+        "cells",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "7c7abb13240c1894"
+    },
+    {
+      "id": "dither_ign_ramp",
+      "family": "dither",
+      "description": "Interleaved gradient noise dithering (Jimenez 2014 formula) of a two-colour ramp quantised to N levels. Colour block. (12 October 2026)",
+      "tags": [
+        "dither",
+        "ign",
+        "noise",
+        "quantise",
+        "colour"
+      ],
+      "looks": [
+        "debanding",
+        "retro-dither"
+      ],
+      "params": [
+        "angle",
+        "c0",
+        "c1",
+        "levels",
+        "cells",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "48be1ca6d4c9007a"
+    },
+    {
+      "id": "dof_bokeh_field",
+      "family": "defocus",
+      "description": "Depth of field bokeh: jittered point lights rendered as defocus discs (circle of confusion) with a bright rim, two-colour palette. Colour block. (12 October 2026) Limit: Single-pass analytic defocus of point lights only (no scene defocus); coc is capped at 0.7 cell so the 3 x 3 search never cuts a disc.",
+      "tags": [
+        "defocus",
+        "bokeh",
+        "dof",
+        "lights",
+        "colour"
+      ],
+      "looks": [
+        "bokeh-background",
+        "city-lights-defocused",
+        "dreamy"
+      ],
+      "params": [
+        "scale",
+        "seed",
+        "coc",
+        "soft",
+        "rim",
+        "density",
+        "c0",
+        "c1",
+        "intensity",
+        "aspect"
+      ],
+      "licence": "original (pcg2d hash implemented from Jarzynski and Olano, Hash Functions for GPU Rendering, JCGT 2020; algorithm, no code copied), same licence as the engine",
+      "source_url": "https://jcgt.org/published/0009/03/02/",
+      "sha256_16": "13b91dc50aeafd77"
+    },
+    {
+      "id": "ease_bias_gain_ramp",
+      "family": "curve",
+      "description": "Two-colour ramp along an angle shaped by Schlick bias then gain (rational curves). Colour block. (12 October 2026)",
+      "tags": [
+        "ease",
+        "bias",
+        "gain",
+        "schlick",
+        "curve",
+        "colour"
+      ],
+      "looks": [
+        "ease-preview",
+        "contrast-curve"
+      ],
+      "params": [
+        "angle",
+        "c0",
+        "c1",
+        "bias",
+        "gain"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "a86dbfd00870d55a"
+    },
+    {
+      "id": "ease_expo_ramp",
+      "family": "curve",
+      "description": "Two-colour ramp along an angle shaped by a normalised exponential ease (1 - exp(-k t)) / (1 - exp(-k)). Colour block. (12 October 2026)",
+      "tags": [
+        "ease",
+        "exponential",
+        "out",
+        "falloff",
+        "curve",
+        "colour"
+      ],
+      "looks": [
+        "ease-preview",
+        "light-falloff"
+      ],
+      "params": [
+        "angle",
+        "c0",
+        "c1",
+        "k"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "b7bee4bf6cdfff7b"
+    },
+    {
+      "id": "ease_power_ramp",
+      "family": "curve",
+      "description": "Two-colour ramp along an angle shaped by an in-out power ease (exponent p). Colour block. (12 October 2026)",
+      "tags": [
+        "ease",
+        "power",
+        "in-out",
+        "curve",
+        "ramp",
+        "colour"
+      ],
+      "looks": [
+        "ease-preview",
+        "soft-ramp"
+      ],
+      "params": [
+        "angle",
+        "c0",
+        "c1",
+        "exponent"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "1b4b9b9272d8cfcf"
+    },
+    {
+      "id": "ease_smootherstep_band",
+      "family": "curve",
+      "description": "Band along an angle between two edges with smootherstep (6t^5 - 15t^4 + 10t^3) feathers. Mask block. (12 October 2026)",
+      "tags": [
+        "ease",
+        "smootherstep",
+        "band",
+        "wipe",
+        "mask"
+      ],
+      "looks": [
+        "wipe",
+        "reveal",
+        "band"
+      ],
+      "params": [
+        "angle",
+        "edge0",
+        "edge1",
+        "feather"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "8d15bb4bf71e7fab"
+    },
+    {
+      "id": "flare_ghosts",
+      "family": "flare",
+      "description": "Lens flare ghosts: five soft discs along the line from the light through the frame centre, tints rotated per ghost. Colour block. (12 October 2026) Limit: soft must stay below size * 0.4 (smallest ghost) for the smoothstep edges to stay ordered.",
+      "tags": [
+        "flare",
+        "ghosts",
+        "lens",
+        "light",
+        "colour"
+      ],
+      "looks": [
+        "lens-flare",
+        "sun-flare"
+      ],
+      "params": [
+        "source",
+        "spread",
+        "size",
+        "soft",
+        "color",
+        "intensity",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "6920caa3e69506ec"
+    },
+    {
+      "id": "flare_halo",
+      "family": "flare",
+      "description": "Lens halo: a gaussian ring around the optical centre with per-channel radius dispersion (rainbow edge). Colour block. (12 October 2026)",
+      "tags": [
+        "flare",
+        "halo",
+        "ring",
+        "lens",
+        "dispersion",
+        "colour"
+      ],
+      "looks": [
+        "lens-halo",
+        "sun-flare"
+      ],
+      "params": [
+        "center",
+        "radius",
+        "width",
+        "dispersion",
+        "color",
+        "intensity",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "8df626e58e238243"
+    },
+    {
+      "id": "flare_streak",
+      "family": "flare",
+      "description": "Anamorphic lens flare streak: exponential cross profile times gaussian length, plus a gaussian core, rotatable. Colour block. (12 October 2026)",
+      "tags": [
+        "flare",
+        "anamorphic",
+        "streak",
+        "lens",
+        "light",
+        "colour"
+      ],
+      "looks": [
+        "anamorphic-flare",
+        "light-source",
+        "headlight"
+      ],
+      "params": [
+        "center",
+        "angle",
+        "streak_len",
+        "thickness",
+        "core",
+        "color",
+        "core_color",
+        "intensity",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "40079c9644caf4af"
+    },
+    {
+      "id": "fog_band_noise",
+      "family": "volumetric",
+      "description": "Ground fog: a horizontal band (centre, half height, soft falloff) whose density is modulated by a stretched fbm that drifts with `drift` (animate it with time). Colour block, use with add or screen. (12 October 2026)",
+      "tags": [
+        "fog",
+        "volumetric",
+        "band",
+        "fbm",
+        "colour"
+      ],
+      "looks": [
+        "smoke-letters-volumetric",
+        "reflective-floor-fog"
+      ],
+      "params": [
+        "y_center",
+        "half_height",
+        "soft",
+        "color",
+        "density",
+        "scale",
+        "seed",
+        "drift",
+        "intensity",
+        "aspect"
+      ],
+      "licence": "original (pcg2d hash implemented from Jarzynski and Olano, Hash Functions for GPU Rendering, JCGT 2020; algorithm, no code copied), same licence as the engine",
+      "source_url": "https://jcgt.org/published/0009/03/02/",
+      "sha256_16": "089bbba49a29462d"
+    },
+    {
+      "id": "fresnel_rim_disc",
+      "family": "light",
+      "description": "Sphere seen as a disc: Schlick fresnel f0 + (1 - f0)(1 - n.z)^power mixes base and rim colours; black outside. Colour block. (12 October 2026)",
+      "tags": [
+        "fresnel",
+        "rim",
+        "sphere",
+        "orb",
+        "light",
+        "colour"
+      ],
+      "looks": [
+        "orb",
+        "sphere",
+        "planet",
+        "bubble"
+      ],
+      "params": [
+        "center",
+        "radius",
+        "base",
+        "rim",
+        "f0",
+        "power",
+        "soft",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "f9b7d01c99c26a36"
+    },
+    {
+      "id": "glow_gaussian",
+      "family": "glow",
+      "description": "Gaussian halo exp(-r^2 / 2 sigma^2), coloured. Colour block for the add blend. (12 October 2026)",
+      "tags": [
+        "glow",
+        "halo",
+        "gaussian",
+        "bloom",
+        "colour"
+      ],
+      "looks": [
+        "glow",
+        "halo",
+        "ambient-light",
+        "orb-halo"
+      ],
+      "params": [
+        "color",
+        "center",
+        "sigma",
+        "intensity",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "d1653425187ee636"
+    },
+    {
+      "id": "glow_inverse_point",
+      "family": "glow",
+      "description": "Point light glow 1 / (1 + (r / radius)^power), coloured, clamped. Colour block for the add blend. (12 October 2026)",
+      "tags": [
+        "glow",
+        "light",
+        "point",
+        "bloom",
+        "colour"
+      ],
+      "looks": [
+        "glow",
+        "light-source",
+        "bokeh",
+        "orb-core"
+      ],
+      "params": [
+        "color",
+        "center",
+        "radius",
+        "power",
+        "intensity",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "dbc063c2bc66934f"
+    },
+    {
+      "id": "glow_parabola",
+      "family": "glow",
+      "description": "Glow along a parabola arch (Gaussian of the first-order distance) with an optional interior fill level. Colour block. (12 October 2026)",
+      "tags": [
+        "glow",
+        "arch",
+        "parabola",
+        "horizon",
+        "colour"
+      ],
+      "looks": [
+        "arch-glow",
+        "horizon-glow",
+        "screen-glow"
+      ],
+      "params": [
+        "color",
+        "vertex",
+        "curvature",
+        "sigma",
+        "fill",
+        "intensity",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "6c511e8f5c6fab13"
+    },
+    {
+      "id": "glow_ring",
+      "family": "glow",
+      "description": "Ring halo: Gaussian of the distance to a circle, exp(-(r - radius)^2 / 2 sigma^2). Colour block for the add blend. (12 October 2026)",
+      "tags": [
+        "glow",
+        "ring",
+        "halo",
+        "neon",
+        "colour"
+      ],
+      "looks": [
+        "neon-ring",
+        "halo",
+        "portal"
+      ],
+      "params": [
+        "color",
+        "center",
+        "radius",
+        "sigma",
+        "intensity",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "f79caa536d313b29"
+    },
+    {
+      "id": "glow_rounded_rect",
+      "family": "glow",
+      "description": "Glow around a rounded rectangle: exp(-d / falloff) outside, mix(inner, 1, exp(d / falloff)) inside, continuous at the edge. Colour block. (12 October 2026)",
+      "tags": [
+        "glow",
+        "halo",
+        "card",
+        "screen-glow",
+        "colour"
+      ],
+      "looks": [
+        "screen-glow",
+        "card-glow",
+        "button-glow"
+      ],
+      "params": [
+        "color",
+        "center",
+        "half_size",
+        "radius",
+        "falloff",
+        "inner",
+        "intensity",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "e7e3095b310dfd4f"
+    },
+    {
+      "id": "glow_segment",
+      "family": "glow",
+      "description": "Light streak: Gaussian of the distance to a segment between two points. Colour block for the add blend. (12 October 2026)",
+      "tags": [
+        "glow",
+        "streak",
+        "line",
+        "laser",
+        "colour"
+      ],
+      "looks": [
+        "light-streak",
+        "laser",
+        "underline-glow"
+      ],
+      "params": [
+        "color",
+        "a",
+        "b",
+        "width",
+        "intensity",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "11b2c51e9ac0ed37"
+    },
+    {
+      "id": "grade_exposure_saturation",
+      "family": "grade",
+      "description": "Exposure in stops (linear light), contrast around a pivot and saturation around Rec. 709 luma, applied to a source ramp. Colour block. (12 October 2026) Limit: Grades a procedural source ramp (c0 to c1). The grading operator itself is the helper <id>_apply(vec3) inside block.glsl, reusable on any colour once compose supports filter layers.",
+      "tags": [
+        "grade",
+        "exposure",
+        "contrast",
+        "saturation",
+        "colour"
+      ],
+      "looks": [
+        "colour-grade",
+        "desaturated",
+        "punchy"
+      ],
+      "params": [
+        "angle",
+        "c0",
+        "c1",
+        "exposure",
+        "contrast",
+        "pivot",
+        "saturation"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "0ce41ddfe6ac4e58"
+    },
+    {
+      "id": "grade_lift_gamma_gain",
+      "family": "grade",
+      "description": "Lift, gamma, gain per channel (y = (gain * (x + lift * (1 - x)))^(1 / gamma)) applied to a source ramp. Colour block. (12 October 2026) Limit: Grades a procedural source ramp (c0 to c1). The grading operator itself is the helper <id>_apply(vec3) inside block.glsl, reusable on any colour once compose supports filter layers.",
+      "tags": [
+        "grade",
+        "lift-gamma-gain",
+        "colour-correction",
+        "colour"
+      ],
+      "looks": [
+        "colour-grade",
+        "cinematic-grade"
+      ],
+      "params": [
+        "angle",
+        "c0",
+        "c1",
+        "lift",
+        "gamma",
+        "gain"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "4a36abe6d572f150"
+    },
+    {
+      "id": "gradient_stops6",
+      "family": "gradient",
+      "description": "Six-stop sRGB ramp along an axis with free stop positions given as relative segment widths (always sorted, so it can be fitted on a measured profile such as the arch vertical profile or a copper ramp). Colour block. (12 October 2026)",
+      "tags": [
+        "gradient",
+        "ramp",
+        "stops",
+        "profile",
+        "colour"
+      ],
+      "looks": [
+        "arch-glow-wallpaper",
+        "copper-metal-rim",
+        "screen-ui-emission",
+        "logo-colour-fade"
+      ],
+      "params": [
+        "angle",
+        "c0",
+        "c1",
+        "c2",
+        "c3",
+        "c4",
+        "c5",
+        "wa",
+        "wb"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "0e4b1ee8357fdaa0"
+    },
+    {
+      "id": "grain_film",
+      "family": "grain",
+      "description": "Film grain over a base colour: per-cell Irwin-Hall gaussian (4 hashes), animated by frame, mid-tone response, optional chroma. Colour block. (12 October 2026) Limit: Grain is applied to a flat base colour; to grain an existing composite, layer it with a low-opacity mask.",
+      "tags": [
+        "grain",
+        "film",
+        "noise",
+        "animated",
+        "colour"
+      ],
+      "looks": [
+        "film-grain",
+        "texture-overlay"
+      ],
+      "params": [
+        "base",
+        "amount",
+        "density",
+        "frame",
+        "chroma",
+        "response",
+        "seed",
+        "aspect"
+      ],
+      "licence": "original (pcg2d hash implemented from Jarzynski and Olano, Hash Functions for GPU Rendering, JCGT 2020; algorithm, no code copied), same licence as the engine",
+      "source_url": "https://jcgt.org/published/0009/03/02/",
+      "sha256_16": "a52ef9599bf634fe"
+    },
+    {
+      "id": "halo_tail3",
+      "family": "glow",
+      "description": "Long bloom tail as a sum of three gaussians of the distance outside a disc (radius 0 gives a point light); fits the measured halo falloffs (sigmas near 3, 15 and 60 px at 1080p). Colour block, use with add or screen. (12 October 2026)",
+      "tags": [
+        "glow",
+        "bloom",
+        "halo",
+        "tail",
+        "colour"
+      ],
+      "looks": [
+        "bloom-halo",
+        "chip-emissive-iridescent",
+        "orb-radial-glow",
+        "neon-ring-glow"
+      ],
+      "params": [
+        "center",
+        "radius",
+        "color",
+        "sigmas",
+        "weights",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "cc66af1989a79933"
+    },
+    {
+      "id": "horizon_floor_reflect",
+      "family": "reflection",
+      "description": "Reflective floor: sky colour above a horizon, a floor ramp below it, and the mirror of a rectangle standing on the horizon, attenuated exponentially and blurred more with depth. Colour block. (12 October 2026) Limit: The mirrored object is a rectangle; mirroring an arbitrary composite needs a render-to-texture pass that compose lacks.",
+      "tags": [
+        "reflection",
+        "floor",
+        "horizon",
+        "mirror",
+        "colour"
+      ],
+      "looks": [
+        "reflective-floor-fog",
+        "grazing-glass-reflection"
+      ],
+      "params": [
+        "horizon",
+        "c_sky",
+        "c_floor_top",
+        "c_floor_bottom",
+        "refl_x",
+        "refl_height",
+        "refl_color",
+        "strength",
+        "falloff",
+        "blur",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "65f43af3b24d4281"
+    },
+    {
+      "id": "light_sweep",
+      "family": "light",
+      "description": "Gaussian light sweep band across the frame along an angle (animate 'position' for a shine pass). Colour block for add or screen. (12 October 2026)",
+      "tags": [
+        "sweep",
+        "shine",
+        "specular",
+        "band",
+        "light",
+        "colour"
+      ],
+      "looks": [
+        "shine-pass",
+        "glass-sweep",
+        "logo-shine"
+      ],
+      "params": [
+        "color",
+        "angle",
+        "position",
+        "width",
+        "intensity"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "5c12d57e43b91c8d"
+    },
+    {
+      "id": "linear_ramp4",
+      "family": "gradient",
+      "description": "Four-stop linear colour ramp along an angle, covering the unit square; two inner stop positions. Colour block, alpha 1. (12 October 2026)",
+      "tags": [
+        "gradient",
+        "ramp",
+        "background",
+        "sky",
+        "colour"
+      ],
+      "looks": [
+        "background-gradient",
+        "sky",
+        "glow-base"
+      ],
+      "params": [
+        "angle",
+        "c0",
+        "c1",
+        "c2",
+        "c3",
+        "s1",
+        "s2"
+      ],
+      "licence": "original (written from the mathematics of piecewise linear interpolation), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "8711eac46614c75e"
+    },
+    {
+      "id": "metal_ring_tint",
+      "family": "light",
+      "description": "Flat metal ring shaded as a tube: Lambert with ambient plus Blinn specular with Schlick fresnel whose F0 is the metal tint (PBR-ish). Colour block. (12 October 2026)",
+      "tags": [
+        "metal",
+        "pbr",
+        "ring",
+        "bezel",
+        "specular",
+        "fresnel",
+        "light",
+        "colour"
+      ],
+      "looks": [
+        "metal-rim",
+        "device-bezel",
+        "watch-ring",
+        "coin-edge"
+      ],
+      "params": [
+        "center",
+        "radius",
+        "thickness",
+        "metal",
+        "light_angle",
+        "elevation",
+        "shininess",
+        "ambient",
+        "soft",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "adc219f85157e57b"
+    },
+    {
+      "id": "noise_domain_warp",
+      "family": "noise",
+      "description": "Domain warping: fbm evaluated at p + warp * (fbm, fbm), flowing organic shapes. Mask block. (12 October 2026)",
+      "tags": [
+        "noise",
+        "domain-warp",
+        "fbm",
+        "organic",
+        "mask"
+      ],
+      "looks": [
+        "smoke-mask",
+        "liquid",
+        "aurora-mask"
+      ],
+      "params": [
+        "scale",
+        "offset",
+        "seed",
+        "octaves",
+        "warp",
+        "contrast",
+        "aspect"
+      ],
+      "licence": "original (pcg2d hash implemented from Jarzynski and Olano, Hash Functions for GPU Rendering, JCGT 2020; algorithm, no code copied), same licence as the engine",
+      "source_url": "https://jcgt.org/published/0009/03/02/",
+      "sha256_16": "16a3ca9354f54f33"
+    },
+    {
+      "id": "noise_fbm",
+      "family": "noise",
+      "description": "Fractal Brownian motion: octaves of gradient noise, mapped to [0, 1]. Mask block (clouds, smoke, dust). (12 October 2026)",
+      "tags": [
+        "noise",
+        "fbm",
+        "fractal",
+        "clouds",
+        "mask"
+      ],
+      "looks": [
+        "clouds",
+        "smoke-mask",
+        "dust",
+        "noise-texture"
+      ],
+      "params": [
+        "scale",
+        "offset",
+        "seed",
+        "octaves",
+        "lacunarity",
+        "gain",
+        "contrast",
+        "aspect"
+      ],
+      "licence": "original (pcg2d hash implemented from Jarzynski and Olano, Hash Functions for GPU Rendering, JCGT 2020; algorithm, no code copied), same licence as the engine",
+      "source_url": "https://jcgt.org/published/0009/03/02/",
+      "sha256_16": "bdde10e4f0cda736"
+    },
+    {
+      "id": "noise_gradient",
+      "family": "noise",
+      "description": "Gradient (Perlin style) noise with hashed unit gradients and quintic fade, mapped to [0, 1]. Mask block. (12 October 2026)",
+      "tags": [
+        "noise",
+        "perlin",
+        "gradient",
+        "mask"
+      ],
+      "looks": [
+        "noise-texture",
+        "smoke-mask",
+        "terrain"
+      ],
+      "params": [
+        "scale",
+        "offset",
+        "seed",
+        "contrast",
+        "aspect"
+      ],
+      "licence": "original (pcg2d hash implemented from Jarzynski and Olano, Hash Functions for GPU Rendering, JCGT 2020; algorithm, no code copied), same licence as the engine",
+      "source_url": "https://jcgt.org/published/0009/03/02/",
+      "sha256_16": "38cf2e7440162a22"
+    },
+    {
+      "id": "noise_ridged",
+      "family": "noise",
+      "description": "Ridged multifractal: octaves of (1 - |gradient noise|)^2, sharp crests for lightning, veins, mountain lines. Mask block. (12 October 2026)",
+      "tags": [
+        "noise",
+        "ridged",
+        "fractal",
+        "veins",
+        "mask"
+      ],
+      "looks": [
+        "veins",
+        "energy-lines",
+        "terrain"
+      ],
+      "params": [
+        "scale",
+        "offset",
+        "seed",
+        "octaves",
+        "lacunarity",
+        "gain",
+        "contrast",
+        "aspect"
+      ],
+      "licence": "original (pcg2d hash implemented from Jarzynski and Olano, Hash Functions for GPU Rendering, JCGT 2020; algorithm, no code copied), same licence as the engine",
+      "source_url": "https://jcgt.org/published/0009/03/02/",
+      "sha256_16": "de82344e72812940"
+    },
+    {
+      "id": "noise_simplex2",
+      "family": "noise",
+      "description": "2D simplex noise (Ashima webgl-noise, MIT), seed shifts the domain, mapped to [0, 1]. Mask block. (12 October 2026)",
+      "tags": [
+        "noise",
+        "simplex",
+        "mask"
+      ],
+      "looks": [
+        "noise-texture",
+        "smoke-mask"
+      ],
+      "params": [
+        "scale",
+        "offset",
+        "seed",
+        "contrast",
+        "aspect"
+      ],
+      "licence": "MIT (webgl-noise, Copyright (C) 2011 Ashima Arts and Stefan Gustavson; adapted: prefixed helpers, seed offset)",
+      "source_url": "https://github.com/ashima/webgl-noise/blob/master/src/noise2D.glsl",
+      "sha256_16": "f70a1c9855ea71ce"
+    },
+    {
+      "id": "noise_simplex3_anim",
+      "family": "noise",
+      "description": "3D simplex noise (Ashima webgl-noise, MIT) sliced at z = time * speed: smoothly evolving 2D noise. Mask block. (12 October 2026)",
+      "tags": [
+        "noise",
+        "simplex",
+        "animated",
+        "time",
+        "mask"
+      ],
+      "looks": [
+        "noise-texture",
+        "smoke-mask",
+        "caustic-base"
+      ],
+      "params": [
+        "scale",
+        "offset",
+        "time",
+        "speed",
+        "seed",
+        "contrast",
+        "aspect"
+      ],
+      "licence": "MIT (webgl-noise, Copyright (C) 2011 Ashima Arts and Stefan Gustavson; adapted: prefixed helpers, seed offset)",
+      "source_url": "https://github.com/ashima/webgl-noise/blob/master/src/noise3D.glsl",
+      "sha256_16": "a2ec30ff82aece53"
+    },
+    {
+      "id": "noise_turbulence",
+      "family": "noise",
+      "description": "Turbulence: octaves of |gradient noise|, billowy creases (fire, marble base). Mask block. (12 October 2026)",
+      "tags": [
+        "noise",
+        "turbulence",
+        "fractal",
+        "mask"
+      ],
+      "looks": [
+        "fire-mask",
+        "marble-base",
+        "smoke-mask"
+      ],
+      "params": [
+        "scale",
+        "offset",
+        "seed",
+        "octaves",
+        "lacunarity",
+        "gain",
+        "contrast",
+        "aspect"
+      ],
+      "licence": "original (pcg2d hash implemented from Jarzynski and Olano, Hash Functions for GPU Rendering, JCGT 2020; algorithm, no code copied), same licence as the engine",
+      "source_url": "https://jcgt.org/published/0009/03/02/",
+      "sha256_16": "97ad823ada85d231"
+    },
+    {
+      "id": "noise_value",
+      "family": "noise",
+      "description": "Value noise: hashed lattice values blended by a quintic fade. Mask block, coverage = noise in [0, 1]. (12 October 2026)",
+      "tags": [
+        "noise",
+        "value",
+        "texture",
+        "mask"
+      ],
+      "looks": [
+        "noise-texture",
+        "cloud-mask",
+        "flicker"
+      ],
+      "params": [
+        "scale",
+        "offset",
+        "seed",
+        "contrast",
+        "aspect"
+      ],
+      "licence": "original (pcg2d hash implemented from Jarzynski and Olano, Hash Functions for GPU Rendering, JCGT 2020; algorithm, no code copied), same licence as the engine",
+      "source_url": "https://jcgt.org/published/0009/03/02/",
+      "sha256_16": "e5214a6d3b786eda"
+    },
+    {
+      "id": "noise_voronoi_cells",
+      "family": "noise",
+      "description": "Voronoi cells filled with a hashed mix of two colours and separated by soft borders (F2 - F1). Colour block. (12 October 2026)",
+      "tags": [
+        "noise",
+        "voronoi",
+        "cells",
+        "mosaic",
+        "colour"
+      ],
+      "looks": [
+        "cells",
+        "mosaic-background"
+      ],
+      "params": [
+        "scale",
+        "offset",
+        "seed",
+        "jitter",
+        "c0",
+        "c1",
+        "border",
+        "border_color",
+        "aspect"
+      ],
+      "licence": "original (pcg2d hash implemented from Jarzynski and Olano, Hash Functions for GPU Rendering, JCGT 2020; algorithm, no code copied), same licence as the engine",
+      "source_url": "https://jcgt.org/published/0009/03/02/",
+      "sha256_16": "795d44e116c8379d"
+    },
+    {
+      "id": "noise_warp_palette",
+      "family": "noise",
+      "description": "Two-level domain warp coloured by a three-colour palette (c2 weighted by the first warp length). Colour block. (12 October 2026)",
+      "tags": [
+        "noise",
+        "domain-warp",
+        "palette",
+        "organic",
+        "background",
+        "colour"
+      ],
+      "looks": [
+        "organic-background",
+        "liquid",
+        "nebula"
+      ],
+      "params": [
+        "scale",
+        "offset",
+        "seed",
+        "octaves",
+        "warp",
+        "c0",
+        "c1",
+        "c2",
+        "c2_amount",
+        "aspect"
+      ],
+      "licence": "original (pcg2d hash implemented from Jarzynski and Olano, Hash Functions for GPU Rendering, JCGT 2020; algorithm, no code copied), same licence as the engine",
+      "source_url": "https://jcgt.org/published/0009/03/02/",
+      "sha256_16": "f7b464f02f433353"
+    },
+    {
+      "id": "noise_worley",
+      "family": "noise",
+      "description": "Worley cellular noise: F1 distance (mode 0) to F2 minus F1 cell borders (mode 1), optional invert. Mask block. (12 October 2026)",
+      "tags": [
+        "noise",
+        "worley",
+        "cellular",
+        "voronoi",
+        "mask"
+      ],
+      "looks": [
+        "cells",
+        "caustic-base",
+        "cracks"
+      ],
+      "params": [
+        "scale",
+        "offset",
+        "seed",
+        "jitter",
+        "mode",
+        "contrast",
+        "invert",
+        "aspect"
+      ],
+      "licence": "original (pcg2d hash implemented from Jarzynski and Olano, Hash Functions for GPU Rendering, JCGT 2020; algorithm, no code copied), same licence as the engine",
+      "source_url": "https://jcgt.org/published/0009/03/02/",
+      "sha256_16": "06f0a6125b2a5792"
+    },
+    {
+      "id": "radial_gradient3",
+      "family": "gradient",
+      "description": "Three-stop radial gradient from a centre (sRGB mixing), clamped beyond the radius. Colour block. (12 October 2026)",
+      "tags": [
+        "gradient",
+        "radial",
+        "background",
+        "spotlight",
+        "colour"
+      ],
+      "looks": [
+        "background-gradient",
+        "spotlight",
+        "orb-body"
+      ],
+      "params": [
+        "center",
+        "radius",
+        "c0",
+        "c1",
+        "c2",
+        "s1",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "5e763b8eeb67ef7e"
+    },
+    {
+      "id": "radial_oklab2",
+      "family": "gradient",
+      "description": "Radial two-colour gradient interpolated in OKLab with a power falloff exponent. Colour block. (12 October 2026)",
+      "tags": [
+        "gradient",
+        "radial",
+        "oklab",
+        "perceptual",
+        "colour"
+      ],
+      "looks": [
+        "orb-body",
+        "spotlight",
+        "background-gradient"
+      ],
+      "params": [
+        "center",
+        "radius",
+        "c0",
+        "c1",
+        "falloff",
+        "aspect"
+      ],
+      "licence": "original (implemented from the published OKLab matrices of Bjorn Ottosson, 2020, https://bottosson.github.io/posts/oklab/; matrices are numeric constants, no code copied), same licence as the engine",
+      "source_url": "https://bottosson.github.io/posts/oklab/",
+      "sha256_16": "565ad22f629a7875"
+    },
+    {
+      "id": "ramp_linear_light2",
+      "family": "gradient",
+      "description": "Two-colour ramp along an angle mixed in linear light (gamma-correct), with a power bias on t. Colour block. (12 October 2026)",
+      "tags": [
+        "gradient",
+        "linear-light",
+        "gamma",
+        "ramp",
+        "colour"
+      ],
+      "looks": [
+        "background-gradient",
+        "light-falloff"
+      ],
+      "params": [
+        "angle",
+        "c0",
+        "c1",
+        "bias"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "d9013f96c156645f"
+    },
+    {
+      "id": "ramp_oklab4",
+      "family": "gradient",
+      "description": "Four-stop linear ramp along an angle, interpolated in OKLab (perceptual, no grey dip between hues). Colour block. (12 October 2026)",
+      "tags": [
+        "gradient",
+        "oklab",
+        "perceptual",
+        "ramp",
+        "sky",
+        "colour"
+      ],
+      "looks": [
+        "background-gradient",
+        "sky",
+        "brand-gradient"
+      ],
+      "params": [
+        "angle",
+        "c0",
+        "c1",
+        "c2",
+        "c3",
+        "s1",
+        "s2"
+      ],
+      "licence": "original (implemented from the published OKLab matrices of Bjorn Ottosson, 2020, https://bottosson.github.io/posts/oklab/; matrices are numeric constants, no code copied), same licence as the engine",
+      "source_url": "https://bottosson.github.io/posts/oklab/",
+      "sha256_16": "dc3ce82dc8935276"
+    },
+    {
+      "id": "ramp_oklab_anim",
+      "family": "colour-time",
+      "description": "Two-colour OKLab gradient whose ends each move between two keyframe colours over time (eased). Colour block. (12 October 2026)",
+      "tags": [
+        "gradient",
+        "oklab",
+        "animated",
+        "time",
+        "background",
+        "colour"
+      ],
+      "looks": [
+        "background-gradient",
+        "colour-transition",
+        "sky"
+      ],
+      "params": [
+        "angle",
+        "a0",
+        "a1",
+        "b0",
+        "b1",
+        "time",
+        "ease"
+      ],
+      "licence": "original (implemented from the published OKLab matrices of Bjorn Ottosson, 2020, https://bottosson.github.io/posts/oklab/; numeric constants, no code copied), same licence as the engine",
+      "source_url": "https://bottosson.github.io/posts/oklab/",
+      "sha256_16": "07ed544dbddff731"
+    },
+    {
+      "id": "rim_light_rect",
+      "family": "light",
+      "description": "Directional rim light inside a rounded rectangle: exp(d / width) times max(dot(sdf gradient, light dir), 0), clipped by the shape. Colour block for add. (12 October 2026)",
+      "tags": [
+        "rim",
+        "edge-light",
+        "bevel",
+        "card",
+        "light",
+        "colour"
+      ],
+      "looks": [
+        "device-edge",
+        "card-rim",
+        "glass-edge"
+      ],
+      "params": [
+        "color",
+        "center",
+        "half_size",
+        "radius",
+        "width",
+        "light_angle",
+        "intensity",
+        "soft",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "8052cf62cf017082"
+    },
+    {
+      "id": "sdf_arc",
+      "family": "mask",
+      "description": "Circular arc stroke with round caps from a start angle over a span, exact distance (ring inside the span, end points outside). Mask block. (12 October 2026)",
+      "tags": [
+        "sdf",
+        "arc",
+        "progress",
+        "gauge",
+        "stroke",
+        "mask"
+      ],
+      "looks": [
+        "progress-ring",
+        "gauge",
+        "loader"
+      ],
+      "params": [
+        "center",
+        "radius",
+        "thickness",
+        "start",
+        "span",
+        "soft",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "7408cd6604770a8b"
+    },
+    {
+      "id": "sdf_arch",
+      "family": "mask",
+      "description": "Arch (doorway) coverage: a box with a semicircular top, union of an exact box and an exact circle distance; base is the bottom middle point. Mask block. (12 October 2026)",
+      "tags": [
+        "sdf",
+        "arch",
+        "doorway",
+        "window",
+        "mask"
+      ],
+      "looks": [
+        "arch",
+        "portal",
+        "window"
+      ],
+      "params": [
+        "base",
+        "half_width",
+        "height",
+        "soft",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "272f25926cbe00d6"
+    },
+    {
+      "id": "sdf_capsule",
+      "family": "mask",
+      "description": "Capsule (rounded segment) coverage between two points, exact segment distance minus a radius. Mask block. (12 October 2026)",
+      "tags": [
+        "sdf",
+        "capsule",
+        "pill",
+        "segment",
+        "line",
+        "mask"
+      ],
+      "looks": [
+        "pill",
+        "progress-bar",
+        "stroke",
+        "toggle"
+      ],
+      "params": [
+        "a",
+        "b",
+        "radius",
+        "soft",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "71a38195030dbb13"
+    },
+    {
+      "id": "sdf_circle",
+      "family": "mask",
+      "description": "Disc coverage from the exact circle distance, soft smoothstep edge. Mask block. (12 October 2026)",
+      "tags": [
+        "sdf",
+        "circle",
+        "disc",
+        "dot",
+        "mask"
+      ],
+      "looks": [
+        "dot",
+        "orb-mask",
+        "button",
+        "bokeh"
+      ],
+      "params": [
+        "center",
+        "radius",
+        "soft",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "77df34cfa9faec59"
+    },
+    {
+      "id": "sdf_concentric_rings",
+      "family": "mask",
+      "description": "Repeated rings (onion repeated with a period) up to an outer radius, for ripples and radar rings. Mask block. (12 October 2026)",
+      "tags": [
+        "sdf",
+        "rings",
+        "ripple",
+        "radar",
+        "repeat",
+        "mask"
+      ],
+      "looks": [
+        "ripple",
+        "radar",
+        "sound-wave"
+      ],
+      "params": [
+        "center",
+        "period",
+        "thickness",
+        "phase",
+        "outer",
+        "soft",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "cb5e95860c1dc31f"
+    },
+    {
+      "id": "sdf_ngon",
+      "family": "mask",
+      "description": "Regular polygon coverage (3 to 9 sides, floor of 'sides'), circumradius and rotation, sector-folded distance. Mask block. (12 October 2026)",
+      "tags": [
+        "sdf",
+        "polygon",
+        "hexagon",
+        "triangle",
+        "ngon",
+        "mask"
+      ],
+      "looks": [
+        "badge",
+        "icon",
+        "geometric"
+      ],
+      "params": [
+        "center",
+        "radius",
+        "sides",
+        "rotation",
+        "soft",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "10f077ad7a375804"
+    },
+    {
+      "id": "sdf_onion_rect",
+      "family": "mask",
+      "description": "Outline of a rounded rectangle (onion operator: absolute distance minus half thickness), for borders and bezels. Mask block. (12 October 2026)",
+      "tags": [
+        "sdf",
+        "onion",
+        "outline",
+        "border",
+        "bezel",
+        "operator",
+        "mask"
+      ],
+      "looks": [
+        "bezel",
+        "outline",
+        "card-border",
+        "button"
+      ],
+      "params": [
+        "center",
+        "half_size",
+        "radius",
+        "thickness",
+        "soft",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "49f2fa07be213f33"
+    },
+    {
+      "id": "sdf_parabola",
+      "family": "mask",
+      "description": "Region inside a parabola opening downwards on screen (y = vertex.y + k x^2), first-order signed distance (value over gradient). Mask block. (12 October 2026)",
+      "tags": [
+        "sdf",
+        "parabola",
+        "arch",
+        "curve",
+        "mask"
+      ],
+      "looks": [
+        "arch-glow",
+        "dome",
+        "horizon"
+      ],
+      "params": [
+        "vertex",
+        "curvature",
+        "soft",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "b19e28582a629788"
+    },
+    {
+      "id": "sdf_ring",
+      "family": "mask",
+      "description": "Annulus coverage: absolute circle distance minus a half thickness (onion of a circle). Mask block. (12 October 2026)",
+      "tags": [
+        "sdf",
+        "ring",
+        "annulus",
+        "outline",
+        "onion",
+        "mask"
+      ],
+      "looks": [
+        "ring",
+        "loader",
+        "halo-mask",
+        "outline"
+      ],
+      "params": [
+        "center",
+        "radius",
+        "thickness",
+        "soft",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "96d5f61916ef6f68"
+    },
+    {
+      "id": "sdf_rounded_rect",
+      "family": "mask",
+      "description": "Rounded rectangle coverage with a soft smoothstep edge, from an exact signed distance. Mask block: vec4(1, 1, 1, coverage). (12 October 2026)",
+      "tags": [
+        "sdf",
+        "shape",
+        "rounded",
+        "mask",
+        "card",
+        "button"
+      ],
+      "looks": [
+        "card",
+        "device-screen",
+        "pill",
+        "panel"
+      ],
+      "params": [
+        "center",
+        "half_size",
+        "radius",
+        "soft",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics of the box signed distance), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "4c5160e97fe5626f"
+    },
+    {
+      "id": "sdf_smooth_subtract",
+      "family": "mask",
+      "description": "Rounded rectangle with a disc carved out by a polynomial smooth maximum (notch, bite). Mask block. (12 October 2026)",
+      "tags": [
+        "sdf",
+        "smooth-subtract",
+        "smax",
+        "notch",
+        "operator",
+        "mask"
+      ],
+      "looks": [
+        "notch",
+        "cutout",
+        "device-screen"
+      ],
+      "params": [
+        "center",
+        "half_size",
+        "radius",
+        "cut_center",
+        "cut_radius",
+        "k",
+        "soft",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "d6837f40f5f81a01"
+    },
+    {
+      "id": "sdf_smooth_union",
+      "family": "mask",
+      "description": "Two discs merged by a polynomial smooth minimum (metaball-like blend radius k). Mask block. (12 October 2026)",
+      "tags": [
+        "sdf",
+        "smooth-union",
+        "smin",
+        "metaball",
+        "blob",
+        "operator",
+        "mask"
+      ],
+      "looks": [
+        "blob",
+        "liquid",
+        "merge"
+      ],
+      "params": [
+        "center_a",
+        "radius_a",
+        "center_b",
+        "radius_b",
+        "k",
+        "soft",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "1bfdd9dac93d9e9d"
+    },
+    {
+      "id": "sdf_superellipse",
+      "family": "mask",
+      "description": "Superellipse (squircle) coverage |x/a|^n + |y/b|^n = 1, distance approximated by the scaled norm. Mask block. (12 October 2026)",
+      "tags": [
+        "sdf",
+        "superellipse",
+        "squircle",
+        "app-icon",
+        "mask"
+      ],
+      "looks": [
+        "app-icon",
+        "card",
+        "device-screen"
+      ],
+      "params": [
+        "center",
+        "half_size",
+        "exponent",
+        "soft",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "ce46637c0e123d18"
+    },
+    {
+      "id": "solid_color",
+      "family": "colour",
+      "description": "Flat colour over the whole canvas; the base layer of a composition (black void, flat backdrop). Colour block. (12 October 2026)",
+      "tags": [
+        "colour",
+        "flat",
+        "background",
+        "base"
+      ],
+      "looks": [
+        "void-black-grain",
+        "background"
+      ],
+      "params": [
+        "color"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "4e4cc3169ae1d69e"
+    },
+    {
+      "id": "specular_band_curved",
+      "family": "light",
+      "description": "Specular band with a sharp core and exponential halo, bowed by a curvature (reflection on a curved glass). Colour block for add. (12 October 2026)",
+      "tags": [
+        "specular",
+        "reflection",
+        "glass",
+        "band",
+        "light",
+        "colour"
+      ],
+      "looks": [
+        "glass-reflection",
+        "screen-glare",
+        "device-highlight"
+      ],
+      "params": [
+        "color",
+        "angle",
+        "position",
+        "core",
+        "falloff",
+        "halo",
+        "bend",
+        "intensity"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "07f2a938a6b9c519"
+    },
+    {
+      "id": "strata_contour_bands",
+      "family": "pattern",
+      "description": "Strata landscape: domain-warped fbm height, fine contour bands on the height, a four-stop palette by height (red, orange, amber, cream) and dark rock in the gaps between bands. Colour block. (12 October 2026) Limit: Contour bands are taken on the fbm height, so a very thin band can alias below 2 pixels; keep bands * scale moderate.",
+      "tags": [
+        "pattern",
+        "strata",
+        "contour",
+        "terrain",
+        "fbm",
+        "colour"
+      ],
+      "looks": [
+        "strata-landscape-wallpaper",
+        "terrain"
+      ],
+      "params": [
+        "scale",
+        "offset",
+        "seed",
+        "warp",
+        "bands",
+        "rock_share",
+        "edge",
+        "c_rock",
+        "c0",
+        "c1",
+        "c2",
+        "c3",
+        "aspect"
+      ],
+      "licence": "original (pcg2d hash implemented from Jarzynski and Olano, Hash Functions for GPU Rendering, JCGT 2020; algorithm, no code copied), same licence as the engine",
+      "source_url": "https://jcgt.org/published/0009/03/02/",
+      "sha256_16": "d90de5257e0eeaf8"
+    },
+    {
+      "id": "thin_film_iridescence",
+      "family": "lighting",
+      "description": "Thin-film fringe: a rounded rectangle body whose edge band shows a cyclic spectral colour (cosine palette of the optical path, magenta, green and cyan), the film phase growing with the distance to the edge. Colour block. (12 October 2026)",
+      "tags": [
+        "iridescent",
+        "thin-film",
+        "fringe",
+        "chip",
+        "colour"
+      ],
+      "looks": [
+        "chip-emissive-iridescent"
+      ],
+      "params": [
+        "center",
+        "half_size",
+        "radius",
+        "soft",
+        "c_body",
+        "edge_width",
+        "cycles",
+        "phase",
+        "strength",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "5e90fd00d1f11f63"
+    },
+    {
+      "id": "tonemap_aces_filmic",
+      "family": "tonemap",
+      "description": "ACES filmic tone mapping as in three.js r185 (MIT) applied to an HDR ramp, then sRGB encoding. Colour block. (12 October 2026) Limit: Tone-maps a procedural HDR ramp (tint times 2^ev); the operator is the helper <id>_apply(vec3 linear, float exposure).",
+      "tags": [
+        "tonemap",
+        "aces",
+        "filmic",
+        "hdr",
+        "colour"
+      ],
+      "looks": [
+        "filmic-look",
+        "hdr-sky",
+        "sunset"
+      ],
+      "params": [
+        "angle",
+        "tint",
+        "ev_min",
+        "ev_max",
+        "exposure"
+      ],
+      "licence": "MIT (three.js r185, Copyright 2010-2025 three.js authors; vendored copy in vendor/three/build/three.module.js); upstream: RRTAndODTFit cites https://github.com/selfshadow/ltc_code (licence not verified)",
+      "source_url": "https://github.com/mrdoob/three.js/blob/r185/src/renderers/shaders/ShaderChunk/tonemapping_pars_fragment.glsl.js",
+      "sha256_16": "4d50d2abd6644b2c"
+    },
+    {
+      "id": "tonemap_agx",
+      "family": "tonemap",
+      "description": "AgX tone mapping as in three.js r185 (MIT) applied to an HDR ramp, then sRGB encoding. Colour block. (12 October 2026) Limit: Tone-maps a procedural HDR ramp (tint times 2^ev); the operator is the helper <id>_apply(vec3 linear, float exposure).",
+      "tags": [
+        "tonemap",
+        "agx",
+        "hdr",
+        "colour"
+      ],
+      "looks": [
+        "filmic-look",
+        "hdr-sky",
+        "neutral-highlights"
+      ],
+      "params": [
+        "angle",
+        "tint",
+        "ev_min",
+        "ev_max",
+        "exposure"
+      ],
+      "licence": "MIT (three.js r185, Copyright 2010-2025 three.js authors; vendored copy in vendor/three/build/three.module.js); upstream: Filament (Apache-2.0) https://github.com/google/filament/pull/7236 and https://iolite-engine.com/blog_posts/minimal_agx_implementation",
+      "source_url": "https://github.com/mrdoob/three.js/blob/r185/src/renderers/shaders/ShaderChunk/tonemapping_pars_fragment.glsl.js",
+      "sha256_16": "e44b7a4943d60b30"
+    },
+    {
+      "id": "tonemap_neutral",
+      "family": "tonemap",
+      "description": "Khronos PBR Neutral tone mapping as in three.js r185 (MIT) applied to an HDR ramp, then sRGB encoding. Colour block. (12 October 2026) Limit: Tone-maps a procedural HDR ramp (tint times 2^ev); the operator is the helper <id>_apply(vec3 linear, float exposure).",
+      "tags": [
+        "tonemap",
+        "neutral",
+        "khronos",
+        "hdr",
+        "colour"
+      ],
+      "looks": [
+        "product-render",
+        "neutral-highlights"
+      ],
+      "params": [
+        "angle",
+        "tint",
+        "ev_min",
+        "ev_max",
+        "exposure"
+      ],
+      "licence": "MIT (three.js r185, Copyright 2010-2025 three.js authors; vendored copy in vendor/three/build/three.module.js); upstream: Khronos PBR Neutral, https://modelviewer.dev/examples/tone-mapping",
+      "source_url": "https://github.com/mrdoob/three.js/blob/r185/src/renderers/shaders/ShaderChunk/tonemapping_pars_fragment.glsl.js",
+      "sha256_16": "9642a578a16d7812"
+    },
+    {
+      "id": "transition_blinds",
+      "family": "transition",
+      "description": "Venetian blinds: stripes along an angle each wipe open, optionally staggered from stripe to stripe. Mask block. (12 October 2026)",
+      "tags": [
+        "transition",
+        "blinds",
+        "stripes",
+        "wipe",
+        "mask"
+      ],
+      "looks": [
+        "blinds-transition",
+        "stripe-reveal"
+      ],
+      "params": [
+        "progress",
+        "count",
+        "angle",
+        "soft",
+        "stagger"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "32bcff4596f7b7e9"
+    },
+    {
+      "id": "transition_clock",
+      "family": "transition",
+      "description": "Clock (radial sweep) wipe around a centre from a start angle, soft angular edge in turns. Mask block. (12 October 2026)",
+      "tags": [
+        "transition",
+        "clock",
+        "radial-wipe",
+        "mask"
+      ],
+      "looks": [
+        "clock-wipe",
+        "progress-ring"
+      ],
+      "params": [
+        "progress",
+        "center",
+        "start",
+        "soft",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "d2f295eed7cf469c"
+    },
+    {
+      "id": "transition_crossfade",
+      "family": "transition",
+      "description": "Cross-fade opacity: uniform mask equal to progress, eased towards smoothstep by 'ease'. Put layer B over A with this mask. Mask block. (12 October 2026)",
+      "tags": [
+        "transition",
+        "crossfade",
+        "dissolve",
+        "opacity",
+        "mask"
+      ],
+      "looks": [
+        "crossfade",
+        "fade"
+      ],
+      "params": [
+        "progress",
+        "ease"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "72b853d49242fc6c"
+    },
+    {
+      "id": "transition_dissolve_noise",
+      "family": "transition",
+      "description": "Noise dissolve: each pixel appears when progress passes its fbm value, soft threshold. Mask block. (12 October 2026)",
+      "tags": [
+        "transition",
+        "dissolve",
+        "noise",
+        "mask"
+      ],
+      "looks": [
+        "dissolve-transition",
+        "burn-reveal"
+      ],
+      "params": [
+        "progress",
+        "scale",
+        "seed",
+        "soft",
+        "octaves",
+        "aspect"
+      ],
+      "licence": "original (pcg2d hash implemented from Jarzynski and Olano, Hash Functions for GPU Rendering, JCGT 2020; algorithm, no code copied), same licence as the engine",
+      "source_url": "https://jcgt.org/published/0009/03/02/",
+      "sha256_16": "a9d78791db79f63a"
+    },
+    {
+      "id": "transition_iris",
+      "family": "transition",
+      "description": "Iris (circle) transition from a centre, radius reaching the farthest corner at progress 1. Mask block. (12 October 2026)",
+      "tags": [
+        "transition",
+        "iris",
+        "circle",
+        "reveal",
+        "mask"
+      ],
+      "looks": [
+        "iris-transition",
+        "reveal"
+      ],
+      "params": [
+        "progress",
+        "center",
+        "soft",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "6abec246fb959111"
+    },
+    {
+      "id": "transition_wipe_linear",
+      "family": "transition",
+      "description": "Linear wipe along an angle with a soft edge: progress 0 hides everything, 1 shows everything. Mask block. (12 October 2026)",
+      "tags": [
+        "transition",
+        "wipe",
+        "linear",
+        "mask"
+      ],
+      "looks": [
+        "wipe-transition",
+        "reveal"
+      ],
+      "params": [
+        "progress",
+        "angle",
+        "soft"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "8ffdbd47db6bcd94"
+    },
+    {
+      "id": "vignette_radial",
+      "family": "light",
+      "description": "Radial vignette as a multiplier: mix(1, tint, amount * smoothstep(inner, outer, r)). Colour block for the multiply blend. (12 October 2026)",
+      "tags": [
+        "vignette",
+        "multiply",
+        "darken",
+        "lens",
+        "colour"
+      ],
+      "looks": [
+        "vignette",
+        "cinematic",
+        "focus"
+      ],
+      "params": [
+        "center",
+        "inner",
+        "outer",
+        "amount",
+        "tint",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "c9a7385636af6888"
+    },
+    {
+      "id": "vignette_rounded_rect",
+      "family": "light",
+      "description": "Rounded rectangle vignette as a multiplier, following the frame shape: smoothstep(-falloff, falloff, box distance). Colour block for multiply. (12 October 2026)",
+      "tags": [
+        "vignette",
+        "frame",
+        "multiply",
+        "darken",
+        "colour"
+      ],
+      "looks": [
+        "vignette",
+        "frame-shade",
+        "screen-edge"
+      ],
+      "params": [
+        "half_size",
+        "radius",
+        "falloff",
+        "amount",
+        "tint",
+        "aspect"
+      ],
+      "licence": "original (written from the mathematics), same licence as the engine",
+      "source_url": "",
+      "sha256_16": "5b6f339a07aeb82b"
+    }
+  ]
+}

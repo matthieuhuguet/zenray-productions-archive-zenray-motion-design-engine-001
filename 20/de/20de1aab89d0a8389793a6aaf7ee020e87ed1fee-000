@@ -1,0 +1,715 @@
+{
+ "id": "arch_ramp_grid",
+ "family": "A",
+ "description": "Power-curve arch with a 8 x 4 colour grid over (normal distance outside the arch, height), smoothstep bilinear; colours are linear in the image, so they are solved exactly by least squares. Colour block. (12 October 2026)",
+ "params": [
+  {
+   "name": "cx",
+   "type": "float",
+   "default": 0.5,
+   "min": 0.3,
+   "max": 0.7,
+   "unit": "canvas"
+  },
+  {
+   "name": "apex",
+   "type": "float",
+   "default": 0.6,
+   "min": 0.2,
+   "max": 0.9,
+   "unit": "canvas"
+  },
+  {
+   "name": "k",
+   "type": "float",
+   "default": 0.6,
+   "min": 0.05,
+   "max": 1.5,
+   "unit": "canvas"
+  },
+  {
+   "name": "p",
+   "type": "float",
+   "default": 2.0,
+   "min": 0.8,
+   "max": 3.5,
+   "unit": "canvas"
+  },
+  {
+   "name": "t0",
+   "type": "float",
+   "default": -0.02,
+   "min": -0.2,
+   "max": 0.0,
+   "unit": "canvas"
+  },
+  {
+   "name": "t1",
+   "type": "float",
+   "default": 0.6,
+   "min": 0.1,
+   "max": 1.5,
+   "unit": "canvas"
+  },
+  {
+   "name": "aspect",
+   "type": "float",
+   "default": 0.63,
+   "min": 0.3,
+   "max": 2.5,
+   "unit": "canvas"
+  },
+  {
+   "name": "c_0_0",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_1_0",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_2_0",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_3_0",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_4_0",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_5_0",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_6_0",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_7_0",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_0_1",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_1_1",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_2_1",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_3_1",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_4_1",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_5_1",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_6_1",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_7_1",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_0_2",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_1_2",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_2_2",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_3_2",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_4_2",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_5_2",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_6_2",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_7_2",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_0_3",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_1_3",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_2_3",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_3_3",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_4_3",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_5_3",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_6_3",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  },
+  {
+   "name": "c_7_3",
+   "type": "color",
+   "default": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "min": [
+    0,
+    0,
+    0
+   ],
+   "max": [
+    1,
+    1,
+    1
+   ],
+   "unit": "srgb"
+  }
+ ],
+ "source_url": "original",
+ "licence": "original (written from the mathematics), same licence as the engine",
+ "attribution": "ZenRay Motion Design",
+ "tags": [
+  "arch",
+  "gradient",
+  "wallpaper",
+  "fit"
+ ],
+ "looks": [
+  "arch-glow-wallpaper"
+ ]
+}

@@ -1,0 +1,54 @@
+{
+  "id": "ease_smootherstep_band",
+  "family": "curve",
+  "description": "Band along an angle between two edges with smootherstep (6t^5 - 15t^4 + 10t^3) feathers. Mask block. (12 October 2026)",
+  "params": [
+    {
+      "name": "angle",
+      "type": "float",
+      "default": 90.0,
+      "min": -180.0,
+      "max": 180.0,
+      "unit": "degrees (0 = left to right, 90 = top to bottom)"
+    },
+    {
+      "name": "edge0",
+      "type": "float",
+      "default": 0.3,
+      "min": 0.05,
+      "max": 0.5,
+      "unit": "ramp position"
+    },
+    {
+      "name": "edge1",
+      "type": "float",
+      "default": 0.7,
+      "min": 0.5,
+      "max": 0.95,
+      "unit": "ramp position"
+    },
+    {
+      "name": "feather",
+      "type": "float",
+      "default": 0.08,
+      "min": 0.005,
+      "max": 0.2,
+      "unit": "ramp units"
+    }
+  ],
+  "source_url": "",
+  "licence": "original (written from the mathematics), same licence as the engine",
+  "attribution": "ZenRay Motion Design, 12 October 2026",
+  "tags": [
+    "ease",
+    "smootherstep",
+    "band",
+    "wipe",
+    "mask"
+  ],
+  "looks": [
+    "wipe",
+    "reveal",
+    "band"
+  ]
+}

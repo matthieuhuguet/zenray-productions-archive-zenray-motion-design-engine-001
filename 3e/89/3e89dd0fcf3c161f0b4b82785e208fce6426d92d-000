@@ -1,0 +1,121 @@
+{
+  "id": "fresnel_rim_disc",
+  "family": "light",
+  "description": "Sphere seen as a disc: Schlick fresnel f0 + (1 - f0)(1 - n.z)^power mixes base and rim colours; black outside. Colour block. (12 October 2026)",
+  "params": [
+    {
+      "name": "center",
+      "type": "vec2",
+      "default": [
+        0.5,
+        0.5
+      ],
+      "min": [
+        0.25,
+        0.25
+      ],
+      "max": [
+        0.75,
+        0.75
+      ],
+      "unit": "uv"
+    },
+    {
+      "name": "radius",
+      "type": "float",
+      "default": 0.3,
+      "min": 0.1,
+      "max": 0.42,
+      "unit": "uv (height units)"
+    },
+    {
+      "name": "base",
+      "type": "color",
+      "default": [
+        0.08,
+        0.1,
+        0.25
+      ],
+      "min": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "unit": "sRGB 0..1"
+    },
+    {
+      "name": "rim",
+      "type": "color",
+      "default": [
+        0.6,
+        0.85,
+        1.0
+      ],
+      "min": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "unit": "sRGB 0..1"
+    },
+    {
+      "name": "f0",
+      "type": "float",
+      "default": 0.04,
+      "min": 0.0,
+      "max": 0.5,
+      "unit": "reflectance at normal"
+    },
+    {
+      "name": "power",
+      "type": "float",
+      "default": 5.0,
+      "min": 1.0,
+      "max": 8.0,
+      "unit": "exponent"
+    },
+    {
+      "name": "soft",
+      "type": "float",
+      "default": 0.004,
+      "min": 0.001,
+      "max": 0.03,
+      "unit": "uv (height units)"
+    },
+    {
+      "name": "aspect",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.5,
+      "max": 2.0,
+      "unit": "width / height"
+    }
+  ],
+  "source_url": "",
+  "licence": "original (written from the mathematics), same licence as the engine",
+  "attribution": "ZenRay Motion Design, 12 October 2026",
+  "tags": [
+    "fresnel",
+    "rim",
+    "sphere",
+    "orb",
+    "light",
+    "colour"
+  ],
+  "looks": [
+    "orb",
+    "sphere",
+    "planet",
+    "bubble"
+  ]
+}
