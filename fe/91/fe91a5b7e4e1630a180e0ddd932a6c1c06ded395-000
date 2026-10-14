@@ -89,6 +89,7 @@ def run(slug: str, max_layers: int | None = None, max_seconds: float | None = No
            "before": (d.get("layered") or {}).get("fidelity"), "seconds": round(time.time() - t0, 1), "report": res["report"], "date": "15 October 2026"}
     if write:
         folder = A.write_version(Path(d["dir"]).parent, params, piece, None, parent=Path(d["dir"]).name, note="multi-layer residual pursuit (zrmd/vector/layerfit.py)")
+        (folder / "component.html").write_text(S.export_html(json.loads((folder / "params.json").read_text(encoding="utf-8")), f"{slug}-layers"), encoding="utf-8")
         (folder / "layered.json").write_text(json.dumps(out, indent=1, default=float), encoding="utf-8")
         out["dir"] = str(folder)
         sc = S._path(c["paths"]["out"], slug) / "layered.json"
