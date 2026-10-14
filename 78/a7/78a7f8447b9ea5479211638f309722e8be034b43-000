@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+# 14 October 2026: the one-table report of the music corpus, every number read from a file (trim.json, scores.json, polish.json, audit.json) of the
+# newest trim version of each member; a missing file prints "-" and never a guess. Columns:
+#   tfBands  the OFFICIAL third-octave critic per stem and for the mix (the gate reads these, target 99.9)
+#   worst    the worst of the held-out audit layouts over the four stems and the mix (never optimised)
+#   ploss    plossFull of the mix, the stricter perceptual loss (STFT, mel, envelope, onset), and of the worst stem
+#   pol      the critic of the polished mix (separate listening version)
+#   fine     fine-structure correlation of the mix with the reference mix; wave: best waveform correlation within 20 ms
+# FR : tableau unique du corpus musical, chaque nombre lu dans un fichier.
+#   MusicReport.py [--md] [--json]
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+sys.path.insert(0, str(ENGINE / "Scripts"))
+from zrmd import settings  # noqa: E402
+from zrmd.audio import corpus as C  # noqa: E402
+import MusicCorpus as MC  # noqa: E402
+
+STEMS = ("drums", "bass", "other", "vocals", "mix")
+
+
+def _j(p: Path):
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
+
+
+def rows() -> list[dict]:
+    target = C.cfg()["targets"]["stem"]
+    out = []
+    for slug in C.corpus():
+        bench = settings.path("sound_out") / slug / "music-bench"
+        tv = MC.trimmed_versions(slug)
+        r = {"slug": slug, "version": tv[-1] if tv else None}
+        if tv:
+            d = bench / tv[-1]
+            t, sc, po, au = _j(d / "trim.json"), _j(d / "scores.json"), _j(d / "polish" / "polish.json"), _j(d / "audit.json")
+            gate = {k: v["gateCritic"] for k, v in t["stems"].items()}
+            gate["mix"] = t["mix"]["gateCritic"]
+            r["tfBands"] = gate
+            r["worstHeldOut"] = min([v["gateAudit"] for v in t["stems"].values()] + [t["mix"]["gateAudit"]])
+            r["auditMean"] = round(sum(v["auditMean"] for v in t["stems"].values()) / len(t["stems"]), 2)
+            h = (sc or {}).get("headline", {})
+            r["ploss"] = {k: h.get(k, {}).get("plossFull") for k in STEMS}
+            r["onsetF"], r["chroma"] = h.get("mix", {}).get("onsetF"), h.get("mix", {}).get("chroma")
+            r["polishedCritic"] = po["mix"]["scoresVsReference"]["polished"]["critic"]["score"] if po else None
+            r["polishClean"] = po["mix"]["clean"] if po else None
+            r["fine"] = au["mix"]["trimmed"]["fine"] if au else None
+            r["wave"] = au["mix"]["trimmed"]["wave"]["bestLag"] if au else None
+            r["rumble"] = au["mix"]["cleanliness"]["trimmed"]["rumbleShare"] if au else None
+            r["gate"] = all(v >= target for v in gate.values())
+        else:
+            r["gate"] = False
+        out.append(r)
+    return out
+
+
+def f(v, w=7, nd=2):
+    return f"{v:>{w}.{nd}f}" if isinstance(v, (int, float)) else f"{'-':>{w}}"
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args()
+    R = rows()
+    if a.json:
+        print(json.dumps(R, indent=1))
+        return 0
+    print(f"{'member':<40} {'ver':<6}" + "".join(f"{s:>8}" for s in STEMS) + f"{'worst':>8}{'audit':>7}{'ploss':>7}{'pStem':>7}{'onset':>6}{'chrom':>6}{'pol':>7}{'fine':>6}{'wave':>6}  gate")
+    for r in R:
+        if not r["version"]:
+            print(f"{r['slug']:<40} {'-':<6}  (no trim version yet)")
+            continue
+        pl = r["ploss"]
+        worst_stem = min([v for k, v in pl.items() if k != "mix" and v is not None], default=None)
+        print(f"{r['slug']:<40} {r['version']:<6}" + "".join(f(r["tfBands"].get(s), 8) for s in STEMS) + f(r["worstHeldOut"], 8) + f(r["auditMean"], 7, 1)
+              + f(pl.get("mix"), 7, 1) + f(worst_stem, 7, 1) + f(r["onsetF"], 6) + f(r["chroma"], 6) + f(r["polishedCritic"], 7) + f(r["fine"], 6) + f(r["wave"], 6)
+              + f"  {'PASS' if r['gate'] else 'no'}")
+    print(f"\n{sum(1 for r in R if r['gate'])} of {len(R)} members at the gate on every stem and the mix (official critic)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

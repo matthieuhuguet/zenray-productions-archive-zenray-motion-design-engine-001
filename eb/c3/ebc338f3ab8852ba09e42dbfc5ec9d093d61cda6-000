@@ -1,0 +1,71 @@
+# 14 October 2026: contact sheets for the eye adjudication of ambiguous cut candidates. One row per candidate boundary:
+# pictures f-2, f-1 | f, f+1 (the red frame is the first picture of the supposed new shot), and the measured evidence in the
+# label. Sheets are written to the private reference cache, never to the workshop (they contain reference pixels).
+# FR : planches de revue a l'oeil des coupes ambigues : une ligne par frontiere, quatre images, preuves mesurees en legende.
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+import numpy as np
+from PIL import Image, ImageDraw
+
+TW, TH = 240, 135
+
+
+def collect_frames(video: str, wanted: set[int], threads: int = 2) -> dict[int, np.ndarray]:
+    cmd = ["ffmpeg", "-v", "error", "-threads", str(threads), "-i", str(video), "-map", "0:v:0",
+           "-vf", f"scale={TW}:{TH}:flags=area,format=rgb24", "-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    size = TW * TH * 3
+    last = max(wanted) if wanted else -1
+    out, i = {}, 0
+    try:
+        while i <= last:
+            raw = proc.stdout.read(size)
+            if len(raw) < size:
+                break
+            if i in wanted:
+                out[i] = np.frombuffer(raw, dtype=np.uint8).reshape(TH, TW, 3).copy()
+            i += 1
+    finally:
+        proc.kill()
+        proc.stdout.close()
+        proc.wait()
+    return out
+
+
+def sheet(video: str, entries: list[dict], out_path: Path, rows_per_sheet: int = 8, fps: float = 30.0) -> list[Path]:
+    """entries: {"frame": f, "label": str}. Returns the written files (sheet-01.jpg, ...)."""
+    wanted = set()
+    for e in entries:
+        for k in (-2, -1, 0, 1):
+            wanted.add(max(0, e["frame"] + k))
+    frames = collect_frames(video, wanted)
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    label_w, pad = 230, 6
+    files = []
+    for s0 in range(0, len(entries), rows_per_sheet):
+        chunk = entries[s0:s0 + rows_per_sheet]
+        W = label_w + 4 * (TW + pad)
+        H = len(chunk) * (TH + pad + 4)
+        img = Image.new("RGB", (W, H), (24, 24, 28))
+        d = ImageDraw.Draw(img)
+        for r, e in enumerate(chunk):
+            y = r * (TH + pad + 4)
+            d.text((6, y + 4), e["label"], fill=(230, 230, 230))
+            for c, k in enumerate((-2, -1, 0, 1)):
+                f = max(0, e["frame"] + k)
+                tile = frames.get(f)
+                if tile is None:
+                    continue
+                x = label_w + c * (TW + pad)
+                img.paste(Image.fromarray(tile), (x, y))
+                if k == 0:
+                    d.rectangle([x, y, x + TW - 1, y + TH - 1], outline=(255, 60, 60), width=3)
+                d.text((x + 4, y + 3), f"{f}", fill=(255, 255, 0))
+        path = out_path.with_name(f"{out_path.stem}-{s0 // rows_per_sheet + 1:02d}.jpg")
+        img.save(path, quality=82)
+        files.append(path)
+    return files

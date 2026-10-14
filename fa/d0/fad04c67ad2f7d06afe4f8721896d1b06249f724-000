@@ -1,0 +1,135 @@
+# 14 October 2026: the cut detection (rhythm) of a project in the V1 application. The rhythm module owns the detector and its V1 interface
+# (params/rhythm-v1-parameters.json: 4 primary, 8 secondary, 16 tertiary values passed BY NAME to shots.detect). This file lists that interface
+# with the values a project used last (analysis/shots.json carries rhythm.v1), previews another set of values (how many shots, which cuts appear
+# or go) WITHOUT touching the project, and adopts it on request: the previous cut list is kept beside it, the storyboard and bible are rebuilt.
+# FR : le decoupage d'un projet dans l'application V1 : interface du module rythme, apercu sans toucher au projet, adoption sur demande.
+from __future__ import annotations
+
+import json
+import subprocess
+import time
+from pathlib import Path
+
+from .. import orchestrator as orch, registry, settings, versions
+from .projects import AppError, SLUG_RE, _check_slug
+
+KIND = {"number": "number", "choice": "choice", "bool": "bool"}
+
+
+def _analysis(slug: str) -> Path:
+    return settings.path("workshop") / "references" / slug / "analysis"
+
+
+def _current(slug: str) -> dict | None:
+    d = versions.read_json(_analysis(slug) / "shots.json", None)
+    return d if isinstance(d, dict) and "shots" in d else None
+
+
+def summary(slug: str) -> dict | None:
+    d = _current(slug)
+    if not d:
+        return None
+    return {"shots": len(d["shots"]), "cuts": len(d.get("cuts") or []), "fps": d.get("fps"), "duration": d.get("duration"),
+            "values": ((d.get("rhythm") or {}).get("v1")) or None}
+
+
+def interface(slug: str) -> dict:
+    """The primary and secondary values with their range, default and the value this project used last (the defaults when it never changed)."""
+    from ..analyze import rhythm_params as RP
+    _check_slug(slug)
+    doc = RP.interface()
+    now = (summary(slug) or {}).get("values") or {}
+    out = {}
+    for tier in ("primary", "secondary"):
+        rows = []
+        for e in doc[tier]:
+            r = {"name": e["name"], "label": e["label"], "kind": KIND.get(e["kind"], e["kind"]), "unit": e.get("unit"), "doc": e.get("doc"), "default": e["default"],
+                 "value": now.get(e["name"], e["default"])}
+            if e.get("range"):
+                r["min"], r["max"] = e["range"]
+            if e.get("choices"):
+                r["choices"] = e["choices"]
+            rows.append(r)
+        out[tier] = rows
+    out["tertiary"] = [{"name": e.get("name"), "label": e.get("label") or e.get("name"), "doc": e.get("doc"), "value": e.get("value"), "where": e.get("where")}
+                       for e in doc.get("tertiary", [])]
+    return {"slug": slug, "interface": out, "current": summary(slug)}
+
+
+def validate(values: dict) -> dict:
+    from ..analyze import rhythm_params as RP
+    if not isinstance(values, dict) or not values:
+        raise AppError("no value to apply")
+    by_name = {e["name"]: e for e in RP.entries()}
+    clean = {}
+    for name, raw in values.items():
+        e = by_name.get(name)
+        if e is None:
+            raise AppError(f"no parameter '{name}' (parameters: {', '.join(by_name)})")
+        try:
+            clean[name] = RP.check(e, raw)
+        except RP.RhythmParamError as err:
+            raise AppError(str(err))
+    return clean
+
+
+def _video(slug: str) -> Path:
+    f = registry.reference_file(slug)
+    if f is None:
+        raise AppError(f"project '{slug}' has no media file", 404)
+    return f
+
+
+def _cut_frames(result: dict) -> list[int]:
+    return sorted(int(c["frame"]) for c in result.get("cuts") or [] if c.get("frame") is not None)
+
+
+def preview(slug: str, values: dict):
+    """A job function: detect with these values and say what changes against the project's current cut list; nothing is written."""
+    _check_slug(slug)
+    clean = validate(values)
+    video = _video(slug)
+
+    def run(step):
+        from ..analyze import shots
+        step("detect", detail="cuts with the given values")
+        res = shots.detect(str(video), v1=clean)
+        now = _current(slug)
+        fps = float(res.get("fps") or 25.0)
+        new = _cut_frames(res)
+        old = _cut_frames(now) if now else []
+
+        def near(f, pool):
+            return any(abs(f - g) <= 1 for g in pool)
+        added = [f for f in new if not near(f, old)]
+        removed = [f for f in old if not near(f, new)]
+        return {"shots": len(res["shots"]), "cuts": len(new), "before": {"shots": len(now["shots"]) if now else None, "cuts": len(old)},
+                "added": [round(f / fps, 2) for f in added], "removed": [round(f / fps, 2) for f in removed], "values": clean}
+    return run
+
+
+def adopt(slug: str, values: dict):
+    """A job function: write the cut list made with these values (the previous one is kept as shots.<stamp>.json) and rebuild bible and storyboard."""
+    _check_slug(slug)
+    clean = validate(values)
+    video = _video(slug)
+    for r in orch.list_runs(slug, 10):
+        if r["state"] in ("running", "queued"):
+            raise AppError("a pipeline is working on this project: wait for it or cancel it first", 409)
+
+    def run(step):
+        from ..analyze import shots
+        step("detect", detail="cuts with the given values")
+        res = shots.detect(str(video), v1=clean)
+        target = _analysis(slug) / "shots.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists():
+            target.replace(target.with_name(f"shots.{time.strftime('%Y%m%d-%H%M%S')}.json"))
+        target.write_text(json.dumps({k: v for k, v in res.items() if k != "curves"}, indent=1, default=float) + "\n", encoding="utf-8")
+        step("book", detail="bible and storyboard")
+        r = subprocess.run([str(settings.path("python")), "-I", str(settings.REPO / "Scripts" / "BuildReferenceBook.py"), "--slug", slug],
+                           cwd=str(settings.REPO), capture_output=True, text=True, timeout=3600)
+        if r.returncode != 0:
+            raise RuntimeError((r.stderr.strip().splitlines() or ["the book step failed"])[-1])
+        return {"slug": slug, **(summary(slug) or {})}
+    return run

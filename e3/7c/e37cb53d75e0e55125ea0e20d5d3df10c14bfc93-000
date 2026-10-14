@@ -1,0 +1,344 @@
+# 14 October 2026: the HTTP routes of the V1 application (/api/v1/*), as pure functions of (method, path, query, body) so they test without a
+# socket. zrmd/orchestrator_server.py calls route() and writes the answer (JSON, or a file with Range support). Reads are paged; a POST needs the
+# client header and the Origin check of the server; no file path ever comes from the page (ids, versions and kinds only, validated).
+# FR : les routes HTTP de l'application V1, fonctions pures testables sans socket.
+from __future__ import annotations
+
+import importlib.util
+import json
+import re
+import threading
+import time
+from pathlib import Path
+from urllib.parse import unquote
+
+from .. import orchestrator as orch, registry, settings, versions
+from . import ingest, projects as P, publish, rhythm, tiers, timeline as TL, vectors
+from .jobs import Jobs
+
+JOBS = Jobs(heavy=2)
+_STUDIO = None
+_STUDIO_LOCK = threading.Lock()
+MIME = {".mp4": "video/mp4", ".webm": "video/webm", ".jpg": "image/jpeg", ".png": "image/png", ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
+        ".js": "application/javascript", ".json": "application/json", ".wav": "audio/wav", ".woff2": "font/woff2", ".ttf": "font/ttf", ".mp3": "audio/mpeg",
+        ".svg": "image/svg+xml"}
+UPLOAD_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ \-\[\]()]{0,120}$")
+
+
+class Reply(dict):
+    """{'json': data, 'status': 200} or {'file': Path, 'mime': str}."""
+
+
+def ok(data, status=200) -> Reply:
+    return Reply(json=data, status=status)
+
+
+def fail(message: str, status: int = 400) -> Reply:
+    return Reply(json={"ok": False, "error": message}, status=status)
+
+
+def studio():
+    """Scripts/MusicStudio.py loaded once as a module: the music cook (members, values, persistent engine) the studio page already uses."""
+    global _STUDIO
+    with _STUDIO_LOCK:
+        if _STUDIO is None:
+            path = settings.REPO / "Scripts" / "MusicStudio.py"
+            spec = importlib.util.spec_from_file_location("zrmd_music_studio", path)
+            mod = importlib.util.module_from_spec(spec)
+            import sys
+            sys.path.insert(0, str(settings.REPO / "Scripts"))
+            spec.loader.exec_module(mod)
+            _STUDIO = mod
+    return _STUDIO
+
+
+def _int(q: dict, key: str, default: int) -> int:
+    try:
+        return int(q.get(key, default))
+    except (TypeError, ValueError):
+        raise P.AppError(f"{key} must be an integer")
+
+
+def _timelines() -> list[dict]:
+    base = TL.root()
+    out = []
+    for f in sorted(base.glob("*/spec.json")) if base.exists() else []:
+        spec = versions.read_json(f, {}) or {}
+        out.append({"id": f.parent.name, "formats": spec.get("formats") or [spec.get("format")], "tracks": len(spec.get("tracks") or []),
+                    "updated": f.stat().st_mtime})
+    return out
+
+
+def library(kind: str, offset: int, limit: int, query: str = "") -> dict:
+    if kind != "motions":
+        raise P.AppError("library kind must be motions")
+    cat = versions.read_json(P.workshop() / "catalog.json", {}) or {}
+    rows = [m for m in cat.get("motions", []) if isinstance(m, dict) and m.get("id") and m.get("latest")]
+    needle = (query or "").strip().lower()
+    if needle:
+        rows = [m for m in rows if needle in f"{m.get('id', '')} {m.get('title', '')} {m.get('recipe', '')} {' '.join(map(str, m.get('tags', [])))}".lower()]
+    page = rows[offset: offset + limit]
+    items = []
+    for m in page:
+        has_poster = bool(m.get("poster"))
+        items.append({"id": m["id"], "title": m.get("title") or m["id"], "recipe": m.get("recipe"), "version": m["latest"], "duration": m.get("duration"),
+                      "score": m.get("score"), "poster": f"/api/v1/motion-media?motion={m['id']}&version={m['latest']}&kind=poster" if has_poster else None,
+                      "render": f"/api/v1/motion-media?motion={m['id']}&version={m['latest']}&kind=render", "tags": m.get("tags", [])})
+    return {"total": len(rows), "offset": offset, "limit": limit, "hasMore": offset + len(page) < len(rows), "items": items}
+
+
+def shutdown() -> None:
+    """Close what this process started: the persistent music cook pool (its workers would otherwise outlive the server as orphans)."""
+    if _STUDIO is not None and getattr(_STUDIO, "COOK", None) is not None:
+        try:
+            _STUDIO.COOK.close()
+        except Exception:  # noqa: BLE001  closing is best effort
+            pass
+
+
+def warm() -> None:
+    """Measure the vector components once, in the background, so a scene opens at once: the interface of a component renders every layer alone
+    (up to 15 s) and is remembered on disk by vectors._interface. A failing project is skipped, never fatal."""
+    for ref in P._references():
+        try:
+            if vectors.summary(ref["slug"]):
+                vectors.detail(ref["slug"])
+        except Exception:  # noqa: BLE001  a warm-up never stops the server
+            continue
+        time.sleep(0.3)
+
+
+def route(method: str, path: str, q: dict, body: dict | None = None, raw=None) -> Reply:
+    """`raw(n)` reads n body bytes (uploads). Raises nothing: every refusal is a Reply with its status and cause."""
+    try:
+        return _route(method, path, q, body or {}, raw)
+    except P.AppError as e:
+        return fail(str(e), e.status)
+    except TL.SpecError as e:
+        return fail(str(e), 400)
+    except Exception as e:  # noqa: BLE001  a crash is reported with its cause, never swallowed
+        return fail(f"{type(e).__name__}: {e}", 500)
+
+
+def _route(method: str, path: str, q: dict, body: dict, raw) -> Reply:
+    path = unquote(path)
+    if method == "GET":
+        if path == "/api/v1/status":
+            return ok({"ok": True, "service": "zenray-motion-app", "projects": len(P._references()), "busy": JOBS.busy(), "runs": ingest.active_runs(),
+                       "tierProblems": tiers.check(), "formats": list(TL.family()["formats"]), "version": "V1", "release": ingest.config().get("release")})
+        if path == "/api/v1/config":
+            return ok({"ok": True, **ingest.config(), "limits": tiers.load()["limits"]})
+        if path == "/api/v1/run":
+            try:
+                return ok({"ok": True, "run": ingest.run_view(orch.load_run(q.get("id", "")))})
+            except orch.OrchestratorError as e:
+                raise P.AppError(str(e), 404)
+        if path == "/api/v1/upload-file":
+            f = ingest.upload_path(q.get("id", ""))
+            mime = MIME.get(f.suffix.lower()) or {".mov": "video/quicktime", ".m4v": "video/mp4", ".mkv": "video/x-matroska", ".m4a": "audio/mp4",
+                                                  ".aac": "audio/aac", ".ogg": "audio/ogg", ".flac": "audio/flac", ".jpeg": "image/jpeg", ".webp": "image/webp"}.get(f.suffix.lower(), "application/octet-stream")
+            return Reply(file=f, mime=mime)
+        if path == "/api/v1/projects":
+            return ok({"ok": True, **P.list_projects(_int(q, "offset", 0), _int(q, "limit", 12))})
+        if path == "/api/v1/project":
+            return ok({"ok": True, **P.project(q.get("slug", ""))})
+        if path == "/api/v1/scenes":
+            return ok({"ok": True, **P.list_scenes(q.get("slug", ""), _int(q, "offset", 0), _int(q, "limit", 24))})
+        if path == "/api/v1/scene":
+            return ok({"ok": True, **P.scene_detail(q.get("slug", ""), q.get("id", ""))})
+        if path == "/api/v1/motion":
+            return ok({"ok": True, **P.motion_detail(q.get("motion", ""), q.get("version") or None)})
+        if path == "/api/v1/frame":
+            f = P.frame_path(q.get("slug", ""), q.get("name", ""))
+            return Reply(file=f, mime="image/jpeg")
+        if path == "/api/v1/motion-media":
+            f = P.media_path(q.get("motion", ""), q.get("version", ""), q.get("kind", ""))
+            return Reply(file=f, mime=MIME[f.suffix.lower()])
+        if path.startswith("/api/v1/composition/"):
+            parts = path[len("/api/v1/composition/"):].split("/", 2)
+            if len(parts) != 3:
+                return fail("no such file", 404)
+            f = P.composition_file(parts[0], parts[1], parts[2])
+            return Reply(file=f, mime=MIME.get(f.suffix.lower(), "application/octet-stream"))
+        if path == "/api/v1/publish/motions":
+            return ok({"ok": True, "slug": q.get("slug", ""), "motions": publish.motions_of_project(q.get("slug", ""))})
+        if path == "/api/v1/rhythm":
+            return ok({"ok": True, **rhythm.interface(q.get("slug", ""))})
+        if path == "/api/v1/vector":
+            return ok({"ok": True, **vectors.detail(q.get("slug", ""), q.get("version") or None)})
+        if path == "/api/v1/vector-file":
+            f = vectors.file_path(q.get("slug", ""), q.get("version", ""), q.get("name", ""))
+            return Reply(file=f, mime=vectors.MIME.get(f.suffix.lower(), "application/octet-stream"))
+        if path == "/api/v1/project-media":
+            P._check_slug(q.get("slug", ""))
+            f = orch.media_file(q.get("slug", ""), q.get("kind", ""))
+            if not f:
+                return fail("no such media", 404)
+            return Reply(file=f, mime=orch.MIME_BY_SUFFIX.get(f.suffix.lower(), "application/octet-stream"))
+        if path == "/api/v1/tiers":
+            data = tiers.load()
+            return ok({"ok": True, "limits": data["limits"], "music": tiers.music()["tiers"], "montage": data["montage"], "scene": data["scene"],
+                       "chantiers": data["chantiers"], "problems": tiers.check()})
+        if path == "/api/v1/library":
+            return ok({"ok": True, **library(q.get("kind", "motions"), _int(q, "offset", 0), max(1, min(_int(q, "limit", 24), 100)), q.get("q", ""))})
+        if path == "/api/v1/uploads":
+            return ok({"ok": True, **ingest.list_uploads(_int(q, "offset", 0), max(1, min(_int(q, "limit", 24), 100)))})
+        if path == "/api/v1/jobs":
+            return ok({"ok": True, "jobs": JOBS.list()})
+        if path == "/api/v1/job":
+            j = JOBS.get(q.get("id", ""))
+            return ok({"ok": True, "job": j}) if j else fail("unknown job", 404)
+        if path == "/api/v1/timeline/config":
+            fam = TL.family()
+            return ok({"ok": True, "formats": fam["formats"], "defaultFormat": fam["defaultFormat"], "fits": fam["fits"], "defaultFit": fam["defaultFit"],
+                       "text": fam["text"], "limits": fam["limits"], "fps": fam["fps"]})
+        if path == "/api/v1/timelines":
+            return ok({"ok": True, "items": _timelines()})
+        if path == "/api/v1/timeline":
+            tid = q.get("id", "")
+            if not re.match(TL.family()["idPattern"], tid):
+                return fail("bad timeline id")
+            f = TL.root() / tid / "spec.json"
+            return ok({"ok": True, "spec": json.loads(f.read_text(encoding="utf-8"))}) if f.exists() else fail("unknown timeline", 404)
+        if path == "/api/v1/timeline/export-file":
+            tid, fmt = q.get("id", ""), q.get("format", "")
+            fam = TL.family()
+            if not re.match(fam["idPattern"], tid) or fmt not in fam["formats"]:
+                return fail("no such export", 404)
+            f = TL.root() / tid / "exports" / f"{tid}-{fmt}.mp4"
+            return Reply(file=f, mime="video/mp4") if f.is_file() else fail("no such export", 404)
+        if path == "/api/v1/music/members":
+            s = studio()
+            return ok({"ok": True, "members": s.members(), "sliders": s.SLIDERS})
+        if path == "/api/v1/music/state":
+            s = studio()
+            slug = q.get("slug", "")
+            m = next((x for x in s.members() if x["slug"] == slug), None)
+            if not m:
+                return fail("unknown music member", 404)
+            return ok({"ok": True, "member": m, "defaults": s.defaults(s.base_params(slug, m["baseVersion"])), "sliders": s.SLIDERS, "tiers": tiers.music()["tiers"]})
+        if path == "/api/v1/music/audio":
+            s = studio()
+            slug, kind, stem = q.get("slug", ""), q.get("kind", ""), q.get("stem", "mix")
+            if not s.SLUG_RE.match(slug) or stem not in s.STEMS + ("mix",):
+                return fail("bad request")
+            try:
+                f = s.audio_path(slug, kind, stem, None, q.get("key"))
+            except s.Refusal as e:
+                return fail(str(e), e.status)
+            if not f.is_file():
+                return fail("no such audio", 404)
+            return Reply(file=f, mime="audio/wav")
+        return fail("not found", 404)
+    if method == "POST":
+        if path == "/api/v1/project/create":
+            made = ingest.create_project(str(body.get("upload", "")), body.get("title"))
+            run = ingest.start_run(made["slug"], body["run"]) if body.get("run") else None
+            return ok({"ok": True, **made, "run": run})
+        if path == "/api/v1/upload/delete":
+            return ok({"ok": True, **ingest.delete_upload(str(body.get("id", "")))})
+        if path == "/api/v1/timeline/delete":
+            return ok({"ok": True, **ingest.delete_timeline(str(body.get("id", "")))})
+        if path == "/api/v1/project/delete":
+            return ok({"ok": True, **ingest.remove_dropped(str(body.get("slug", "")))})
+        if path == "/api/v1/project/run":
+            return ok({"ok": True, "run": ingest.start_run(str(body.get("slug", "")), str(body.get("pipeline", "")))})
+        if path == "/api/v1/run/cancel":
+            try:
+                return ok({"ok": True, "run": ingest.run_view(orch.request_cancel(str(body.get("id", ""))))})
+            except orch.OrchestratorError as e:
+                raise P.AppError(str(e))
+        if path == "/api/v1/motion/rights":
+            if body.get("confirmed") is not True:
+                return fail("rights are validated by a person: confirmed must be true")
+            return ok({"ok": True, "rights": publish.set_rights(str(body.get("motion", "")), bool(body.get("cleared")))})
+        if path == "/api/v1/publish/plan":
+            fn = publish.plan(str(body.get("slug", "")))
+            return ok({"ok": True, "job": JOBS.submit("publish-plan", fn, slug=str(body.get("slug", "")))})
+        if path == "/api/v1/publish/run":
+            if body.get("confirm") is not True:
+                return fail("publishing needs an explicit confirmation: confirm must be true")
+            fn = publish.publish(str(body.get("slug", "")), [str(m) for m in body.get("motions") or []])
+            return ok({"ok": True, "job": JOBS.submit("publish-run", fn, slug=str(body.get("slug", "")))})
+        if path in ("/api/v1/rhythm/preview", "/api/v1/rhythm/adopt"):
+            slug = str(body.get("slug", ""))
+            make = rhythm.preview if path.endswith("preview") else rhythm.adopt
+            fn = make(slug, body.get("values") or {})  # refused before any work
+            return ok({"ok": True, "job": JOBS.submit("rhythm-" + path.rsplit("/", 1)[1], fn, slug=slug)})
+        if path == "/api/v1/vector/apply":
+            fn = vectors.apply_values(str(body.get("slug", "")), body.get("baseVersion") or None, body.get("values") or {})  # refused before any work
+            return ok({"ok": True, "job": JOBS.submit("vector-apply", fn, slug=str(body.get("slug", "")))})
+        if path == "/api/v1/motion/promote":
+            motion, version = str(body.get("motion", "")), str(body.get("version", ""))
+            fn = P.promote(motion, version)  # refused before any work when the version does not exist
+            return ok({"ok": True, "job": JOBS.submit("promote", fn, motion=motion, version=version)})
+        if path == "/api/v1/scene/apply":
+            motion = str(body.get("motion", ""))
+            P.validate_values(motion, body.get("baseVersion") or None, body.get("values") or {})  # refuses before any work
+            fn = P.apply_scene(motion, body.get("baseVersion") or None, body.get("values") or {}, body.get("note"))
+            return ok({"ok": True, "job": JOBS.submit("scene-apply", fn, motion=motion)})
+        if path == "/api/v1/music/cook":
+            s = studio()
+            slug = str(body.get("slug", ""))
+            m = next((x for x in s.members() if x["slug"] == slug), None)
+            if not m:
+                return fail("unknown music member", 404)
+            values = {k: float(v) for k, v in (body.get("values") or {}).items()}
+            s.apply_values(s.base_params(slug, m["baseVersion"]), values)
+            return ok({"ok": True, **s.cook_variation(slug, m["baseVersion"], values)})
+        if path == "/api/v1/timeline/validate":
+            p = TL.plan(body.get("spec") or {})
+            return ok({"ok": True, "id": p["id"], "frames": p["frames"], "fps": p["fps"], "seconds": round(p["frames"] / p["fps"], 3), "formats": p["formats"],
+                       "tracks": [{"id": t["id"], "kind": t["kind"], "clips": len(t["clips"]),
+                                   "items": [{"id": c["id"], "kind": c["kind"], "start": round(c["start_frame"] / p["fps"], 3), "duration": round(c["frames"] / p["fps"], 3),
+                                              "name": Path(c["src"]).name if c.get("src") else None, "motion": (c.get("source") or {}).get("motion")} for c in t["clips"]]}
+                                  for t in p["tracks"]]})
+        if path == "/api/v1/timeline/save":
+            spec = body.get("spec") or {}
+            p = TL.plan(spec)
+            f = TL.root() / p["id"] / "spec.json"
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(json.dumps(spec, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+            return ok({"ok": True, "id": p["id"], "path": str(f)})
+        if path == "/api/v1/timeline/export":
+            spec = body.get("spec")
+            tid = str(body.get("id", ""))
+            if spec is None:
+                f = TL.root() / tid / "spec.json"
+                if not re.match(TL.family()["idPattern"], tid) or not f.exists():
+                    return fail("unknown timeline", 404)
+                spec = json.loads(f.read_text(encoding="utf-8"))
+            fmt = body.get("format")
+            TL.plan(spec)  # refused before the job exists
+            fn = lambda step: (step("render", format=fmt), TL.export(spec, fmt))[1]  # noqa: E731
+            return ok({"ok": True, "job": JOBS.submit("timeline-export", fn, id=spec.get("id"), format=fmt)})
+        if path == "/api/v1/media/upload":
+            name = Path(str(q.get("name", ""))).name
+            if not UPLOAD_NAME.match(name) or raw is None:
+                return fail("upload needs a plain file name and a body")
+            ext = Path(name).suffix.lower()
+            fam = TL.family()
+            if ext not in fam["clipExtensions"] + fam["audioExtensions"] + fam["imageExtensions"]:
+                return fail(f"extension {ext} refused")
+            n = int(q.get("length", 0))
+            if n <= 0 or n > 2 * 1024 ** 3:
+                return fail("bad length", 413)
+            dest = TL.root() / "_uploads" / f"{int(time.time())}-{name}"
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            left = n
+            with open(dest, "wb") as out:
+                while left > 0:
+                    block = raw(min(1 << 20, left))
+                    if not block:
+                        dest.unlink(missing_ok=True)
+                        return fail("upload interrupted")
+                    out.write(block)
+                    left -= len(block)
+            try:
+                desc = ingest.describe(dest)
+                ingest.remember(desc)
+                return ok({"ok": True, **desc, "url": f"/api/v1/upload-file?id={dest.name}"})
+            except P.AppError:
+                dest.unlink(missing_ok=True)
+                raise
+    return fail("not found", 404)

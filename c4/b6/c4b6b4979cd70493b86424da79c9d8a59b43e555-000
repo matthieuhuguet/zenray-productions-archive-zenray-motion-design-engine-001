@@ -1,0 +1,210 @@
+# 14 October 2026: leave-one-reference-out of the WHOLE rhythm product (cut fusion + typed transitions), scored on every cut kind
+# exactly as the orchestrator reads it (zrmd.analyze.rhythm_eval, F1 at +-1 frame, transitions by interval, flashes excluded).
+#   probs   out-of-fold cut probabilities: the fusion trained on every OTHER video (the other references and the synthetic videos),
+#           for each reference and each synthetic video; cached in <workshop>/rhythm/loro-probs*.npz;
+#   eval    the table per reference (found, extra, missed, F1) of a configuration, held-out; `--stage` chooses the transition stage:
+#             none    hard cuts only, no typed transition;
+#             rule    the shipped rule-typed ramps (params/rhythm.json types: fades typed, dissolves and whips off);
+#             learned the typed-transition classifier (rhythm_ramps), trained on the other videos, thresholded at --threshold.
+# The in-sample numbers of the SHIPPED models are Scripts/RhythmReport.py (the product path, shots.json, score_rhythm).
+# Run: nice -n 5 /Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/RhythmLoro.py probs [--before]
+#      nice -n 5 /Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/RhythmLoro.py eval --stage rule|learned [--before] [--json out]
+#      nice -n 5 /Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/RhythmLoro.py all     (every configuration, loro-results.json)
+# FR : validation par reference exclue du produit entier (fusion + transitions typees), notee sur tous les types de coupes.
+from __future__ import annotations
+
+import argparse
+import copy
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+sys.path.insert(0, str(ENGINE / "Scripts"))
+from zrmd import settings  # noqa: E402
+from zrmd.analyze import (rhythm_detect as D, rhythm_eval as E, rhythm_fusion as FU, rhythm_params as RP,  # noqa: E402
+                          rhythm_ramps as RR)
+import RhythmSheet as SH  # noqa: E402
+
+WORKSHOP = settings.path("workshop")
+REFS = SH.REFS                      # the eleven references that carry judged boundaries
+ALL_REFS = REFS + ["fin-4"]         # fin-4 has none: no cut can exist, it is scored with the others
+SYNTH = SH.SYNTH
+BEFORE_DROP = {"motion-opus-5-5": ["1"]}   # the label added on 14 October 2026 (second pass): the "before" fusion never saw it
+
+
+def probs_path(before: bool) -> Path:
+    return WORKSHOP / "rhythm" / ("loro-probs-before.npz" if before else "loro-probs.npz")
+
+
+def load_all(names: list[str], before: bool = False) -> dict:
+    datas = {n: SH.load(n) for n in names}
+    if before:
+        for slug, drop in BEFORE_DROP.items():
+            if slug in datas:
+                lab = copy.deepcopy(datas[slug]["lab"])
+                for k in drop:
+                    lab["labels"].pop(k, None)
+                datas[slug]["lab"] = lab
+    return datas
+
+
+def oof_probs(before: bool = False, force: bool = False) -> dict:
+    """{name: p per file frame} for every reference and synthetic video, each from the fusion trained on every OTHER video."""
+    path = probs_path(before)
+    if path.exists() and not force:
+        z = np.load(path)
+        return {k: z[k] for k in z.files}
+    names = REFS + SYNTH
+    datas = load_all(names, before)
+    keys = FU.feature_names(datas[REFS[0]]["mat"])
+    sets = SH.with_sets(datas, keys)
+    out = {}
+    for h in names:
+        clf = SH.fit_model([sets[k] for k in sets if k != h])
+        d = datas[h]
+        need = d["mat"]["need"]
+        p = np.zeros(d["n"])
+        p[need] = clf.predict_proba(FU.design(d["mat"], keys)[need])[:, 1]
+        out[h] = p
+        print("oof", h, flush=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(path, **out)
+    return out
+
+
+def row_of(truth: list[dict], pred: list[dict]) -> dict:
+    r = E.summary(truth, [c for c in pred if c["kind"] != "flash"])["cuts_tol1"]
+    return {"tp": r["tp"], "fp": r["fp"], "fn": r["fn"], "f1": r["f1"], "truth": r["truth"], "missed": r["missed"], "extra": r["extra"]}
+
+
+def cuts_for(d: dict, p: np.ndarray, spans: list[dict], prm: dict, plan: dict, flash_cache: dict) -> list[dict]:
+    out = D.decide(d["sig"], d["fine"], d["frames"], spans, prm, flash_cache=flash_cache, probs=p)
+    return RP.apply(out, plan, float(np.asarray(d["sig"]["fps"]).ravel()[0]), d["n"])
+
+
+def summarize(rows: dict, names: list[str]) -> dict:
+    tp = sum(rows[n]["tp"] for n in names)
+    fp = sum(rows[n]["fp"] for n in names)
+    fn = sum(rows[n]["fn"] for n in names)
+    P, R = tp / max(tp + fp, 1), tp / max(tp + fn, 1)
+    return {"tp": tp, "fp": fp, "fn": fn, "P": P, "R": R, "micro_f1": 2 * P * R / max(P + R, 1e-9),
+            "macro_f1": float(np.mean([rows[n]["f1"] for n in names]))}
+
+
+def learned_spans(name: str, held: dict, tables: dict, thr: float, params: dict | None = None) -> list[dict]:
+    """The typed transitions the classifier trained WITHOUT `name` keeps on `name` (its features come from the out-of-fold
+    cut probabilities, the way an unseen video reads them)."""
+    import RhythmRamps as RRS
+    return RRS.heldout_spans(name, held, tables, thr, params)
+
+
+_DATAS: dict = {}
+
+
+def datas_for(before: bool) -> dict:
+    if before not in _DATAS:
+        _DATAS[before] = load_all(ALL_REFS, before)
+    return _DATAS[before]
+
+
+def evaluate(stage: str, before: bool, thr: float, flash_calm: float | None, v1: dict | None = None, params: dict | None = None,
+             anchor: str = "span") -> dict:
+    """One configuration, held-out, every reference: {name: row}. `stage` none | rule | learned; `params` {"hp": ..., "select": ...}
+    is passed to the classifier of the learned stage."""
+    names = ALL_REFS
+    datas = datas_for(before)
+    p_all = oof_probs(before)
+    base = D.params()
+    base["decision"] = {"method": "fusion"}
+    if flash_calm is not None:
+        base.setdefault("guard", {})["flash_calm"] = flash_calm
+    base.setdefault("transitions", {})["anchor"] = anchor
+    prm, plan = RP.resolve(v1, base=base)
+    tables = None
+    if stage == "learned":
+        import RhythmRamps as RRS
+        tables = RRS.load_tables()
+    rows = {}
+    for n in names:
+        d = datas[n]
+        p = p_all.get(n)
+        if p is None:                      # fin-4: no judged boundary, the shipped fusion is also its held-out fusion
+            p = FU.probabilities(FU.load(), d["mat"])
+        if stage == "none":
+            spans = []
+        elif stage == "rule":
+            spans = D.ramps(d["sig"], d["frames"], dict(prm["types"], dissolve=False, whip=False))
+        else:
+            spans = learned_spans(n, d, tables, thr, params)
+        cuts = cuts_for(d, p, spans, prm, plan, {})
+        rows[n] = row_of(d["truth"], cuts)
+    return rows
+
+
+def print_rows(rows: dict, title: str) -> None:
+    print(f"== {title}")
+    print(f"{'reference':34s} {'truth':>5s} {'found':>5s} {'extra':>5s} {'missed':>6s} {'F1':>6s}")
+    for n, r in rows.items():
+        print(f"{n:34s} {r['truth']:5d} {r['tp']:5d} {r['fp']:5d} {r['fn']:6d} {r['f1']:6.3f}")
+    s = summarize(rows, list(rows))
+    print(f"micro P {s['P']:.3f} R {s['R']:.3f} F1 {s['micro_f1']:.4f} ({s['tp']}/{s['fp']}/{s['fn']})   macro F1 {s['macro_f1']:.4f}")
+
+
+def run_all(thresholds: tuple = (0.5, 0.9, 0.97, 0.99), out: Path | None = None) -> dict:
+    """Every configuration the report needs, held out, in one document:
+      before        the fusion without the 14 October 2026 label, the first-pass flash rule, rule-typed fades (the state at the start of
+                    the second pass);
+      cut_model     the retrained fusion and the quiet-side flash rule, rule-typed fades;
+      no_types      the same, no typed transition at all;
+      learned       the typed-transition classifier at each confidence floor, anchored on the cut the model placed;
+      default       the learned entry at the shipped transitions.threshold (params/rhythm.json)."""
+    shipped = float(D.params().get("transitions", {}).get("threshold", 0.5))
+    doc = {"schema": "zrmd/rhythm-loro@1", "date": "14 October 2026", "shipped_threshold": shipped,
+           "before": evaluate("rule", True, 0.5, 1e9), "cut_model": evaluate("rule", False, 0.5, None),
+           "no_types": evaluate("none", False, 0.5, None), "learned": {}}
+    for thr in sorted(set(thresholds) | {shipped}):
+        doc["learned"][str(thr)] = evaluate("learned", False, thr, None, anchor="cut")
+    doc["default"] = doc["learned"][str(shipped)]
+    for key in ("before", "cut_model", "no_types"):
+        s = summarize(doc[key], list(doc[key]))
+        print(f"{key:12s} micro F1 {s['micro_f1']:.4f} ({s['tp']}/{s['fp']}/{s['fn']}) macro {s['macro_f1']:.4f}", flush=True)
+    for thr, rows in doc["learned"].items():
+        s = summarize(rows, list(rows))
+        print(f"learned {thr:6s} micro F1 {s['micro_f1']:.4f} ({s['tp']}/{s['fp']}/{s['fn']}) macro {s['macro_f1']:.4f}", flush=True)
+    path = out or (WORKSHOP / "rhythm" / "loro-results.json")
+    path.write_text(json.dumps(doc, indent=1, default=float) + "\n", encoding="utf-8")
+    return doc
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("all")
+    p = sub.add_parser("probs")
+    p.add_argument("--before", action="store_true")
+    p.add_argument("--force", action="store_true")
+    e = sub.add_parser("eval")
+    e.add_argument("--stage", choices=["none", "rule", "learned"], default="rule")
+    e.add_argument("--before", action="store_true", help="the fusion trained without the 14 October 2026 label, the old flash rule")
+    e.add_argument("--threshold", type=float, default=0.5)
+    e.add_argument("--json")
+    a = ap.parse_args()
+    if a.cmd == "probs":
+        oof_probs(a.before, a.force)
+        return
+    if a.cmd == "all":
+        run_all()
+        return
+    calm = 1e9 if a.before else None          # 1e9: the quiet side never rejects, the flash rule of the first pass
+    rows = evaluate(a.stage, a.before, a.threshold, calm)
+    print_rows(rows, f"held-out, stage {a.stage}, {'before' if a.before else 'after'}")
+    if a.json:
+        Path(a.json).write_text(json.dumps(rows, indent=1, default=float) + "\n", encoding="utf-8")
+
+
+if __name__ == "__main__":
+    main()

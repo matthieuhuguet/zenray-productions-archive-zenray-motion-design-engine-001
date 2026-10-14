@@ -1,0 +1,50 @@
+# Le montage de ZenRay Motion Design (14 October 2026)
+
+Le second versant du logiciel : glisser un motion dans une timeline, y poser tes propres vidéos, images et sons, des titres, et exporter en 16:9, 9:16, 4:5 ou 1:1. Le principe vient de la philosophie du skill `zenray-edit` : une définition unique, des paramètres qui s'écrivent à un seul endroit, le vrai rendu plutôt qu'une maquette, aucun panneau d'atelier en production. Le rendu est celui d'HyperFrames (une composition HTML à timeline GSAP en pause). (14 October 2026)
+
+## Ce que fait le montage (14 October 2026)
+
+| Fonction | Comment |
+|---|---|
+| Bibliothèque de motions | pagination progressive, recherche par mot ; double-clic ou « Ajouter » pour poser à la fin de la piste vidéo, glisser sur une piste pour poser à l'endroit voulu |
+| Mes fichiers | vidéo, image ou son : dépôt (glisser ou clic), durée et son détectés une fois ; « Retirer » refusé si un montage enregistré l'utilise |
+| Pistes | vidéo, texte, son ; jusqu'à 8 pistes et 64 clips par piste ; « + piste » ajoute une piste du type voulu |
+| Clips | glisser pour déplacer (aimantation à la tête de lecture, aux bords des autres clips et à 0,05 s), poignées gauche et droite pour couper l'entrée et la sortie, Couper à la tête de lecture, Dupliquer, Supprimer ; un clip passe d'une piste à une autre de même type |
+| Formats | 16:9 (1920 x 1080), 9:16 (1080 x 1920), 4:5 (1080 x 1350), 1:1 (1080 x 1080) ; l'aperçu prend le rapport choisi |
+| Cadrage | Entier (contain), Remplir (cover), Flou (le fond est la même image floutée) ; réglable par clip |
+| Titres et sous-titres | texte réel, police (InterVariable, AnthropicSerif, AnthropicMono), couleur, graisse, taille (part de la hauteur), position, alignement, animation (apparition, fondu, aucune), ajustement automatique de la largeur |
+| Texte seul | un clip motion peut être posé « texte seul » : ses calques de fond sont masqués et il se rend en WebM à transparence ; seul son texte se superpose à ta vidéo |
+| Son | volume par clip, « couper le son » ; le son des vidéos et les pistes sons partent dans l'export |
+| Enregistrer, rouvrir, supprimer | un montage est un fichier `spec.json` ; la liste « Ouvrir » ; Supprimer ne touche ni tes fichiers ni tes motions |
+| Export | valide d'abord (le refus nomme la piste et le clip), puis rend un MP4 H.264 + AAC, avec le chemin, la taille, la durée et la présence du son |
+
+Raccourcis : Espace lecture et pause, S couper, D dupliquer, Suppr supprimer. (14 October 2026)
+
+## Le fichier de montage (14 October 2026)
+
+```json
+{
+  "id": "mon-montage", "fps": 30, "formats": ["9x16"], "fit": "contain", "background": "#000000",
+  "tracks": [
+    {"kind": "video", "clips": [
+      {"source": {"kind": "motion", "motion": "onekey-s02-caption-shine", "version": "V_066"}, "start": 0, "in": 0, "out": 1.35},
+      {"source": {"kind": "file", "path": "/Users/zenray/Movies/ma-video.mp4"}, "start": 1.35, "in": 2, "out": 6, "fit": "cover"}]},
+    {"kind": "text", "clips": [
+      {"text": "Bonjour", "start": 0.4, "duration": 2, "color": "#ffffff", "font": "InterVariable", "size": 0.06,
+       "weight": 600, "x": 0.5, "y": 0.82, "align": "center", "anim": "pop"}]},
+    {"kind": "audio", "clips": [{"source": {"kind": "file", "path": "/Users/zenray/Music/son.mp3"}, "start": 0, "volume": 0.8}]}
+  ]
+}
+```
+
+Toutes les valeurs par défaut, bornes et listes (formats, cadrages, polices, animations, limites) sont dans `params/timeline.json`, la seule interface de paramètres du montage. Un fichier hors du dossier personnel, une police inconnue, un texte vide, une sortie au-delà de la source : refusé avant tout rendu, avec la piste et le clip nommés. (14 October 2026)
+
+## Par le MCP (14 October 2026)
+
+`app_library`, `app_upload`, `app_timeline_validate`, `app_timeline_save`, `app_timeline_export` : un montage se compose et s'exporte sans un clic. Exemple : `app_timeline_export(format="9x16", spec={...})`. (14 October 2026)
+
+## Limites connues (14 October 2026)
+
+- L'aperçu du texte seul est une approximation (mode de fusion « écran ») ; l'export est la vérité.
+- La lecture simultanée de beaucoup de vidéos dans l'aperçu dépend du navigateur ; l'export, lui, est exact à l'image.
+- Pas encore : transitions entre clips, étalonnage, ancrage d'un texte sur un élément d'une vidéo, plusieurs formats exportés d'un coup (un export par format). (14 October 2026)

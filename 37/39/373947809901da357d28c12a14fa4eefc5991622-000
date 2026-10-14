@@ -1,0 +1,274 @@
+# 14 October 2026: the per-event SFX calibration proven in both directions on synthetic events (no reference sample): an event whose spectrum is
+# tilted and whose envelope is wrong comes out closer to its target on the official perceptual loss AND on the audit (the seed-invariant variant),
+# the stored gains reproduce the trimmed event when re-applied (every renderer ships the same sound), an event already equal to its target is left
+# untouched, and limits are respected. FR : le calibrage par evenement prouve dans les deux sens.
+import copy
+import sys
+from pathlib import Path
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from zrmd.audio import config, ploss, sfxtrim  # noqa: E402
+
+SR = 48000
+FAIL = []
+
+
+def check(name, cond, detail=""):
+    print(("ok   " if cond else "FAIL ") + name + (f"  {detail}" if detail and not cond else ""))
+    if not cond:
+        FAIL.append(name)
+
+
+def event(seed=3, seconds=0.5):
+    rng = np.random.default_rng(seed)
+    n = int(seconds * SR)
+    t = np.arange(n) / SR
+    noise = rng.standard_normal(n)
+    env = np.exp(-t / 0.08) * (t > 0.02)
+    tone = np.sin(2 * np.pi * 330 * t) * np.exp(-t / 0.15)
+    return (0.4 * noise * env + 0.3 * tone).astype(np.float32)
+
+
+def tilt(x, db_per_oct, pivot=1000.0):
+    X = np.fft.rfft(x)
+    f = np.maximum(np.fft.rfftfreq(len(x), 1 / SR), 20.0)
+    return np.fft.irfft(X * 10 ** (db_per_oct * np.log2(f / pivot) / 20.0), len(x)).astype(np.float32)
+
+
+def run() -> int:
+    c = sfxtrim.cfg()
+    c["optimiser"]["steps"] = 160
+    c["bands"]["count"] = 48
+    c["stochasticWeight"] = 0.0
+    target = event()
+    bad = tilt(target, -9.0) * 0.5                       # dark and quiet
+    cfg_o = copy.deepcopy(config.cfg())
+    cfg_o["ploss"]["stochastic"]["enabled"] = False
+    cfg_s = copy.deepcopy(cfg_o)
+    cfg_s["ploss"]["stochastic"]["enabled"] = True
+    before_o = ploss.score(bad, target, SR, cfg_o)["score"]
+    before_s = ploss.score(bad, target, SR, cfg_s)["score"]
+    y, trim = sfxtrim.trim_event(bad, target, SR, c)
+    after_o = ploss.score(y, target, SR, cfg_o)["score"]
+    after_s = ploss.score(y, target, SR, cfg_s)["score"]
+    check("the trim stores gains", bool(trim) and len(trim["gainsDb"]) == 48, trim.get("e2After") if trim else None)
+    check("official score rises by at least 8 points", after_o - before_o >= 8.0, (before_o, after_o))
+    check("AUDIT: the seed-invariant variant (not optimised here) rises too, by at least 3 points", after_s - before_s >= 3.0, (before_s, after_s))
+    again = sfxtrim.apply(bad, trim, SR)
+    check("re-applying the stored gains reproduces the trimmed event (relative error below 3 percent, gains are stored to 0.01 dB)",
+          float(np.sqrt(((again - y) ** 2).mean()) / (np.sqrt((y ** 2).mean()) + 1e-12)) < 0.03)
+    lim = c["limits"]
+    g = np.asarray(trim["gainsDb"])
+    check("gains stay inside the declared limits", g.max() <= lim["maxBoostDb"] + 1e-6 and g.min() >= -lim["maxCutDb"] - 1e-6, (g.min(), g.max()))
+    same, trim_same = sfxtrim.trim_event(target, target, SR, c)
+    check("RED: an event already equal to its target is left untouched (no stored gains)", not trim_same and float(np.abs(same - target).max()) < 1e-7)
+    off = copy.deepcopy(c)
+    off["limits"] = {"maxBoostDb": 0.0, "maxCutDb": 0.0}
+    frozen, trim_frozen = sfxtrim.trim_event(bad, target, SR, off)
+    after_f = ploss.score(frozen, target, SR, cfg_o)["score"]
+    check("RED: with both limits at zero nothing improves", abs(after_f - before_o) < 0.5, (before_o, after_f))
+    run_cascade()
+    run_guard()
+    print(f"{len(FAIL)} failure(s)")
+    return 1 if FAIL else 0
+
+
+def run_cascade():
+    """14 October 2026: the cook of one event (shared spectral trim, then EQ, baked with the chain hash), proven on a chain of the bank against a
+    target made by the SAME blocks with other parameters and another noise seed: no reference sample is involved."""
+    import copy
+    from zrmd.audio import bank, sfxspectral
+    sc = sfxtrim.cfg()
+    sc["optimiser"]["steps"] = 120
+    sc["bands"]["count"] = 48
+    sc["stochasticWeight"] = 0.5
+    chain = {"sr": SR, "seconds": 0.5, "blocks": [
+        {"block": "room_tone", "params": {"tilt_db_oct": -3.0, "hp_hz": 150.0, "lp_hz": 12000.0, "hum_hz": 100.0, "hum_db": -20.0, "fade_s": 0.002, "amp_db": -24.0}, "gainDb": 0.0, "offsetS": 0.0, "seed": 0},
+        {"block": "wind", "params": {"center_hz": 500.0, "bw_oct": 1.5, "sweep_oct": 0.3, "lfo_hz": 4.0, "gust_depth": 0.9, "attack_s": 0.1, "amp_db": -26.0}, "gainDb": 0.0, "offsetS": 0.0, "seed": 0}]}
+    other = copy.deepcopy(chain)
+    other["blocks"][0]["params"].update(tilt_db_oct=-8.0, amp_db=-20.0, lp_hz=6000.0)
+    other["blocks"][1]["params"].update(center_hz=1400.0, amp_db=-21.0, attack_s=0.05)
+    for b in other["blocks"]:
+        b["seed"] = 7
+    body = bank.render_chain(chain).astype(np.float32)
+    target = bank.render_chain(other).astype(np.float32)
+    y, rec = sfxspectral.calibrate_event(chain, body, target, SR, sc)
+    m0 = sfxspectral.metrics(body, target, SR)
+    m1 = sfxspectral.metrics(y, target, SR)
+    check("cascade: a record with a bake and the chain hash is stored", bool(rec.get("bake")) and rec.get("chainSha") == sfxtrim.chain_sha(chain), list(rec))
+    check("cascade: the program lists the spectral stage then the eq stage", [p["stage"] for p in rec.get("program", [])] == ["spectral", "eq"], rec.get("program"))
+    check("cascade: the official score rises by at least 5 points", m1["ploss"] - m0["ploss"] >= 5.0, (m0["ploss"], m1["ploss"]))
+    check("AUDIT: the held-out layouts of the music (never optimised) rise by at least 3 points", (m1["auditMean"] or 0) - (m0["auditMean"] or 0) >= 3.0, (m0["auditMean"], m1["auditMean"]))
+    check("cascade: the music critic ends above 97", m1["critic"] >= 97.0, m1["critic"])
+    shipped = sfxtrim.render({"chain": chain, "trim": rec})
+    err = float(np.sqrt(((shipped[: len(y)] - y) ** 2).mean()) / (np.sqrt((y ** 2).mean()) + 1e-12))
+    check("every renderer ships the cooked body (relative error below 1 percent, 16-bit bake)", err < 0.01, err)
+    edited = copy.deepcopy(chain)
+    edited["blocks"][1]["params"]["center_hz"] = 900.0
+    raw = bank.render_chain(edited).astype(np.float32)
+    played = sfxtrim.render({"chain": edited, "trim": rec})
+    check("RED: a bake of another chain is never played (the edited chain plays untouched)", float(np.abs(played[: len(raw)] - raw).max()) < 1e-6)
+    same, rec_same = sfxspectral.calibrate_event(chain, body, body, SR, sc)
+    check("RED: an event already equal to its target is left alone (no bake, or a body within 1 percent)",
+          (not rec_same.get("bake")) or float(np.sqrt(((same - body) ** 2).mean()) / (np.sqrt((body ** 2).mean()) + 1e-12)) < 0.01)
+    off = copy.deepcopy(sc)
+    off["pipeline"]["stages"] = []
+    nothing, rec_off = sfxspectral.calibrate_event(chain, body, target, SR, off)
+    check("RED: with no stage in the pipeline nothing is stored and the body is untouched", rec_off == {} and float(np.abs(nothing - body).max()) < 1e-9)
+    eq_only = copy.deepcopy(sc)
+    eq_only["pipeline"]["stages"] = ["eq"]
+    y_eq, rec_eq = sfxspectral.calibrate_event(chain, body, target, SR, eq_only)
+    check("['eq'] alone keeps the historical record (gains, no bake) so older versions still render", bool(rec_eq.get("gainsDb")) and "bake" not in rec_eq, list(rec_eq))
+    v = sfxspectral.variant_cfg(sc["pipeline"]["variant"])
+    check("SFX base: the two music guards are off for a short effect (minResolvedBins 0, highpassHz 0)", v.get("minResolvedBins") == 0 and v.get("highpassHz") == 0.0, (v.get("minResolvedBins"), v.get("highpassHz")))
+    spectral = sfxspectral.cfg()
+    sha_a = sfxspectral.config_sha(sc["pipeline"]["variant"], spectral)
+    spectral["base"] = dict(spectral["base"], highpassHz=18.0)
+    check("RED: the configuration hash changes when a base override changes (a stale version is recognised)", sha_a != sfxspectral.config_sha(sc["pipeline"]["variant"], spectral))
+    gate = sc["gate"]
+    check("gate: the cooked event is judged by the seed-invariant loss and the held-out audit", isinstance(sfxspectral.passes(m1, gate), bool))
+    worse = dict(m1, sto=gate["stochasticMin"] - 1.0, critic=100.0, auditMean=100.0)
+    check("RED: the headline gate refuses an event whose seed-invariant loss is under its minimum, whatever its critic", not sfxspectral.passes(worse, gate))
+    unaudited = dict(m1, sto=100.0, critic=100.0, auditMean=gate["auditMin"] - 1.0)
+    check("RED: the headline gate refuses an event whose held-out audit is under its minimum", not sfxspectral.passes(unaudited, gate))
+    ok = dict(m1, critic=100.0, sto=100.0, auditMean=100.0)
+    check("GREEN: the headline gate accepts an event above both minima", sfxspectral.passes(ok, gate))
+    check("music gate: GREEN at the minimum, RED just under it", sfxspectral.passes_music(dict(m1, critic=gate["criticMin"]), gate)
+          and not sfxspectral.passes_music(dict(m1, critic=gate["criticMin"] - 0.01), gate))
+
+
+def run_guard():
+    """14 October 2026: the B1 guard of the EQ stage (params/sfx-trim.json pipeline.b1Guard), proven in both directions. The pure decision first
+    (a table), then calibrate_event with the measurements replaced by controlled ones: the same synthetic chain and target, so the only thing
+    that differs between the two runs is what the guard is told about B1 and the gate. FR : le garde-fou B1, prouve dans les deux sens."""
+    import copy
+    from zrmd.audio import bank, sfxspectral
+    gate = sfxtrim.cfg()["gate"]
+    ok = {"sto": 99.95, "auditMean": 99.5, "critic": 99.95, "b1": 99.0}
+    bad = {"sto": 99.0, "auditMean": 99.5, "critic": 99.95, "b1": 99.0}
+    check("guard table: B1 within the guard keeps the EQ", sfxspectral.eq_guard(dict(ok, b1=99.0), dict(ok, b1=98.0), gate, 2.0)["keep"])
+    check("guard table: B1 falling beyond the guard rejects the EQ when its input passes the headline gate",
+          not sfxspectral.eq_guard(dict(ok, b1=99.0), dict(ok, b1=90.0), gate, 2.0)["keep"])
+    waived = sfxspectral.eq_guard(dict(bad, b1=99.0), dict(ok, b1=90.0), gate, 2.0)
+    check("guard table: the guard is waived (EQ kept) when its input FAILS the headline gate: a gate is never traded for a cue",
+          waived["keep"] and "waived" in waived["why"], waived)
+    check("guard table: a missing B1 reading never rejects", sfxspectral.eq_guard(dict(ok, b1=None), dict(ok, b1=50.0), gate, 2.0)["keep"])
+    check("guard table: the limit itself is inside the guard (drop equal to maxDrop keeps)", sfxspectral.eq_guard(dict(ok, b1=99.0), dict(ok, b1=97.0), gate, 2.0)["keep"])
+
+    sc = sfxtrim.cfg()
+    sc["optimiser"]["steps"] = 60
+    sc["bands"]["count"] = 48
+    sc["pipeline"]["variant"] = "fine"
+    chain = {"sr": SR, "seconds": 0.5, "blocks": [
+        {"block": "room_tone", "params": {"tilt_db_oct": -3.0, "hp_hz": 150.0, "lp_hz": 12000.0, "hum_hz": 100.0, "hum_db": -20.0, "fade_s": 0.002, "amp_db": -24.0}, "gainDb": 0.0, "offsetS": 0.0, "seed": 0}]}
+    other = copy.deepcopy(chain)
+    other["blocks"][0]["params"].update(tilt_db_oct=-8.0, amp_db=-20.0, lp_hz=6000.0)
+    other["blocks"][0]["seed"] = 7
+    body = bank.render_chain(chain).astype(np.float32)
+    target = bank.render_chain(other).astype(np.float32)
+    spectral_only = copy.deepcopy(sc)
+    spectral_only["pipeline"]["stages"] = ["spectral"]
+    y_spec, _ = sfxspectral.calibrate_event(chain, body, target, SR, spectral_only)
+
+    real = sfxspectral.metrics
+    calls = {"n": 0}
+
+    def fake(first, second):
+        def f(y, t, sr, spectral=None):
+            calls["n"] += 1
+            return dict(first if calls["n"] % 2 == 1 else second, errors={})
+        return f
+    try:
+        sfxspectral.metrics = fake(dict(ok, b1=99.0), dict(ok, b1=60.0))
+        calls["n"] = 0
+        y_rej, rec_rej = sfxspectral.calibrate_event(chain, body, target, SR, copy.deepcopy(sc))
+        eq_rej = [p for p in rec_rej.get("program", []) if p["stage"] == "eq"][0]
+        check("integration: a B1 fall beyond the guard, input passing the gate, ships the spectral trim ALONE (identical body)",
+              eq_rej.get("kept") is False and float(np.abs(y_rej - y_spec).max()) < 1e-6, (eq_rej, float(np.abs(y_rej - y_spec).max())))
+        sfxspectral.metrics = fake(dict(bad, b1=99.0), dict(ok, b1=60.0))
+        calls["n"] = 0
+        y_kept, rec_kept = sfxspectral.calibrate_event(chain, body, target, SR, copy.deepcopy(sc))
+        eq_kept = [p for p in rec_kept.get("program", []) if p["stage"] == "eq"][0]
+        check("integration: the same fall with an input that fails the headline gate keeps the EQ (the body differs from the spectral trim alone)",
+              eq_kept.get("kept") is True and float(np.abs(y_kept - y_spec).max()) > 1e-4, (eq_kept, float(np.abs(y_kept - y_spec).max())))
+        off = copy.deepcopy(sc)
+        off["pipeline"]["b1Guard"]["enabled"] = False
+        sfxspectral.metrics = fake(dict(ok, b1=99.0), dict(ok, b1=60.0))
+        calls["n"] = 0
+        y_off, rec_off = sfxspectral.calibrate_event(chain, body, target, SR, off)
+        eq_off = [p for p in rec_off.get("program", []) if p["stage"] == "eq"][0]
+        check("RED: with the guard disabled the same B1 fall is not looked at (EQ kept, no verdict recorded)", "kept" not in eq_off and float(np.abs(y_off - y_spec).max()) > 1e-4, eq_off)
+    finally:
+        sfxspectral.metrics = real
+    run_replay(chain, body, target, copy.deepcopy(sc))
+    run_peak(chain, body, target, copy.deepcopy(sc))
+
+
+def run_replay(chain, body, target, sc):
+    """14 October 2026: the shipped SFX track is replayed from what a version stores (chain, trim, bake) and nothing else, proven both ways."""
+    import copy
+    from zrmd.audio import sfxspectral
+    y, rec = sfxspectral.calibrate_event(chain, body, target, SR, sc)
+    n_total = SR
+    a0 = 4800
+    track = np.zeros(n_total)
+    track[a0:a0 + len(y)] += y.astype(np.float64)
+    events = {"events": [{"id": "E001", "windowStart": a0 / SR, "fit": {"chain": chain, "trim": rec}}]}
+    rep = sfxtrim.verify_render(events, track, SR, tol_rel=0.01)
+    check("replay: the track is rebuilt from the stored chain and bake within 1 percent (16-bit bake)", rep["ok"] and rep["events"][0]["baked"], rep)
+    edited = copy.deepcopy(events)
+    edited["events"][0]["fit"]["chain"]["blocks"][0]["params"]["tilt_db_oct"] = -1.0
+    bad = sfxtrim.verify_render(edited, track, SR, tol_rel=0.01)
+    check("RED: an edited chain makes its bake stale and the replay fails (it never plays the bake of another chain)", not bad["ok"] and bad["stale"] == ["E001"], bad)
+    tampered = track.copy()
+    tampered[a0:a0 + 2000] *= 3.0
+    off = sfxtrim.verify_render(events, tampered, SR, tol_rel=0.01)
+    check("RED: a track that is not what the stored version renders fails the replay", not off["ok"] and off["relRmsError"] > 0.05, off)
+
+
+def run_peak(chain, body, target, sc):
+    """14 October 2026: the peak guard, proven in both directions. A click far above the reference peak is brought under the ceiling and the rest
+    of the body is left alone; a body already under the ceiling is returned bit for bit."""
+    import copy
+    from zrmd.audio import sfxspectral
+    ref_peak = sfxspectral.true_peak(target)
+    margin = sc["pipeline"]["peakGuard"]["marginDb"]
+    ceiling = ref_peak * 10 ** (margin / 20.0)
+    clicked = body.copy()
+    clicked[1500] += 8.0 * ref_peak
+    limited = sfxspectral.peak_guard(clicked, ceiling, SR)
+    check("peak guard: a click 18 dB over the reference peak ends under the ceiling (true peak)", sfxspectral.true_peak(limited) <= ceiling * 1.001, (sfxspectral.true_peak(limited), ceiling))
+    far = np.ones(len(body), bool)
+    far[1500 - 400:1500 + 400] = False
+    check("peak guard: samples away from the click are left alone (look-ahead is short)", float(np.abs(limited[far] - clicked[far]).max()) < 1e-6)
+    quiet = (body * (0.5 * ceiling / max(sfxspectral.true_peak(body), 1e-9))).astype(np.float32)
+    check("RED: a body already under the ceiling comes back bit for bit", float(np.abs(sfxspectral.peak_guard(quiet, ceiling, SR) - quiet).max()) == 0.0)
+    # the shared trim absorbs a click (it matches band levels), so the stage order is proven with a trim stage that returns a known overshoot
+    real = sfxspectral.trim_event
+    only = copy.deepcopy(sc)
+    only["pipeline"]["stages"] = ["spectral"]
+    fake_rep = {"before": {"critic": {"score": 0.0}}, "after": {"critic": {"score": 0.0}}}
+    try:
+        sfxspectral.trim_event = lambda y, t, sr, variant, spectral=None: (clicked.astype(np.float32), fake_rep)
+        y, rec = sfxspectral.calibrate_event(chain, body, target, SR, copy.deepcopy(only))
+        stages = [p["stage"] for p in rec.get("program", [])]
+        check("cascade: an event whose cooked body overshoots the reference peak gets a final peak stage that brings it to the margin",
+              stages[-1] == "peak" and sfxspectral.true_peak(y) <= ceiling * 1.001 and rec["program"][-1]["overDb"] > margin, rec.get("program"))
+        off = copy.deepcopy(only)
+        off["pipeline"]["peakGuard"]["enabled"] = False
+        y_off, rec_off = sfxspectral.calibrate_event(chain, body, target, SR, off)
+        check("RED: with the peak guard disabled no peak stage is written and the overshoot stays",
+              "peak" not in [p["stage"] for p in rec_off.get("program", [])] and sfxspectral.true_peak(y_off) > ceiling * 3.0, sfxspectral.true_peak(y_off))
+    finally:
+        sfxspectral.trim_event = real
+
+
+def test_sfxtrim():
+    assert run() == 0
+
+
+if __name__ == "__main__":
+    sys.exit(run())

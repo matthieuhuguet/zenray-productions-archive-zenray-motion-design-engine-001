@@ -1,0 +1,270 @@
+# 14 October 2026: the typed-transition classifier of the rhythm module (zrmd.analyze.rhythm_ramps).
+#   table   list every candidate span of every adjudicated video (references and synthetic), with its feature vector and its label
+#           (does its span overlap an adjudicated transition?), twice: with the cut probabilities of the SHIPPED fusion ("ins", what
+#           the product reads on a video it was trained on) and with the out-of-fold probabilities of Scripts/RhythmLoro.py
+#           ("oof", what it reads on a video it never saw);
+#   cv      leave-one-video-out evaluation of the classifier at event level (a kept span counts when its instant lies inside the
+#           adjudicated interval, the rule the score applies), plus the resubstitution numbers;
+#   train   fit on the whole "ins" table and write datasets/rhythm-ramps.json.
+# Run: nice -n 5 /Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/RhythmRamps.py table|cv|train
+# FR : le classifieur des transitions typees : tables des candidats, validation par video exclue, entrainement.
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+sys.path.insert(0, str(ENGINE / "Scripts"))
+from zrmd import settings  # noqa: E402
+from zrmd.analyze import (rhythm_cache, rhythm_core as C, rhythm_detect as D, rhythm_features as RF, rhythm_fusion as FU,  # noqa: E402
+                          rhythm_ramps as RR, rhythm_truth as T)
+import RhythmSignals as RS  # noqa: E402
+import RhythmSynth  # noqa: E402
+
+WORKSHOP = settings.path("workshop")
+REFS = ["claude-opus-5-5", "flora-agents-on-canvas", "motion-opus-5-5", "kardashev-0-7", "memo", "paper-mono-code", "onekey-pro-2",
+        "interface", "x-anabology-2106157622986748377", "x-anabology-2105325733312884869", "yt-4Q-o_ylnVnc", "fin-4"]
+SYNTH = ["S1", "S2", "S3", "S4"]
+# depth 5, 300 rounds, no down-weighting of the positives: the in-sample scores of the adjudicated transitions reach 0.99 and the
+# non-transition candidates stay under 0.02, so a high confidence floor types what the model has seen and little else
+HP = {"max_depth": 5, "learning_rate": 0.1, "max_iter": 300, "l2_regularization": 1.0, "min_samples_leaf": 2, "pos_weight": 1.0}
+
+
+def table_path(kind: str) -> Path:
+    return WORKSHOP / "rhythm" / f"ramps-table-{kind}.npz"
+
+
+def video(name: str) -> dict:
+    synth = name in SYNTH
+    folder = RhythmSynth.root() / name / "cache" if synth else RS.folder_of(name)
+    sig = RS.load_signals(folder)
+    z = np.load(folder / "fine.npz")
+    fine = {k: z[k] for k in z.files}
+    frames = rhythm_cache.load(folder)["frames"]
+    if synth:
+        t = json.loads((RhythmSynth.root() / name / "truth.json").read_text(encoding="utf-8"))
+        truth = [{"frame": x["frame"], "kind": x["kind"], "start": x["start"], "end": x["end"]} for x in t["transitions"]]
+        hard = [int(f) for f in t["hard"]]
+    else:
+        full = T.truth_list(T.load_labels(WORKSHOP, name))
+        truth = [x for x in full if x["kind"] in ("dissolve", "fade", "whip")]
+        hard = [int(x["frame"]) for x in full if x["kind"] == "hard"]
+    return {"name": name, "folder": folder, "sig": sig, "fine": fine, "frames": frames, "truth": truth, "hard": hard}
+
+
+_VIDEOS: dict = {}
+
+
+def cached_video(name: str) -> dict:
+    if name not in _VIDEOS:
+        v = video(name)
+        v["ctx"] = C.Ctx(v["sig"], v["frames"])
+        v["mat"] = RF.cached(v["folder"], v["sig"], v["fine"], v["frames"])
+        _VIDEOS[name] = v
+    return _VIDEOS[name]
+
+
+def predictions(v: dict, p: np.ndarray, thr: float = 0.5) -> list[int]:
+    """The cut frames the cut model reports on a video (flashes typed apart are not cuts), what a typed span has to cover."""
+    prm = D.params()
+    need = np.asarray(v["mat"]["need"]).astype(bool)
+    out = []
+    for i in np.nonzero(need & (np.asarray(p) >= thr))[0]:
+        i = int(i)
+        if i > 0 and not D.is_flash(v["frames"], i, prm["types"]["flash_return"], calm=prm["guard"]["flash_calm"]):
+            out.append(i)
+    return out
+
+
+def build_tables(only: list[str] | None = None) -> None:
+    """Both tables in one pass: the slow, probability-free candidates and their base features are computed once per video."""
+    from RhythmLoro import oof_probs
+    model = FU.load()
+    oof = oof_probs(False)
+    acc = {"ins": {"X": [], "y": [], "vid": [], "meta": []}, "oof": {"X": [], "y": [], "vid": [], "meta": []}}
+    for name in (only or REFS + SYNTH):
+        v = cached_video(name)
+        ctx = v["ctx"]
+        p_ins = FU.probabilities(model, v["mat"])
+        p_oof = oof.get(name, p_ins)
+        t0 = time.time()
+        base = RR.generate(ctx)
+        t_gen = time.time() - t0
+        cache: dict = {}
+        shown = []
+        for kind, p in (("ins", p_ins), ("oof", p_oof)):
+            cands = RR.candidates(ctx, p, base)
+            X = RR.features(ctx, cands, v["frames"], p, cache)
+            y = RR.label(cands, v["truth"], ctx.src, v["hard"], predictions(v, p))
+            a = acc[kind]
+            metas = [{"kind": c["kind"], "s": int(c["s"]), "e": int(c["e"]), "i": int(c["i"]), "a": int(ctx.src[c["s"]]),
+                      "b": int(ctx.src[c["e"]]), "f": int(ctx.src[c["i"]])} for c in cands]
+            a["X"].append(X)
+            a["y"].append(y)
+            a["vid"] += [name] * len(cands)
+            a["meta"] += metas
+            covered = sum(1 for t in v["truth"] if any(m["a"] <= t["end"] + 1 and m["b"] >= t["start"] - 1 and lab
+                                                       for m, lab in zip(metas, y)))
+            shown.append(f"{kind}: candidates {len(cands):4d} positives {int(y.sum()):2d} covered {covered}/{len(v['truth'])}")
+        print(f"{name:34s} " + " | ".join(shown) + f" | generate {t_gen:.1f}s", flush=True)
+    for kind, a in acc.items():
+        np.savez_compressed(table_path(kind), X=np.concatenate(a["X"]), y=np.concatenate(a["y"]), vid=np.array(a["vid"]),
+                            meta=np.array([json.dumps(m) for m in a["meta"]]))
+
+
+def relabel() -> None:
+    """Recompute the labels of both tables from their stored spans and instants (RR.is_positive), features untouched. The cut
+    probabilities are those of the table: the shipped fusion for "ins", the out-of-fold ones for "oof"."""
+    from RhythmLoro import oof_probs
+    model = FU.load()
+    oof = oof_probs(False)
+    for kind in ("ins", "oof"):
+        z = np.load(table_path(kind), allow_pickle=False)
+        data = {k: z[k] for k in z.files}
+        meta = [json.loads(s) for s in data["meta"]]
+        y = np.zeros(len(meta), dtype=int)
+        for name in dict.fromkeys(data["vid"].tolist()):
+            v = cached_video(name)
+            p = FU.probabilities(model, v["mat"]) if kind == "ins" else oof.get(name, FU.probabilities(model, v["mat"]))
+            preds = predictions(v, p)
+            for i in np.nonzero(data["vid"] == name)[0]:
+                m = meta[i]
+                y[i] = int(RR.is_positive(m["a"], m["b"], m["f"], v["truth"], v["hard"], preds))
+        data["y"] = y
+        np.savez_compressed(table_path(kind), **data)
+        print(kind, "positives", int(y.sum()), "of", len(y))
+
+
+def load_tables() -> dict:
+    out = {}
+    for kind in ("ins", "oof"):
+        z = np.load(table_path(kind), allow_pickle=False)
+        out[kind] = {"X": z["X"], "y": z["y"], "vid": z["vid"], "meta": [json.loads(s) for s in z["meta"]]}
+    return out
+
+
+def fit(X: np.ndarray, y: np.ndarray, hp: dict | None = None):
+    from sklearn.ensemble import HistGradientBoostingClassifier
+    h = dict(HP, **(hp or {}))
+    pos = max(int(y.sum()), 1)
+    w = np.where(y == 1, (len(y) - pos) / pos * h["pos_weight"], 1.0)
+    clf = HistGradientBoostingClassifier(max_depth=h["max_depth"], learning_rate=h["learning_rate"], max_iter=h["max_iter"],
+                                         l2_regularization=h["l2_regularization"], min_samples_leaf=h["min_samples_leaf"], random_state=0)
+    clf.fit(X, y, sample_weight=w)
+    return clf
+
+
+_CLF: dict = {}
+
+
+def heldout_classifier(held: str, tables: dict, hp: dict | None = None):
+    key = (held, json.dumps(hp or {}, sort_keys=True))
+    if key not in _CLF:
+        t = tables["ins"]
+        m = t["vid"] != held
+        _CLF[key] = fit(t["X"][m], t["y"][m], hp)
+    return _CLF[key]
+
+
+def spans_from(name: str, kind: str, tables: dict, p: np.ndarray, thr: float, params: dict | None = None) -> list[dict]:
+    t = tables[kind]
+    idx = np.nonzero(t["vid"] == name)[0]
+    v = cached_video(name)
+    cands = [{"kind": t["meta"][i]["kind"], "s": t["meta"][i]["s"], "e": t["meta"][i]["e"], "i": t["meta"][i]["i"]} for i in idx]
+    return RR.select(v["ctx"], cands, p, thr=thr, **(params or {}).get("select", {}))
+
+
+def heldout_spans(name: str, held: dict, tables: dict, thr: float, params: dict | None = None) -> list[dict]:
+    """The transitions the classifier trained on the OTHER videos keeps on `name`, from out-of-fold cut probabilities."""
+    hp = (params or {}).get("hp")
+    clf = heldout_classifier(name, tables, hp)
+    t = tables["oof"]
+    idx = np.nonzero(t["vid"] == name)[0]
+    if len(idx) == 0:
+        return []
+    p = clf.predict_proba(t["X"][idx])[:, 1]
+    return spans_from(name, "oof", tables, p, thr, params)
+
+
+def event_level(spans: list[dict], truth: list[dict]) -> tuple[int, int, int]:
+    """Kept spans against the adjudicated transitions by the rule the score applies (the instant inside the interval, one frame of
+    tolerance), one to one."""
+    used, tp = set(), 0
+    for sp in spans:
+        hit = next((j for j, t in enumerate(truth) if j not in used and t["start"] - 1 <= sp["frame"] <= t["end"] + 1), None)
+        if hit is not None:
+            used.add(hit)
+            tp += 1
+    return tp, len(spans) - tp, len(truth) - len(used)
+
+
+def cv(thr: float = 0.5, hp: dict | None = None, quiet: bool = False) -> dict:
+    tables = load_tables()
+    ins = tables["ins"]
+    names = list(dict.fromkeys(ins["vid"].tolist()))
+    tot = {"loro": [0, 0, 0], "in": [0, 0, 0]}
+    real = {"loro": [0, 0, 0], "in": [0, 0, 0]}
+    full = fit(ins["X"], ins["y"], hp)
+    if not quiet:
+        print(f"{'video':34s} truth | held-out tp fp fn | in-sample tp fp fn")
+    for h in names:
+        v = cached_video(h)
+        truth = v["truth"]
+        a = event_level(heldout_spans(h, {}, tables, thr, {"hp": hp}), truth)
+        idx = np.nonzero(ins["vid"] == h)[0]
+        b = event_level(spans_from(h, "ins", tables, full.predict_proba(ins["X"][idx])[:, 1], thr), truth)
+        for k, val in (("loro", a), ("in", b)):
+            for i in range(3):
+                tot[k][i] += val[i]
+                if h not in SYNTH:
+                    real[k][i] += val[i]
+        if not quiet:
+            print(f"{h:34s} {len(truth):3d}   | {a[0]:3d} {a[1]:3d} {a[2]:3d}          | {b[0]:3d} {b[1]:3d} {b[2]:3d}")
+    out = {}
+    for label_, d in (("all", tot), ("real", real)):
+        for k, (tp, fp, fn) in d.items():
+            P, R = tp / max(tp + fp, 1), tp / max(tp + fn, 1)
+            F = 2 * P * R / max(P + R, 1e-9)
+            out[f"{label_}_{k}"] = (tp, fp, fn, round(F, 3))
+            if not quiet:
+                print(f"{label_:5s} {k:5s} transitions: tp {tp} fp {fp} fn {fn}  P {P:.3f} R {R:.3f} F1 {F:.3f}")
+    return out
+
+
+def train(hp: dict | None = None) -> None:
+    ins = load_tables()["ins"]
+    clf = fit(ins["X"], ins["y"], hp)
+    model = FU.export(clf, RR.FEATURES, {"date": "14 October 2026", "candidates": int(len(ins["y"])), "positives": int(ins["y"].sum()),
+                                         "trained_on": sorted(set(ins["vid"].tolist())), "hyper": dict(HP, **(hp or {})),
+                                         "doc": "Typed-transition classifier trained by Scripts/RhythmRamps.py train. "
+                                                "FR : classifieur des transitions typees."})
+    err = float(np.abs(FU.predict(model, ins["X"]) - clf.predict_proba(ins["X"])[:, 1]).max())
+    RR.MODEL.write_text(json.dumps(model) + "\n", encoding="utf-8")
+    print(json.dumps({"model": str(RR.MODEL), "trees": len(model["trees"]), "candidates": int(len(ins["y"])),
+                      "positives": int(ins["y"].sum()), "max_abs_error": err}))
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("cmd", choices=["table", "relabel", "cv", "train"])
+    ap.add_argument("--only", action="append")
+    ap.add_argument("--threshold", type=float, default=0.5)
+    a = ap.parse_args()
+    if a.cmd == "table":
+        build_tables(a.only)
+    elif a.cmd == "relabel":
+        relabel()
+    elif a.cmd == "cv":
+        cv(a.threshold)
+    else:
+        train()
+
+
+if __name__ == "__main__":
+    main()

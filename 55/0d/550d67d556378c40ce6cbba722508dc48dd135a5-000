@@ -1,0 +1,680 @@
+// 14 October 2026: the montage of the V1 application. A library (motions of the workshop, the user's own videos, images and sounds), a timeline
+// with video, text and audio tracks (drag to move, handles to trim, drop from the library), a preview in the chosen format (16:9, 9:16, 4:5, 1:1),
+// an inspector driven by the tiers (params/v1-tiers.json montage) and an export that runs the same HyperFrames composition as the spec.
+// The spec is the single truth (zrmd/timeline@1, validated by /api/v1/timeline/validate before any render). FR : le montage V1.
+import { $, $$, esc, get, post, poll, toast, upload, clock, makeField, pagedList } from './studio-core.js'
+
+const LS_DRAFT = 'zrmd.montage.draft'
+const uid = (() => { let n = 0; return (p) => `${p}${Date.now().toString(36).slice(-4)}${(n++).toString(36)}` })()
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v))
+const round = (v, d = 3) => Math.round(v * 10 ** d) / 10 ** d
+
+export async function montageView(root, { id, q, config }) {
+  const [tcfg, tiersAll] = await Promise.all([get('/api/v1/timeline/config'), get('/api/v1/tiers')])
+  const TIERS = tiersAll.montage
+  const T = tcfg.text
+  const tierOf = (key) => (TIERS.primary.includes(key) ? 0 : TIERS.secondary.includes(key) ? 1 : 2)
+  document.title = 'Montage · ZenRay Motion Design'
+
+  const blankSpec = () => ({
+    id: 'montage', fps: tcfg.fps, formats: [tcfg.defaultFormat], fit: tcfg.defaultFit, background: tcfg.background,
+    tracks: [{ id: 'video1', kind: 'video', clips: [] }, { id: 'text1', kind: 'text', clips: [] }, { id: 'audio1', kind: 'audio', clips: [] }],
+  })
+  let spec = blankSpec()
+  let selected = null
+  let t = 0
+  let playing = false
+  let t0 = 0
+  let pps = 80
+  let raf = 0
+  let stopJob = null
+  let saveTimer = 0
+  let dead = false
+  const fmt = () => spec.formats[0]
+  const fmtInfo = () => tcfg.formats[fmt()]
+
+  // ---------------------------------------------------------------------------------------------- spec helpers
+  const allClips = () => spec.tracks.flatMap((tr) => tr.clips.map((c) => ({ tr, c })))
+  const findClip = (cid) => allClips().find((x) => x.c.id === cid) || null
+  function clipDur(tr, c) {
+    if (tr.kind === 'text') return c.duration ?? 2
+    if (c.source?.kind === 'file' && c._kind === 'image') return c.duration ?? tcfg.imageSeconds ?? 3
+    return Math.max(0.05, (c.out ?? c._dur ?? 1) - (c.in ?? 0))
+  }
+  const end = () => allClips().reduce((m, { tr, c }) => Math.max(m, (c.start ?? 0) + clipDur(tr, c)), 0)
+  const trackEnd = (tr) => tr.clips.reduce((m, c) => Math.max(m, (c.start ?? 0) + clipDur(tr, c)), 0)
+  function ensureTrack(kind) {
+    let tr = spec.tracks.find((x) => x.kind === kind)
+    if (!tr) {
+      if (spec.tracks.length >= tcfg.limits.tracks) return null
+      tr = { id: uid(kind), kind, clips: [] }
+      spec.tracks.push(tr)
+    }
+    return tr
+  }
+  function draft() {
+    clearTimeout(saveTimer)
+    saveTimer = setTimeout(() => { try { localStorage.setItem(LS_DRAFT, JSON.stringify(spec)) } catch { /* private window */ } }, 250)
+  }
+  const mediaUrl = (c) => (c.source?.kind === 'motion'
+    ? `/api/v1/motion-media?motion=${encodeURIComponent(c.source.motion)}&version=${encodeURIComponent(c.source.version)}&kind=render`
+    : c._url || '')
+
+  function addClip(kind, partial, at = null, trackId = null) {
+    const tr = trackId ? spec.tracks.find((x) => x.id === trackId) : ensureTrack(kind === 'audio' ? 'audio' : kind === 'text' ? 'text' : 'video')
+    if (!tr) return toast(`Maximum ${tcfg.limits.tracks} pistes.`, true)
+    if (tr.clips.length >= tcfg.limits.clipsPerTrack) return toast(`Maximum ${tcfg.limits.clipsPerTrack} clips par piste.`, true)
+    const c = { id: uid('c'), ...partial }
+    c.start = round(at ?? trackEnd(tr))
+    tr.clips.push(c)
+    selected = c.id
+    redrawAll()
+    draft()
+    return c
+  }
+  const clipFromLibrary = (m) => ({ source: { kind: 'motion', motion: m.id, version: m.version }, in: 0, out: m.duration || 1, _dur: m.duration || 1, _title: m.title, _poster: m.poster, _kind: 'video' })
+  const clipFromFile = (f) => (f.kind === 'image'
+    ? { source: { kind: 'file', path: f.path }, duration: tcfg.imageSeconds ?? 3, _dur: tcfg.imageSeconds ?? 3, _title: f.name, _url: f.url, _kind: 'image' }
+    : { source: { kind: 'file', path: f.path }, in: 0, out: f.duration, _dur: f.duration, _title: f.name, _url: f.url, _kind: f.kind })
+  const newText = (at) => ({ text: 'Titre', color: T.color, font: T.font, size: T.size, weight: T.weight, x: T.x, y: T.y, align: T.align, anim: T.defaultAnim, duration: 2, _title: 'Titre' })
+
+  // ------------------------------------------------------------------------------------------------- layout
+  root.innerHTML = `<h1 class="title">Montage</h1>
+    <div class="row toolbar" style="margin:6px 0 14px">
+      <label class="note">Nom <input id="tid" type="text" value="${esc(spec.id)}" style="width:170px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg)"></label>
+      <select id="open" aria-label="Ouvrir un montage enregistré"><option value="">Ouvrir…</option></select>
+      <button class="btn" id="new" type="button">Nouveau</button>
+      <button class="btn" id="save" type="button" data-testid="save">Enregistrer</button>
+      <button class="btn" id="delmont" type="button" data-testid="delete-montage" title="Supprime ce montage enregistré (tes fichiers et tes motions restent)">Supprimer</button>
+      <span class="grow"></span>
+      <div class="seg" id="formats" role="group" aria-label="Format"></div>
+      <div class="seg" id="fits" role="group" aria-label="Cadrage"></div>
+    </div>
+    <div class="mont">
+      <aside class="panel" id="lib"></aside>
+      <section>
+        <div class="pvwrap"><div class="pv" id="pv" data-testid="preview"></div></div>
+        <div class="row transport" style="margin-top:10px">
+          <button class="icon-btn" id="play" type="button" aria-label="Lecture" data-testid="play">▶</button>
+          <span class="num" id="clock">0:00.0 / 0:00.0</span>
+          <span class="grow"></span>
+          <button class="btn" id="split" type="button" title="Couper le clip sélectionné à la tête de lecture (S)">Couper</button>
+          <button class="btn" id="dup" type="button" title="Dupliquer (D)">Dupliquer</button>
+          <button class="btn" id="del" type="button" title="Supprimer (Suppr)">Supprimer</button>
+          <button class="btn" id="zout" type="button" aria-label="Zoom arrière">−</button><button class="btn" id="zin" type="button" aria-label="Zoom avant">+</button>
+        </div>
+        <div class="tl" id="tl" data-testid="timeline"></div>
+      </section>
+      <aside class="panel" id="insp"></aside>
+    </div>
+    <div class="panel" id="out" style="margin-top:var(--gap)">
+      <div class="row"><strong>Exporter</strong><span class="note" id="outInfo"></span><span class="grow"></span>
+        <button class="btn primary" id="export" type="button" data-testid="export">Exporter ce format</button></div>
+      <div id="outStatus" class="note"></div><div id="outResult"></div>
+    </div>`
+
+  const pv = $('#pv', root), tl = $('#tl', root), insp = $('#insp', root), lib = $('#lib', root), playBtn = $('#play', root)
+
+  // ------------------------------------------------------------------------------------------------ toolbar
+  function drawToolbar() {
+    $('#formats', root).innerHTML = Object.entries(tcfg.formats).map(([k, f]) => `<button type="button" data-f="${k}" class="${k === fmt() ? 'on' : ''}">${esc(f.label)}</button>`).join('')
+    $('#fits', root).innerHTML = tcfg.fits.map((f) => `<button type="button" data-fit="${f}" class="${f === spec.fit ? 'on' : ''}">${{ contain: 'Entier', cover: 'Remplir', blur: 'Flou' }[f] || f}</button>`).join('')
+    $$('#formats button', root).forEach((b) => b.addEventListener('click', () => { spec.formats = [b.dataset.f]; drawToolbar(); drawPreviewShell(); renderPreview(); draft() }))
+    $$('#fits button', root).forEach((b) => b.addEventListener('click', () => { spec.fit = b.dataset.fit; spec.tracks.forEach((tr) => tr.clips.forEach((c) => { delete c.fit })); drawToolbar(); renderPreview(); draft() }))
+    $('#tid', root).value = spec.id
+  }
+  $('#tid', root).addEventListener('change', (e) => {
+    const v = e.target.value.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || 'montage'
+    spec.id = v
+    e.target.value = v
+    draft()
+  })
+  $('#new', root).addEventListener('click', () => { spec = blankSpec(); selected = null; t = 0; redrawAll(); draft() })
+  $('#save', root).addEventListener('click', async () => {
+    try {
+      const r = await post('/api/v1/timeline/save', { spec })
+      toast(`Montage « ${r.id} » enregistré.`)
+      await listSaved()
+    } catch (e) { toast(e.message, true) }
+  })
+  $('#delmont', root).addEventListener('click', async () => {
+    const saved = $$('#open option', root).some((o) => o.value === spec.id)
+    if (!saved) return toast('Ce montage n\'est pas enregistré.', true)
+    if (!confirm(`Supprimer le montage « ${spec.id} » ? Tes fichiers et tes motions restent.`)) return
+    try {
+      await post('/api/v1/timeline/delete', { id: spec.id })
+      toast('Montage supprimé.')
+      spec = blankSpec(); selected = null; t = 0
+      redrawAll(); draft(); await listSaved()
+    } catch (e) { toast(e.message, true) }
+  })
+  async function listSaved() {
+    const { items } = await get('/api/v1/timelines')
+    const sel = $('#open', root)
+    sel.innerHTML = '<option value="">Ouvrir…</option>' + items.map((i) => `<option value="${esc(i.id)}">${esc(i.id)}</option>`).join('')
+  }
+  $('#open', root).addEventListener('change', async (e) => {
+    if (!e.target.value) return
+    try {
+      const r = await get('/api/v1/timeline', { id: e.target.value })
+      spec = r.spec
+      spec.formats = spec.formats || (spec.format ? [spec.format] : [tcfg.defaultFormat])
+      selected = null; t = 0
+      redrawAll(); draft()
+      hydrate()
+    } catch (err) { toast(err.message, true) }
+    e.target.value = ''
+  })
+
+  // ------------------------------------------------------------------------------------------------ library
+  let stopLib = null
+  function drawLibrary(tab = 'motions') {
+    stopLib?.()
+    lib.innerHTML = `<div class="seg"><button type="button" data-tab="motions" class="${tab === 'motions' ? 'on' : ''}">Motions</button><button type="button" data-tab="files" class="${tab === 'files' ? 'on' : ''}">Mes fichiers</button></div>
+      <div class="row"><button class="btn" id="addText" type="button" data-testid="add-text">+ Titre</button></div>
+      ${tab === 'motions' ? '<input id="libq" type="search" placeholder="Chercher un motion…" aria-label="Chercher" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg)">' :
+        '<div class="drop" id="fdrop" tabindex="0" style="padding:12px;margin:0"><span class="note">Dépose des vidéos, images ou sons ici (ou clique)</span><input id="fpick" type="file" multiple hidden></div>'}
+      <div id="libList" class="lib"></div>`
+    $$('[data-tab]', lib).forEach((b) => b.addEventListener('click', () => drawLibrary(b.dataset.tab)))
+    $('#addText', lib).addEventListener('click', () => addClip('text', newText(), t))
+    const list = $('#libList', lib)
+    const item = (it, kind) => {
+      const el = document.createElement('div')
+      el.className = 'item'
+      el.draggable = true
+      el.dataset.testid = 'lib-item'
+      const poster = kind === 'motion' ? (it.poster ? `<img alt="" loading="lazy" src="${esc(it.poster)}">` : '<img alt="">') : (it.kind === 'image' ? `<img alt="" loading="lazy" src="${esc(it.url)}">` : `<img alt="">`)
+      el.innerHTML = `${poster}<div><div class="name" style="font-size:var(--ui-s)">${esc(kind === 'motion' ? it.title : it.name)}</div>
+        <div class="chips"><span class="chip">${esc(kind === 'motion' ? it.recipe : it.kind)}</span>${it.duration ? `<span class="chip num">${it.duration.toFixed(1)} s</span>` : ''}</div></div>`
+      $('img', el).addEventListener('error', (e) => e.target.style.visibility = 'hidden')
+      const make = () => (kind === 'motion' ? clipFromLibrary(it) : clipFromFile(it))
+      el.addEventListener('dblclick', () => addClip(make()._kind === 'audio' ? 'audio' : 'video', make(), null))
+      el.addEventListener('dragstart', (e) => { e.dataTransfer.setData('application/x-zr-clip', JSON.stringify(make())); e.dataTransfer.effectAllowed = 'copy' })
+      const add = document.createElement('button')
+      add.className = 'btn'; add.type = 'button'; add.textContent = 'Ajouter'; add.style.gridColumn = '1 / -1'
+      add.addEventListener('click', () => addClip(make()._kind === 'audio' ? 'audio' : 'video', make(), null))
+      el.append(add)
+      if (kind === 'file') {
+        const rm = document.createElement('button')
+        rm.className = 'btn'; rm.type = 'button'; rm.textContent = 'Retirer'; rm.dataset.testid = 'remove-file'; rm.style.gridColumn = '1 / -1'
+        rm.title = 'Retire ce fichier de la bibliothèque (refusé s\'il est utilisé par un montage enregistré)'
+        rm.addEventListener('click', async () => {
+          try { await post('/api/v1/upload/delete', { id: it.id }); el.remove(); toast('Fichier retiré.') } catch (e) { toast(e.message, true) }
+        })
+        el.append(rm)
+      }
+      return el
+    }
+    if (tab === 'motions') {
+      const run = (needle) => {
+        stopLib?.()
+        list.innerHTML = ''
+        stopLib = pagedList({
+          container: list, pageSize: config.paging.library,
+          fetchPage: (offset, limit) => get('/api/v1/library', { kind: 'motions', offset, limit, q: needle }),
+          renderItem: (m) => item(m, 'motion'), emptyText: 'Aucun motion ne correspond.',
+        })
+      }
+      let timer
+      $('#libq', lib).addEventListener('input', (e) => { clearTimeout(timer); timer = setTimeout(() => run(e.target.value), 250) })
+      run('')
+    } else {
+      const drop = $('#fdrop', lib), pick = $('#fpick', lib)
+      const handle = async (files) => {
+        for (const f of files) {
+          try {
+            toast(`Envoi de ${f.name}…`)
+            await upload(f)
+          } catch (e) { toast(`${f.name} : ${e.message}`, true) }
+        }
+        drawLibrary('files')
+      }
+      drop.addEventListener('click', () => pick.click())
+      pick.addEventListener('click', (e) => e.stopPropagation())
+      pick.addEventListener('change', () => handle([...pick.files]))
+      for (const ev of ['dragenter', 'dragover']) drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over') })
+      for (const ev of ['dragleave', 'drop']) drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('over') })
+      drop.addEventListener('drop', (e) => handle([...e.dataTransfer.files]))
+      stopLib = pagedList({
+        container: list, pageSize: config.paging.library,
+        fetchPage: (offset, limit) => get('/api/v1/uploads', { offset, limit }),
+        renderItem: (f) => item(f, 'file'), emptyText: 'Aucun fichier : dépose le tien ci-dessus.',
+      })
+    }
+  }
+
+  // ------------------------------------------------------------------------------------------------ timeline
+  const RULER_H = 22
+  function drawTimeline() {
+    const total = Math.max(end() + 5, 20)
+    const width = Math.ceil(total * pps)
+    const ticks = []
+    const step = pps >= 100 ? 1 : pps >= 50 ? 2 : pps >= 25 ? 5 : 10
+    for (let s = 0; s <= total; s += step) ticks.push(`<span style="left:${s * pps}px">${clock(s).replace(/\.0$/, '')}</span>`)
+    tl.innerHTML = `<div class="tlin" style="width:${width}px;position:relative">
+      <div class="ruler" id="ruler" style="width:${width}px">${ticks.join('')}</div>
+      ${spec.tracks.map((tr) => `<div class="track" data-track="${esc(tr.id)}" data-kind="${tr.kind}" style="width:${width}px">
+        <span class="label">${{ video: 'Vidéo', text: 'Texte', audio: 'Son' }[tr.kind]}</span>
+        ${tr.clips.map((c) => {
+    const left = (c.start ?? 0) * pps, w = Math.max(6, clipDur(tr, c) * pps)
+    const kind = tr.kind === 'video' && c._kind === 'image' ? 'image' : tr.kind
+    return `<div class="clip ${kind} ${c.id === selected ? 'sel' : ''}" data-clip="${esc(c.id)}" style="left:${left}px;width:${w}px" title="${esc(c._title || c.text || '')}">
+            <span class="h l"></span>${esc(tr.kind === 'text' ? c.text : c._title || c.source?.motion || 'clip')}<span class="h r"></span></div>`
+  }).join('')}</div>`).join('')}
+      <div class="playhead" id="ph" style="left:${t * pps}px"></div></div>
+      <div class="row" style="margin-top:8px">${['video', 'text', 'audio'].map((k) => `<button class="btn" type="button" data-addtrack="${k}">+ piste ${{ video: 'vidéo', text: 'texte', audio: 'son' }[k]}</button>`).join('')}</div>`
+    $$('[data-addtrack]', tl).forEach((b) => b.addEventListener('click', () => {
+      if (spec.tracks.length >= tcfg.limits.tracks) return toast(`Maximum ${tcfg.limits.tracks} pistes.`, true)
+      spec.tracks.push({ id: uid(b.dataset.addtrack), kind: b.dataset.addtrack, clips: [] })
+      redrawAll(); draft()
+    }))
+  }
+  // pointer interactions (delegated)
+  let drag = null
+  const snap = (v, selfId) => {
+    const px = 6 / pps
+    const pts = [0, t, ...allClips().filter((x) => x.c.id !== selfId).flatMap(({ tr, c }) => [c.start ?? 0, (c.start ?? 0) + clipDur(tr, c)])]
+    const near = pts.find((p) => Math.abs(p - v) < px)
+    return round(near ?? Math.round(v / 0.05) * 0.05)
+  }
+  tl.addEventListener('pointerdown', (e) => {
+    const ruler = e.target.closest('#ruler')
+    if (ruler) { const r = ruler.getBoundingClientRect(); seek(clamp((e.clientX - r.left) / pps, 0, 1e6)); return }
+    const el = e.target.closest('.clip')
+    if (!el) return
+    const found = findClip(el.dataset.clip)
+    if (!found) return
+    selected = found.c.id
+    const mode = e.target.classList.contains('l') ? 'l' : e.target.classList.contains('r') ? 'r' : 'move'
+    drag = { id: found.c.id, mode, x0: e.clientX, orig: { ...found.c }, tr: found.tr, el, moved: false }
+    try { el.setPointerCapture?.(e.pointerId) } catch { /* a synthetic pointer has no capture; the drag still works through the timeline listeners */ }
+    $$('.clip', tl).forEach((x) => x.classList.toggle('sel', x === el))
+    drawInspector()
+  })
+  tl.addEventListener('pointermove', (e) => {
+    if (!drag) return
+    const dx = (e.clientX - drag.x0) / pps
+    if (Math.abs(e.clientX - drag.x0) > 2) drag.moved = true
+    if (!drag.moved) return
+    const found = findClip(drag.id)
+    if (!found) return
+    const { tr, c } = found
+    const o = drag.orig
+    const dur0 = clipDur(drag.tr, o)
+    if (drag.mode === 'move') {
+      c.start = Math.max(0, snap((o.start ?? 0) + dx, c.id))
+    } else if (drag.mode === 'l') {
+      const maxShift = dur0 - 0.1
+      const shift = clamp(dx, -(o.start ?? 0), maxShift)
+      if (tr.kind === 'text' || c._kind === 'image') { c.start = round((o.start ?? 0) + shift); c.duration = round(dur0 - shift) }
+      else {
+        const sh = clamp(shift, -(o.in ?? 0), maxShift)
+        c.start = round((o.start ?? 0) + sh); c.in = round((o.in ?? 0) + sh)
+      }
+    } else {
+      const nd = Math.max(0.1, dur0 + dx)
+      if (tr.kind === 'text' || c._kind === 'image') c.duration = round(nd)
+      else c.out = round(clamp((o.in ?? 0) + nd, (o.in ?? 0) + 0.1, c._dur ?? (o.in ?? 0) + nd))
+    }
+    drag.el.style.left = `${(c.start ?? 0) * pps}px`
+    drag.el.style.width = `${Math.max(6, clipDur(tr, c) * pps)}px`
+  })
+  const endDrag = (e) => {
+    if (!drag) return
+    const d = drag
+    drag = null
+    if (d.moved) {
+      // a clip can change track when dropped on another track of its kind
+      const hit = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.track')
+      const found = findClip(d.id)
+      if (hit && found && hit.dataset.track !== found.tr.id && hit.dataset.kind === found.tr.kind) {
+        const target = spec.tracks.find((x) => x.id === hit.dataset.track)
+        found.tr.clips = found.tr.clips.filter((x) => x.id !== d.id)
+        target.clips.push(found.c)
+      }
+      redrawAll(); draft()
+    }
+  }
+  tl.addEventListener('pointerup', endDrag)
+  tl.addEventListener('pointercancel', endDrag)
+  // drop from the library
+  tl.addEventListener('dragover', (e) => { if ([...e.dataTransfer.types].includes('application/x-zr-clip')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' } })
+  tl.addEventListener('drop', (e) => {
+    const raw = e.dataTransfer.getData('application/x-zr-clip')
+    if (!raw) return
+    e.preventDefault()
+    const clip = JSON.parse(raw)
+    const trackEl = e.target.closest('.track')
+    const rect = $('.tlin', tl).getBoundingClientRect()
+    const at = Math.max(0, round((e.clientX - rect.left) / pps))
+    const kind = clip._kind === 'audio' ? 'audio' : 'video'
+    let target = trackEl ? spec.tracks.find((x) => x.id === trackEl.dataset.track) : null
+    if (target && target.kind !== kind) target = null
+    addClip(kind, clip, at, target?.id || null)
+  })
+
+  // ----------------------------------------------------------------------------------------------- inspector
+  function drawInspector() {
+    insp.innerHTML = ''
+    const found = selected ? findClip(selected) : null
+    const proj = document.createElement('div')
+    proj.className = 'group'
+    insp.append(Object.assign(document.createElement('strong'), { textContent: found ? 'Clip sélectionné' : 'Aucun clip sélectionné' }))
+    if (!found) {
+      const p = document.createElement('p')
+      p.className = 'note'
+      p.textContent = 'Clique un clip de la timeline pour changer son texte, sa couleur, sa position ou sa durée. Double-clique un motion de la bibliothèque pour l\'ajouter.'
+      insp.append(p)
+      const bg = makeField({ key: 'background', label: 'Fond du montage', kind: 'color' }, spec.background, (v) => { spec.background = v; renderPreview(); draft() })
+      insp.append(bg.el)
+      return
+    }
+    const { tr, c } = found
+    const defs = []
+    if (tr.kind === 'text') {
+      defs.push({ key: 'text', label: 'Texte', kind: 'text', maxLength: T.maxChars },
+        { key: 'color', label: 'Couleur du texte', kind: 'color' },
+        { key: 'font', label: 'Police', kind: 'select', options: T.fonts },
+        { key: 'size', label: 'Taille (part de la hauteur)', kind: 'number', min: T.sizeRange[0], max: T.sizeRange[1], step: 0.005 },
+        { key: 'x', label: 'Position horizontale', kind: 'number', min: 0, max: 1, step: 0.01 },
+        { key: 'y', label: 'Position verticale', kind: 'number', min: 0, max: 1, step: 0.01 },
+        { key: 'weight', label: 'Graisse', kind: 'number', min: T.weightRange[0], max: T.weightRange[1], step: 50 },
+        { key: 'anim', label: 'Animation', kind: 'select', options: T.anims.map((a) => ({ value: a, label: { pop: 'Apparition', fade: 'Fondu', none: 'Aucune' }[a] || a })) },
+        { key: 'start', label: 'Début (s)', kind: 'number', input: 'number', min: 0, step: 0.05 },
+        { key: 'duration', label: 'Durée (s)', kind: 'number', input: 'number', min: 0.1, step: 0.05 },
+        { key: 'align', label: 'Alignement', kind: 'select', options: [{ value: 'left', label: 'Gauche' }, { value: 'center', label: 'Centre' }, { value: 'right', label: 'Droite' }] },
+        { key: 'wrap', label: 'Retour à la ligne', kind: 'bool' })
+    } else if (tr.kind === 'video') {
+      defs.push({ key: 'start', label: 'Début (s)', kind: 'number', input: 'number', min: 0, step: 0.05 })
+      if (c._kind === 'image') defs.push({ key: 'duration', label: 'Durée (s)', kind: 'number', input: 'number', min: 0.1, step: 0.05 })
+      else defs.push({ key: 'in', label: 'Entrée dans la source (s)', kind: 'number', input: 'number', min: 0, step: 0.05 }, { key: 'out', label: 'Sortie de la source (s)', kind: 'number', input: 'number', min: 0.1, step: 0.05 })
+      defs.push({ key: 'fit', label: 'Cadrage', kind: 'select', options: tcfg.fits.map((f) => ({ value: f, label: { contain: 'Entier', cover: 'Remplir', blur: 'Flou' }[f] })) },
+        { key: 'opacity', label: 'Opacité', kind: 'number', min: 0, max: 1, step: 0.01 })
+      if (c._kind !== 'image') defs.push({ key: 'volume', label: 'Volume', kind: 'number', min: 0, max: 2, step: 0.05 }, { key: 'mute', label: 'Couper le son', kind: 'bool' })
+      if (c.source?.kind === 'motion') defs.push({ key: 'textOnly', label: 'Texte seul (sans le fond)', kind: 'bool' })
+    } else {
+      defs.push({ key: 'start', label: 'Début (s)', kind: 'number', input: 'number', min: 0, step: 0.05 },
+        { key: 'in', label: 'Entrée dans la source (s)', kind: 'number', input: 'number', min: 0, step: 0.05 },
+        { key: 'out', label: 'Sortie de la source (s)', kind: 'number', input: 'number', min: 0.1, step: 0.05 },
+        { key: 'volume', label: 'Volume', kind: 'number', min: 0, max: 2, step: 0.05 })
+    }
+    const initial = (k) => (k === 'start' ? c.start ?? 0 : k === 'duration' ? clipDur(tr, c) : k === 'in' ? c.in ?? 0 : k === 'out' ? c.out ?? c._dur ?? 1
+      : k === 'fit' ? c.fit || spec.fit : k === 'opacity' ? c.opacity ?? 1 : k === 'volume' ? c.volume ?? 1 : k === 'mute' || k === 'textOnly' || k === 'wrap' ? !!c[k]
+        : c[k] ?? T[k] ?? '')
+    const groups = [[], [], []]
+    defs.forEach((d) => groups[Math.min(tierOf(d.key), 2)].push(d))
+    const mk = (d) => {
+      const f = makeField(d, initial(d.key), (v) => {
+        if (d.key === 'duration' && tr.kind !== 'text' && c._kind !== 'image') return
+        c[d.key] = v
+        if (d.key === 'out' && c.in != null && c.out <= c.in) c.out = round(c.in + 0.1)
+        drawTimeline(); renderPreview(); draft()
+      })
+      return f.el
+    }
+    const first = document.createElement('div'); first.className = 'group'
+    groups[0].forEach((d) => first.append(mk(d)))
+    insp.append(first)
+    const second = document.createElement('div'); second.className = 'group'
+    groups[1].forEach((d) => second.append(mk(d)))
+    insp.append(second)
+    if (groups[2].length) {
+      const more = document.createElement('details'); more.className = 'more-params'
+      more.innerHTML = '<summary>Réglages avancés</summary>'
+      groups[2].forEach((d) => more.append(mk(d)))
+      insp.append(more)
+    }
+  }
+
+  // ------------------------------------------------------------------------------------------------ preview
+  const nodes = new Map()
+  function drawPreviewShell() {
+    const f = fmtInfo()
+    pv.style.aspectRatio = `${f.width} / ${f.height}`
+    pv.style.width = `min(100%, ${60 * f.width / f.height}vh)`
+    pv.querySelectorAll('[data-pvclip]').forEach((n) => n.remove())
+    nodes.clear()
+  }
+  function nodeFor(tr, c) {
+    let n = nodes.get(c.id)
+    if (n) return n
+    const box = document.createElement('div')
+    box.dataset.pvclip = c.id
+    box.style.cssText = 'position:absolute;inset:0;display:none'
+    if (tr.kind === 'text') {
+      box.innerHTML = '<div class="ptxt" style="position:absolute;white-space:pre;line-height:1.15"></div>'
+      n = { box, el: box.firstChild }
+    } else if (tr.kind === 'audio') {
+      const a = document.createElement('audio')
+      a.preload = 'auto'; a.src = mediaUrl(c)
+      box.append(a)
+      n = { box, el: a }
+    } else if (c._kind === 'image') {
+      box.innerHTML = `<img alt="" style="position:absolute;inset:0;width:100%;height:100%" src="${esc(mediaUrl(c))}">`
+      n = { box, el: box.firstChild }
+    } else {
+      const v = document.createElement('video')
+      v.playsInline = true; v.preload = 'auto'; v.src = mediaUrl(c)
+      v.style.cssText = 'position:absolute;inset:0;width:100%;height:100%'
+      box.append(v)
+      n = { box, el: v }
+    }
+    pv.append(box)
+    nodes.set(c.id, n)
+    return n
+  }
+  function renderPreview() {
+    const ph = pv.clientHeight || 360, pw = pv.clientWidth || 640
+    pv.style.background = spec.background
+    const live = new Set()
+    spec.tracks.forEach((tr, ti) => {
+      tr.clips.forEach((c, ci) => {
+        live.add(c.id)
+        const n = nodeFor(tr, c)
+        const s = c.start ?? 0, d = clipDur(tr, c)
+        const active = t >= s - 1e-6 && t < s + d
+        n.box.style.zIndex = String(ti * 100 + ci + 1)
+        n.box.style.display = active && tr.kind !== 'audio' ? 'block' : 'none'
+        if (tr.kind === 'text') {
+          const el = n.el
+          el.textContent = c.text || ''
+          const fontPx = (c.size ?? T.size) * ph
+          const origin = { left: '0', center: '-50%', right: '-100%' }[c.align || T.align]
+          Object.assign(el.style, {
+            left: `${(c.x ?? T.x) * 100}%`, top: `${(c.y ?? T.y) * 100}%`, fontFamily: `'${c.font || T.font}'`, fontWeight: String(c.weight ?? T.weight),
+            color: c.color || T.color, fontSize: `${fontPx}px`, textAlign: c.align || T.align, translate: `${origin} -50%`,
+          })
+          const maxW = T.maxWidth * pw
+          if (!c.wrap && el.scrollWidth > maxW) el.style.fontSize = `${Math.max(8, fontPx * maxW / el.scrollWidth)}px`
+          const age = t - s
+          const anim = c.anim || T.defaultAnim
+          const k = anim === 'none' ? 1 : clamp(age / T.popSeconds, 0, 1)
+          el.style.opacity = anim === 'none' ? '1' : String(k)
+          el.style.scale = anim === 'pop' ? String(T.popFromScale + (1 - T.popFromScale) * k) : '1'
+          return
+        }
+        const media = n.el
+        if (tr.kind === 'video' && c._kind !== 'image') {
+          media.style.objectFit = (c.fit || spec.fit) === 'cover' ? 'cover' : 'contain'
+          media.style.opacity = String(c.opacity ?? 1)
+          media.style.mixBlendMode = c.textOnly ? 'screen' : 'normal'
+        } else if (c._kind === 'image') {
+          media.style.objectFit = (c.fit || spec.fit) === 'cover' ? 'cover' : 'contain'
+        }
+        if (media.tagName === 'IMG') return
+        media.muted = !!c.mute || tr.kind === 'video' && c._kind === 'image'
+        media.volume = clamp(c.volume ?? 1, 0, 1)
+        const want = (c.in ?? 0) + (t - s)
+        if (active) {
+          if (Math.abs(media.currentTime - want) > (playing ? 0.35 : 0.04)) { try { media.currentTime = want } catch { /* not seekable yet */ } }
+          if (playing && media.paused) media.play().catch(() => {})
+          if (!playing && !media.paused) media.pause()
+        } else if (!media.paused) media.pause()
+      })
+    })
+    nodes.forEach((n, cid) => { if (!live.has(cid)) { n.box.remove(); nodes.delete(cid) } })
+    $('#clock', root).textContent = `${clock(t)} / ${clock(end())}`
+    const phEl = $('#ph', tl)
+    if (phEl) phEl.style.left = `${t * pps}px`
+  }
+  function seek(s) {
+    t = clamp(s, 0, Math.max(end(), 0))
+    if (playing) t0 = performance.now() - t * 1000
+    renderPreview()
+  }
+  function frame() {
+    if (!playing) return
+    t = (performance.now() - t0) / 1000
+    if (t >= end()) { t = end(); playing = false; playBtn.textContent = '▶'; renderPreview(); return }
+    renderPreview()
+    raf = requestAnimationFrame(frame)
+  }
+  playBtn.addEventListener('click', () => {
+    if (!end()) return
+    if (playing) { playing = false; playBtn.textContent = '▶'; renderPreview(); return }
+    if (t >= end() - 0.01) t = 0
+    playing = true
+    playBtn.textContent = '❚❚'
+    t0 = performance.now() - t * 1000
+    raf = requestAnimationFrame(frame)
+  })
+  $('#zin', root).addEventListener('click', () => { pps = Math.min(400, pps * 1.25); drawTimeline() })
+  $('#zout', root).addEventListener('click', () => { pps = Math.max(8, pps / 1.25); drawTimeline() })
+  $('#del', root).addEventListener('click', removeSelected)
+  $('#dup', root).addEventListener('click', duplicateSelected)
+  $('#split', root).addEventListener('click', splitSelected)
+  function removeSelected() {
+    const f = selected && findClip(selected)
+    if (!f) return
+    f.tr.clips = f.tr.clips.filter((x) => x.id !== selected)
+    selected = null
+    redrawAll(); draft()
+  }
+  function duplicateSelected() {
+    const f = selected && findClip(selected)
+    if (!f) return
+    const copy = { ...JSON.parse(JSON.stringify(f.c)), id: uid('c'), start: round((f.c.start ?? 0) + clipDur(f.tr, f.c)) }
+    f.tr.clips.push(copy)
+    selected = copy.id
+    redrawAll(); draft()
+  }
+  function splitSelected() {
+    const f = selected && findClip(selected)
+    if (!f) return toast('Sélectionne un clip à couper.', true)
+    const { tr, c } = f
+    const s = c.start ?? 0, d = clipDur(tr, c)
+    if (!(t > s + 0.1 && t < s + d - 0.1)) return toast('Place la tête de lecture à l\'intérieur du clip.', true)
+    const cut = round(t - s)
+    const right = { ...JSON.parse(JSON.stringify(c)), id: uid('c'), start: round(t) }
+    if (tr.kind === 'text' || c._kind === 'image') { c.duration = cut; right.duration = round(d - cut) }
+    else { const src = (c.in ?? 0) + cut; right.in = round(src); c.out = round(src) }
+    tr.clips.push(right)
+    redrawAll(); draft()
+  }
+  const onKey = (e) => {
+    if (e.target.matches('input, select, textarea')) return
+    if (e.code === 'Space') { e.preventDefault(); playBtn.click() }
+    else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); removeSelected() }
+    else if (e.key === 's') splitSelected()
+    else if (e.key === 'd') duplicateSelected()
+  }
+  document.addEventListener('keydown', onKey)
+
+  // ------------------------------------------------------------------------------------------------- export
+  $('#export', root).addEventListener('click', async () => {
+    const status = $('#outStatus', root), result = $('#outResult', root)
+    result.innerHTML = ''
+    status.classList.remove('err')
+    const body = spec
+    try {
+      status.textContent = 'Vérification du montage…'
+      const v = await post('/api/v1/timeline/validate', { spec: body })
+      $('#outInfo', root).textContent = `${v.seconds.toFixed(1)} s · ${fmtInfo().label}`
+      status.textContent = 'Export en cours…'
+      const r = await post('/api/v1/timeline/export', { spec: body, format: fmt() })
+      stopJob?.()
+      stopJob = poll(async () => {
+        const { job } = await get('/api/v1/job', { id: r.job.id })
+        if (job.state === 'queued' || job.state === 'running') {
+          const last = job.steps.at(-1)
+          status.textContent = `Export en cours${last ? ' : ' + last.name : ''}…`
+          return false
+        }
+        if (job.state === 'failed') { status.textContent = job.error; status.classList.add('err'); toast(job.error, true); return true }
+        const url = `/api/v1/timeline/export-file?id=${encodeURIComponent(v.id)}&format=${encodeURIComponent(fmt())}`
+        status.textContent = `Terminé : ${job.result.width}×${job.result.height}, ${job.result.seconds.toFixed(1)} s${job.result.audio ? ', avec son' : ''}.`
+        result.innerHTML = `<video controls src="${url}" style="max-width:min(100%,480px);margin-top:10px" data-testid="export-video"></video>
+          <div class="row" style="margin-top:8px"><a class="btn" href="${url}" download="${esc(v.id)}-${esc(fmt())}.mp4">Télécharger</a><span class="note mono">${esc(job.result.path)}</span></div>`
+        toast('Export terminé.')
+        return true
+      }, config.poll.jobMs)
+    } catch (e) {
+      status.textContent = e.message
+      status.classList.add('err')
+      toast(e.message, true)
+    }
+  })
+
+  /** A spec written elsewhere (API, MCP, an older save) may lack the display meta: ask the planner for each clip's kind and exact length. */
+  async function hydrate() {
+    if (!allClips().length) return
+    try {
+      const v = await post('/api/v1/timeline/validate', { spec })
+      const by = new Map(v.tracks.flatMap((tr) => tr.items.map((i) => [i.id, i])))
+      allClips().forEach(({ tr, c }) => {
+        const i = by.get(c.id)
+        if (!i) return
+        if (tr.kind !== 'text') {
+          c._kind ||= i.kind === 'audio' ? 'audio' : i.kind
+          if (c._dur == null) c._dur = round((c.in ?? 0) + i.duration)
+          c._title ||= i.motion || i.name || 'clip'
+          if (!c._url && c.source?.kind === 'file' && /_uploads\//.test(c.source.path || '')) c._url = `/api/v1/upload-file?id=${encodeURIComponent(i.name)}`
+        }
+      })
+      redrawAll()
+    } catch { /* an invalid spec is reported when the user exports it */ }
+  }
+
+  function redrawAll() {
+    drawToolbar()
+    drawTimeline()
+    drawInspector()
+    drawPreviewShell()
+    renderPreview()
+  }
+
+  // ------------------------------------------------------------------------------------------------- boot
+  try {
+    if (id && id !== 'new') {
+      spec = (await get('/api/v1/timeline', { id })).spec
+      spec.formats = spec.formats || (spec.format ? [spec.format] : [tcfg.defaultFormat])
+    } else {
+      const raw = localStorage.getItem(LS_DRAFT)
+      if (raw && id !== 'new') { const d = JSON.parse(raw); if (d && Array.isArray(d.tracks)) spec = d }
+    }
+  } catch { /* an unreadable draft or an unknown id starts a blank montage */ }
+  if (q?.add) {
+    const [motion, version] = q.add.split('~')
+    try {
+      const m = await get('/api/v1/motion', { motion, version })
+      const clip = clipFromLibrary({ id: motion, version: m.version, duration: m.duration || 1, title: m.title, poster: null })
+      ensureTrack('video').clips.push({ id: uid('c'), start: round(trackEnd(ensureTrack('video'))), ...clip })
+      history.replaceState(null, '', `#/montage`)
+      draft()
+    } catch (e) { toast(e.message, true) }
+  }
+  drawLibrary('motions')
+  redrawAll()
+  hydrate()
+  listSaved().catch(() => {})
+  window.addEventListener('resize', renderPreview)
+  return () => {
+    dead = true
+    playing = false
+    cancelAnimationFrame(raf)
+    stopLib?.(); stopJob?.()
+    document.removeEventListener('keydown', onKey)
+    window.removeEventListener('resize', renderPreview)
+    nodes.forEach((n) => { try { n.el.pause?.() } catch { /* not media */ } })
+  }
+}

@@ -1,0 +1,108 @@
+# 14 October 2026: the V1 montage proven in both directions: GREEN a spec of clips, text and audio is planned frame-exact, cooked per format
+# (16:9, 9:16, 4:5, 1:1) and exported by HyperFrames with the right size, length and sound; a motion placed "text only" overlays another video
+# with its background gone; RED every malformed spec is refused with the track and the clip named, before any render.
+# FR : le montage V1 prouve dans les deux sens ; chaque spec mal formee est refusee avant tout rendu.
+import json
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+WORK = Path.home() / ".claude" / "tmp" / ("tmp-zenray-timeline-test-" + os.urandom(3).hex())
+WORK.mkdir(parents=True, exist_ok=True)
+os.environ["ZRMD_PATH_TIMELINES"] = str(WORK / "out")
+
+from zrmd.app import timeline as TL  # noqa: E402
+
+FAIL = []
+
+
+def check(name, cond, detail=""):
+    print(("ok   " if cond else "FAIL ") + name + (f"  {detail}" if detail and not cond else ""))
+    if not cond:
+        FAIL.append(name)
+
+
+def refuses(spec, needle):
+    try:
+        TL.plan(spec)
+    except TL.SpecError as e:
+        return needle in str(e)
+    return False
+
+
+def ff(*a):
+    subprocess.run(["ffmpeg", "-v", "error", "-y", *a], check=True)
+
+
+def run() -> int:
+    a, b, snd, img = WORK / "a.mp4", WORK / "b.mp4", WORK / "s.wav", WORK / "i.png"
+    ff("-f", "lavfi", "-i", "testsrc=s=320x180:r=30:d=1.0", "-f", "lavfi", "-i", "sine=f=330:d=1.0", "-shortest", "-pix_fmt", "yuv420p", str(a))
+    ff("-f", "lavfi", "-i", "color=c=0x224466:s=160x90:r=30:d=1.0", "-pix_fmt", "yuv420p", str(b))
+    ff("-f", "lavfi", "-i", "sine=f=220:d=2", str(snd))
+    ff("-f", "lavfi", "-i", "color=c=red:s=64x64:d=1", "-frames:v", "1", str(img))
+    F = lambda p: {"kind": "file", "path": str(p)}  # noqa: E731
+    good = {"id": "t-good", "fps": 30, "formats": ["4x5"], "fit": "blur", "tracks": [
+        {"kind": "video", "clips": [{"id": "v1", "source": F(a)}, {"id": "v2", "source": F(b), "fit": "cover"}, {"id": "im", "source": F(img), "duration": 0.5}]},
+        {"kind": "text", "clips": [{"id": "x1", "text": "Hello", "start": 0.2, "duration": 1.0}]},
+        {"kind": "audio", "clips": [{"id": "m1", "source": F(snd), "out": 2.0, "volume": 0.5}]}]}
+    p = TL.plan(good)
+    check("clips of a track are placed one after the other and the frames add up", p["frames"] == 75 and p["tracks"][0]["clips"][1]["start_frame"] == 30, p["frames"])
+    check("the text clip is planned at its start", p["tracks"][1]["clips"][0]["start_frame"] == 6 and p["tracks"][1]["clips"][0]["frames"] == 30)
+    proj = TL.cook(p, WORK / "cook", "4x5")
+    html = (proj / "index.html").read_text()
+    check("the 4:5 canvas is 1080 x 1350", 'data-width="1080" data-height="1350"' in html)
+    check("a blur fit draws a blurred copy under the picture", 'class="bgblur"' in html and html.count("<video") >= 3)
+    check("text, audio and a paused timeline are in the composition", 'class="clip txt"' in html and "<audio" in html and "window.__timelines" in html)
+    # RED: refusals before any render
+    check("RED: an empty text is refused", refuses({**good, "tracks": [{"kind": "text", "clips": [{"text": "  ", "duration": 1}]}]}, "empty text"))
+    check("RED: an unknown font is refused", refuses({**good, "tracks": [{"kind": "text", "clips": [{"text": "x", "font": "Comic Sans"}]}]}, "font"))
+    check("RED: an unknown fit is refused", refuses({**good, "fit": "stretch"}, "fit"))
+    check("RED: an unknown format is refused", refuses({**good, "formats": ["21x9"]}, "format"))
+    check("RED: a file outside the home folder is refused", refuses({**good, "tracks": [{"kind": "video", "clips": [{"source": {"kind": "file", "path": "/etc/hosts"}}]}]}, "outside"))
+    check("RED: a relative path is refused", refuses({**good, "tracks": [{"kind": "video", "clips": [{"source": {"kind": "file", "path": "a.mp4"}}]}]}, "absolute"))
+    check("RED: an out point beyond the media is refused", refuses({**good, "tracks": [{"kind": "video", "clips": [{"source": F(a), "out": 9}]}]}, "out"))
+    check("RED: an audio file on a video track is a bad source only for text", refuses({**good, "tracks": [{"kind": "video", "clips": [{"source": F(snd)}]}]}, "cannot go"))
+    check("RED: textOnly needs a motion", refuses({**good, "tracks": [{"kind": "video", "clips": [{"source": F(a), "textOnly": True}]}]}, "textOnly"))
+    check("RED: a repeated clip id is refused", refuses({**good, "tracks": [{"kind": "video", "clips": [{"id": "z", "source": F(a)}, {"id": "z", "source": F(b)}]}]}, "repeated"))
+    check("RED: an empty timeline is refused", refuses({**good, "tracks": [{"kind": "video", "clips": []}]}, "empty"))
+    check("RED: a bad timeline id is refused", refuses({**good, "id": "Bad Id"}, "id"))
+    # GREEN: a real export
+    r = TL.export(good, "4x5")
+    check("GREEN: the export has the 4:5 size", (r["width"], r["height"]) == (1080, 1350), r)
+    check("GREEN: the export lasts what the plan says (2.5 s) and carries sound", abs(r["seconds"] - 2.5) < 0.15 and r["audio"], r)
+    # GREEN: text-only motion over another video (skipped when the motion is not on this machine)
+    motion = Path("/Users/zenray/.claude/tmp/tmp-zenray-motion-design/motions/onekey-s02-caption-shine/V_045/16x9/index.html")
+    if motion.exists():
+        ov = {"id": "t-overlay", "fps": 30, "formats": ["16x9"], "tracks": [
+            {"kind": "video", "clips": [{"id": "base", "source": F(a)}]},
+            {"kind": "video", "clips": [{"id": "fx", "start": 0.0, "source": {"kind": "motion", "motion": "onekey-s02-caption-shine", "version": "V_045"}, "textOnly": True}]}]}
+        o = TL.export(ov, "16x9")
+        frame = WORK / "ov.png"
+        ff("-ss", "0.9", "-i", o["path"], "-frames:v", "1", str(frame))
+        base = WORK / "base.png"
+        ff("-ss", "0.9", "-i", str(a), "-frames:v", "1", "-vf", "scale=1920:1080", str(base))
+        diff = subprocess.run(["ffmpeg", "-v", "error", "-i", str(frame), "-i", str(base), "-filter_complex", "[0][1]blend=all_mode=difference,format=gray,signalstats,metadata=print:key=lavfi.signalstats.YAVG:file=-", "-f", "null", "-"],
+                              capture_output=True, text=True).stdout
+        avg = [float(l.split("=")[1]) for l in diff.splitlines() if "YAVG" in l]
+        check("GREEN: a text-only motion changes the picture only where its text is (small mean difference, not zero)", avg and 0.05 < avg[0] < 12, avg)
+        check("the overlay of a text-only motion is an alpha WebM in the cache", any(Path(os.environ["ZRMD_PATH_TIMELINES"]).glob("_overlays/*.webm")))
+    print(f"{len(FAIL)} failure(s)")
+    return 1 if FAIL else 0
+
+
+def test_timeline():
+    assert run() == 0
+
+
+if __name__ == "__main__":
+    try:
+        code = run()
+    finally:
+        import shutil
+        shutil.rmtree(WORK, ignore_errors=True)
+    sys.exit(code)

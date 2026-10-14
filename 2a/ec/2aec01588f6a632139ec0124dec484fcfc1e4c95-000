@@ -1,0 +1,147 @@
+# 14 October 2026: two-way validation of the master chain (zrmd/audio/master.py, zrmd/audio/gainride.py). Synthetic soundtracks only (a
+# brick-wall reference and a more dynamic sum of the same content), so the test needs no corpus. Every test has a green case (the chain does
+# what it promises) and a red case (a known defect is caught), so no check can pass without looking at its input.
+# Runs under pytest, or directly: python -I tests/test_master.py (prints JSON, exit code 0 when all pass).
+# FR : validation dans les deux sens de la chaine de master ; ciel de crete, rejeu sans reference, parcimonie de la saturation.
+from __future__ import annotations
+
+import os
+
+for _k in ("OMP_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "OPENBLAS_NUM_THREADS"):
+    os.environ.setdefault(_k, "1")
+import copy
+import json
+import math
+import sys
+from pathlib import Path
+
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from zrmd.audio import config, gainride, loudness, master, mix  # noqa: E402
+
+CFG = copy.deepcopy(config.cfg())
+CFG["mix"]["ride"]["binS"] = 0.1          # a coarser bin keeps the test short; the engine default is read from datasets/sfx-params.json
+SR = CFG["audio"]["sampleRate"]
+DUR = 24.0
+_CACHE: dict = {}
+
+
+def _content(sections: list[float], kick_db: float, seed: int = 7) -> np.ndarray:
+    """A chord under a section envelope, a 55 Hz kick every half second and short noise hats: deterministic, stereo, 24 s."""
+    rng = np.random.default_rng(seed)
+    n = int(DUR * SR)
+    t = np.arange(n) / SR
+    env = np.interp(t, np.arange(len(sections)) * (DUR / len(sections)) + DUR / len(sections) / 2, sections)
+    chord = sum(np.sin(2 * np.pi * f * t) for f in (220.0, 277.18, 329.63)) / 3 * env * 0.5
+    kick, hats = np.zeros(n), np.zeros(n)
+    for k in np.arange(0, DUR, 0.5):
+        i, m = int(k * SR), min(int(0.25 * SR), n - int(k * SR))
+        kick[i:i + m] += np.sin(2 * np.pi * 55 * np.arange(m) / SR) * np.exp(-np.arange(m) / (0.05 * SR)) * 0.9
+    for k in np.arange(0.25, DUR, 0.5):
+        i, m = int(k * SR), min(int(0.04 * SR), n - int(k * SR))
+        hats[i:i + m] += rng.normal(0, 0.15, m) * np.exp(-np.arange(m) / (0.01 * SR))
+    x = chord + kick * 10 ** (kick_db / 20) * (env * 0.8 + 0.2) + hats
+    return np.stack([x, np.roll(x, 7)], axis=1)
+
+
+def scenario(name: str) -> dict:
+    """name 'dense': a brick-wall reference at -7 LUFS that a dynamic sum cannot match by gain alone (the drive matters).
+    name 'easy': a lighter master the plain sum already follows once its curve is ridden (the drive must stay at 0)."""
+    if name in _CACHE:
+        return _CACHE[name]
+    target, ref_drive, kick = {"dense": (-7.0, 8.0, 12.0), "easy": (-8.0, 14.0, 6.0)}[name]
+    c = _content([0.3, 0.6, 1.0, 0.6], 0.0)
+    g = c * mix.db_gain(target - loudness.integrated(c, SR)) * mix.db_gain(ref_drive)
+    ref = master.settle(master.soft_clip(g, -1.1), SR, CFG, target)
+    raw = _content([0.45, 0.6, 0.8, 0.6], kick) * 0.5
+    out, spec, tried = master.fit(ref, raw, SR, CFG)
+    _CACHE[name] = {"ref": ref, "raw": raw, "target": target, "out": out, "spec": spec, "tried": tried,
+                    "plain": gainride.mix_parts(ref, master.settle(raw, SR, CFG, target), SR, CFG)}
+    return _CACHE[name]
+
+
+def test_fit_beats_the_plain_chain_and_replays_exactly():
+    s = scenario("dense")
+    final = gainride.mix_parts(s["ref"], s["out"], SR, CFG)
+    assert final["score"] > s["plain"]["score"] + 0.03, (final, s["plain"])             # green: the master chain improves the exact mix score
+    replay = master.render(s["raw"], SR, CFG, json.loads(json.dumps(s["spec"])))        # numbers only, through JSON, no reference in sight
+    assert float(np.abs(replay - s["out"]).max()) < 1e-9                                 # green: the stored numbers replay the same samples
+    # red: a spec stripped of its numbers is not the chain (the check looks at its input)
+    plain = master.render(s["raw"], SR, CFG, {"targetLufs": s["spec"]["targetLufs"], "driveDb": 0.0, "chain": []})
+    assert gainride.mix_parts(s["ref"], plain, SR, CFG)["score"] < final["score"] - 0.03
+
+
+def test_true_peak_never_over_the_ceiling():
+    s = scenario("dense")
+    ceiling = CFG["mix"]["truePeakCeilingDbtp"]
+    assert loudness.true_peak_db(s["out"], SR, CFG["mix"]["oversample"]) <= ceiling + 1e-6        # green
+    inflated = copy.deepcopy(s["spec"])
+    for ride in inflated["chain"]:
+        ride["gainDb"] = [v + 9.0 for v in ride["gainDb"]]
+    raised = gainride.apply(master._driven(s["raw"], SR, CFG, s["spec"]["targetLufs"], s["spec"]["driveDb"]), inflated["chain"][0], SR)
+    assert loudness.true_peak_db(raised, SR, CFG["mix"]["oversample"]) > ceiling + 1.0          # red: unguarded, the raised ride is over the ceiling
+    guarded = master.render(s["raw"], SR, CFG, inflated)
+    assert loudness.true_peak_db(guarded, SR, CFG["mix"]["oversample"]) <= ceiling + 0.05        # green: render keeps it under (limiter after the ride)
+
+
+def test_drive_is_searched_and_parsimonious():
+    dense, easy = scenario("dense"), scenario("easy")
+    assert dense["spec"]["driveDb"] > 0, dense["tried"]                                  # green: the dense master asks for a drive
+    assert max(t["score"] for t in dense["tried"]) == dense["tried"][[t["driveDb"] for t in dense["tried"]].index(dense["spec"]["driveDb"])]["score"]
+    assert easy["spec"]["driveDb"] == 0.0 and len(easy["tried"]) == 1, easy["tried"]    # green: no saturation when the plain chain is enough
+    assert easy["tried"][0]["score"] >= CFG["mix"]["drive"]["stopScore"]
+    no_drive = copy.deepcopy(dense["spec"])
+    no_drive["driveDb"] = 0.0
+    red = master.render(dense["raw"], SR, CFG, no_drive)                                  # red: the same ride without the drive is lower
+    assert gainride.mix_parts(dense["ref"], red, SR, CFG)["score"] < gainride.mix_parts(dense["ref"], dense["out"], SR, CFG)["score"]
+
+
+def test_spec_is_numbers_only():
+    s = scenario("dense")["spec"]
+    text = json.dumps(s)
+    assert len(text) < 30_000, len(text)                                                  # a few hundred numbers, never audio
+    ride = s["chain"][0]
+    assert len(ride["gainDb"]) == len(ride["centres"]) <= math.ceil(DUR / CFG["mix"]["ride"]["binS"]) + 1
+    assert all(isinstance(v, float) for v in ride["gainDb"]) and np.isfinite(ride["gainDb"]).all()
+    assert abs(max(ride["gainDb"])) <= CFG["mix"]["ride"]["maxDb"] + 2.0                  # shift under the overall scale, bounded ride
+
+
+def test_stored_stems_replay_the_sum():
+    """music.wav and sfx.wav are hotter than full scale before the master brings the level down: stored unscaled they clip and the sum is lost."""
+    import tempfile
+
+    from zrmd.media import load_audio, write_wav
+    rng = np.random.default_rng(3)
+    music = np.clip(rng.normal(0, 0.55, (SR, 2)), -3.0, 3.0)                              # peaks well above 1
+    sfx = np.zeros((SR, 2))
+    sfx[1000:1400] = 1.8
+    raw = music + sfx
+    with tempfile.TemporaryDirectory() as d:
+        write_wav(Path(d) / "m.wav", music, SR)
+        write_wav(Path(d) / "s.wav", sfx, SR)
+        clipped = load_audio(Path(d) / "m.wav", SR, mono=False)[0].astype(np.float64) + load_audio(Path(d) / "s.wav", SR, mono=False)[0].astype(np.float64)
+        assert float(np.abs(clipped - raw).max()) > 0.5                                   # red: unscaled stems cannot give the sum back
+        g = master.stem_gain([music, sfx])
+        write_wav(Path(d) / "m.wav", music * g, SR)
+        write_wav(Path(d) / "s.wav", sfx * g, SR)
+        back = (load_audio(Path(d) / "m.wav", SR, mono=False)[0].astype(np.float64) + load_audio(Path(d) / "s.wav", SR, mono=False)[0].astype(np.float64)) / g
+        assert float(np.abs(back - raw).max()) < 1e-4, float(np.abs(back - raw).max())    # green: scaled stems give the sum back to 24-bit precision
+    assert master.stem_gain([np.full((10, 2), 0.2)]) == 1.0                               # a quiet stem is never amplified
+
+
+def main() -> int:
+    results = {}
+    for name, fn in sorted(globals().items()):
+        if name.startswith("test_") and callable(fn):
+            try:
+                fn()
+                results[name] = "pass"
+            except AssertionError as e:
+                results[name] = f"FAIL {e}"
+    print(json.dumps(results, indent=1))
+    return 0 if all(v == "pass" for v in results.values()) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

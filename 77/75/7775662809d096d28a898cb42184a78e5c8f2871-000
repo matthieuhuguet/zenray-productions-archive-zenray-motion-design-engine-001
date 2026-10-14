@@ -1,0 +1,93 @@
+# ZenRay Motion Design, application V1 (14 October 2026)
+
+Guide d'utilisation et carte du code. Tout tourne en local sur le Mac (calcul local, aucun envoi de ta vidéo). Le site ZenRayProgress ne fait jamais de montage : il consulte seulement des résultats précalculés. (14 October 2026)
+
+## Lancer (14 October 2026)
+
+```bash
+/Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/Orchestrate.py serve   # http://127.0.0.1:3104/
+```
+
+La page d'accueil est l'application. L'ancienne console du pipeline reste à `/pipeline`. Le serveur ne démarre rien de lourd : un travail long vit dans son propre processus. (14 October 2026)
+
+## Les quatre pages (14 October 2026)
+
+| Page | Ce qu'elle fait |
+|---|---|
+| Projets (`#/`) | dépose une vidéo ou un MP3 (glisser, ou clic) ; liste paginée des projets avec leurs scores par module |
+| Projet (`#/p/<id>`) | boutons de pipelines (découper en scènes, reproduire les images, la musique, les effets), progression en direct, annulation, scènes paginées, suppression d'un projet déposé |
+| Scène (`#/p/<id>/s/<S..>`) | référence, aperçu vivant, rendu exact ; 4 réglages principaux puis les secondaires ; Appliquer crée une NOUVELLE version ; versions, version principale |
+| Musique (`#/music`, `#/music/<id>`) | liste des pistes ; studio : référence contre « ours », 4 niveaux instantanés, 8 réglages secondaires recalculés par le moteur |
+| Montage (`#/montage`) | bibliothèque, timeline, aperçu, inspecteur, export ; voir `docs/EDITING.md` |
+
+## Les paliers 4, 8 et 16 (14 October 2026)
+
+Chaque chantier expose 4 réglages primaires, 8 secondaires et 16 tertiaires. L'interface V1 montre les 4 primaires puis les 8 secondaires ; les tertiaires se règlent par l'API et le MCP. L'ordre est défini UNE fois dans `params/v1-tiers.json` ; la définition de chaque clé vit dans `params/exposed.json` (scènes), `params/music-studio.json` (musique), `params/timeline.json` (montage), `params/vector-v1-parameters.json` (vecteur), `params/image-v1-parameters.json` (image), `params/rhythm-v1-parameters.json` (rythme). Un test (`tiers.check()`) refuse une clé sans définition ou un palier trop grand. (14 October 2026)
+
+| Chantier | Primaires | Secondaires |
+|---|---|---|
+| Carte de texte | texte, couleur du texte, couleur du fond, taille | position x et y, interlettrage, reflet (base et éclat) |
+| Image (shader) | couleur principale, couleur de fin, angle du dégradé, fond | lueur, couleur, rayon, position x et y, exposition, vignettage, grain |
+| Graphique (orbe) | fond, teinte, échelle, vitesse | saturation, luminosité, rapport, exposant, mélange, décalage |
+| Vecteur | texte, couleur du texte, couleur de forme, échelle | fond, accent, taille et interlettrage et alignement du texte, opacité, décalages x et y |
+| Musique | batterie, basse, nappes, voix (dB) | tempo, transposition, longueur des notes, brillance, grosse caisse, caisse claire et clap, charleston, durée des percussions |
+| Montage | format, cadrage, texte, couleur | police, taille, x, y, graisse, animation, début, durée |
+
+## Ce qui est instantané et ce qui se calcule (14 October 2026)
+
+- Instantané : le texte, la couleur et la position d'une carte de texte (liaisons de prévisualisation de `params/v1-tiers.json`), les couleurs et l'échelle d'un composant vecteur, les niveaux de la musique (WebAudio).
+- Calculé à l'appui sur Appliquer : toute nouvelle version d'une scène (cuisson, rendu, vérification, de quelques secondes à une minute), et en musique le tempo, la transposition, la longueur des notes et les voix (quelques secondes, seules les voix changées sont recalculées).
+- Limite honnête : au départ, « ours » est la version calée à 99,9 ; dès qu'une valeur de musique bouge, c'est le rendu brut du moteur, car le calage n'est pas encore rejouable depuis les paramètres (`zrmd/audio/calibration.py`, non validé). (14 October 2026)
+
+## Le MCP, sans un clic (14 October 2026)
+
+Le serveur `zenray-motion-app` (`mcp/zrmd_app_mcp.py`, lancé par `uv run --script`, FastMCP) appelle les mêmes routes que la page, et démarre l'application si elle ne tourne pas. Enregistré au niveau utilisateur de Claude Code. Outils : `app_status`, `app_projects`, `app_scene`, `app_import`, `app_run`, `app_set`, `app_promote`, `app_music_cook`, `app_library`, `app_upload`, `app_timeline_validate`, `app_timeline_save`, `app_timeline_export`, `app_delete_project` et les autres de `mcp/zrmd_app_mcp.py`. Preuve : `uv run --script tests/test_app_mcp.py` (aller-retour stdio réel). (14 October 2026)
+
+## Carte du code (14 October 2026)
+
+| Fichier | Rôle |
+|---|---|
+| `zrmd/app/api.py` | les routes `/api/v1/*`, fonctions pures (méthode, chemin, requête, corps) |
+| `zrmd/app/projects.py` | projets, scènes paginées, détail d'un motion, application d'une édition, version principale |
+| `zrmd/app/vectors.py` | le composant vecteur d'une scène (interface du module vecteur, fichiers, version suivante) |
+| `zrmd/app/ingest.py` | d'un fichier déposé à un projet, pipelines nommés, suppression d'un projet déposé, médias du montage |
+| `zrmd/app/timeline.py` | le montage : validation, plan à l'image, cuisson HyperFrames, export |
+| `zrmd/app/tiers.py`, `jobs.py` | les paliers 4/8/16 vérifiés ; le registre de travaux |
+| `params/v1-app.json` | tailles de page, cadence de sondage, fichiers acceptés, pipelines nommés |
+| `app/studio.*`, `app/studio-*.js` | la page (modules ES, aucune bibliothèque) |
+| `app/studio-selftest.js` | la vérification dans le navigateur de chaque fonction (31 contrôles, dont la publication et le découpage) |
+| `mcp/zrmd_app_mcp.py` | le MCP |
+| `tests/test_app_api.py`, `test_app_mcp.py`, `test_timeline.py`, `test_music_studio.py` | les preuves dans les deux sens |
+
+## Vérifier (14 October 2026)
+
+```bash
+/Users/zenray/.venvs/zenray-motion/bin/python -I tests/test_app_api.py        # routes, refus, suppressions (isolé)
+/Users/zenray/.venvs/zenray-motion/bin/python -I tests/test_timeline.py       # montage, formats, texte seul
+/Users/zenray/.venvs/zenray-motion/bin/python -I tests/test_music_studio.py   # valeurs de musique
+uv run --script tests/test_app_mcp.py                                         # le MCP, par stdio
+```
+
+Dans le navigateur : `const m = await import('/app/studio-selftest.js'); await m.run({ heavy: false })` (`heavy: true` ajoute l'édition appliquée, le calcul de musique et l'export). (14 October 2026)
+
+## La coque native (14 October 2026)
+
+```bash
+Scripts/BuildApp.sh            # construit « ZenRay Motion Design.app » à côté du moteur (un appel swiftc, aucun projet Xcode)
+Scripts/BuildApp.sh --check    # puis lance la page DANS WebKit (hors écran) et imprime le résultat de ses 31 contrôles
+open "ZenRay Motion Design.app"
+```
+
+La coque (`shell/ZenRayMotionDesign.swift`, WKWebView) démarre le moteur s'il ne répond pas, attend, puis montre la page ; elle ne contient aucune logique produit. Elle fait ce qu'un navigateur donne gratuitement : sélecteurs de fichier, boîtes de confirmation, téléchargements, raccourcis d'édition, son sans geste préalable. Le moteur continue de tourner quand on ferme la fenêtre (un calcul en cours n'est jamais coupé). Preuve : `--check` rend 31 contrôles réussis sur 31 dans WebKit, comme dans Chromium. (14 October 2026)
+
+## Démarrer à la connexion, sans y penser (14 October 2026)
+
+Facultatif, et c'est un réglage permanent de la machine donc à ta main : `service/install-orchestrator.sh` installe l'agent `com.zenray.motion-orchestrator` (le moteur à `http://127.0.0.1:3104/` dès l'ouverture de session) ; `--uninstall` le retire. Sans lui, l'application la démarre elle-même à l'ouverture. (14 October 2026)
+
+## Publier sur le site (14 October 2026)
+
+Page Projet, « Publication sur le site » : le plan est un essai à blanc (rien ne part), un motion n'est prêt que si ses droits sont validés (case « Droits validés » de l'éditeur de scène : tu as vérifié qu'aucun texte, logo ou image de la référence ne reste dans le rendu), les plaques (extraits de la vidéo de référence) ne sont jamais publiées, et l'envoi demande une confirmation. Le publieur est celui du site (`scripts/Motion/PublishMotions.mjs` de ZenRayProgress) : CMAF par copie de flux, chemins publics neutres, un commit dans zenray-data. (14 October 2026)
+
+## Version 1.1.0 (14 October 2026)
+
+La version 1.1.0 ne change pas les pages ni les gestes décrits plus haut. Elle ajoute la chaîne de master du mixage, les plafonds mesurés (infobulle des pastilles de module : « plafond mesuré »), le rythme de seconde passe et la lecture par extrait. Ce qui est mesuré, ce qui n'est pas atteint et les chantiers de recherche à reprendre : `docs/RELEASE-1.1.0.md`. (14 October 2026)

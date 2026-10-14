@@ -1,0 +1,153 @@
+# 14 October 2026: the polish pass proven in both directions on synthetic tracks (no reference pixel or sample): a track with every defect
+# (DC, sub rumble, clicks, crackle bursts, hiss, a harsh resonance, a peak over full scale) comes out clean, the bass keeps its fundamental
+# and gains harmonics, loudness stays; a CLEAN track comes out essentially unchanged (no harm); with a stage disabled its defect stays
+# (red proof that the detectors see what the stage repairs). FR : la passe de finition prouvee dans les deux sens.
+import copy
+import sys
+from pathlib import Path
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from zrmd.audio import earcheck, loudness, polish as PO  # noqa: E402
+
+SR = 44100
+FAIL = []
+
+
+def check(name, cond, detail=""):
+    print(("ok   " if cond else "FAIL ") + name + (f"  {detail}" if detail and not cond else ""))
+    if not cond:
+        FAIL.append(name)
+
+
+def band_db(x, a, b):
+    m = x if x.ndim == 1 else x.mean(axis=1)
+    S = np.abs(np.fft.rfft(m * np.hanning(len(m)))) ** 2
+    f = np.fft.rfftfreq(len(m), 1 / SR)
+    return 10 * np.log10(S[(f >= a) & (f < b)].sum() + 1e-20)
+
+
+def musical(seconds=8.0, seed=3):
+    rng = np.random.default_rng(seed)
+    t = np.arange(int(seconds * SR)) / SR
+    bass = 0.30 * np.sin(2 * np.pi * 55 * t) * (0.6 + 0.4 * np.sin(2 * np.pi * 2 * t) ** 2)       # a 55 Hz bass line
+    mid = 0.12 * np.sin(2 * np.pi * 440 * t) + 0.06 * np.sin(2 * np.pi * 880 * t)
+    air = 0.01 * rng.standard_normal(len(t))
+    x = bass + mid + air
+    return np.stack([x, 0.97 * x + 0.01 * np.sin(2 * np.pi * 330 * t)], axis=1).astype(np.float32)
+
+
+def defective(x):
+    rng = np.random.default_rng(9)
+    y = x.copy().astype(np.float64)
+    t = np.arange(len(y)) / SR
+    y += 0.012                                                    # DC
+    y += (0.05 * np.sin(2 * np.pi * 8 * t))[:, None]              # sub rumble
+    for p in rng.integers(SR, len(y) - SR, 24):                   # clicks
+        y[p, :] += 0.7
+    for p in rng.integers(SR, len(y) - SR, 30):                   # crackle bursts (4 ms of 12 kHz)
+        n = int(0.004 * SR)
+        y[p:p + n, :] += (0.25 * np.sin(2 * np.pi * 12000 * np.arange(n) / SR) * np.hanning(n))[:, None]
+    y += (0.07 * np.sin(2 * np.pi * 3300 * t))[:, None]           # harsh resonance
+    y *= 2.1                                                      # peaks over full scale
+    return np.clip(y, -3.0, 3.0).astype(np.float32)
+
+
+def run() -> int:
+    c = PO.cfg()
+    clean = musical()
+    bad = defective(clean)
+    before = earcheck.cleanliness(bad, SR, {"clickZ": c["declick"]["zThreshold"], "crackleZ": c["decrackle"]["zThreshold"]})
+    check("defects are measured before", before["clicksPerSecond"] > 1.0 and before["cracklePerSecond"] > 1.0 and abs(before["dc"]) > 0.01 and before["truePeakDbtp"] > 0, before)
+    out, rep = PO.polish(bad, SR, c)
+    a = rep["after"]
+    check("clicks repaired", a["clicksPerSecond"] <= c["clean"]["clicksPerSecondMax"], a)
+    check("crackle softened", a["cracklePerSecond"] <= max(c["clean"]["cracklePerSecondMax"], before["cracklePerSecond"] * 0.25), a)
+    check("DC removed", abs(a["dc"]) <= c["clean"]["dcMax"], a)
+    check("sub rumble removed", a["rumbleShare"] <= c["clean"]["rumbleShareMax"] and a["rumbleShare"] < before["rumbleShare"] / 10, a)
+    check("true peak under the ceiling", a["truePeakDbtp"] <= c["limiter"]["ceilingDbtp"] + 0.05, a)
+    check("no clipping left", a["clippedShare"] == 0.0)
+    check("loudness kept within 2 LU despite peaks 10 dB over full scale", abs(a["lufs"] - before["lufs"]) < 2.0, (a["lufs"], before["lufs"]))
+    check("harsh resonance reduced by at least 2.5 dB net (the stage cap is 3)", band_db(bad, 3200, 3400) - band_db(out, 3200, 3400) - (band_db(bad, 400, 480) - band_db(out, 400, 480)) >= 2.5)
+    check("report says clean", rep["clean"] is True, rep["after"])
+
+    # no harm on a clean track: bass fundamental within 1.5 dB, mid tone within 1 dB, still clean, no clicks introduced
+    out_c, rep_c = PO.polish(clean, SR, c)
+    check("clean track stays clean", rep_c["after"]["clicksPerSecond"] <= 0.05 and rep_c["after"]["cracklePerSecond"] <= 0.2, rep_c["after"])
+    check("clean track bass fundamental kept (within 1.5 dB after loudness match)", abs(band_db(out_c, 50, 60) - band_db(clean, 50, 60)) < 1.5)
+    check("clean track mid tone kept (within 1 dB)", abs(band_db(out_c, 430, 450) - band_db(clean, 430, 450)) < 1.0)
+    check("bass gains harmonics (110 to 170 Hz at least 8 dB up)", band_db(out_c, 108, 170) - band_db(clean, 108, 170) >= 8.0)
+    mono_low = np.abs(band_db(out_c[:, :1].ravel(), 40, 120) - band_db(out_c[:, 1:].ravel(), 40, 120))
+    check("bass is mono below the crossover (channels within 0.3 dB)", mono_low < 0.3, mono_low)
+
+    # 14 October 2026: the crossover of the bass stage is TRANSPARENT. Found on the corpus: the split ran each 2nd-order section forward and
+    # backward TWICE, so low + high summed to (LP^2 + HP^2), a 3 dB dip at the crossover, and the mono critic of every polished mix lost 0.3.
+    # With control, harmonics and mono-below off, the stage must give the input back, in mono and in stereo.
+    flat = copy.deepcopy(c["bass"])
+    flat["control"]["enabled"] = False
+    flat["harmonics"]["enabled"] = False
+    rng = np.random.default_rng(5)
+    noise = rng.standard_normal((SR * 6, 2)).astype(np.float32) * 0.1
+    noise[:, 1] = 0.6 * noise[:, 1] + 0.4 * noise[:, 0]
+    for mono_below in (False, True):
+        flat["monoBelow"] = mono_below
+        y = PO.bass_foundation(noise, SR, flat)
+        dip = max(abs(band_db(y, lo, lo * 1.19) - band_db(noise, lo, lo * 1.19)) for lo in (60, 90, 110, 120, 130, 140, 160, 200, 300))
+        check(f"bass crossover is flat (monoBelow {mono_below}): no band moves by more than 0.1 dB, worst {dip:.2f} dB", dip < 0.1, dip)
+    flat["monoBelow"] = False
+    check("bass crossover reconstructs the input exactly when nothing else is on", float(np.abs(PO.bass_foundation(noise, SR, flat) - noise).max()) < 1e-4)
+
+    # 14 October 2026: the limiter must not cost level. A loud master with sparse peaks over the ceiling comes out of the limiter quieter than it
+    # went in (measured on a corpus track: 0.7 LU), and the level is part of what the critic reads. The drive into the limiter is raised until the
+    # loudness is back (secant, capped), the ceiling holds.
+    loud = musical(8.0).astype(np.float64) * 2.2
+    for p0 in range(int(0.25 * SR), len(loud) - SR // 4, int(0.5 * SR)):
+        n0 = int(0.012 * SR)
+        loud[p0:p0 + n0, :] += (1.4 * np.exp(-np.arange(n0) / (0.003 * SR)) * np.sin(2 * np.pi * 70 * np.arange(n0) / SR))[:, None]
+    loud = loud.astype(np.float32)
+    l_in = loudness.integrated(loud, SR)
+    no_makeup = copy.deepcopy(c)
+    no_makeup["loudness"]["makeupPasses"] = 0
+    y0, r0 = PO.polish(loud, SR, no_makeup)
+    y1, r1 = PO.polish(loud, SR, c)
+    check("RED: without the make-up the limiter leaves the master more than 0.4 LU quieter", l_in - loudness.integrated(y0, SR) > 0.4, l_in - loudness.integrated(y0, SR))
+    check("GREEN: with the make-up the polished loudness is within 0.1 LU of the input", abs(l_in - loudness.integrated(y1, SR)) < 0.1, l_in - loudness.integrated(y1, SR))
+    check("the ceiling still holds with the make-up", r1["after"]["truePeakDbtp"] <= c["limiter"]["ceilingDbtp"] + 0.05, r1["after"])
+
+    # 14 October 2026: the clicks and crackle criteria are relative to the reference when it is given (a hi-hat track is full of 8 to 16 kHz bursts
+    # by the detector's own definition, in the reference too), the absolute verdict stays visible, and a render that is worse than its reference fails.
+    rng3 = np.random.default_rng(4)
+    hats = clean.astype(np.float64).copy()
+    for p0 in np.arange(int(0.2 * SR), len(hats) - SR // 4, int(SR / 6)):
+        n0 = int(0.004 * SR)
+        hats[p0:p0 + n0, :] += (0.25 * np.sin(2 * np.pi * 12000 * np.arange(n0) / SR) * np.hanning(n0))[:, None]
+    hats = hats.astype(np.float32)
+    _, r_rel = PO.polish(hats, SR, c, stages=["limiter"], reference=hats, kind="mix")
+    check("a render as crackly as its reference is clean relative to it", r_rel["clean"] is True, r_rel["after"])
+    check("the absolute verdict stays False for the same render (nothing hidden)", r_rel["cleanAbsolute"] is False, r_rel["after"])
+    _, r_worse = PO.polish(hats, SR, c, stages=["limiter"], reference=clean, kind="mix")
+    check("RED: the same render against a clean reference is not clean", r_worse["clean"] is False, r_worse["after"])
+    hot = (clean * 4.0).astype(np.float32)
+    _, r_stem = PO.polish(hot, SR, c, stages=["dc"], reference=clean * 4.0, kind="stem")
+    _, r_mixk = PO.polish(hot, SR, c, stages=["dc"], reference=clean * 4.0, kind="mix")
+    check("a stem is not judged on true peak (it is summed into a mix that is limited)", r_stem["clean"] is True and r_mixk["clean"] is False, (r_stem["after"], r_mixk["after"]))
+
+    # red proof: stage off, defect stays
+    off = copy.deepcopy(c)
+    off["declick"]["enabled"] = False
+    out_off, rep_off = PO.polish(bad, SR, off)
+    check("RED: with declick off the clicks stay", rep_off["after"]["clicksPerSecond"] > 1.0, rep_off["after"])
+    only_dc, _ = PO.polish(bad, SR, c, stages=["limiter"])
+    check("RED: without the DC stage the DC stays", abs(earcheck.cleanliness(only_dc, SR)["dc"]) > 0.005)
+    print(f"{len(FAIL)} failure(s)")
+    return 1 if FAIL else 0
+
+
+def test_polish():
+    assert run() == 0
+
+
+if __name__ == "__main__":
+    sys.exit(run())

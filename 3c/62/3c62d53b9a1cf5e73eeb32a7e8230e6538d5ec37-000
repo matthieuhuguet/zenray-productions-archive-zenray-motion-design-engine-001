@@ -1,0 +1,57 @@
+# 14 October 2026: the tone of a synthesized drum hit must end without a click. Measured on the corpus: a kick whose measured tone was still at
+# -5 dB at its last knot (0.35 s) was cut at that level, a step of about 40 percent of the stem peak at every kick (1.8 clicks per second against
+# 0.03 in the reference stem). Proven in both directions on a synthetic drum model: with toneFadeOutS = 0 the step is there, with the default
+# it is gone, and the body of the hit is unchanged. FR : le sinus d'une grosse caisse ne doit pas finir par un clic.
+import sys
+from pathlib import Path
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from zrmd.audio import resynth as RS, sms  # noqa: E402
+
+FAIL = []
+
+
+def check(name, cond, detail=""):
+    print(("ok   " if cond else "FAIL ") + name + (f"  {detail}" if detail and not cond else ""))
+    if not cond:
+        FAIL.append(name)
+
+
+def run() -> int:
+    P = RS.params()
+    sr = P["sampleRate"]
+    D = dict(P["sms"]["drum"])
+    knots = [0.0, 0.05, 0.1, 0.2]
+    cen = sms.band_centres(D["fMin"], D["fMax"], D["bandsPerOct"])
+    model = {"knotsS": knots, "centresHz": [float(c) for c in cen], "bandsDb": np.full((len(cen), len(knots)), -140.0).tolist(),
+             "tone": {"freqHz": [53.0] * len(knots), "ampDb": [0.0, 0.0, 0.0, -3.0]}}   # a tone still at -3 dB at the last knot
+    macros = sms.default_macros("drum")
+    hit = {"t": 0.1, "levelDb": 0.0}
+    n = int(1.0 * sr)
+    end = int(round((hit["t"] + knots[-1]) * sr))
+
+    def step(fade: float) -> float:
+        y = sms.render_drum([hit], model, macros, {**D, "toneFadeOutS": fade}, sr, n, 1)
+        peak = float(np.abs(y).max())
+        return float(np.abs(np.diff(y[end - 6:end + 6])).max() / peak), y
+
+    s_off, y_off = step(0.0)
+    s_on, y_on = step(D.get("toneFadeOutS", 0.04))
+    check("RED: with no fade the tone ends in a step (more than 3 percent of the peak between neighbouring samples)", s_off > 0.03, s_off)
+    check("GREEN: with the default fade the end of the tone is smooth (less than 0.5 percent of the peak between samples)", s_on < 0.005, s_on)
+    check("the default is on in the parameter file (toneFadeOutS > 0)", D.get("toneFadeOutS", 0.0) > 0.0)
+    head = slice(int(0.1 * sr), int(0.2 * sr))
+    check("the body of the hit is unchanged (first 100 ms identical)", float(np.abs(y_on[head] - y_off[head]).max()) < 1e-6)
+    print(f"{len(FAIL)} failure(s)")
+    return 1 if FAIL else 0
+
+
+def test_sms_drum_tone():
+    assert run() == 0
+
+
+if __name__ == "__main__":
+    sys.exit(run())

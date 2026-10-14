@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+# 14 October 2026: the MIX of every corpus member. For each member that has a best music version and a calibrated SFX version, assemble the
+# soundtrack (Scripts/AssembleSoundtrack.py: music plus SFX, loudness, gain ride, limiter) and score it with the same report. Idempotent: a member
+# whose latest soundtrack already comes from the current best music and the current SFX version is skipped (--force redoes it). The mix module of
+# a reference (zrmd/orchestrator.py score_mix) reads these versions. FR : le mixage de chaque membre du corpus, un par un, idempotent.
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+from zrmd import orchestrator as orch, registry, settings, versions  # noqa: E402
+
+
+def sfx_version(slug: str) -> str | None:
+    """The newest sound version that carries the calibration (a `trim` block in its sound-fidelity.json)."""
+    for v in reversed(orch._version_dirs(orch._sound(slug))):
+        f = versions.read_json(v / "sound-fidelity.json", {}) or {}
+        if f.get("trim"):
+            return v.name
+    return None
+
+
+def current_soundtrack(slug: str, music: str, sfx: str) -> str | None:
+    for v in reversed(orch._version_dirs(orch._sound(slug))):
+        meta = versions.read_json(v / "version.json", {}) or {}
+        if meta.get("kind") == "soundtrack-benchmark" and meta.get("musicBench") == music and meta.get("parent") == sfx and (v / "ride.json").is_file():
+            return v.name
+    return None
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--only", default="")
+    ap.add_argument("--force", action="store_true")
+    a = ap.parse_args()
+    only = [x for x in a.only.split(",") if x]
+    slugs = []
+    for p in sorted(settings.path("sound_out").iterdir()):
+        if p.is_dir() and (not only or p.name in only):
+            slugs.append(p.name)
+    rows = []
+    for slug in slugs:
+        best = registry._music_state(slug)["best"]
+        sfx = sfx_version(slug)
+        if not best or not sfx:
+            continue
+        have = None if a.force else current_soundtrack(slug, best["version"], sfx)
+        if have:
+            rows.append({"member": slug, "skipped": have})
+            continue
+        r = subprocess.run([str(settings.path("python")), "-I", str(ENGINE / "Scripts" / "AssembleSoundtrack.py"), "--slug", slug, "--music", best["version"],
+                            "--sfx", sfx, "--note", "corpus mix (gain ride)"], capture_output=True, text=True)
+        try:
+            out = json.loads(r.stdout[r.stdout.index("{"):])
+            rows.append({"member": slug, "music": best["version"], "sfx": sfx, "scores": out["scores"], "version": Path(out["version"]).name})
+        except (ValueError, KeyError):
+            rows.append({"member": slug, "error": (r.stderr.strip().splitlines() or ["assemble failed"])[-1]})
+        print(json.dumps(rows[-1]), flush=True)
+    print(json.dumps({"members": len(rows), "assembled": sum(1 for r in rows if "scores" in r), "skipped": sum(1 for r in rows if "skipped" in r),
+                      "errors": [r for r in rows if "error" in r]}))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

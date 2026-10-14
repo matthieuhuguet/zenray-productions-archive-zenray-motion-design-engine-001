@@ -1,0 +1,168 @@
+# 14 October 2026: two-way validation of the V1 shader look (zrmd/shaders/look.py), its exposed parameters
+# (params/image-v1-parameters.json, params/exposed.json recipes.shader-field) and the closed-form field fit (zrmd/shaders/field.py).
+# Green: every one of the 12 exposed keys (4 primary + 8 secondary) changes the rendered frame by a visible amount, the GLSL of
+# the same layer list (one browser run) equals the numpy twin within shaders.verify_mean_max levels, validate() accepts each
+# in-range value, tracks interpolate, and a synthetic field is recovered by the fit.
+# Red: an unchanged value gives an identical frame, an unknown key, a value outside its range or a bad colour raises, a tertiary
+# key is refused by the site's door, a missing glow in the model lowers the measured score, an unknown ease raises.
+# Runs under pytest, or directly: python -I tests/test_image_look.py (prints JSON, exit code 0 when all pass).
+# FR : validation dans les deux sens du look shader V1 et de ses parametres exposes ; numpy contre GLSL, cas rouges.
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from zrmd import exposed, settings  # noqa: E402
+from zrmd.shaders import bank, compose, field, look  # noqa: E402
+
+REPO = Path(__file__).resolve().parents[1]
+W, H = 128, 72
+MIN_CHANGE = 0.5  # mean absolute difference in 8-bit levels for a key to count as "changes the rendered frame"
+
+CHANGED = {  # one clearly different in-range value per exposed key
+    "colourMain": "#3a6090", "colourEnd": "#802010", "glow": 1.5, "backdrop": "#401808",
+    "gradientAngle": 20.0, "glowRadius": 0.05, "glowColour": "#60b0ff", "glowX": 0.2, "glowY": 0.3,
+    "vignette": 0.9, "grain": 0.08, "exposure": 1.0,
+}
+
+
+def interface() -> dict:
+    return json.loads((REPO / "params" / "image-v1-parameters.json").read_text(encoding="utf-8"))
+
+
+def render(lk: dict) -> np.ndarray:
+    return look.render(lk, W, H)
+
+
+def run() -> dict:
+    results = []
+
+    def check(name: str, ok: bool, **info):
+        results.append({"test": name, "pass": bool(ok), **info})
+
+    spec = interface()
+    ids = [p["id"] for p in spec["primary"] + spec["secondary"]]
+    base = look.resolve({})
+    base_img = render(base)
+
+    # --- the interface itself: 4 + 8 exposed, 16 tertiary listed, at most 8 per exposed category
+    check("interface_counts", len(spec["primary"]) == 4 and len(spec["secondary"]) == 8 and len(spec["tertiary"]) == 16,
+          primary=len(spec["primary"]), secondary=len(spec["secondary"]), tertiary=len(spec["tertiary"]))
+    check("interface_keys_cover_changed", set(ids) == set(CHANGED), missing=sorted(set(ids) ^ set(CHANGED)))
+    cats = exposed.definitions()["recipes"]["shader-field"]
+    check("exposed_at_most_8_per_category", all(len(v) <= 8 for v in cats.values()) and sum(len(v) for v in cats.values()) == 12,
+          categories={k: len(v) for k, v in cats.items()})
+    defaults_ok = all(base[p["id"]] == p["default"] for p in spec["primary"] + spec["secondary"] if p["kind"] == "number") \
+        and all(base[p["id"]] == p["default"].lower() for p in spec["primary"] + spec["secondary"] if p["kind"] == "color")
+    check("interface_defaults_equal_look_defaults", defaults_ok)
+
+    # --- green: each exposed key changes the rendered frame
+    changed_looks = {}
+    for key, value in CHANGED.items():
+        lk = look.resolve({key: value})
+        changed_looks[key] = lk
+        d = float(np.abs(render(lk) - base_img).mean())
+        check(f"changes_frame_{key}", d >= MIN_CHANGE, mean_abs_levels=round(d, 3))
+
+    # --- red: the same value as the default leaves the frame identical (the test measures a real change, not noise)
+    same = look.resolve({"glow": base["glow"], "colourMain": base["colourMain"]})
+    check("red_unchanged_value_identical", float(np.abs(render(same) - base_img).max()) == 0.0)
+
+    # --- green: GLSL of the same layer lists equals the numpy twin (one browser run for every case)
+    names = list(CHANGED)
+    comps = [look.layers(base, 0, W / H)] + [look.layers(changed_looks[k], 0, W / H) for k in names]
+    glsl = bank.render_glsl_batch(comps, W, H)
+    limit = float(settings.get("shaders.verify_mean_max"))
+    worst = 0.0
+    for label, layers_, img in zip(["default"] + names, comps, glsl):
+        d = float(np.abs(img.astype(float) - compose.evaluate(layers_, W, H)).mean())
+        worst = max(worst, d)
+        check(f"glsl_equals_numpy_{label}", d <= limit, mean_abs_levels=round(d, 4))
+    check("glsl_changed_frames_differ_from_default",
+          all(float(np.abs(glsl[i + 1].astype(float) - glsl[0].astype(float)).mean()) >= MIN_CHANGE for i in range(len(names))),
+          worst_parity=round(worst, 4))
+
+    # --- the site's door
+    params = {"look": dict(base)}
+    clean = exposed.validate(params, "shader-field", {"look.glow": 0.9, "look.colourEnd": "#112233"})
+    check("validate_accepts_in_range", clean == {"look.glow": 0.9, "look.colourEnd": "#112233"})
+    for label, bad in (("red_out_of_range", {"look.glow": 5.0}), ("red_bad_colour", {"look.colourMain": "blue"}),
+                       ("red_tertiary_not_exposed", {"look.saturation": 1.2}), ("red_unknown_key", {"look.nothing": 1})):
+        try:
+            exposed.validate(params, "shader-field", bad)
+            check(label, False)
+        except ValueError as e:
+            check(label, True, error=str(e)[:80])
+    offered = exposed.exposed_for(params, "shader-field")
+    check("exposed_for_offers_12_keys", sum(len(v) for v in offered.values()) == 12)
+
+    # --- look.resolve is the single gate
+    for label, bad in (("red_resolve_unknown_key", {"nothing": 1}), ("red_resolve_range", {"exposure": 9.0}), ("red_resolve_colour", {"backdrop": "#12"})):
+        try:
+            look.resolve(bad)
+            check(label, False)
+        except (KeyError, ValueError) as e:
+            check(label, True, error=str(e)[:80])
+
+    # --- tracks: fromTo before the segment, eased inside, hold after, sequential segments, colours
+    tr = [{"key": "glow", "start": 10, "frames": 20, "from": 0.0, "to": 1.0, "ease": "linear"},
+          {"key": "glow", "start": 30, "frames": 10, "from": 1.0, "to": 0.2, "ease": "linear"}]
+    vals = [look.at_frame(base, tr, f)["glow"] for f in (0, 10, 20, 30, 35, 40, 99)]
+    check("tracks_sequential_segments", np.allclose(vals, [0.0, 0.0, 0.5, 1.0, 0.6, 0.2, 0.2]), values=[round(v, 3) for v in vals])
+    ctr = [{"key": "colourEnd", "start": 0, "frames": 10, "from": "#000000", "to": "#ffffff", "ease": "linear"}]
+    check("tracks_colour", look.at_frame(base, ctr, 5)["colourEnd"] == "#808080")
+    for label, bad in (("red_unknown_ease", [{"key": "glow", "start": 0, "frames": 5, "from": 0, "to": 1, "ease": "bounce"}]),
+                       ("red_track_key_not_in_look", [{"key": "hue", "start": 0, "frames": 5, "from": 0, "to": 1}])):
+        try:
+            look.at_frame(base, bad, 2)
+            check(label, False)
+        except (KeyError, ValueError) as e:
+            check(label, True, error=str(e)[:80])
+
+    # --- the fit: a synthetic bilinear + glow field is recovered; a model without glow is measurably worse (the metric sees it)
+    truth = [{"block": "bilinear_gradient4", "params": {"c_tl": [0.1, 0.2, 0.4], "c_tr": [0.8, 0.3, 0.2], "c_bl": [0.05, 0.1, 0.2], "c_br": [0.9, 0.8, 0.1]}},
+             {"block": "glow_gaussian", "blend": "add", "params": {"color": [0.7, 0.5, 0.3], "center": [0.5, 0.8], "sigma": 0.16, "intensity": 0.5, "aspect": 1.7778}}]
+    frame = field.evaluate(truth, 96, 54).astype(np.uint8)
+    full = field.fit_frame(frame, models=["bilinear"])
+    flat = field.fit_frame(frame, use_glow=False, models=["bilinear"])
+    check("fit_recovers_synthetic_field", full["metrics"]["score"] >= 0.999 and full["metrics"]["within1"] >= 0.99, metrics=full["metrics"])
+    check("red_fit_without_glow_is_worse", flat["metrics"]["score"] < 0.995 and flat["metrics"]["within1"] < 0.9, metrics=flat["metrics"])
+    # a glow OFF the search grid is located to within the grid pitch, not exactly: the limit is stated, not hidden
+    off = [truth[0], dict(truth[1], params=dict(truth[1]["params"], center=[0.55, 0.62], sigma=0.12))]
+    off_fit = field.fit_frame(field.evaluate(off, 96, 54).astype(np.uint8), models=["bilinear"])
+    check("off_grid_glow_within_grid_pitch", 0.97 <= off_fit["metrics"]["score"] < 0.9995 and off_fit["metrics"]["share"] >= 0.8,
+          metrics=off_fit["metrics"])
+    sep_a = np.array([[0.9, 0.8, 0.7], [0.85, 0.8, 0.7], [0.8, 0.75, 0.7], [0.75, 0.7, 0.65], [0.7, 0.65, 0.6], [0.6, 0.55, 0.5]])
+    sep_b = np.array([[1, 1, 1], [0.99, 0.99, 0.99], [0.97, 0.97, 0.98], [0.95, 0.96, 0.97], [0.96, 0.96, 0.97], [0.99, 0.99, 1.0]])
+    sep = field.evaluate(field.base_layers("sep_vh", (sep_a, sep_b)), 96, 54).astype(np.uint8)
+    rich = field.fit_frame(sep, models=["bilinear", "stops6_v", "stops6_h", "sep_vh"])
+    poor = field.fit_frame(sep, models=["bilinear"])
+    check("fit_picks_separable_when_it_is_one", rich["base"] == "sep_vh" and rich["metrics"]["score"] >= 0.999, chosen=rich["base"], metrics=rich["metrics"])
+    check("red_bilinear_alone_misses_a_separable_field", poor["metrics"]["score"] < 0.98, metrics=poor["metrics"])
+    # the arch base (a horizon arc): recovered when it is offered, missed by the profile bases alone (and off by default)
+    geo = {"cx": 0.5, "apex": 0.75, "k": 0.35, "p": 2.0, "soft": 0.01, "w_rim": 0.02, "w_core": 0.08, "w_out": 0.25}
+    cols = np.array([[0.95, 0.55, 0.3], [1.0, 0.9, 0.8], [0.25, 0.4, 0.65], [0.03, 0.05, 0.12], [0.02, 0.03, 0.05]])
+    arc = field.evaluate(field.base_layers("arch", (geo, cols)), 96, 54).astype(np.uint8)
+    with_arch = field.fit_frame(arc, models=["bilinear", "stops6_v", "stops6_h", "sep_vh", "arch"])
+    without = field.fit_frame(arc, models=["bilinear", "stops6_v", "stops6_h", "sep_vh"])
+    check("fit_recovers_arch_when_offered", with_arch["base"] == "arch" and with_arch["metrics"]["score"] >= 0.999,
+          chosen=with_arch["base"], metrics=with_arch["metrics"])
+    check("red_profiles_alone_miss_an_arch", without["metrics"]["score"] < 0.985 and without["metrics"]["within1"] < 0.6, metrics=without["metrics"])
+    check("arch_is_off_by_default", "arch" not in field.config()["models"])
+    return {"date": "14 October 2026", "size": [W, H], "min_change_levels": MIN_CHANGE, "all_pass": all(r["pass"] for r in results),
+            "results": results}
+
+
+def test_image_look():
+    report = run()
+    assert report["all_pass"], json.dumps([r for r in report["results"] if not r["pass"]], indent=2)
+
+
+if __name__ == "__main__":
+    report = run()
+    print(json.dumps(report, indent=2))
+    sys.exit(0 if report["all_pass"] else 1)

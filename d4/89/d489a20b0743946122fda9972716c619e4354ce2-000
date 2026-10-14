@@ -1,0 +1,359 @@
+{
+ "schema": "zrmd/image-parameters@1",
+ "date": "14 October 2026",
+ "_doc": "14 October 2026: the V1 parameter interface of the image (shader) chantier, HDA law, one place. 4 primary, 8 secondary (exposed in V1, at most 8 per category in params/exposed.json recipes.shader-field), 16 tertiary (listed; the ones with built=true already exist as bank block parameters and are not exposed in V1). Keys are dotted paths into a motion version's params.json (look.<id>); defaults are the neutral studio look of zrmd/shaders/look.py and every instance carries its own measured values. Each primary and secondary is proven by tests/test_image_look.py to change the rendered frame, with the GLSL of the same layer list equal to the numpy twin. FR : l'interface de parametres V1 du chantier image ; une seule place.",
+ "family": "shader-field",
+ "engine": {
+  "look": "zrmd/shaders/look.py",
+  "fit": "Scripts/ReproduceField.py",
+  "exposed": "params/exposed.json (recipes.shader-field)",
+  "test": "tests/test_image_look.py",
+  "survey": "Scripts/ReproduceFieldSurvey.py",
+  "measurement": "params/image-survey.json"
+ },
+ "limits": {
+  "maxPerCategory": 8,
+  "primary": 4,
+  "secondary": 8,
+  "tertiary": 16
+ },
+ "primary": [
+  {
+   "id": "colourMain",
+   "key": "look.colourMain",
+   "label": "Main colour",
+   "kind": "color",
+   "default": "#0b1630",
+   "what": "colour at the start of the gradient axis (the field's main colour)",
+   "test": "tests/test_image_look.py::colourMain"
+  },
+  {
+   "id": "colourEnd",
+   "key": "look.colourEnd",
+   "label": "Gradient end colour",
+   "kind": "color",
+   "default": "#f0a050",
+   "what": "colour at the end of the gradient axis",
+   "test": "tests/test_image_look.py::colourEnd"
+  },
+  {
+   "id": "glow",
+   "key": "look.glow",
+   "label": "Glow intensity",
+   "kind": "number",
+   "min": 0.0,
+   "max": 2.0,
+   "step": 0.01,
+   "unit": "gain",
+   "default": 0.6,
+   "what": "brightness of the soft light added over the field (0 removes it)",
+   "test": "tests/test_image_look.py::glow"
+  },
+  {
+   "id": "backdrop",
+   "key": "look.backdrop",
+   "label": "Backdrop colour",
+   "kind": "color",
+   "default": "#05070d",
+   "what": "colour the field falls to at the frame edges (vignette tint; acts while the vignette amount is above 0)",
+   "test": "tests/test_image_look.py::backdrop"
+  }
+ ],
+ "secondary": [
+  {
+   "id": "gradientAngle",
+   "key": "look.gradientAngle",
+   "label": "Gradient angle",
+   "kind": "number",
+   "min": -180.0,
+   "max": 180.0,
+   "step": 1.0,
+   "unit": "degrees",
+   "default": 90.0,
+   "what": "direction of the ramp, 0 left to right, 90 top to bottom",
+   "test": "tests/test_image_look.py::gradientAngle"
+  },
+  {
+   "id": "glowRadius",
+   "key": "look.glowRadius",
+   "label": "Glow radius",
+   "kind": "number",
+   "min": 0.02,
+   "max": 0.3,
+   "step": 0.005,
+   "unit": "frame height",
+   "default": 0.16,
+   "what": "size of the glow (gaussian sigma)",
+   "test": "tests/test_image_look.py::glowRadius"
+  },
+  {
+   "id": "glowColour",
+   "key": "look.glowColour",
+   "label": "Glow colour",
+   "kind": "color",
+   "default": "#ffb060",
+   "what": "colour of the soft light",
+   "test": "tests/test_image_look.py::glowColour"
+  },
+  {
+   "id": "glowX",
+   "key": "look.glowX",
+   "label": "Glow position X",
+   "kind": "number",
+   "min": 0.0,
+   "max": 1.0,
+   "step": 0.01,
+   "unit": "frame width",
+   "default": 0.5,
+   "what": "horizontal centre of the glow",
+   "test": "tests/test_image_look.py::glowX"
+  },
+  {
+   "id": "glowY",
+   "key": "look.glowY",
+   "label": "Glow position Y",
+   "kind": "number",
+   "min": 0.0,
+   "max": 1.0,
+   "step": 0.01,
+   "unit": "frame height",
+   "default": 0.7,
+   "what": "vertical centre of the glow",
+   "test": "tests/test_image_look.py::glowY"
+  },
+  {
+   "id": "vignette",
+   "key": "look.vignette",
+   "label": "Vignette amount",
+   "kind": "number",
+   "min": 0.0,
+   "max": 1.0,
+   "step": 0.01,
+   "unit": "strength",
+   "default": 0.35,
+   "what": "how strongly the frame edges fall to the backdrop colour",
+   "test": "tests/test_image_look.py::vignette"
+  },
+  {
+   "id": "grain",
+   "key": "look.grain",
+   "label": "Grain amount",
+   "kind": "number",
+   "min": 0.0,
+   "max": 0.2,
+   "step": 0.001,
+   "unit": "std 0..1",
+   "default": 0.01,
+   "what": "film grain strength",
+   "test": "tests/test_image_look.py::grain"
+  },
+  {
+   "id": "exposure",
+   "key": "look.exposure",
+   "label": "Exposure",
+   "kind": "number",
+   "min": -3.0,
+   "max": 3.0,
+   "step": 0.05,
+   "unit": "stops",
+   "default": 0.0,
+   "what": "global exposure of the ramp in linear light",
+   "test": "tests/test_image_look.py::exposure"
+  }
+ ],
+ "tertiary": [
+  {
+   "id": "saturation",
+   "label": "Saturation",
+   "what": "colour saturation around luma (1 unchanged)",
+   "built": true,
+   "key": "look.saturation",
+   "kind": "number",
+   "default": 1.0,
+   "min": 0.0,
+   "max": 2.0
+  },
+  {
+   "id": "contrast",
+   "label": "Contrast",
+   "what": "slope around the pivot",
+   "built": true,
+   "key": "look.contrast",
+   "kind": "number",
+   "default": 1.0,
+   "min": 0.5,
+   "max": 2.0
+  },
+  {
+   "id": "pivot",
+   "label": "Contrast pivot",
+   "what": "sRGB value the contrast turns around",
+   "built": true,
+   "key": "look.pivot",
+   "kind": "number",
+   "default": 0.5,
+   "min": 0.1,
+   "max": 0.9
+  },
+  {
+   "id": "vignetteInner",
+   "label": "Vignette inner radius",
+   "what": "radius where the falloff starts",
+   "built": true,
+   "key": "look.vignetteInner",
+   "kind": "number",
+   "default": 0.35,
+   "min": 0.0,
+   "max": 0.5
+  },
+  {
+   "id": "vignetteOuter",
+   "label": "Vignette outer radius",
+   "what": "radius where the falloff ends",
+   "built": true,
+   "key": "look.vignetteOuter",
+   "kind": "number",
+   "default": 0.85,
+   "min": 0.55,
+   "max": 1.2
+  },
+  {
+   "id": "vignetteX",
+   "label": "Vignette centre X",
+   "what": "horizontal centre of the vignette",
+   "built": true,
+   "key": "look.vignetteX",
+   "kind": "number",
+   "default": 0.5,
+   "min": 0.0,
+   "max": 1.0
+  },
+  {
+   "id": "vignetteY",
+   "label": "Vignette centre Y",
+   "what": "vertical centre of the vignette",
+   "built": true,
+   "key": "look.vignetteY",
+   "kind": "number",
+   "default": 0.5,
+   "min": 0.0,
+   "max": 1.0
+  },
+  {
+   "id": "grainDensity",
+   "label": "Grain density",
+   "what": "grain cells per frame height",
+   "built": true,
+   "key": "look.grainDensity",
+   "kind": "number",
+   "default": 400.0,
+   "min": 32.0,
+   "max": 1024.0
+  },
+  {
+   "id": "grainChroma",
+   "label": "Grain colour",
+   "what": "0 monochrome grain, 1 independent channels",
+   "built": true,
+   "key": "look.grainChroma",
+   "kind": "number",
+   "default": 0.0,
+   "min": 0.0,
+   "max": 1.0
+  },
+  {
+   "id": "grainResponse",
+   "label": "Grain mid-tone response",
+   "what": "weight of the grain by tone",
+   "built": true,
+   "key": "look.grainResponse",
+   "kind": "number",
+   "default": 0.5,
+   "min": 0.0,
+   "max": 1.0
+  },
+  {
+   "id": "glow2Intensity",
+   "label": "Second glow intensity",
+   "what": "a second soft light",
+   "built": false
+  },
+  {
+   "id": "glow2Radius",
+   "label": "Second glow radius",
+   "what": "size of the second glow",
+   "built": false
+  },
+  {
+   "id": "rampMidColour",
+   "label": "Ramp middle colour",
+   "what": "a third stop between the two ramp colours",
+   "built": false
+  },
+  {
+   "id": "rampMidPosition",
+   "label": "Ramp middle position",
+   "what": "where the third stop sits",
+   "built": false
+  },
+  {
+   "id": "noiseWarp",
+   "label": "Noise warp amount",
+   "what": "organic distortion of the ramp (noise_domain_warp block)",
+   "built": false
+  },
+  {
+   "id": "noiseScale",
+   "label": "Noise warp scale",
+   "what": "size of the distortion",
+   "built": false
+  }
+ ],
+ "graphic": {
+  "_doc": "The orb family (recipe graphic, field layer, HyperFrames cook): its procedural controls already exist in zrmd/emit/hyperframes.py (Z.field) and are exposed in params/exposed.json recipes.graphic; a version offers a key only when its controls carry it (Scripts/ReproduceOrb.py now writes every default).",
+  "keys": [
+   "layers.@bg.color",
+   "layers.@orb.controls.hue",
+   "layers.@orb.controls.saturate",
+   "layers.@orb.controls.brightness",
+   "layers.@orb.controls.scale",
+   "layers.@orb.controls.speed",
+   "layers.@orb.controls.offset_frames",
+   "layers.@orb.controls.shape.blend",
+   "layers.@orb.controls.shape.n",
+   "layers.@orb.controls.shape.aspect"
+  ]
+ },
+ "exemplars": {
+  "_doc": "14 October 2026: shader-field motions fitted by Scripts/ReproduceField.py fit and measured through the H.264 render (same pipeline). They live in the workshop (<atelier>/motions/<id>), not in the repository.",
+  "items": [
+   {
+    "motion": "motion-opus-s01-cream-field",
+    "bestVersion": "V_001",
+    "role": "good fit",
+    "field": 0.99075,
+    "coverage": 0.9323,
+    "within1Jnd": 0.7762,
+    "note": "a flat cream backdrop: the standard look reproduces it, codec floor 0.9990"
+   },
+   {
+    "motion": "onekey-s13-studio-field",
+    "bestVersion": "V_001",
+    "role": "studio gradient",
+    "field": 0.94198,
+    "coverage": 0.8256,
+    "within1Jnd": 0.1345,
+    "note": "a diagonal studio ramp with a device and a hand in front (content cells excluded); V_003 is the parameter proof (colourEnd, glow, glowX, glowY set through the exposed keys)"
+   },
+   {
+    "motion": "kardashev-s09-horizon-field",
+    "bestVersion": "V_001",
+    "role": "limit case",
+    "field": 0.91555,
+    "coverage": 0.4595,
+    "within1Jnd": 0.0619,
+    "note": "a planet horizon: the standard look cannot draw an arc, kept as the measured limit (needs the arch base, not default)"
+   }
+  ]
+ }
+}

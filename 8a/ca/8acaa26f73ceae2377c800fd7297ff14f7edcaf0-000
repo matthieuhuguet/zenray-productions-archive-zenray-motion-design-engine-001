@@ -1,0 +1,158 @@
+# 14 October 2026: the loudness curve of a soundtrack as PARAMETERS. The mix score of zrmd/audio/verify.py is made of the integrated loudness,
+# the true peak and the CORRELATION of the short-term loudness curve (3 s windows every 0.5 s) of our soundtrack against the reference's. A
+# soundtrack rebuilt from music stems and SFX events carries the right content and a slightly different dynamic (a hit a little too soft, a bed a
+# little too loud under it, a limiter that flattens what the reference's master did not). A gain ride is a few hundred numbers, one dB value per
+# 0.1 s bin, that moves our loudness curve onto the reference's: no sample of the reference is stored, only a loudness envelope (band powers and
+# gains are the doctrine of docs/ARCHITECTURE.md section 2), and the envelope is replayable without the reference (apply).
+# The fit is a bounded least squares on the K-weighted power of each bin (a window's power is the overlap-weighted sum of its bins), under the
+# LOCAL true-peak headroom of the signal it rides, with a free overall scale: a master already at its ceiling can only be attenuated, and the
+# level is moved onto the reference loudness as far as that headroom allows. Several anchors of that scale are tried and the one with the best
+# exact mix score is kept. FR : la courbe de sonie en parametres, rejouable sans la reference.
+from __future__ import annotations
+
+import numpy as np
+from scipy import signal
+from scipy.optimize import lsq_linear
+
+from . import loudness
+
+SCHEMA = "zrmd/gain-ride@2"
+
+
+def _windows(duration_s: float, mix_cfg: dict) -> tuple[float, float]:
+    """The window and hop verify.curve_score uses for a span of this length (short-term when long enough, momentary otherwise)."""
+    long = duration_s >= 4 * mix_cfg["shortTermWindowS"]
+    return (mix_cfg["shortTermWindowS"], mix_cfg["shortTermHopS"]) if long else (mix_cfg["momentaryWindowS"], mix_cfg["momentaryHopS"])
+
+
+def curve(x: np.ndarray, sr: int, mix_cfg: dict) -> tuple[np.ndarray, np.ndarray, float, float]:
+    w, h = _windows(len(x) / sr, mix_cfg)
+    L, t = loudness.short_term(x, sr, w, h)
+    return L, t, w, h
+
+
+def correlation(ref: np.ndarray, ours: np.ndarray, sr: int, mix_cfg: dict) -> float | None:
+    cr, _, _, _ = curve(ref, sr, mix_cfg)
+    cg, _, _, _ = curve(ours, sr, mix_cfg)
+    k = min(len(cr), len(cg))
+    if k < 4 or np.std(cr[:k]) == 0 or np.std(cg[:k]) == 0:
+        return None
+    return float(np.corrcoef(cr[:k], cg[:k])[0, 1])
+
+
+def gain_samples(ride: dict, n: int, sr: int) -> np.ndarray:
+    """The linear gain per sample of a stored ride: piecewise linear in dB between the bin centres, constant outside."""
+    t = np.asarray(ride["centres"], dtype=np.float64)
+    g = np.asarray(ride["gainDb"], dtype=np.float64)
+    if len(t) == 0:
+        return np.ones(n)
+    return 10 ** (np.interp(np.arange(n) / sr, t, g) / 20.0)
+
+
+def apply(x: np.ndarray, ride: dict | None, sr: int) -> np.ndarray:
+    if not ride or ride.get("gainDb") is None or len(ride["gainDb"]) == 0:
+        return x
+    g = gain_samples(ride, len(x), sr)
+    return x * (g[:, None] if x.ndim == 2 else g)
+
+
+def mix_parts(ref: np.ndarray, out: np.ndarray, sr: int, cfg: dict) -> dict:
+    """The three parts of verify.report's mix score and their geometric mean, computed with the same functions."""
+    from . import verify
+    m, base = cfg["mix"], cfg["score"]["base"]
+    n = min(len(ref), len(out))
+    r, g = ref[:n], out[:n]
+    lufs_e = (loudness.integrated(g, sr) - loudness.integrated(r, sr)) / m["lufsJnd"]
+    cur = verify.curve_score(r, g, sr, 0.0, n / sr, cfg)
+    parts = {"loudness": 100 * base ** (lufs_e ** 2), "curve": 100 * max(cur["correlation"] or 0.0, 0.0) if cur["correlation"] is not None else 100.0,
+             "truePeak": 100.0 if loudness.true_peak_db(g, sr, m["oversample"]) <= m["truePeakCeilingDbtp"] + 1e-6 else 0.0}
+    parts["score"] = verify._geo([parts["loudness"], parts["curve"], parts["truePeak"]])
+    return parts
+
+
+def _kpower(x: np.ndarray, sr: int) -> np.ndarray:
+    y = loudness.as_2d(loudness.k_weight(loudness.as_2d(np.asarray(x, dtype=np.float64)), sr))
+    return (y ** 2).sum(axis=1)
+
+
+def _bin_headroom_amp(ours: np.ndarray, sr: int, bin_n: int, nb: int, ceiling_db: float) -> np.ndarray:
+    """Per bin, the largest LINEAR amplitude gain that keeps the oversampled peak of this bin and of its two neighbours under the ceiling (a
+    piecewise-linear ride between bin centres never exceeds the larger of two adjacent bin gains)."""
+    up = signal.resample_poly(loudness.as_2d(np.asarray(ours, dtype=np.float32)), 4, 1, axis=0)
+    mag = np.abs(up).max(axis=1)
+    peaks = np.array([mag[i * bin_n * 4:(i + 1) * bin_n * 4].max() if i * bin_n * 4 < len(mag) else 1e-9 for i in range(nb)]) + 1e-12
+    amp = 10 ** (ceiling_db / 20.0) / peaks
+    near = np.minimum(amp, np.minimum(np.concatenate([amp[1:], [np.inf]]), np.concatenate([[np.inf], amp[:-1]])))
+    return near
+
+
+def _solve_once(A: np.ndarray, R: np.ndarray, u_lo: np.ndarray, u_hi: np.ndarray, smooth: float, pull: float, kappa: float) -> np.ndarray:
+    """min over (u, s): sum_j (A_j u / R_j - s)^2 + smooth^2 |D u|^2 + pull^2 |u - 1|^2 + kappa^2 (s - 1)^2, bounds on u (power gain per bin)."""
+    nw, nb = A.shape
+    M = np.zeros((nw + (nb - 1) + nb + 1, nb + 1))
+    y = np.zeros(M.shape[0])
+    M[:nw, :nb] = A / np.maximum(R, 1e-12)[:, None]
+    M[:nw, nb] = -1.0
+    i = nw
+    for k in range(nb - 1):
+        M[i + k, k], M[i + k, k + 1] = -smooth, smooth
+    i += nb - 1
+    M[i:i + nb, :nb] = pull * np.eye(nb)
+    y[i:i + nb] = pull
+    i += nb
+    M[i, nb] = kappa
+    y[i] = kappa
+    lo = np.concatenate([u_lo, [0.2]])
+    hi = np.concatenate([u_hi, [5.0]])
+    return lsq_linear(M, y, bounds=(lo, hi), method="bvls", max_iter=4000).x[:nb]
+
+
+def fit(ref: np.ndarray, ours: np.ndarray, sr: int, cfg: dict, ride_cfg: dict | None = None, target_lufs: float | None = None) -> dict:
+    """The ride that brings OUR loudness curve onto the reference's with the best exact mix score under the peak ceiling. Returns
+    {schema, binS, windowS, hopS, centres, gainDb, before, after} (before/after: the three mix parts and the score)."""
+    m = cfg["mix"]
+    rc = ride_cfg or m["ride"]
+    n = min(len(ref), len(ours))
+    ref, ours = ref[:n], ours[:n]
+    w, h = _windows(n / sr, m)
+    win, hop = int(w * sr), int(h * sr)
+    starts = np.arange(0, max(1, n - win + 1), hop)
+    qr, qo = _kpower(ref, sr), _kpower(ours, sr)
+    cr = np.concatenate([[0.0], np.cumsum(qr)])
+    R = (cr[np.minimum(starts + win, n)] - cr[starts]) / win
+    bin_n = max(1, int(rc["binS"] * sr))
+    nb = int(np.ceil(n / bin_n))
+    qbar = np.array([qo[i * bin_n:(i + 1) * bin_n].mean() for i in range(nb)])
+    A = np.zeros((len(starts), nb))
+    for j, s in enumerate(starts):
+        for i in range(s // bin_n, min(nb - 1, (s + win - 1) // bin_n) + 1):
+            lo, hi = max(s, i * bin_n), min(s + win, (i + 1) * bin_n)
+            A[j, i] = max(hi - lo, 0) / win * qbar[i]
+    ceiling = m["truePeakCeilingDbtp"] - rc["peakMarginDb"]
+    allow = _bin_headroom_amp(ours, sr, bin_n, nb, ceiling)
+    u_lo = np.full(nb, 10 ** (-rc["maxDb"] / 10))
+    u_hi = np.maximum(np.minimum(10 ** (rc["maxDb"] / 10), allow ** 2), u_lo + 1e-9)
+    centres = (np.arange(nb) + 0.5) * rc["binS"]
+    before = mix_parts(ref, ours, sr, cfg)
+    best = None
+    for kappa in rc["anchors"]:
+        u = _solve_once(A, R, u_lo, u_hi, rc["smooth"], rc["pull"], kappa)
+        ride = {"centres": centres, "gainDb": 10 * np.log10(u)}
+        out = apply(ours, ride, sr)
+        # the level: moved onto the reference loudness as far as the global peak allows, never over the ceiling
+        if target_lufs is not None:
+            shift = target_lufs - loudness.integrated(out, sr)
+            tp = loudness.true_peak_db(out, sr, m["oversample"])
+            shift = min(shift, (m["truePeakCeilingDbtp"] - 0.05) - tp)
+            ride["gainDb"] = ride["gainDb"] + shift
+            out = apply(ours, ride, sr)
+        parts = mix_parts(ref, out, sr, cfg)
+        if best is None or parts["score"] > best[0]["score"]:
+            best = (parts, {"centres": centres.copy(), "gainDb": ride["gainDb"].copy()}, kappa)
+    parts, ride, kappa = best
+    if parts["score"] + 1e-9 < before["score"]:        # a ride that does not help is not stored
+        return {"schema": SCHEMA, "binS": rc["binS"], "windowS": w, "hopS": h, "centres": [], "gainDb": [], "before": before, "after": before,
+                "note": "no gain: the signal already beats every candidate ride"}
+    return {"schema": SCHEMA, "binS": rc["binS"], "windowS": w, "hopS": h, "centres": [round(float(v), 4) for v in ride["centres"]],
+            "gainDb": [round(float(v), 3) for v in ride["gainDb"]], "anchor": kappa,
+            "before": {k: round(v, 3) for k, v in before.items()}, "after": {k: round(v, 3) for k, v in parts.items()}}

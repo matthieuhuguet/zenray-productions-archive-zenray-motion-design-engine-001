@@ -1,0 +1,375 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["mcp>=1.2,<2"]
+# ///
+# 14 October 2026: MCP server "zenray-motion-app": drives the V1 application of ZenRay Motion Design WITHOUT a click, through the same local API the
+# page uses (/api/v1/*, params/v1-app.json and params/v1-tiers.json are the single truth). It starts the app if it is not running. Run it with
+# `uv run --script mcp/zrmd_app_mcp.py` (stdio). Every tool returns plain JSON; work that takes time (an applied edit, an export, a music cook)
+# is waited for up to `wait_s` seconds and otherwise returns its job id for app_job. Nothing here knows a value of the product.
+# FR : serveur MCP de l'application V1, lancee par uv ; les memes routes que la page, aucun clic.
+"""zenray-motion-app MCP server (FastMCP over stdio)."""
+from __future__ import annotations
+
+import http.client
+import json
+import os
+import subprocess
+import sys
+import time
+import urllib.parse
+from pathlib import Path
+
+from mcp.server.fastmcp import FastMCP
+
+ENGINE = Path(__file__).resolve().parent.parent
+SETTINGS = json.loads((ENGINE / "settings.json").read_text(encoding="utf-8"))
+URL = os.environ.get("ZRMD_APP_URL", "http://127.0.0.1:3104")
+HOST, PORT = urllib.parse.urlparse(URL).hostname, urllib.parse.urlparse(URL).port or 80
+CLIENT = {"x-zr-orchestrator-client": "1"}
+PYTHON = os.environ.get("ZRMD_PYTHON", SETTINGS["paths"]["python"])
+LOG = Path(os.environ.get("ZRMD_APP_LOG", Path.home() / ".claude" / "tmp" / "tmp-zenray-motion-design" / "logs" / "orchestrator-server.log"))
+
+mcp = FastMCP("zenray-motion-app")
+
+
+class AppUnavailable(RuntimeError):
+    pass
+
+
+def _raw(method: str, path: str, body: bytes | None = None, headers: dict | None = None, timeout: float = 120.0):
+    conn = http.client.HTTPConnection(HOST, PORT, timeout=timeout)
+    try:
+        conn.request(method, path, body=body, headers={**(CLIENT if method == "POST" else {}), **(headers or {})})
+        resp = conn.getresponse()
+        return resp.status, resp.read()
+    finally:
+        conn.close()
+
+
+def _alive() -> bool:
+    try:
+        status, _ = _raw("GET", "/api/v1/status", timeout=3)
+        return status == 200
+    except OSError:
+        return False
+
+
+def _ensure_app() -> None:
+    """Start the application server detached when it does not answer (its runs and jobs live in their own processes)."""
+    if _alive():
+        return
+    LOG.parent.mkdir(parents=True, exist_ok=True)
+    with open(LOG, "ab") as out:
+        subprocess.Popen([PYTHON, "-I", str(ENGINE / "Scripts" / "Orchestrate.py"), "serve"], cwd=str(ENGINE), stdout=out, stderr=out,
+                         stdin=subprocess.DEVNULL, start_new_session=True)
+    for _ in range(40):
+        time.sleep(0.5)
+        if _alive():
+            return
+    raise AppUnavailable(f"the application did not start (see {LOG})")
+
+
+def call(method: str, path: str, query: dict | None = None, body: dict | None = None, timeout: float = 120.0) -> dict:
+    """One API call; the JSON answer, with {ok: false, error} for a refusal (never an exception for a refusal)."""
+    _ensure_app()
+    q = {k: v for k, v in (query or {}).items() if v is not None}
+    url = path + ("?" + urllib.parse.urlencode(q) if q else "")
+    data = json.dumps(body).encode() if body is not None else None
+    status, raw = _raw(method, url, data, {"content-type": "application/json"} if data is not None else None, timeout)
+    try:
+        return json.loads(raw)
+    except ValueError:
+        return {"ok": False, "error": f"HTTP {status}: {raw[:200]!r}"}
+
+
+def wait_job(job: dict, wait_s: float) -> dict:
+    """Poll a job until it ends or `wait_s` passes; a job still running comes back with its id so app_job can follow it."""
+    deadline = time.time() + max(0.0, wait_s)
+    jid = job["id"]
+    while True:
+        got = call("GET", "/api/v1/job", {"id": jid})
+        j = got.get("job") or {}
+        if j.get("state") in ("done", "failed"):
+            return {"ok": j["state"] == "done", "state": j["state"], "job": jid, "result": j.get("result"), "error": j.get("error")}
+        if time.time() >= deadline:
+            return {"ok": True, "state": j.get("state", "running"), "job": jid, "note": "still working; follow it with app_job"}
+        time.sleep(0.8)
+
+
+# ------------------------------------------------------------------------------------------------------ the application
+@mcp.tool()
+def app_status() -> dict:
+    """State of the application: number of projects, whether a job or a run is working, and the problems of the 4/8/16 tiers (empty when sound)."""
+    return call("GET", "/api/v1/status")
+
+
+@mcp.tool()
+def app_config() -> dict:
+    """The shell parameters: page sizes, accepted upload extensions, the named pipelines (scenes, visual, music, sound) and the tier limits."""
+    return call("GET", "/api/v1/config")
+
+
+@mcp.tool()
+def app_tiers() -> dict:
+    """The parameter tiers of every chantier: scene recipes (textcard, graphic, shader-field), music, montage. 4 primary, 8 secondary, 16 tertiary."""
+    return call("GET", "/api/v1/tiers")
+
+
+# ------------------------------------------------------------------------------------------------------ projects and scenes
+@mcp.tool()
+def app_projects(offset: int = 0, limit: int = 12) -> dict:
+    """The projects (references dropped or indexed), paged. Each card has its title, duration, scene and motion counts and its module scores."""
+    return call("GET", "/api/v1/projects", {"offset": offset, "limit": limit})
+
+
+@mcp.tool()
+def app_project(slug: str) -> dict:
+    """One project: metadata, module scores, available results (reference, film, music...), its runs and its pipeline steps."""
+    return call("GET", "/api/v1/project", {"slug": slug})
+
+
+@mcp.tool()
+def app_scenes(slug: str, offset: int = 0, limit: int = 24) -> dict:
+    """The scenes (shots) of a project, paged: time span, family, palette, the motions that reproduce each scene and whether it is editable."""
+    return call("GET", "/api/v1/scenes", {"slug": slug, "offset": offset, "limit": limit})
+
+
+@mcp.tool()
+def app_scene(slug: str, scene_id: str) -> dict:
+    """One scene with its three frames and, for each motion of it, the primary and secondary values (with their current value), versions and canvas."""
+    return call("GET", "/api/v1/scene", {"slug": slug, "id": scene_id})
+
+
+@mcp.tool()
+def app_import(path: str, title: str | None = None, pipeline: str | None = "scenes") -> dict:
+    """Drop a local video or sound into the app as a NEW project. `path` is a file on this Mac (video: mp4 mov mkv webm m4v; sound: mp3 wav flac m4a
+    aac ogg). A sound without picture rides on a still black frame. `pipeline` (default 'scenes') starts the named pipeline right away; null for none.
+    Returns the slug and the run."""
+    p = Path(path).expanduser()
+    if not p.is_file():
+        return {"ok": False, "error": f"no such file: {p}"}
+    _ensure_app()
+    size = p.stat().st_size
+    conn = http.client.HTTPConnection(HOST, PORT, timeout=3600)
+    try:
+        conn.putrequest("POST", "/api/v1/media/upload?" + urllib.parse.urlencode({"name": p.name}))
+        for k, v in CLIENT.items():
+            conn.putheader(k, v)
+        conn.putheader("Content-Length", str(size))
+        conn.endheaders()
+        with open(p, "rb") as f:
+            while True:
+                block = f.read(1 << 20)
+                if not block:
+                    break
+                conn.send(block)
+        up = json.loads(conn.getresponse().read())
+    finally:
+        conn.close()
+    if not up.get("ok"):
+        return up
+    return call("POST", "/api/v1/project/create", body={"upload": up["id"], "title": title or p.stem, "run": pipeline if up["kind"] == "video" else None})
+
+
+@mcp.tool()
+def app_run(slug: str, pipeline: str) -> dict:
+    """Start a named pipeline on a project: 'scenes' (cut and storyboard), 'visual' (vector scene and film), 'music', 'sound'. Returns the run to follow."""
+    return call("POST", "/api/v1/project/run", body={"slug": slug, "pipeline": pipeline})
+
+
+@mcp.tool()
+def app_run_status(run_id: str) -> dict:
+    """The state of a run and of each of its steps (pending, running, done, failed, below-target, cancelled) with seconds and score."""
+    return call("GET", "/api/v1/run", {"id": run_id})
+
+
+@mcp.tool()
+def app_run_cancel(run_id: str) -> dict:
+    """Ask a running pipeline to stop; the current step is interrupted and the run ends as cancelled."""
+    return call("POST", "/api/v1/run/cancel", body={"id": run_id})
+
+
+@mcp.tool()
+def app_delete_project(slug: str) -> dict:
+    """Delete a DROPPED project and its calculs. A reference of the corpus is refused. Montages and motions are never touched."""
+    return call("POST", "/api/v1/project/delete", body={"slug": slug})
+
+
+# ------------------------------------------------------------------------------------------------------ scene editing
+@mcp.tool()
+def app_motion(motion: str, version: str | None = None) -> dict:
+    """A motion (a versioned composition): its recipe, the tiers with current values, its versions (score, note, author) and which one is main."""
+    return call("GET", "/api/v1/motion", {"motion": motion, "version": version})
+
+
+@mcp.tool()
+def app_set(motion: str, values: dict, base_version: str | None = None, note: str | None = None, wait_s: float = 120.0) -> dict:
+    """Change values of a motion and cook the result as a NEW version (the old one stays). `values` maps a tier key to its value, for example
+    {"layers.@caption.text": "Hello", "layers.@bg.color": "#223355", "layers.@caption.font.size": 120}; keys and ranges come from app_motion tiers.
+    A refused value is reported before any work. Waits up to wait_s seconds for the version (cook, render, verify)."""
+    r = call("POST", "/api/v1/scene/apply", body={"motion": motion, "baseVersion": base_version, "values": values, "note": note})
+    return wait_job(r["job"], wait_s) if r.get("ok") else r
+
+
+@mcp.tool()
+def app_promote(motion: str, version: str, wait_s: float = 60.0) -> dict:
+    """Make a version the MAIN one of a motion (what the library and the montage use by default). Nothing is deleted."""
+    r = call("POST", "/api/v1/motion/promote", body={"motion": motion, "version": version})
+    return wait_job(r["job"], wait_s) if r.get("ok") else r
+
+
+@mcp.tool()
+def app_job(job_id: str) -> dict:
+    """The state, steps, result or error of a job started by app_set, app_promote, app_timeline_export."""
+    return call("GET", "/api/v1/job", {"id": job_id})
+
+
+# ------------------------------------------------------------------------------------------------------ music
+@mcp.tool()
+def app_music_members() -> dict:
+    """The reproduced music tracks with their critic scores (0..100) and the slider definitions (id, label, unit, range)."""
+    return call("GET", "/api/v1/music/members")
+
+
+@mcp.tool()
+def app_music_state(slug: str) -> dict:
+    """One track: its calibrated version, default value of every slider and the 4 primary and 8 secondary tiers."""
+    return call("GET", "/api/v1/music/state", {"slug": slug})
+
+
+@mcp.tool()
+def app_music_cook(slug: str, values: dict) -> dict:
+    """Cook a variation of a track from slider values (ids from app_music_state, for example {"drums": 3, "transpose": 2, "kick": -4}). The engine
+    recomputes only what changed (a few seconds). Returns the folder with the stems and mix WAV files, the key and the cook statistics."""
+    return call("POST", "/api/v1/music/cook", body={"slug": slug, "values": values}, timeout=900)
+
+
+# ------------------------------------------------------------------------------------------------------ montage
+@mcp.tool()
+def app_library(query: str = "", offset: int = 0, limit: int = 24) -> dict:
+    """The motions available to place in a montage (latest version, duration, score, poster), searchable by a word, paged."""
+    return call("GET", "/api/v1/library", {"kind": "motions", "q": query, "offset": offset, "limit": limit})
+
+
+@mcp.tool()
+def app_uploads(offset: int = 0, limit: int = 24) -> dict:
+    """The user's own media (videos, images, sounds) uploaded for montages, with their duration and `path` to use in a spec."""
+    return call("GET", "/api/v1/uploads", {"offset": offset, "limit": limit})
+
+
+@mcp.tool()
+def app_upload(path: str) -> dict:
+    """Upload a local video, image or sound for montages. Returns its descriptor: id, kind, duration, has audio, size and `path` for a clip source."""
+    p = Path(path).expanduser()
+    if not p.is_file():
+        return {"ok": False, "error": f"no such file: {p}"}
+    _ensure_app()
+    conn = http.client.HTTPConnection(HOST, PORT, timeout=3600)
+    try:
+        conn.putrequest("POST", "/api/v1/media/upload?" + urllib.parse.urlencode({"name": p.name}))
+        for k, v in CLIENT.items():
+            conn.putheader(k, v)
+        conn.putheader("Content-Length", str(p.stat().st_size))
+        conn.endheaders()
+        with open(p, "rb") as f:
+            while True:
+                block = f.read(1 << 20)
+                if not block:
+                    break
+                conn.send(block)
+        return json.loads(conn.getresponse().read())
+    finally:
+        conn.close()
+
+
+@mcp.tool()
+def app_timeline_config() -> dict:
+    """What a montage spec may contain: formats (16x9, 9x16, 4x5, 1x1), fits (contain, cover, blur), text defaults, fonts, animations and limits."""
+    return call("GET", "/api/v1/timeline/config")
+
+
+@mcp.tool()
+def app_timeline_validate(spec: dict) -> dict:
+    """Validate a montage spec without rendering: the planned duration, formats and each clip's kind and length, or the refusal naming track and clip.
+    Spec: {"id": "my-montage", "formats": ["9x16"], "fit": "contain", "background": "#000000", "tracks": [{"kind": "video", "clips": [
+    {"source": {"kind": "motion", "motion": "<id>", "version": "V_001"}, "start": 0, "in": 0, "out": 1.5, "textOnly": false},
+    {"source": {"kind": "file", "path": "<absolute path under your home>"}}]}, {"kind": "text", "clips": [{"text": "Hello", "start": 0.5,
+    "duration": 2, "color": "#ffffff", "font": "InterVariable", "size": 0.06, "x": 0.5, "y": 0.82, "anim": "pop"}]}, {"kind": "audio", "clips": [...]}]}."""
+    return call("POST", "/api/v1/timeline/validate", body={"spec": spec})
+
+
+@mcp.tool()
+def app_timeline_save(spec: dict) -> dict:
+    """Save a montage spec (it then appears in the app's montage list and can be reopened or exported by id)."""
+    return call("POST", "/api/v1/timeline/save", body={"spec": spec})
+
+
+@mcp.tool()
+def app_timelines() -> dict:
+    """The saved montages (id, formats, number of tracks, last update)."""
+    return call("GET", "/api/v1/timelines")
+
+
+@mcp.tool()
+def app_timeline_get(id: str) -> dict:
+    """The spec of a saved montage."""
+    return call("GET", "/api/v1/timeline", {"id": id})
+
+
+@mcp.tool()
+def app_timeline_export(format: str, id: str | None = None, spec: dict | None = None, wait_s: float = 300.0) -> dict:
+    """Render a montage to an MP4 in one format (16x9, 9x16, 4x5, 1x1): give the id of a saved montage or a spec. Waits up to wait_s seconds and
+    returns the file path, size, duration and whether it carries sound."""
+    body = {"format": format}
+    if spec is not None:
+        body["spec"] = spec
+    else:
+        body["id"] = id
+    r = call("POST", "/api/v1/timeline/export", body=body)
+    return wait_job(r["job"], wait_s) if r.get("ok") else r
+
+
+@mcp.tool()
+def app_timeline_delete(id: str) -> dict:
+    """Delete a saved montage (its spec and exports). The user's files and motions are never touched."""
+    return call("POST", "/api/v1/timeline/delete", body={"id": id})
+
+
+@mcp.tool()
+def app_upload_delete(id: str) -> dict:
+    """Remove an uploaded file from the library; refused while a saved montage uses it."""
+    return call("POST", "/api/v1/upload/delete", body={"id": id})
+
+
+# ------------------------------------------------------------------------------------------------------ publication
+@mcp.tool()
+def app_publish_motions(slug: str) -> dict:
+    """The motions that reproduce a project, with their latest version and whether their rights are validated."""
+    return call("GET", "/api/v1/publish/motions", {"slug": slug})
+
+
+@mcp.tool()
+def app_publish_plan(slug: str, wait_s: float = 600.0) -> dict:
+    """A DRY RUN of the site publisher for every motion of a project: ready, rights to validate, or a problem with its cause. Nothing leaves the Mac."""
+    r = call("POST", "/api/v1/publish/plan", body={"slug": slug})
+    return wait_job(r["job"], wait_s) if r.get("ok") else r
+
+
+@mcp.tool()
+def app_motion_rights(motion: str, cleared: bool, confirmed: bool = False) -> dict:
+    """Record that the rights of a motion are validated (or withdraw it). Only a PERSON can validate: use this only when the user has said, in chat,
+    that they checked the render (no text, logo or image of the reference remains); `confirmed` must be true."""
+    return call("POST", "/api/v1/motion/rights", body={"motion": motion, "cleared": cleared, "confirmed": confirmed})
+
+
+@mcp.tool()
+def app_publish_run(slug: str, motions: list[str], confirm: bool = False, wait_s: float = 900.0) -> dict:
+    """PUBLISH motions of a project to the site (public CDN, neutral paths, never the reference video). Irreversible in practice: only after the user
+    approved this exact list in chat, with `confirm` true. Each motion must have validated rights."""
+    r = call("POST", "/api/v1/publish/run", body={"slug": slug, "motions": motions, "confirm": confirm})
+    return wait_job(r["job"], wait_s) if r.get("ok") else r
+
+
+if __name__ == "__main__":
+    mcp.run()

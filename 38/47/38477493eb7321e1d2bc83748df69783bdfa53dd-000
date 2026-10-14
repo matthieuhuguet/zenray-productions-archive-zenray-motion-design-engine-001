@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+# 14 October 2026: the production polish of a music-trim bench version (zrmd/audio/polish.py), kept as a separate LISTENING version inside
+# <bench>/<V_NNN>/polish/ (stems, mix.wav, mix.mp3, polish.json). The benchmark version itself is never touched. Eligible only when the
+# version passed the 99.9 gate on every stem and on the final mix (Matthieu, 14 October 2026: polish the files that reach 99.9); --force runs a
+# PREVIEW on any version and says so in polish.json.
+#   MusicPolish.py --slug claude-opus-5-5 [--version V_NNN] [--force]
+# FR : passe de finition d'une version du banc, en version d'ecoute separee ; seulement si la porte 99,9 est franchie, sinon apercu force.
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+sys.path.insert(0, str(ENGINE / "Scripts"))
+import MusicRun  # noqa: E402
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--slug", required=True)
+    ap.add_argument("--version", default="")
+    ap.add_argument("--force", action="store_true")
+    a = ap.parse_args()
+    os.environ["ZRMD_RESYNTH_OVERRIDES"] = MusicRun.env_for(a.slug)["ZRMD_RESYNTH_OVERRIDES"]
+    from zrmd.audio import earcheck, polish as PO, resynth as RS, trim as T
+    P = RS.params()
+    sr = P["sampleRate"]
+    bench = Path(P["paths"]["bench"])
+    versions = sorted(p.name for p in bench.glob("V_*") if (p / "trim.json").exists())
+    version = a.version or (versions[-1] if versions else "")
+    if not version or not (bench / version / "trim.json").exists():
+        print(json.dumps({"ok": False, "error": f"no music-trim version in {bench}: run MusicTrim.py first"}))
+        return 1
+    d = bench / version
+    tr = json.loads((d / "trim.json").read_text(encoding="utf-8"))
+    tc = T.cfg()["targets"]
+    stem_gates = {k: v["gateCritic"] for k, v in tr["stems"].items()}
+    mix_gate = tr["mix"]["gateCritic"]
+    eligible = all(g >= tc["stem"] for g in stem_gates.values()) and mix_gate >= tc["mix"]
+    if not eligible and not a.force:
+        print(json.dumps({"ok": False, "eligible": False, "version": version, "stemGates": stem_gates, "mixGate": round(mix_gate, 3), "target": tc["stem"],
+                          "error": "below the 99.9 gate: polish refused (use --force for a preview)"}))
+        return 1
+    c = PO.cfg()
+    out = d / "polish"
+    (out / "stems").mkdir(parents=True, exist_ok=True)
+    t0 = time.time()
+    report = {"version": version, "preview": not eligible, "stemGates": stem_gates, "mixGate": round(mix_gate, 3), "stems": {}}
+    refs = RS.load_reference(P)
+    for stem in stem_gates:
+        x = RS._read(d / "stems" / f"{stem}.wav", sr)
+        y, rep = PO.polish(x, sr, c, stages=["dc", "declick", "decrackle", "resonance"] + (["bass"] if stem == "bass" else []),
+                           reference=np.asarray(refs["stems"][stem]), kind="stem")
+        RS.write_stereo(out / "stems" / f"{stem}.wav", y, sr)
+        report["stems"][stem] = {"before": rep["before"], "after": rep["after"], "clean": rep["clean"], "cleanAbsolute": rep["cleanAbsolute"], "reference": rep.get("reference")}
+    mix = RS._read(d / "mix.wav", sr)
+    ref_mix = np.asarray(refs["mix"])
+    y, rep = PO.polish(mix, sr, c, reference=ref_mix, kind="mix")
+    RS.write_stereo(out / "mix.wav", y, sr)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(out / "mix.wav"), "-c:a", "libmp3lame", "-b:a", "256k", str(out / "mix.mp3")], check=True)
+    report["mix"] = {"before": rep["before"], "after": rep["after"], "clean": rep["clean"], "cleanAbsolute": rep["cleanAbsolute"], "reference": rep.get("reference"),
+                     "limiter": rep["stages"].get("limiter"),
+                     "scoresVsReference": {"trimmed": T.scores(ref_mix, mix, sr, T.cfg()), "polished": T.scores(ref_mix, y, sr, T.cfg())},
+                     "bassFine": {"trimmed": earcheck.bass_fine(ref_mix, mix, sr), "polished": earcheck.bass_fine(ref_mix, y, sr)}}
+    report["seconds"] = round(time.time() - t0, 1)
+    (out / "polish.json").write_text(json.dumps(report, indent=1, default=float) + "\n", encoding="utf-8")
+    sv = report["mix"]["scoresVsReference"]
+    print(json.dumps({"ok": True, "version": version, "preview": report["preview"], "clean": rep["clean"], "mix": str(out / "mix.mp3"),
+                      "criticTrimmed": sv["trimmed"]["critic"]["score"], "criticPolished": sv["polished"]["critic"]["score"],
+                      "after": rep["after"], "seconds": report["seconds"]}, default=float), flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

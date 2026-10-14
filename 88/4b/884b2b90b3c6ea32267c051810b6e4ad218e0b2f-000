@@ -1,0 +1,423 @@
+// 14 October 2026: the scene editor of the V1 application. One scene = one shot of the reference and the motions that reproduce it. The page
+// shows the reference, the live composition (instant for the values that have a preview binding in params/v1-tiers.json) and the exact render of
+// a version; the 4 primary and 8 secondary values come from the tiers, and Apply cooks a NEW version (nothing is overwritten).
+// FR : l'editeur de scene : reference, apercu vivant et rendu exact ; Appliquer cree une NOUVELLE version, rien n'est ecrase.
+import { $, $$, esc, get, post, poll, toast, clock, sec, pct, makeField } from './studio-core.js'
+
+const VIEW_LABEL = { ref: 'Référence', live: 'Ours · aperçu', render: 'Ours · rendu' }
+const hex2rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16))
+
+export async function sceneView(root, { slug, id, config }) {
+  const scene = await get('/api/v1/scene', { slug, id })
+  document.title = `${id} · ${slug}`
+  const motions = scene.motionDetails
+  const KIND = { colour: 'color', choice: 'select', bool: 'bool', text: 'text', number: 'number' }
+  /** The vector component of the scene as a motion-like entry: its V1 interface rows become fields (map kinds stay API only). */
+  function vectorAsMotion(v) {
+    const rows = (tier) => v.interface[tier].filter((r) => r.available && KIND[r.kind]).map((r) => ({
+      key: r.name, label: r.label, kind: KIND[r.kind], min: r.min, max: r.max, step: r.step ?? (r.max != null ? (r.max - r.min) / 200 : undefined), unit: r.unit,
+      options: r.choices, maxLength: r.maxLength, value: r.value, dom: r.dom,
+    }))
+    const skipped = ['primary', 'secondary', 'tertiary'].reduce((n, t) => n + v.interface[t].filter((r) => !(r.available && KIND[r.kind])).length, 0)
+    return {
+      id: 'vector', vector: true, title: 'Composant vecteur', recipe: 'vecteur', version: v.version, latest: v.latest,
+      versions: v.versions.map((x) => ({ version: x.version, note: x.note, author: x.variation ? 'app' : null, score: x.score, render: x.render, poster: x.render })),
+      tiers: { primary: rows('primary'), secondary: rows('secondary'), tertiary: rows('tertiary') }, supported: true, composition: v.component,
+      canvas: { width: v.canvas.width, height: v.canvas.height }, skipped,
+    }
+  }
+  let disposed = false
+  const vectorLoad = scene.vector
+    ? get('/api/v1/vector', { slug }).then((v) => { motions.push(vectorAsMotion(v)) }).catch((e) => { toast(e.message, true) })
+    : null
+  // measuring the component can take seconds the first time: the other motions are shown at once, the vector joins them when it arrives
+  if (vectorLoad && !motions.some((m) => m.supported)) await vectorLoad
+  // the first motion that has values to edit comes first (a plate is only a clip of the video)
+  let mi = Math.max(0, motions.findIndex((m) => m.supported))
+  let md = motions[mi] || null
+  let view = md ? (md.composition ? 'live' : 'render') : 'ref'
+  const edits = {}
+  const fieldOf = {}
+  let player = null
+  let stopJob = null
+  let vview = null
+  let applying = false
+  let raf = 0
+  let pos = 0
+
+  root.innerHTML = `<p class="crumbs"><a href="#/">Projets</a> › <a href="#/p/${encodeURIComponent(slug)}">${esc(slug)}</a> › <span class="num">${esc(id)}</span></p>
+    <h1 class="title" data-testid="scene-title"><span class="num">${esc(id)}</span>${scene.content ? ' · ' + esc(scene.content) : ''}</h1>
+    <div class="meta"><span class="num">${clock(scene.start)} → ${clock(scene.end)}</span><span class="num">${sec(scene.duration)}</span>${scene.family ? `<span>${esc(scene.family)}</span>` : ''}</div>
+    ${scene.description ? `<p class="note" style="max-width:70ch">${esc(scene.description)}</p>` : ''}
+    <div class="editor">
+      <section>
+        <div class="row"><div class="seg" id="views" role="group" aria-label="Affichage"></div></div>
+        <div class="stage" id="stage" style="margin-top:10px"></div>
+        <div class="row transport" style="margin-top:10px">
+          <button class="icon-btn" id="play" type="button" aria-label="Lecture">▶</button>
+          <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Position" style="flex:1">
+          <span class="num note" id="time">0.00 s</span>
+        </div>
+        <div class="versions" id="versions" style="margin-top:12px"></div>
+      </section>
+      <aside class="panel" id="panel"></aside>
+    </div>`
+
+  const stage = $('#stage', root), panel = $('#panel', root), playBtn = $('#play', root), scrub = $('#scrub', root), timeEl = $('#time', root)
+
+  // ------------------------------------------------------------------------------------------------ views and player
+  function stopLoop() { cancelAnimationFrame(raf); raf = 0 }
+  function loop() {
+    if (!player) return
+    pos = player.duration() ? Math.min(1, Math.max(0, player.time() / player.duration())) : 0
+    scrub.value = Math.round(pos * 1000)
+    timeEl.textContent = `${player.time().toFixed(2)} s`
+    if (player.playing()) raf = requestAnimationFrame(loop)
+    else raf = 0
+  }
+  function setPlaying(on) {
+    playBtn.textContent = on ? '❚❚' : '▶'
+    if (on && !raf) raf = requestAnimationFrame(loop)
+  }
+  function mountView() {
+    vview = null
+    stopLoop()
+    player?.destroy?.()
+    player = null
+    stage.innerHTML = ''
+    stage.style.aspectRatio = md?.canvas?.width ? `${md.canvas.width} / ${md.canvas.height}` : '16 / 9'
+    const seg = $('#views', root)
+    const available = ['ref']
+    if (md?.composition) available.push('live')
+    if (md?.versions?.find((v) => v.version === md.version)?.render) available.push('render')
+    if (!available.includes(view)) view = available.includes('live') ? 'live' : available.at(-1)
+    seg.innerHTML = available.map((v) => `<button type="button" data-view="${v}" class="${v === view ? 'on' : ''}">${VIEW_LABEL[v]}</button>`).join('')
+    $$('button', seg).forEach((b) => b.addEventListener('click', () => { view = b.dataset.view; mountView() }))
+    if (view === 'ref') player = referencePlayer()
+    else if (view === 'live') player = livePlayer()
+    else player = renderPlayer()
+    player.seekNorm(pos)
+    setPlaying(false)
+    loop()
+  }
+  function videoPlayer(video, from, to) {
+    const dur = () => (to != null ? to - from : video.duration || 0)
+    video.addEventListener('timeupdate', () => { if (to != null && video.currentTime >= to) { video.pause(); video.currentTime = from; setPlaying(false) } })
+    video.addEventListener('ended', () => setPlaying(false))
+    return {
+      duration: dur, time: () => Math.max(0, video.currentTime - from), playing: () => !video.paused && !video.ended,
+      play: () => video.play(), pause: () => video.pause(), seek: (t) => { video.currentTime = from + t }, seekNorm: (n) => { video.currentTime = from + n * dur() },
+      destroy: () => video.pause(),
+    }
+  }
+  function referencePlayer() {
+    const v = document.createElement('video')
+    v.muted = true; v.playsInline = true; v.preload = 'auto'
+    v.src = `/api/v1/project-media?slug=${encodeURIComponent(slug)}&kind=reference`
+    v.addEventListener('error', () => { stage.innerHTML = `<img alt="Image de la scène" src="${esc(scene.frames.mid)}">` })
+    stage.append(v)
+    const p = videoPlayer(v, scene.start, scene.end)
+    v.addEventListener('loadedmetadata', () => { v.currentTime = scene.start + pos * scene.duration })
+    return p
+  }
+  function renderPlayer() {
+    const row = md.versions.find((x) => x.version === md.version)
+    if (md.vector) {
+      const img = document.createElement('img')
+      img.alt = 'Rendu du composant'
+      img.src = row.render
+      img.style.objectFit = 'contain'
+      stage.append(img)
+      return { duration: () => 0, time: () => 0, playing: () => false, play() {}, pause() {}, seek() {}, seekNorm() {}, destroy() {} }
+    }
+    const v = document.createElement('video')
+    v.muted = true; v.playsInline = true; v.preload = 'auto'
+    v.src = row.render
+    stage.append(v)
+    return videoPlayer(v, 0, null)
+  }
+  function livePlayer() {
+    const W = md.canvas.width || 1920, H = md.canvas.height || 1080
+    const frame = document.createElement('iframe')
+    frame.className = 'comp'
+    frame.style.width = `${W}px`
+    frame.style.height = `${H}px`
+    frame.setAttribute('title', 'Aperçu vivant')
+    frame.src = md.composition
+    stage.append(frame)
+    const fit = () => { frame.style.transform = `scale(${stage.clientWidth / W})` }
+    const ro = new ResizeObserver(fit)
+    ro.observe(stage)
+    fit()
+    let tl = null
+    let wasPlaying = false
+    const isVector = !!md.vector
+    const timeline = () => (isVector ? null : (tl || (tl = frame.contentWindow?.__timelines?.main || null)))
+    frame.addEventListener('load', () => {
+      tl = null
+      Object.values(fieldOf).forEach((f) => { if (f.def.preview && f.changed()) live(f.def, f.get()) })
+      timeline()?.pause?.()
+      timeline()?.seek?.(pos * (timeline()?.duration?.() || 0))
+    })
+    return {
+      duration: () => timeline()?.duration?.() || 0,
+      time: () => timeline()?.time?.() || 0,
+      playing: () => !!timeline() && !timeline().paused(),
+      play: () => { const t = timeline(); if (t) { if (t.time() >= t.duration() - 0.001) t.seek(0); t.play() } },
+      pause: () => timeline()?.pause?.(),
+      seek: (s) => timeline()?.seek?.(s),
+      seekNorm: (n) => timeline()?.seek?.(n * (timeline()?.duration?.() || 0)),
+      destroy: () => { ro.disconnect(); wasPlaying = false },
+    }
+  }
+  playBtn.addEventListener('click', () => {
+    if (!player) return
+    if (player.playing()) { player.pause(); setPlaying(false) } else { player.play(); setPlaying(true) }
+  })
+  scrub.addEventListener('input', () => {
+    if (!player) return
+    pos = scrub.value / 1000
+    player.pause()
+    setPlaying(false)
+    player.seekNorm(pos)
+    timeEl.textContent = `${(pos * player.duration()).toFixed(2)} s`
+  })
+
+  // ------------------------------------------------------------------------------------------------ live bindings
+  function live(def, value) {
+    if (md?.vector) {
+      const frame = stage.querySelector('iframe')
+      try {
+        if (frame?.contentWindow?.ZRMD?.set) { frame.contentWindow.ZRMD.set(def.key, value); return }
+        // a component without live text: the colours are CSS variables and the view block is the svg's own box
+        const doc = frame?.contentDocument, dom = def.dom
+        if (!doc || !dom) return
+        if (dom.op === 'var' && /^#[0-9a-f]{6}$/i.test(value)) doc.documentElement.style.setProperty(`--${dom.key}`, value)
+        else if (dom.op === 'view') {
+          const st = (vview ||= { scale: 1, opacity: 1, offset_x: 0, offset_y: 0 })
+          st[dom.field] = Number(value)
+          const svg = doc.querySelector('svg')
+          svg.style.transformOrigin = '50% 50%'
+          svg.style.transform = `translate(${st.offset_x}px, ${st.offset_y}px) scale(${st.scale})`
+          svg.style.opacity = String(st.opacity)
+        }
+      } catch { /* not live-settable: Apply cooks it */ }
+      return
+    }
+    const b = def.preview
+    if (!b || view !== 'live') return
+    const doc = stage.querySelector('iframe')?.contentDocument
+    const el = doc && doc.querySelector(b.selector)
+    if (!el) return
+    if (b.set === 'text') el.textContent = value
+    else if (b.set === 'background') el.style.background = value
+    else if (b.set === 'fontSizePx') el.style.fontSize = `${value}px`
+    else if (b.set === 'letterSpacingEm') el.style.letterSpacing = `${value}em`
+    else if (b.set === 'leftPx') el.style.left = `${value}px`
+    else if (b.set === 'topPx') el.style.top = `${value}px`
+    else if (b.set === 'tint' && /^#[0-9a-f]{6}$/i.test(value) && /^#[0-9a-f]{6}$/i.test(def.value || '')) {
+      const [r0, g0, b0] = hex2rgb(def.value).map((c) => Math.max(c, 1))
+      const [r1, g1, b1] = hex2rgb(value)
+      let svg = doc.getElementById('zr-tint-svg')
+      if (!svg) {
+        svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg')
+        svg.id = 'zr-tint-svg'
+        svg.setAttribute('style', 'position:absolute;width:0;height:0')
+        svg.innerHTML = '<filter id="zr-tint" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 1 0"/></filter>'
+        doc.body.append(svg)
+      }
+      const m = svg.querySelector('feColorMatrix')
+      m.setAttribute('values', `${r1 / r0} 0 0 0 0  0 ${g1 / g0} 0 0 0  0 0 ${b1 / b0} 0 0  0 0 0 1 0`)
+      el.style.filter = 'blur(calc(var(--zr-blur, 0) * 1px)) brightness(var(--zr-bright, 1)) url(#zr-tint)'
+    }
+    // a changed value that is not drawn instantly is cooked by Apply; the stage keeps showing the version
+  }
+
+  // ----------------------------------------------------------------------------------------------------- panel
+  function renderVersions() {
+    const box = $('#versions', root)
+    if (!md) { box.innerHTML = ''; return }
+    box.innerHTML = `<span class="note">Versions</span> ` + md.versions.slice(0, 12).map((v) =>
+      `<button type="button" class="btn ${v.version === md.version ? 'primary' : ''}" data-version="${esc(v.version)}" title="${esc(v.note || '')}">${esc(v.version)}${v.author === 'app' ? ' · variation' : v.score != null ? ` · ${pct(v.score)}` : ''}${v.version === md.latest ? ' · principale' : ''}</button>`).join('')
+    $$('[data-version]', box).forEach((b) => b.addEventListener('click', () => loadVersion(b.dataset.version)))
+    if (!md.vector && md.latest && md.version !== md.latest) {
+      const pin = document.createElement('button')
+      pin.className = 'btn'
+      pin.type = 'button'
+      pin.dataset.testid = 'promote'
+      pin.textContent = `Utiliser ${md.version} comme version principale`
+      pin.addEventListener('click', async () => {
+        pin.disabled = true
+        try {
+          const r = await post('/api/v1/motion/promote', { motion: md.id, version: md.version })
+          const stop = poll(async () => {
+            const { job } = await get('/api/v1/job', { id: r.job.id })
+            if (job.state === 'queued' || job.state === 'running') return false
+            if (job.state === 'failed') toast(job.error, true)
+            else { toast(`${md.version} est la version principale.`); md = await get('/api/v1/motion', { motion: md.id, version: md.version }); motions[mi] = md; renderPanel() }
+            return true
+          }, config.poll.jobMs)
+          void stop
+        } catch (e) { toast(e.message, true); pin.disabled = false }
+      })
+      box.append(pin)
+    }
+  }
+  async function loadVersion(version) {
+    md = md.vector ? vectorAsMotion(await get('/api/v1/vector', { slug, version })) : await get('/api/v1/motion', { motion: md.id, version })
+    motions[mi] = md
+    edits[md.id] = {}
+    pos = 0
+    renderPanel()
+    mountView()
+  }
+  function dirty() { return Object.keys(edits[md.id] || {}).length }
+  function renderPanel() {
+    panel.innerHTML = ''
+    Object.keys(fieldOf).forEach((k) => delete fieldOf[k])
+    renderVersions()
+    if (!md) {
+      panel.innerHTML = '<p class="note">Cette scène n\'a pas encore été reproduite en motion. Lance « Reproduire les images » depuis le projet.</p>'
+      return
+    }
+    if (motions.length > 1) {
+      const tabs = document.createElement('div')
+      tabs.className = 'seg'
+      tabs.innerHTML = motions.map((m, i) => `<button type="button" class="${i === mi ? 'on' : ''}" data-mi="${i}">${esc(m.recipe)}</button>`).join('')
+      $$('button', tabs).forEach((b) => b.addEventListener('click', () => { mi = Number(b.dataset.mi); md = motions[mi]; pos = 0; renderPanel(); mountView() }))
+      panel.append(tabs)
+    }
+    const head = document.createElement('div')
+    head.innerHTML = `<div class="name" style="font-family:var(--zr-police-serif);font-size:var(--ui-l)">${esc(md.title)}</div>
+      <div class="chips"><span class="chip">${esc(md.recipe)}</span><span class="chip num">${esc(md.version)}</span>${md.canvas?.width ? `<span class="chip num">${md.canvas.width}×${md.canvas.height}</span>` : ''}</div>`
+    panel.append(head)
+    edits[md.id] = edits[md.id] || {}
+    if (!md.vector && md.recipe !== 'plate') {
+      const rights = document.createElement('label')
+      rights.className = 'note rights'
+      rights.style.cssText = 'display:flex;gap:8px;align-items:flex-start'
+      rights.innerHTML = `<input type="checkbox" id="rights" data-testid="rights" ${md.rights?.cleared ? 'checked' : ''}><span>Droits validés : j'ai vérifié qu'aucun texte, logo ou image de la référence ne reste dans ce rendu. Sans cela, ce motion ne peut pas être publié sur le site.</span>`
+      const box = $('#rights', rights)
+      box.addEventListener('change', async () => {
+        const want = box.checked
+        if (want && !confirm(`Tu confirmes avoir vérifié le rendu de « ${md.title} » ${md.version} : aucun texte, logo ou image de la référence n'y reste ?`)) { box.checked = false; return }
+        try {
+          const r = await post('/api/v1/motion/rights', { motion: md.id, cleared: want, confirmed: true })
+          md.rights = r.rights
+          toast(want ? 'Droits validés.' : 'Droits retirés.')
+        } catch (e) { box.checked = !want; toast(e.message, true) }
+      })
+      panel.append(rights)
+    }
+    if (!md.supported) {
+      const n = document.createElement('p')
+      n.className = 'note'
+      n.textContent = 'Ce motion est un extrait de la vidéo : il n\'a pas encore de réglages en V1. Tu peux l\'utiliser tel quel dans le montage.'
+      panel.append(n)
+    } else {
+      const addGroup = (title, items, open) => {
+        if (!items.length) return null
+        const wrap = document.createElement(open ? 'div' : 'details')
+        wrap.className = 'group'
+        if (!open) { wrap.className = 'more-params'; wrap.innerHTML = `<summary>${esc(title)}</summary>` }
+        items.forEach((def) => {
+          const f = makeField(def, edits[md.id][def.key] ?? def.value, (v) => {
+            if (JSON.stringify(v) === JSON.stringify(def.value)) delete edits[md.id][def.key]; else edits[md.id][def.key] = v
+            live(def, v)
+            syncButtons()
+          })
+          f.def = def
+          fieldOf[def.key] = f
+          wrap.append(f.el)
+        })
+        panel.append(wrap)
+        return wrap
+      }
+      if (md.vector && md.skipped) {
+        const n = document.createElement('p')
+        n.className = 'note'
+        n.textContent = `${md.skipped} réglage${md.skipped > 1 ? 's' : ''} indisponible${md.skipped > 1 ? 's' : ''} pour ce composant (pas de calque de texte, ou réglage par calque réservé à l'API).`
+        panel.append(n)
+      }
+      addGroup('Réglages principaux', md.tiers.primary, true)
+      addGroup(`Plus de réglages (${md.tiers.secondary.length})`, md.tiers.secondary, false)
+      if (!md.tiers.primary.length && !md.tiers.secondary.length) panel.append(Object.assign(document.createElement('p'), { className: 'note', textContent: 'Aucun réglage n\'est encore ouvert pour ce type de scène.' }))
+    }
+    const bar = document.createElement('div')
+    bar.className = 'row'
+    bar.innerHTML = `<button class="btn primary" id="apply" type="button" data-testid="apply" disabled>Appliquer (nouvelle version)</button>
+      <button class="btn" id="revert" type="button" disabled>Annuler mes changements</button>
+      ${md.vector ? '' : `<a class="btn" id="addMontage" href="#/montage?add=${encodeURIComponent(md.id)}~${encodeURIComponent(md.version)}">Ajouter au montage</a>`}`
+    panel.append(bar)
+    const status = document.createElement('p')
+    status.className = 'note'
+    status.id = 'status'
+    status.textContent = 'Appliquer crée une nouvelle version : l\'ancienne reste intacte.'
+    panel.append(status)
+    $('#apply', panel).addEventListener('click', apply)
+    $('#revert', panel).addEventListener('click', () => { edits[md.id] = {}; renderPanel(); mountView() })
+    syncButtons()
+  }
+  function syncButtons() {
+    const n = dirty()
+    const a = $('#apply', panel), r = $('#revert', panel)
+    if (a) a.disabled = !n || applying
+    if (r) r.disabled = !n || applying
+  }
+  async function apply() {
+    const values = { ...edits[md.id] }
+    const motion = md.id, base = md.version
+    const status = $('#status', panel)
+    applying = true
+    status.classList.remove('err')
+    syncButtons()
+    try {
+      const r = md.vector ? await post('/api/v1/vector/apply', { slug, baseVersion: base, values })
+        : await post('/api/v1/scene/apply', { motion, baseVersion: base, values, note: `app: ${Object.keys(values).length} valeur(s) depuis ${id}` })
+      status.textContent = 'Calcul de la nouvelle version…'
+      const jid = r.job.id
+      stopJob = poll(async () => {
+        const { job } = await get('/api/v1/job', { id: jid })
+        const last = job.steps.at(-1)
+        if (job.state === 'running' || job.state === 'queued') {
+          status.textContent = `Calcul en cours${last ? ' : ' + (last.detail || last.name) : ''}…`
+          return false
+        }
+        stopJob = null
+        applying = false
+        if (job.state === 'failed') {
+          status.textContent = job.error
+          status.classList.add('err')
+          toast(job.error, true)
+          syncButtons()
+          return true
+        }
+        toast(`Version ${job.result.version} créée.`)
+        edits[motion] = {}
+        md = md.vector ? vectorAsMotion(await get('/api/v1/vector', { slug, version: job.result.version })) : await get('/api/v1/motion', { motion, version: job.result.version })
+        motions[mi] = md
+        view = md.vector ? 'live' : 'render'
+        pos = 0
+        renderPanel()
+        mountView()
+        return true
+      }, config.poll.jobMs)
+    } catch (e) {
+      applying = false
+      toast(e.message, true)
+      status.textContent = e.message
+      status.classList.add('err')
+      syncButtons()
+    }
+  }
+
+  renderPanel()
+  mountView()
+  if (vectorLoad && motions.some((m) => m.vector) === false) {
+    vectorLoad.then(() => {
+      if (disposed || !motions.some((m) => m.vector)) return
+      if (!md) { mi = Math.max(0, motions.findIndex((m) => m.supported)); md = motions[mi] || null; renderPanel(); mountView() } else renderPanel()
+    })
+  }
+  return () => { disposed = true; stopLoop(); player?.destroy?.(); stopJob?.() }
+}

@@ -1,0 +1,58 @@
+# 14 October 2026: exhaustive fine-resolution pass (240x135, global motion removed) over every boundary of a reference or of a
+# synthetic benchmark video. Writes <cache folder>/fine.npz (U, S, F, R, GX, GY, MAD per file frame).
+# Run: nice -n 5 /Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/RhythmFine.py [--slug X | --synth S1] [--force]
+# FR : passe exhaustive fine (240x135, mouvement global retire) sur chaque frontiere.
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+sys.path.insert(0, str(ENGINE / "Scripts"))
+from zrmd.analyze import rhythm_fine  # noqa: E402
+import RhythmCache  # noqa: E402
+import RhythmSignals as RS  # noqa: E402
+import RhythmSynth  # noqa: E402
+
+FLOOR = 0.0015  # coarse RGB mean absolute difference below which a boundary is a duplicate or a still hold
+
+
+def run(video: str, folder: Path, force: bool = False) -> dict:
+    out = folder / "fine.npz"
+    if out.exists() and not force:
+        z = np.load(out)
+        return {k: z[k] for k in z.files}
+    sig = RS.load_signals(folder)
+    need = sig["diff_full"] >= FLOOR
+    res = rhythm_fine.exhaustive(video, need)
+    np.savez_compressed(out, need=need, **res)
+    return {**res, "need": need}
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--slug", action="append")
+    ap.add_argument("--synth", action="append")
+    ap.add_argument("--force", action="store_true")
+    a = ap.parse_args()
+    jobs = []
+    for s in a.slug or []:
+        jobs.append((s, RhythmCache.reference_video(s), RS.folder_of(s)))
+    for v in a.synth or []:
+        folder = RhythmSynth.root() / v
+        jobs.append((v, str(folder / f"{v}.mp4"), folder / "cache"))
+    for name, video, folder in jobs:
+        t0 = time.time()
+        r = run(video, folder, a.force)
+        print(json.dumps({"id": name, "need": int(r["need"].sum()), "frames": int(len(r["need"])), "decoded": int(r["decoded"][0]),
+                          "seconds": round(time.time() - t0, 1)}), flush=True)
+
+
+if __name__ == "__main__":
+    main()

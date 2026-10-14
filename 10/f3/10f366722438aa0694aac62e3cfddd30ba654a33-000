@@ -15,7 +15,11 @@
   "yt-4Q-o_ylnVnc",
   "arkadata-music-02",
   "onekey-pro-2",
-  "fin-4"
+  "fin-4",
+  "grandbrothers-bloodflow-edit",
+  "kiasmos-blurred",
+  "grandbrothers-sonic-riots",
+  "20syl-ode-to-odd"
  ],
  "references": [
   {
@@ -160,6 +164,50 @@
    "has_audio": true,
    "brand": null,
    "focus": "music-only test of another session (13 October 2026), result judged mediocre by Matthieu: use it to prove music generalisation"
+  },
+  {
+   "slug": "grandbrothers-bloodflow-edit",
+   "title": "Grandbrothers - Bloodflow (Edit)",
+   "page_url": "https://www.youtube.com/watch?v=an37W_S0LzI",
+   "source_post_url": null,
+   "origin": "youtube-music",
+   "duration_s": 220.074,
+   "has_audio": true,
+   "brand": "Grandbrothers",
+   "focus": "music for motion, added by Matthieu on 14 October 2026 (music only, no picture)"
+  },
+  {
+   "slug": "kiasmos-blurred",
+   "title": "Kiasmos - Blurred",
+   "page_url": "https://www.youtube.com/watch?v=GalsoK5laZ8",
+   "source_post_url": null,
+   "origin": "youtube-music",
+   "duration_s": 306.503,
+   "has_audio": true,
+   "brand": "Kiasmos",
+   "focus": "music for motion, added by Matthieu on 14 October 2026 (music only, no picture)"
+  },
+  {
+   "slug": "grandbrothers-sonic-riots",
+   "title": "Grandbrothers - Sonic Riots",
+   "page_url": "https://www.youtube.com/watch?v=uKT8mAjtmp4",
+   "source_post_url": null,
+   "origin": "youtube-music",
+   "duration_s": 324.067,
+   "has_audio": true,
+   "brand": "Grandbrothers",
+   "focus": "music for motion, added by Matthieu on 14 October 2026 (music only, no picture)"
+  },
+  {
+   "slug": "20syl-ode-to-odd",
+   "title": "20syl - Ode to Odd",
+   "page_url": "https://www.youtube.com/watch?v=oVu1V0kNYXI",
+   "source_post_url": null,
+   "origin": "youtube-music",
+   "duration_s": 158.952,
+   "has_audio": true,
+   "brand": "20syl",
+   "focus": "music for motion, added by Matthieu on 14 October 2026 (music only, no picture)"
   }
  ],
  "harvest": {

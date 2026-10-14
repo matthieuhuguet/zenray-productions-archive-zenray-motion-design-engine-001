@@ -1,0 +1,87 @@
+{
+ "schema": "zrmd/music-polish@1",
+ "date": "14 October 2026",
+ "doc": "Interface of zrmd/audio/polish.py (HDA law): the last clean-up of a finished music track, a production-grade polish after the 1:1 calibration. It is NOT part of the benchmark (the benchmark stays as measured); it is a separate listening version. Order: remove DC and sub rumble, repair clicks, soften crackle bursts, tame harsh resonances, give the bass a foundation (mono below the crossover, harmonics for small speakers, gentle control), then a smooth look-ahead true-peak limiter. Every strength is a parameter; 0 disables a stage. The report states what each stage changed and how far the spectrum moved from the reference. FR : passe finale de nettoyage et de finition, separee du banc 1:1.",
+ "dcRumble": {
+  "highpassHz": 22.0,
+  "order": 4
+ },
+ "declick": {
+  "enabled": true,
+  "highpassHz": 3000.0,
+  "zThreshold": 14.0,
+  "repairMs": 0.6
+ },
+ "decrackle": {
+  "enabled": true,
+  "bandHz": [
+   8000.0,
+   16000.0
+  ],
+  "zThreshold": 8.0,
+  "maxReductionDb": 30.0,
+  "attackMs": 0.25,
+  "releaseMs": 6.0,
+  "targetRatio": 3.0,
+  "lookaheadMs": 2.5
+ },
+ "resonance": {
+  "enabled": true,
+  "bandHz": [
+   1500.0,
+   9000.0
+  ],
+  "smoothOct": 0.5,
+  "thresholdDb": 6.0,
+  "strength": 0.5,
+  "maxCutDb": 3.0,
+  "attackMs": 20.0,
+  "releaseMs": 120.0,
+  "nFft": 2048
+ },
+ "bass": {
+  "enabled": true,
+  "crossoverHz": 130.0,
+  "monoBelow": true,
+  "harmonics": {
+   "enabled": true,
+   "bandHz": [
+    40.0,
+    110.0
+   ],
+   "drive": 3.0,
+   "mixDb": -17.0,
+   "highpassHz": 70.0
+  },
+  "control": {
+   "enabled": true,
+   "thresholdRelRmsDb": 1.5,
+   "ratio": 1.8,
+   "attackMs": 25.0,
+   "releaseMs": 160.0
+  }
+ },
+ "limiter": {
+  "ceilingDbtp": -1.0,
+  "lookaheadMs": 3.0,
+  "releaseMs": 120.0,
+  "oversample": 4
+ },
+ "loudness": {
+  "match": true,
+  "makeupPasses": 6,
+  "toleranceLu": 0.05,
+  "makeupMaxDb": 6.0,
+  "doc": "After the limiter the integrated loudness is brought back to the input's by raising the drive into the limiter (up to makeupPasses passes, never more than makeupMaxDb): a limiter that takes 0.7 LU off a loud master costs the critic about 0.15 points, which is level and not tone. 14 October 2026."
+ },
+ "clean": {
+  "clicksPerSecondMax": 0.05,
+  "cracklePerSecondMax": 0.2,
+  "dcMax": 0.0005,
+  "rumbleShareMax": 0.003,
+  "truePeakMaxDbtp": -1.0,
+  "clippedShareMax": 0.0,
+  "relativeAllowance": 0.25,
+  "relativeDoc": "With a reference given, clicks and crackle are allowed up to the reference's own rate times (1 + relativeAllowance): a detector that flags a hi-hat as crackle flags it in the reference too. The absolute verdict is kept as cleanAbsolute. 14 October 2026."
+ }
+}

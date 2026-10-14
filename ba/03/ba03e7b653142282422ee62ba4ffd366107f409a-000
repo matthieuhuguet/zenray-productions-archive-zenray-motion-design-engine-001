@@ -1,0 +1,428 @@
+# 14 October 2026: the V1 PARAMETER INTERFACE of a vector component. A traced scene is params.json (palette, layers, texts, view); the
+# values a person changes WITHOUT asking are listed in params/vector-v1-parameters.json (HDA law: one place): 4 primary, 8 secondary and
+# 16 tertiary parameters, each with its target in the component, its kind and its range.
+#
+#   spec()           the JSON file, checked (counts, names, kinds, ranges)
+#   resolve(P)       the selectors against THIS component: main/second text layer, shape/background/accent palette keys (areas are
+#                    measured by rendering every layer alone, never guessed from the geometry)
+#   values(P)        the current value of every built parameter of this component
+#   interface(P)     what a panel shows: tier, name, kind, range, value, and whether it is available for this component and why not
+#   apply(P, {...})  a NEW params with the values written; an unknown name, a value out of its range, a parameter that needs a text layer
+#                    the component does not have: an error that NAMES the parameter and says what exists
+#
+# Rights (Rules.md, 12 October 2026): a value written here never carries a reference string; the strings of a variation are the
+# person's. FR : l'interface V1 d'un composant, quatre valeurs primaires, huit secondaires, seize tertiaires.
+from __future__ import annotations
+
+import copy
+import json
+import re
+from pathlib import Path
+
+import numpy as np
+
+from zrmd.vector import asset as A
+from zrmd.vector import render as R
+from zrmd.vector import texts as TX
+
+SPEC_PATH = A.V1_SPEC
+TIERS = ("primary", "secondary", "tertiary")
+KINDS = ("text", "colour", "number", "choice", "bool", "map:bool", "map:number", "map:colour")
+COLOUR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+TEXT_FIELD = {"text": "text", "colour": "colour", "size_px": "size_px", "tracking_em": "tracking_em", "align": "align", "fit": "fit",
+              "min_scale": "min_scale", "baseline_shift_px": "baseline_shift_px", "axes.wght": "axes.wght"}
+
+
+def spec(path: Path | None = None) -> dict:
+    """The parameter file, checked: the counts per tier match `limits`, names are unique, kinds are known, a number has its range."""
+    d = json.loads(Path(path or SPEC_PATH).read_text(encoding="utf-8"))
+    names = []
+    for tier in TIERS:
+        rows = d.get(tier) or []
+        if len(rows) != int(d["limits"][tier]):
+            raise ValueError(f"{SPEC_PATH.name}: tier '{tier}' lists {len(rows)} parameters, limits.{tier} says {d['limits'][tier]}")
+        for e in rows:
+            for k in ("name", "label", "kind", "target", "built"):
+                if k not in e:
+                    raise ValueError(f"{SPEC_PATH.name}: parameter {e.get('name', '?')} of tier '{tier}' has no '{k}'")
+            if e["kind"] not in KINDS:
+                raise ValueError(f"{SPEC_PATH.name}: parameter '{e['name']}' has an unknown kind '{e['kind']}' (kinds: {', '.join(KINDS)})")
+            if e["kind"] in ("number", "map:number") and ("min" not in e or "max" not in e):
+                raise ValueError(f"{SPEC_PATH.name}: number parameter '{e['name']}' needs min and max")
+            if e["kind"] == "choice" and not e.get("choices"):
+                raise ValueError(f"{SPEC_PATH.name}: choice parameter '{e['name']}' needs choices")
+            names.append(e["name"])
+    dup = sorted({n for n in names if names.count(n) > 1})
+    if dup:
+        raise ValueError(f"{SPEC_PATH.name}: duplicate parameter names {dup}")
+    return d
+
+
+def entries(d: dict | None = None) -> list[dict]:
+    d = d or spec()
+    return [{**e, "tier": t} for t in TIERS for e in d[t]]
+
+
+# ----------------------------------------------------------------------------------------------------------- selectors
+
+def _paint_keys(paint: dict) -> list[str]:
+    cols = [paint.get("colour")] if paint.get("type") == "flat" else [s.get("colour") for s in paint.get("stops", [])]
+    return [c[1:] for c in cols if isinstance(c, str) and c.startswith("@")]
+
+
+def painted_areas(P: dict) -> dict:
+    """{layer id: painted pixels} of the visible, non-background shape layers, each rendered alone at the canvas size (measured)."""
+    w, h = P["canvas"]["width"], P["canvas"]["height"]
+    out = {}
+    many = len(P.get("layers", [])) > MANY_LAYERS
+    for l in P.get("layers", []):
+        if l.get("visible", True) is False or (l.get("fit") or {}).get("background"):
+            continue
+        a = _geometric_area(l) if many else None       # 15 October 2026: a multi-layer fit has thousands of layers; rendering each alone took minutes
+        out[l["id"]] = a if a is not None else float(R.svg_mask(A.cook_svg(P, only=l["id"], white=True), w, h, engine="skia", ss=1).sum())
+    return out
+
+
+MANY_LAYERS = 150
+
+
+def _units(P: dict) -> dict:
+    """{unit key: [layer dicts]} of a multi-layer fit: every group ("G012", layers that are one visual object) and every role ("role:glow"). Empty
+    for a component whose layers carry no fit.group / fit.role."""
+    units: dict = {}
+    for l in P.get("layers", []):
+        f = l.get("fit") or {}
+        if f.get("background"):
+            continue
+        if f.get("group"):
+            units.setdefault(f["group"], []).append(l)
+        if f.get("role"):
+            units.setdefault(f"role:{f['role']}", []).append(l)
+    return units
+
+
+def _geometric_area(l: dict) -> float | None:
+    """Area of a layer from its geometry (no render): exact for ellipses, rectangles and straight-edged paths (shoelace over every M..Z run,
+    even-odd as the cook draws it); None for anything else (Bezier, strokes), which is then measured by rendering."""
+    import math
+    import re
+    k, g = l.get("kind"), l.get("geometry") or {}
+    try:
+        if k == "circle":
+            return math.pi * g["r"] ** 2
+        if k == "ellipse":
+            return math.pi * g["rx"] * g["ry"]
+        if k in ("rect", "rounded_rect"):
+            return g["w"] * g["h"]
+        if k == "path" and re.fullmatch(r"[ML0-9.\-ZzEe\s]+", g.get("d", "")):
+            total = 0.0
+            for run in re.findall(r"M[^MZ]*Z?", g["d"]):
+                nums = [float(x) for x in re.findall(r"-?\d+(?:\.\d+)?(?:[eE]-?\d+)?", run)]
+                xs, ys = nums[0::2], nums[1::2]
+                if len(xs) >= 3:
+                    total += 0.5 * abs(sum(xs[i] * ys[(i + 1) % len(xs)] - xs[(i + 1) % len(xs)] * ys[i] for i in range(len(xs))))
+            return total
+    except (KeyError, ValueError, TypeError):
+        return None
+    return None
+
+
+def resolve(P: dict) -> dict:
+    """The selectors of the spec against this component: {"main": id|None, "second": id|None, "shape": key|None, "background": key|None,
+    "accent": key|None, "areas": {palette key: painted px}}. FR : les selecteurs, resolus sur CE composant."""
+    texts = [t for t in P.get("texts") or [] if t.get("visible", True) is not False]
+    order = sorted(texts, key=lambda t: (-float(t["size_px"]), -float(t.get("fit_width_px") or 0.0), t["id"]))
+    main = order[0]["id"] if order else None
+    second = order[1]["id"] if len(order) > 1 else None
+    bg_layers = [l for l in P.get("layers", []) if (l.get("fit") or {}).get("background")]
+    bg_key = next(iter(_paint_keys(bg_layers[0]["paint"])), None) if bg_layers else None
+    area = {}
+    per_layer = painted_areas(P)
+    for l in P.get("layers", []):
+        if l["id"] not in per_layer:
+            continue
+        keys = _paint_keys(l["paint"])
+        for k in keys:
+            area[k] = area.get(k, 0.0) + per_layer[l["id"]] / max(1, len(keys))
+    ranked = sorted((k for k in area if k != bg_key), key=lambda k: (-area[k], k))
+    return {"main": main, "second": second, "shape": ranked[0] if ranked else None, "background": bg_key,
+            "accent": ranked[1] if len(ranked) > 1 else None, "areas": {k: round(v, 1) for k, v in area.items()}}
+
+
+# --------------------------------------------------------------------------------------------------------- read values
+
+def _text_layer(P: dict, tid: str | None) -> dict | None:
+    return next((t for t in P.get("texts") or [] if t["id"] == tid), None) if tid else None
+
+
+def _text_value(t: dict, field: str, P: dict):
+    if field == "colour":
+        c = t.get("colour", "#ffffff")
+        return P.get("palette", {}).get(c[1:]) if c.startswith("@") else c
+    if field.startswith("axes."):
+        return (t.get("font", {}).get("axes") or {}).get(field[5:])
+    if field == "baseline_shift_px":
+        return float(t.get("baseline_shift_px") or 0.0)
+    if field in ("min_scale", "max_scale"):
+        return float(t.get(field, 0.25 if field == "min_scale" else 1.6))
+    if field in ("fit", "align"):
+        return t.get(field, "shrink" if field == "fit" else "left")
+    return t.get(field)
+
+
+def _target_value(P: dict, e: dict, sel: dict):
+    """(value, why_not): the current value of one parameter in this component, or None and the reason it does not apply."""
+    tg = e["target"]
+    if tg == "view.adjust.*":
+        return dict(A.view_of(P)["adjust"]), None
+    if tg.startswith("view."):
+        return A.view_of(P)[tg[5:]], None
+    if tg.startswith("text."):
+        _, which, field = tg.split(".", 2)
+        t = _text_layer(P, sel[which])
+        if t is None:
+            return None, f"this component has no {which} text layer"
+        v = _text_value(t, field, P)
+        if v is None:
+            return None, f"the font of text layer {t['id']} has no '{field[5:]}' axis" if field.startswith("axes.") else "no value"
+        return v, None
+    if tg.startswith("palette.@"):
+        key = sel[tg[9:]]
+        if key is None:
+            return None, f"this component has no {tg[9:]} colour"
+        return P["palette"][key], None
+    if tg == "palette.*":
+        return dict(P.get("palette", {})), None
+    if tg.startswith("layers.*."):
+        field = tg[9:]
+        vals = {}
+        if len(P.get("layers", [])) > MANY_LAYERS:
+            # a multi-layer fit has thousands of layers: the parameter is read and written by GROUP ("G012") and by ROLE ("role:glow"), the
+            # value of a unit being its first layer's (a unit is edited as one). FR : une pile de milliers de calques s'edite par groupe et role.
+            for key, members in _units(P).items():
+                l = members[0]
+                vals[key] = (l.get("visible", True) is not False) if field == "visible" else float((l.get("effects") or {}).get(
+                    field if field == "blur" else "opacity", 0.0 if field == "blur" else 1.0))
+            return vals, None
+        for l in P.get("layers", []):
+            vals[l["id"]] = (l.get("visible", True) is not False) if field == "visible" else float((l.get("effects") or {}).get(field if field == "blur" else "opacity", 0.0 if field == "blur" else 1.0))
+        for t in P.get("texts") or []:
+            if field == "visible":
+                vals[t["id"]] = t.get("visible", True) is not False
+        return vals, None
+    raise ValueError(f"parameter '{e['name']}' has an unknown target '{tg}'")
+
+
+def values(P: dict, sel: dict | None = None) -> dict:
+    sel = sel or resolve(P)
+    out = {}
+    for e in entries():
+        if e["built"]:
+            v, why = _target_value(P, e, sel)
+            if why is None:
+                out[e["name"]] = v
+    return out
+
+
+def decouple_text_colours(P: dict) -> dict:
+    """A NEW params where every text layer that shares its palette entry with a shape or another text owns an entry `<id>c` (same hex),
+    exactly what apply() does on the first colour change: the HTML component then changes a text colour and a shape colour
+    independently from the browser. FR : chaque texte possede sa couleur dans la page."""
+    out = copy.deepcopy(P)
+    for t in out.get("texts") or []:
+        c = t.get("colour", "")
+        if not c.startswith("@"):
+            continue
+        used = [f"@{k}" for l in out.get("layers", []) for k in _paint_keys(l["paint"])]
+        others = [o.get("colour") for o in out["texts"] if o is not t]
+        if c in used or c in others:
+            name = f"{t['id']}c"
+            out["palette"][name] = out["palette"][c[1:]]
+            t["colour"] = "@" + name
+    return out
+
+
+# the parameters the browser applies by itself (no re-cook): name -> how
+DOM_OPS = {"text": ("text", "main"), "text2": ("text", "second"), "textColour": ("fill", "main"), "text2Colour": ("fill", "second"),
+           "shapeColour": ("var", "shape"), "backgroundColour": ("var", "background"), "accentColour": ("var", "accent"),
+           "scale": ("view", "scale"), "opacity": ("view", "opacity"), "offsetX": ("view", "offset_x"), "offsetY": ("view", "offset_y"),
+           "rotate": ("view", "rotate_deg"), "flipX": ("view", "flip_x"), "transparentBackground": ("hide-background", None),
+           "layerVisible": ("layers", "visible"), "layerOpacity": ("layers", "opacity")}
+
+
+def _dom(name: str, sel: dict, P: dict):
+    """How the HTML component applies this parameter from the browser, or None when it needs a re-cook (VectorScene.py --text)."""
+    op = DOM_OPS.get(name)
+    if op is None:
+        return None
+    kind, arg = op
+    if kind == "text":
+        return {"op": "text", "id": sel[arg]} if sel.get(arg) else None
+    if kind == "fill":
+        return {"op": "fill", "id": f"{sel[arg]}-text"} if sel.get(arg) else None
+    if kind == "var":
+        return {"op": "var", "key": sel[arg]} if sel.get(arg) else None
+    if kind == "view":
+        return {"op": "view", "field": arg}
+    if kind == "hide-background":
+        ids = [l["name"] for l in P.get("layers", []) if (l.get("fit") or {}).get("background")]
+        return {"op": "hide", "ids": ids} if ids else None
+    if kind == "layers":
+        return {"op": "layers", "field": arg, "names": {l["id"]: l["name"] for l in P.get("layers", [])},
+                "texts": [t["id"] for t in P.get("texts") or []]}
+    return None
+
+
+def interface(P: dict) -> dict:
+    """What a panel shows for THIS component: {tier: [{name, label, kind, value, range..., available, why}]}, plus the selectors resolved
+    (which text layer is main, which palette key is the shape colour ...)."""
+    d = spec()
+    sel = resolve(P)
+    out = {"schema": d["schema"], "selectors": {k: v for k, v in sel.items() if k != "areas"}}
+    for tier in TIERS:
+        rows = []
+        for e in d[tier]:
+            v, why = _target_value(P, e, sel) if e["built"] else (None, "listed for the next version")
+            row = {k: e[k] for k in ("name", "label", "kind", "target") if k in e}
+            row.update({k: e[k] for k in ("min", "max", "step", "unit", "choices", "maxLength") if k in e})
+            row.update(available=bool(e["built"] and why is None), value=v)
+            dom = _dom(e["name"], sel, P) if (e["built"] and why is None) else None
+            row["dom"] = dom
+            if why:
+                row["why"] = why
+            rows.append(row)
+        out[tier] = rows
+    return out
+
+
+# --------------------------------------------------------------------------------------------------------- write values
+
+def _bad(e: dict, msg: str) -> ValueError:
+    return ValueError(f"parameter '{e['name']}' {msg}")
+
+
+def _check_number(e: dict, v, label: str | None = None) -> float:
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not np.isfinite(float(v)):
+        raise _bad(e, f"expects a number{(' for ' + label) if label else ''}")
+    lo, hi = float(e["min"]), float(e["max"])
+    if not lo <= float(v) <= hi:
+        raise _bad(e, f"is {v:g}{(' for ' + label) if label else ''}, outside its range {lo:g} to {hi:g}" + (f" {e['unit']}" if e.get("unit") else ""))
+    return float(v)
+
+
+def _check(e: dict, value):
+    """The value validated and normalised for its kind; the error names the parameter, the range or the choices."""
+    k = e["kind"]
+    if k == "text":
+        if not isinstance(value, str) or not value.strip():
+            raise _bad(e, "expects a non empty string")
+        if len(value) > int(e.get("maxLength", 80)):
+            raise _bad(e, f"is over {e.get('maxLength', 80)} characters")
+        return value
+    if k == "colour":
+        if not isinstance(value, str) or not COLOUR_RE.match(value):
+            raise _bad(e, f"expects a colour #rrggbb, got {value!r}")
+        return value.lower()
+    if k == "number":
+        return _check_number(e, value)
+    if k == "choice":
+        if value not in e["choices"]:
+            raise _bad(e, f"expects one of {', '.join(e['choices'])}, got {value!r}")
+        return value
+    if k == "bool":
+        if not isinstance(value, bool):
+            raise _bad(e, f"expects true or false, got {value!r}")
+        return value
+    if k.startswith("map:"):
+        if not isinstance(value, dict) or not value:
+            raise _bad(e, "expects a non empty {id: value} object")
+        sub = {"map:bool": {**e, "kind": "bool"}, "map:number": {**e, "kind": "number"}, "map:colour": {**e, "kind": "colour"}}[k]
+        return {str(i): (_check_number(sub, v, f"'{i}'") if k == "map:number" else _check(sub, v)) for i, v in value.items()}
+    raise ValueError(f"unknown kind '{k}'")
+
+
+def _detach_texts(P: dict, key: str) -> None:
+    """Before a palette entry changes: every text layer that points at it gets its own entry holding the old colour, so changing a
+    shape colour never recolours a text. FR : un changement de couleur de forme ne touche jamais un texte."""
+    for t in P.get("texts") or []:
+        if t.get("colour") == f"@{key}":
+            name = f"{t['id']}c"
+            P["palette"][name] = P["palette"][key]
+            t["colour"] = "@" + name
+
+
+def apply(P: dict, values_: dict) -> dict:
+    """A NEW params with `values_` ({parameter name: value}) written. Unknown names, unbuilt parameters, values out of range and
+    parameters that need a layer the component does not have raise an error that names the parameter. FR : applique des valeurs V1."""
+    by_name = {e["name"]: e for e in entries()}
+    out = copy.deepcopy(P)
+    for name, raw in (values_ or {}).items():
+        e = by_name.get(name)
+        if e is None:
+            raise KeyError(f"no parameter '{name}' (parameters: {', '.join(by_name)})")
+        if not e["built"]:
+            raise NotImplementedError(f"parameter '{name}' is listed for the next version and is not built yet")
+        v = _check(e, raw)
+        sel = resolve(out)
+        tg = e["target"]
+        if tg == "view.adjust.*":
+            allowed = e["keys"]
+            for k in v:
+                if k not in allowed:
+                    raise KeyError(f"parameter '{name}': no adjustment '{k}' (adjustments: {', '.join(allowed)})")
+            out.setdefault("view", {})["adjust"] = {**A.view_of(out)["adjust"], **{k: float(x) for k, x in v.items()}}
+        elif tg.startswith("view."):
+            out.setdefault("view", {})[tg[5:]] = v
+        elif tg.startswith("text."):
+            _, which, field = tg.split(".", 2)
+            tid = sel[which]
+            if tid is None:
+                raise KeyError(f"parameter '{name}' needs a {which} text layer and this component has none (texts: "
+                               f"{[t['id'] for t in out.get('texts') or []] or 'none'})")
+            if field == "text":
+                out = TX.apply(out, {tid: v})
+            else:
+                if field.startswith("axes.") and field[5:] not in ((_text_layer(out, tid) or {}).get("font", {}).get("axes") or {}):
+                    # a variable font may carry the axis without the layer having fitted it: the file's axes decide
+                    from zrmd.vector import render as _R
+                    tags = [a["tag"] for a in _R.font_axes(_text_layer(out, tid)["font"]["file"])]
+                    if field[5:] not in tags:
+                        raise KeyError(f"parameter '{name}': the font of text layer {tid} has no '{field[5:]}' axis (axes: {tags or 'none'})")
+                out = TX.apply(out, None, {f"texts.@{tid}.{TEXT_FIELD[field]}": v})
+        elif tg.startswith("palette.@"):
+            key = sel[tg[9:]]
+            if key is None:
+                raise KeyError(f"parameter '{name}' needs the {tg[9:]} colour and this component has none (palette: {sorted(out.get('palette', {}))})")
+            _detach_texts(out, key)
+            out["palette"][key] = v
+        elif tg == "palette.*":
+            for k, c in v.items():
+                if k not in out.get("palette", {}):
+                    raise KeyError(f"parameter '{name}': no palette colour '{k}' (palette: {sorted(out.get('palette', {}))})")
+                _detach_texts(out, k)
+                out["palette"][k] = c
+        elif tg.startswith("layers.*."):
+            field = tg[9:]
+            ids = {l["id"]: l for l in out.get("layers", [])}
+            tids = {t["id"]: t for t in out.get("texts") or []}
+            units = _units(out)
+            for i, c in v.items():
+                if i in units and i not in ids:                  # a group ("G012") or a role ("role:glow"): every layer of the unit
+                    for l in units[i]:
+                        if field == "visible":
+                            l["visible"] = bool(c)
+                        else:
+                            l.setdefault("effects", {})["blur" if field == "blur" else "opacity"] = float(c)
+                    continue
+                if i in tids and field == "visible":
+                    tids[i]["visible"] = bool(c)
+                    continue
+                if i not in ids:
+                    raise KeyError(f"parameter '{name}': no layer '{i}' (layers: {sorted(ids)}{', texts: ' + str(sorted(tids)) if tids and field == 'visible' else ''})")
+                if field == "visible":
+                    ids[i]["visible"] = bool(c)
+                else:
+                    ids[i].setdefault("effects", {})["blur" if field == "blur" else "opacity"] = float(c)
+        else:
+            raise ValueError(f"parameter '{name}' has an unknown target '{tg}'")
+    return out

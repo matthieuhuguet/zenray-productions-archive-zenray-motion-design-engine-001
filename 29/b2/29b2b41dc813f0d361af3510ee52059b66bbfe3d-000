@@ -1,0 +1,134 @@
+# 14 October 2026: the incremental cook of a music render, the engine's own functions behind a cache and a persistent worker pool.
+# The batch render (resynth.render) starts a new process pool for every render (each worker imports torch and librosa, about 3 s), recomputes
+# every voice and every stem even when one macro changed. The cook keeps the pool alive and caches by CONTENT: a voice is re-rendered only when its
+# spec, its events, the length, the transposition or its seed change; a stem's effects chain only when its dry sum or its fx change; the mix bus
+# is the last, cheap, step. It calls the same functions as `resynth.render` and is proven bit-identical to it (tests/test_cook.py), so there is
+# still ONE definition of the sound. FR : cuisson incrementale, memes fonctions que le rendu par lot, pool persistant, cache par contenu.
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+import time
+from concurrent.futures import ProcessPoolExecutor
+
+import numpy as np
+
+from . import resynth as RS
+
+
+def _digest(*parts) -> str:
+    h = hashlib.blake2b(digest_size=12)
+    for p in parts:
+        if isinstance(p, np.ndarray):
+            h.update(np.ascontiguousarray(p).tobytes())
+        else:
+            h.update(json.dumps(p, sort_keys=True, default=float).encode())
+    return h.hexdigest()
+
+
+def _role_job(job: dict) -> tuple[str, np.ndarray]:
+    """One voice. With job['fast'] the tonal voices use the compiled kernel (sms_fast, proven above 80 dB against sms.tonal_note); the drums and
+    every other engine go through the batch render's own function. FR : voix tonales par le noyau compile, le reste par la fonction du lot."""
+    spec = job["spec"]
+    if job.get("fast") and spec.get("engine") == "sms" and spec["kind"] != "drum":
+        from . import sms_fast
+        P = job["P"]
+        S = P["sms"]
+        return job["role"], sms_fast.render_tonal(job["events"], spec["model"], spec["macros"], {**S["tonal"], **spec.get("settings", {})}, P["sampleRate"],
+                                                  job["n"], P["render"]["seedBase"] + job.get("seedOffset", 0), job.get("transpose", 0.0))
+    return RS.render_role_job(job)
+
+
+def _warm(P: dict) -> int:
+    """Worker initialiser: pay the imports once (torch, librosa, the sms module) so the first real job does not."""
+    import torch
+    torch.set_num_threads(1)
+    from . import sms, sms_fast  # noqa: F401
+    import librosa  # noqa: F401
+    RS.install(P)
+    return 1
+
+
+class Cook:
+    def __init__(self, P: dict, workers: int | None = None, fast: bool = True):
+        self.P = P
+        self.fast = fast
+        self.workers = workers or max(2, min(8, P.get("workers", 8)))
+        self.pool = ProcessPoolExecutor(max_workers=self.workers, initializer=_warm, initargs=(P,))
+        self.voices: dict[str, np.ndarray] = {}
+        self.stems: dict[str, np.ndarray] = {}
+        self.resid: dict[str, np.ndarray] = {}
+        self.scores: dict = {}
+        self.stats: dict = {}
+        # make the workers start now: one trivial job each
+        list(self.pool.map(abs, range(self.workers)))
+
+    def close(self) -> None:
+        self.pool.shutdown(wait=True, cancel_futures=True)
+
+    def render(self, prm: dict, score: dict, P: dict | None = None) -> dict:
+        """Same contract as resynth.render(prm, score, P): {'stems', 'mix', 'sr', 'dry', 'score'}, plus self.stats of what was recomputed."""
+        P = P or self.P
+        t_start = time.time()
+        sr = P["sampleRate"]
+        # the retimed score (a deep copy of every note, about half a second) depends only on the tempo and the edits: cached
+        skey = _digest("score", score, prm["tempo"]["bpm"], prm.get("patternEdits", []))
+        if skey not in self.scores:
+            sc0, k0 = RS.retime(score, prm["tempo"]["bpm"])
+            self.scores = {skey: (RS.apply_edits(sc0, prm.get("patternEdits", [])), k0)}
+        sc, k = self.scores[skey]
+        n = int(math.ceil((sc["tempo"]["duration"] + 0.05) * sr)) if k != 1.0 else prm["lengthSamples"]
+        events = RS.role_events(sc)
+        jobs, keys = [], {}
+        for role, spec in prm["voices"].items():
+            if spec.get("mute") or not events.get(role):
+                continue
+            tr = prm.get("transposeSemitones", 0.0) if spec["kind"] == "tonal" else 0.0
+            job = {"role": role, "spec": spec, "events": events[role], "n": n, "P": P, "transpose": tr,
+                   "seedOffset": sorted(prm["voices"]).index(role), "fast": self.fast}
+            keys[role] = _digest(role, spec, events[role], n, tr, job["seedOffset"], P["render"]["seedBase"], P["sampleRate"], P["sms"], self.fast)
+            jobs.append(job)
+        jobs.sort(key=lambda j: -len(j["events"]))  # the batch render sums the voices in this order: float32 addition is not associative
+        fresh = [j for j in jobs if self.voices.get(keys[j["role"]]) is None]
+        t_voices = time.time()
+        done = dict(self.pool.map(_role_job, fresh))
+        for j in fresh:
+            self.voices[keys[j["role"]]] = done[j["role"]]
+        roles = {j["role"]: self.voices[keys[j["role"]]] for j in jobs}
+        t_fx = time.time()
+        dry = {s_: np.zeros(n, np.float32) for s_ in RS.STEMS}
+        for role, buf in roles.items():
+            dry[P["roles"][role]["stem"]] += buf
+        au = sc["automation"]
+        if sc["voices"].get("vocals", {}).get("kind", "texture") != "melody":
+            dry["vocals"] = RS.render_texture(sc["voices"].get("vocals", {}), au["hopS"], n, sr, P["render"]["seedBase"])
+        t0 = score["tempo"]["t0"]
+        out, fx_fresh = {}, 0
+        for s_ in RS.STEMS:
+            fx = prm.get("stemFx", {}).get(s_, {})
+            gain = prm.get("stemGainsDb", {}).get(s_, 0.0)
+            key = _digest("stem", s_, dry[s_], gain, fx, au.get("hopS"), au.get("windowS"), au["stems"].get(s_) if au.get("stems") else None, k, t0, n,
+                          P["render"]["seedBase"], P["sampleRate"])
+            if key not in self.stems:
+                fx_fresh += 1
+                x = dry[s_] * 10 ** (gain / 20.0)
+                if fx.get("residual"):
+                    lane = au["stems"].get(s_) if au.get("stems") else None
+                    rkey = _digest("residual", s_, fx["residual"], n, lane, au["hopS"], k, t0, P["render"]["seedBase"], P["sampleRate"])
+                    if rkey not in self.resid:  # the noise bed does not depend on the voices: cached on its own
+                        self.resid[rkey] = RS.render_residual(fx["residual"], n, sr, P, lane, au["hopS"], P["render"]["seedBase"] + 500 + RS.STEMS.index(s_), k, t0)
+                    x = x + self.resid[rkey]
+                if fx.get("eq"):
+                    x = RS.apply_eq(x, fx["eq"], sr, P, k, t0)
+                if fx.get("automation") and au["stems"].get(s_):
+                    x = RS.apply_automation(x, au["stems"][s_], au["hopS"], au["windowS"], sr, P)
+                self.stems[key] = RS.apply_stereo(x, fx.get("stereo"), sr, P)
+            out[s_] = self.stems[key]
+        t_bus = time.time()
+        mixed = RS.apply_mix_bus(out, prm.get("mixBus"), sr, P, k, t0)
+        t_end = time.time()
+        self.stats = {"voicesRecomputed": len(fresh), "voicesTotal": len(jobs), "stemsRecomputed": fx_fresh,
+                      "seconds": {"prepare": round(t_voices - t_start, 3), "voices": round(t_fx - t_voices, 3), "stems": round(t_bus - t_fx, 3),
+                                  "bus": round(t_end - t_bus, 3), "total": round(t_end - t_start, 3)}}
+        return {"stems": out, "mix": mixed, "sr": sr, "dry": dry, "score": sc}

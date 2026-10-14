@@ -1,0 +1,133 @@
+{
+ "schema": "zrmd/vector-scene@2",
+ "date": "14 October 2026",
+ "doc": "Interface of zrmd/vector/scene.py (HDA law): how one SCENE of any reference is chosen from its bible (several candidate shots, the one whose frame looks most like editable UI wins), which part of the frame is traced (a window of whole objects with sharp edges, never a cut word or a blurred field), how much tracing work a scene may cost (budget), and how every traced layer is sorted into VECTOR (editable SVG and HTML UI, text outlines, shapes), SHADER (blur, glow, gradient field: the shader bank) or RESIDUAL (photograph or texture: a plate). The vectoriser itself keeps its settings in settings.json, vector.trace. FR : interface du module vecteur sur une scene.",
+ "pick": {
+  "families": [
+   "graphic",
+   "textcard"
+  ],
+  "fallbackFamilies": [
+   "montage",
+   "plate"
+  ],
+  "scoreWeights": {
+   "textLines": 3.0,
+   "elementsTracked": 0.1,
+   "duration": 0.2
+  },
+  "frameAt": "textFrameOrMiddle",
+  "maxShotsPreferred": 8,
+  "maxShotsOther": 4,
+  "minCropScore": 0.002
+ },
+ "crop": {
+  "strideFrac": 0.25,
+  "minEdgeShare": 0.004,
+  "fragmentMinPx": 12,
+  "fragmentHalf": 400,
+  "shortlist": 60,
+  "maxColourBins": 600,
+  "colourBinBits": 4,
+  "colourCoverage": 0.95,
+  "textBonus": 0.5,
+  "textPadFrac": 0.15,
+  "cutHalf": 6,
+  "windows": [
+   [
+    0.12,
+    0.12
+   ],
+   [
+    0.2,
+    0.2
+   ],
+   [
+    0.33,
+    0.33
+   ],
+   [
+    0.5,
+    0.2
+   ],
+   [
+    0.65,
+    0.3
+   ],
+   [
+    0.3,
+    0.5
+   ],
+   [
+    0.5,
+    0.5
+   ]
+  ],
+  "maxPixels": 520000,
+  "contrastMin": 40
+ },
+ "budget": {
+  "doc": "Tracing cost grows with the number of layers and with the size and boundary of each: a video crop of line art or paper grain gives hundreds of layers and one free path of 25000 px costs more than ten CPU minutes. The layers are ranked by area; only the largest maxRefined that stay under maxBoundaryPx of boundary and maxAreaPx of area are fitted with primitives and least squares, the others get the unrefined Bezier contour (cheap), and a layer under specklePx is never traced and is reported as a residual speck, never as a vector. A layer that spends layerCpuS seconds of CPU time (not wall time: a loaded machine does not change the result) keeps its unrefined contour and says so. The whole scene has an allowance of sceneCpuS CPU seconds shared by the pool, biggest layers first: once it is spent the layers not yet started keep the unrefined contour and say so (fit.budget scene-cpu). 14 October 2026: one hand-drawn line-art frame spent 2600 CPU seconds in the layers alone. FR : plafond de cout du trace, par couche et par scene. 14 October 2026: the layers whose boundary is at most rankFreeBoundaryPx (glyphs, icons: seconds each, tenths of IoU) are exempt from the maxRefined rank cap, run FIRST, cheapest first, and may spend at most shortShare of sceneCpuS so the big layers behind them are not starved (x-anabology S44: short layers alone took the whole allowance, 112 layers flagged scene-cpu and the cards at IoU 0.65). FR : contours courts d'abord, avec une part de l'enveloppe.",
+  "maxRefined": 60,
+  "rankFreeBoundaryPx": 160,
+  "shortShare": 0.5,
+  "maxBoundaryPx": 3000,
+  "maxAreaPx": 30000,
+  "specklePx": 24,
+  "workers": 8,
+  "layerCpuS": 60,
+  "sceneCpuS": 900
+ },
+ "classes": {
+  "shaderBlurPx": 0.8,
+  "fragment": {
+   "doc": "14 October 2026: a soft fragment is residual, not vector. A layer whose edge is optically soft on the reference (blur measured by the analysis above shaderBlurPx), under areaMaxPx of area, that the fit does not explain (soft IoU under iouMax), is compression residue or shading: no sharp path and no blur reproduces it (interface S75: six layers of 25 to 84 px with a measured blur of 1.7 to 3.8 px, soft IoU 0.46 to 0.52 as paths, 0.03 to 0.17 with the blur kept). A tiny SHARP layer that is badly traced stays vector and lowers the mean. FR : un fragment mou n'est pas du vecteur.",
+   "areaMaxPx": 100,
+   "iouMax": 0.8
+  },
+  "shaderBackgroundTypes": [
+   "linear",
+   "radial"
+  ],
+  "vectorKinds": [
+   "rect",
+   "rounded_rect",
+   "circle",
+   "ellipse",
+   "line",
+   "arc",
+   "polyline",
+   "stroke_path",
+   "path",
+   "text"
+  ],
+  "softIouMax": 0.9,
+  "softIouMaxDoc": "14 October 2026: a layer optically soft on the reference (measured blur above shaderBlurPx) that the sharp fit explains under softIouMax is a shader value, not a shape; above it, it is codec softness on a real shape and stays vector. FR : mou et inexplique = shader."
+ },
+ "verdict": {
+  "vectorShareMin": 0.6,
+  "explainedMin": 0.95,
+  "layerIouMin": 0.99,
+  "layerEdgeMaxPx": 0.5,
+  "targets": [
+   0.99,
+   0.999
+  ]
+ },
+ "paths": {
+  "out": "{workshop}/vector/{slug}",
+  "index": "{workshop}/vector",
+  "frames": "{refcache}/{slug}/vector"
+ },
+ "timeoutS": 3600,
+ "texts": {
+  "doc": "Text layers of a scene (zrmd/vector/texts.py): tesseract finds the lines, a font from the bible's font match is fitted on the matte of each line, a line is kept when the soft IoU of the fitted line against its matte reaches minIou. The traced glyph layers inside a kept line are hidden in a text-editable variant, the exact trace stays in the version before. FR : detection des lignes de texte.",
+  "enabled": true,
+  "minConf": 60,
+  "minChars": 2,
+  "minIou": 0.8,
+  "maxLines": 6,
+  "fontsPerLine": 2,
+  "upscale": 1.0
+ }
+}

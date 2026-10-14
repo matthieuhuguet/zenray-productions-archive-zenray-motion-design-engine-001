@@ -1,0 +1,112 @@
+# 14 October 2026: the music corpus of the engine. Every indexed video that carries music is cut into excerpts (the most musical
+# 30 s window, and a second distinct one on long videos), decoded losslessly to FLAC in the reference cache and registered as its
+# own reference (<slug>-m1, <slug>-m2) so the whole music pipeline (stems, transcription, resynthesis, critic) runs on it unchanged.
+# Rights: audio stays in the reference cache; nothing of it is archived or published. FR : decoupe de toutes les musiques en extraits.
+from __future__ import annotations
+
+import hashlib
+import json
+import subprocess
+from pathlib import Path
+
+import numpy as np
+
+from .. import orchestrator as orch
+from .. import registry, settings, versions
+
+PARAMS = Path(__file__).resolve().parents[2] / "params" / "music-corpus.json"
+
+
+def cfg() -> dict:
+    return json.loads(PARAMS.read_text(encoding="utf-8"))
+
+
+def loudness_per_second(media: Path, rate: int) -> np.ndarray:
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(media), "-vn", "-ac", "1", "-ar", str(rate), "-f", "f32le", "-"], capture_output=True, timeout=600).stdout
+    x = np.frombuffer(raw, dtype=np.float32)
+    n = len(x) // rate
+    return np.sqrt((x[: n * rate].reshape(n, rate) ** 2).mean(axis=1)) if n else np.zeros(0)
+
+
+def pick_windows(rms: np.ndarray, length: int, count: int, silence_ratio: float) -> list[int]:
+    """Start seconds of the most musical windows: mean level high, silent seconds penalised, windows never overlapping.
+    FR : les fenetres les plus musicales, sans chevauchement."""
+    n = len(rms)
+    if n <= length + 4:
+        return [0]
+    floor = silence_ratio * float(np.median(rms[rms > 0])) if (rms > 0).any() else 0.0
+    score = []
+    for s in range(0, n - length + 1):
+        w = rms[s:s + length]
+        score.append(float(w.mean()) * (1.0 - float((w < floor).mean())))
+    starts = []
+    for _ in range(count):
+        best = max((s for s in range(len(score)) if all(abs(s - t) >= length for t in starts)), key=lambda s: score[s], default=None)
+        if best is None:
+            break
+        starts.append(best)
+    return sorted(starts)
+
+
+def source_of(slug: str) -> Path | None:
+    return registry.reference_file(slug)
+
+
+def members() -> list[str]:
+    """Registry references that carry music, minus the skipped ones and minus the excerpts themselves."""
+    c = cfg()
+    out = []
+    for slug in registry.slugs():
+        ref = registry.get(slug)
+        if slug in c["members"]["skip"] or ref.get("origin") == "music-corpus":
+            continue
+        if ref.get("has_audio") is False:
+            continue
+        if source_of(slug):
+            out.append(slug)
+    return out
+
+
+def build(slug: str, force: bool = False) -> list[str]:
+    """Cut one reference into corpus excerpts; returns the excerpt slugs (existing ones are kept unless force)."""
+    c = cfg()
+    src = source_of(slug)
+    if not src:
+        return []
+    dur = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(src)], capture_output=True, text=True).stdout.strip() or 0)
+    if slug in c["members"]["whole"]:
+        return [slug]
+    length = int(round(c["excerptS"]))
+    count = 3 if dur >= c.get("thirdExcerptMinDurationS", 1e9) else 2 if dur >= c["secondExcerptMinDurationS"] else 1
+    starts = pick_windows(loudness_per_second(src, c["analysisRateHz"]), length, count, c["silenceRatio"])
+    made = []
+    parent = registry.get(slug)
+    for i, start in enumerate(starts, 1):
+        ex = f"{slug}-m{i}"
+        made.append(ex)
+        folder = settings.path("refcache") / ex
+        target = folder / f"{ex}.flac"
+        if target.exists() and not force:
+            continue
+        folder.mkdir(parents=True, exist_ok=True)
+        span = min(length, dur - start)
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{start}", "-t", f"{span}", "-i", str(src), "-vn", "-ac", "2", "-c:a", "flac", str(target)], check=True, timeout=600)
+        meta = {"schema": "zenray-motion-design/reference@1", "slug": ex, "page_url": None, "media_url": None, "date": versions.today(), "file_name": target.name,
+                "sha256": hashlib.sha256(target.read_bytes()).hexdigest(), "bytes": target.stat().st_size, "duration_s": round(span, 3), "has_audio": True,
+                "video_codec": None, "audio_codec": "flac", "family": "music-corpus", "parent_slug": slug, "start_s": start, "end_s": round(start + span, 3),
+                "title": f"{parent.get('title', slug)} (music excerpt {i}: {start} to {round(start + span)} s)",
+                "notes": ["Lossless decode of the reference audio; the media stays in the reference cache (never archived or published)."]}
+        orch.atomic_json(settings.path("workshop") / "references" / ex / "reference.json", meta)
+        orch.add_dropped({"slug": ex, "title": meta["title"], "page_url": None, "origin": "music-corpus", "duration_s": meta["duration_s"], "has_audio": True,
+                          "brand": parent.get("brand"), "focus": f"music corpus excerpt of {slug}"})
+    return made
+
+
+def corpus() -> list[str]:
+    """Every corpus member: the `priority` parents first, then registry order."""
+    pri = cfg().get("priority", [])
+    parents = sorted(members(), key=lambda s: (pri.index(s) if s in pri else len(pri)))
+    out = []
+    for slug in parents:
+        out += build(slug)
+    return out

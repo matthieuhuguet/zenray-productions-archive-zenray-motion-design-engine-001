@@ -1,0 +1,249 @@
+// 14 October 2026: shared helpers of the V1 application (vanilla ES modules, no library): the API client, escaping, number formats, the toast,
+// the theme, a paged list and the polling of jobs and runs. No value of the product lives here: it all comes from /api/v1/config and the tiers.
+// FR : les outils communs de l'application V1 ; aucune valeur du produit ici, tout vient de /api/v1/config.
+export const CLIENT = { 'x-zr-orchestrator-client': '1' }
+export const $ = (sel, root = document) => root.querySelector(sel)
+export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)]
+export const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+export const pct = (v) => (v == null ? '·' : (v * 100).toFixed(1))
+export const clock = (s) => {
+  if (s == null || !isFinite(s)) return ''
+  const m = Math.floor(s / 60)
+  return `${m}:${(s - m * 60).toFixed(1).padStart(4, '0')}`
+}
+export const sec = (s) => (s == null ? '' : `${Number(s).toFixed(s < 10 ? 2 : 1)} s`)
+
+export class ApiError extends Error {}
+
+export async function api(path, options = {}) {
+  const isPost = options.method === 'POST'
+  let response
+  try {
+    response = await fetch(path, { ...options, headers: { ...(isPost ? CLIENT : {}), ...(options.headers || {}) } })
+  } catch (e) {
+    throw new ApiError("Le moteur local ne répond pas. Vérifie qu'il tourne (port 3104).")
+  }
+  const data = await response.json().catch(() => ({ ok: false, error: `HTTP ${response.status}` }))
+  if (!response.ok || data.ok === false) throw new ApiError(data.error || `HTTP ${response.status}`)
+  return data
+}
+export const get = (path, q = {}) => {
+  const s = new URLSearchParams(Object.entries(q).filter(([, v]) => v != null && v !== '')).toString()
+  return api(s ? `${path}?${s}` : path)
+}
+export const post = (path, body) => api(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+
+/** Upload with progress (fetch cannot report it). Resolves with the described file {id, name, kind, duration, audio, width, height, path}. */
+export function upload(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `/api/v1/media/upload?name=${encodeURIComponent(file.name)}`)
+    Object.entries(CLIENT).forEach(([k, v]) => xhr.setRequestHeader(k, v))
+    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress?.(e.loaded / e.total)
+    xhr.onerror = () => reject(new ApiError("L'envoi a échoué (le moteur local ne répond pas)."))
+    xhr.onload = () => {
+      let data
+      try { data = JSON.parse(xhr.responseText) } catch { data = { ok: false, error: `HTTP ${xhr.status}` } }
+      data.ok === false || xhr.status >= 400 ? reject(new ApiError(data.error || `HTTP ${xhr.status}`)) : resolve(data)
+    }
+    xhr.send(file)
+  })
+}
+
+// ---------------------------------------------------------------------------------------------------------------- toast
+let toastTimer
+export function toast(message, isError = false) {
+  const el = $('#toast')
+  el.textContent = message
+  el.className = `toast${isError ? ' error' : ''}`
+  el.hidden = false
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => { el.hidden = true }, isError ? 8000 : 4200)
+}
+
+// ---------------------------------------------------------------------------------------------------------------- theme
+const THEME_ICON = '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="3.6"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/></svg>'
+export function initTheme() {
+  const root = document.documentElement
+  const apply = (t) => {
+    if (t) root.dataset.theme = t; else delete root.dataset.theme
+    try { t ? localStorage.setItem('zrmd.theme', t) : localStorage.removeItem('zrmd.theme') } catch { /* private window */ }
+  }
+  try { apply(localStorage.getItem('zrmd.theme')) } catch { /* private window */ }
+  const btn = $('#theme')
+  btn.innerHTML = THEME_ICON
+  btn.addEventListener('click', () => {
+    const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches
+    apply(dark ? 'light' : 'dark')
+  })
+}
+
+// ------------------------------------------------------------------------------------------------------------ polling
+/** Calls `step()` every `ms` until it returns true or `stop()` is called. A failing step is retried, never fatal. */
+export function poll(step, ms) {
+  let live = true
+  let timer
+  const tick = async () => {
+    if (!live) return
+    let done = false
+    try { done = await step() } catch { /* retried on the next tick */ }
+    if (live && !done) timer = setTimeout(tick, ms)
+  }
+  timer = setTimeout(tick, 0)
+  return () => { live = false; clearTimeout(timer) }
+}
+
+// -------------------------------------------------------------------------------------------------------- paged list
+/** Fetches pages on demand and renders them progressively: the first page now, the next ones when the sentinel scrolls into view. */
+export function pagedList({ container, fetchPage, renderItem, pageSize, emptyText, onCount }) {
+  let offset = 0, total = null, busy = false, dead = false, failed = null
+  const grid = document.createElement('div')
+  grid.className = 'grid'
+  const foot = document.createElement('div')
+  foot.className = 'more'
+  container.append(grid, foot)
+  const skeleton = (n) => Array.from({ length: n }, () => '<div class="card skeleton"><div class="thumb"></div><div class="body"><div class="bar-line" style="width:70%"></div><div class="bar-line" style="width:40%"></div></div></div>').join('')
+  async function more() {
+    if (busy || dead || (total != null && offset >= total)) return
+    busy = true
+    failed = null
+    foot.innerHTML = ''
+    const ph = document.createElement('div')
+    ph.style.display = 'contents'
+    ph.innerHTML = skeleton(Math.min(pageSize, 6))
+    grid.append(ph)
+    try {
+      const page = await fetchPage(offset, pageSize)
+      if (dead) return
+      ph.remove()
+      total = page.total
+      onCount?.(total)
+      page.items.forEach((it) => grid.append(renderItem(it)))
+      offset += page.items.length
+      if (total === 0) grid.innerHTML = `<div class="state" style="grid-column:1/-1">${esc(emptyText || 'Rien à afficher pour le moment.')}</div>`
+    } catch (e) {
+      ph.remove()
+      failed = e
+    } finally {
+      busy = false
+    }
+    if (dead) return
+    if (failed) {
+      foot.innerHTML = `<div class="state err">${esc(failed.message)} <button class="btn" type="button" data-retry>Réessayer</button></div>`
+      $('[data-retry]', foot).addEventListener('click', more)
+    } else if (total != null && offset < total) {
+      foot.innerHTML = `<button class="btn" type="button" data-more>Afficher la suite (${offset} sur ${total})</button>`
+      $('[data-more]', foot).addEventListener('click', more)
+      observer.observe(foot)
+    } else {
+      observer.disconnect()
+    }
+  }
+  const observer = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) more() }, { rootMargin: '600px' })
+  more()
+  return () => { dead = true; observer.disconnect() }
+}
+
+export const BADGE_LABEL = { rhythm: 'Rythme', vector: 'Vecteur', music: 'Musique', sfx: 'Effets', mix: 'Mixage', visual: 'Image' }
+export function moduleChips(modules) {
+  const rows = (modules || []).filter((m) => m.value != null)
+  if (!rows.length) return '<span class="chip">pas encore mesuré</span>'
+  const note = (m) => (m.limited && m.ceiling != null ? ` · plafond mesuré ${pct(m.ceiling)}` : '')
+  return rows.map((m) => `<span class="chip ${m.reached ? 'ok' : ''}" title="${esc((m.label || m.module) + note(m))}">${esc(BADGE_LABEL[m.module] || m.label || m.module)} <b class="num">${pct(m.value)}</b></span>`).join('')
+}
+
+// ------------------------------------------------------------------------------------------------------------- fields
+const hexOk = (v) => /^#[0-9a-fA-F]{6}$/.test(v)
+const numText = (v, step) => {
+  if (v == null || Number.isNaN(Number(v))) return ''
+  const decimals = step && step < 1 ? Math.min(4, Math.ceil(-Math.log10(step))) : 0
+  return Number(v).toFixed(decimals)
+}
+
+/**
+ * One parameter control from its definition {key, label, kind: number|color|text|select|bool, min, max, step, unit, options, maxLength}.
+ * `onInput(value, field)` fires on every change; double click on a number resets to its starting value; the label shows a dot while changed.
+ */
+export function makeField(def, value, onInput) {
+  const el = document.createElement('div')
+  el.className = 'field'
+  el.dataset.key = def.key
+  const base = value
+  let current = value
+  const label = document.createElement('label')
+  const name = document.createElement('span')
+  name.textContent = def.label || def.key
+  const shown = document.createElement('span')
+  shown.className = 'num'
+  label.append(name, shown)
+  el.append(label)
+  const setChanged = () => el.classList.toggle('changed', JSON.stringify(current) !== JSON.stringify(base))
+  const fire = () => { setChanged(); onInput?.(current, api_) }
+  let input, setter
+  if (def.kind === 'number' && def.input === 'number') {
+    input = document.createElement('input')
+    input.type = 'number'
+    if (def.min != null) input.min = def.min
+    if (def.max != null) input.max = def.max
+    input.step = def.step ?? 'any'
+    input.value = value ?? ''
+    input.setAttribute('aria-label', def.label || def.key)
+    const show = () => { shown.textContent = def.unit || '' }
+    input.addEventListener('input', () => { const n = parseFloat(input.value); if (!Number.isNaN(n)) { current = n; fire() } })
+    input.addEventListener('dblclick', () => { current = base; input.value = base; fire() })
+    setter = (v) => { current = v; input.value = v ?? ''; setChanged() }
+    show()
+  } else if (def.kind === 'number') {
+    input = document.createElement('input')
+    input.type = 'range'
+    input.min = def.min; input.max = def.max; input.step = def.step ?? 'any'
+    input.value = value ?? def.min
+    input.setAttribute('aria-label', def.label || def.key)
+    const show = () => { shown.textContent = `${numText(current, def.step)}${def.unit ? ' ' + def.unit : ''}` }
+    input.addEventListener('input', () => { current = parseFloat(input.value); show(); fire() })
+    input.addEventListener('dblclick', () => { current = base; input.value = base; show(); fire() })
+    setter = (v) => { current = v; input.value = v; show(); setChanged() }
+    show()
+  } else if (def.kind === 'color') {
+    const row = document.createElement('div')
+    row.className = 'colorrow'
+    const picker = document.createElement('input')
+    picker.type = 'color'
+    picker.value = hexOk(value) ? value : '#000000'
+    picker.setAttribute('aria-label', def.label || def.key)
+    const hex = document.createElement('input')
+    hex.type = 'text'
+    hex.value = value || ''
+    hex.maxLength = 7
+    hex.setAttribute('aria-label', `${def.label || def.key} (hex)`)
+    picker.addEventListener('input', () => { current = picker.value; hex.value = current; fire() })
+    hex.addEventListener('input', () => { if (hexOk(hex.value)) { current = hex.value.toLowerCase(); picker.value = current; fire() } })
+    row.append(picker, hex)
+    el.append(row)
+    setter = (v) => { current = v; picker.value = hexOk(v) ? v : '#000000'; hex.value = v || ''; setChanged() }
+    shown.textContent = ''
+  } else if (def.kind === 'select') {
+    input = document.createElement('select')
+    input.innerHTML = (def.options || []).map((o) => `<option value="${esc(o.value ?? o)}">${esc(o.label ?? o)}</option>`).join('')
+    input.value = value
+    input.addEventListener('change', () => { current = input.value; fire() })
+    setter = (v) => { current = v; input.value = v; setChanged() }
+  } else if (def.kind === 'bool') {
+    input = document.createElement('input')
+    input.type = 'checkbox'
+    input.checked = !!value
+    input.addEventListener('change', () => { current = input.checked; fire() })
+    setter = (v) => { current = !!v; input.checked = !!v; setChanged() }
+  } else {
+    input = document.createElement('input')
+    input.type = 'text'
+    input.value = value ?? ''
+    if (def.maxLength) input.maxLength = def.maxLength
+    input.setAttribute('aria-label', def.label || def.key)
+    input.addEventListener('input', () => { current = input.value; fire() })
+    setter = (v) => { current = v; input.value = v ?? ''; setChanged() }
+  }
+  if (input) el.append(input)
+  const api_ = { el, key: def.key, get: () => current, set: setter, base, changed: () => JSON.stringify(current) !== JSON.stringify(base) }
+  return api_
+}

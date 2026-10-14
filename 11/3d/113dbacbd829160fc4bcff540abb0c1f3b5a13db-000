@@ -1,0 +1,356 @@
+{
+ "schema": "zrmd/rhythm-v1@1",
+ "date": "14 October 2026",
+ "doc": "V1 interface of the rhythm module (HDA law). Edit a value here, or pass it by name to Scripts/Orchestrate.py / zrmd.analyze.rhythm_pipeline.detect(video, v1={name: value}); the next detection applies it. 4 PRIMARY values change a storyboard the most, 8 SECONDARY thresholds sit behind them, 16 TERTIARY measurement constants are listed with where they live (they are not exposed). 'maps' says which internal key a value drives (params/rhythm.json): 'set' writes it, 'scale' multiplies the tuned base by 1 + gain x (neutral - value), 'plan' is read after the detector (minimum shot, flashes, transitions). An unknown name or an out-of-range value raises an error that names it. FR : interface V1 du rythme : 4 primaires, 8 secondaires, 16 tertiaires listees.",
+ "primary": [
+  {
+   "name": "sensitivity",
+   "label": "Cut sensitivity",
+   "kind": "number",
+   "unit": "0 (few cuts) to 1 (every change)",
+   "range": [
+    0.0,
+    1.0
+   ],
+   "default": 0.5,
+   "doc": "How readily a changed picture counts as a cut. Raising it lowers the fusion threshold (and, for the rule fallback, the area-rule thresholds): more cuts, more false cuts. Lowering it keeps only the unmistakable replacements.",
+   "maps": [
+    {
+     "how": "scale",
+     "key": "fusion.threshold",
+     "gain": 1.6,
+     "min": 0.05,
+     "max": 0.95
+    },
+    {
+     "how": "scale",
+     "key": "hard.replaced_min",
+     "gain": 1.0,
+     "min": 0.2,
+     "max": 0.95
+    },
+    {
+     "how": "scale",
+     "key": "hard.structure_min",
+     "gain": 0.5,
+     "min": 0.3,
+     "max": 0.95
+    },
+    {
+     "how": "scale",
+     "key": "hard.destroyed_min",
+     "gain": 1.0,
+     "min": 0.1,
+     "max": 0.9
+    }
+   ],
+   "neutral": 0.5
+  },
+  {
+   "name": "min_shot_s",
+   "label": "Minimum shot length",
+   "kind": "number",
+   "unit": "seconds",
+   "range": [
+    0.0,
+    5.0
+   ],
+   "default": 0.0,
+   "doc": "Two cuts closer than this are one: the stronger is kept. 0 keeps every cut (a strobe of one-frame pictures stays one shot per picture); 0.25 s turns a stutter into a single beat.",
+   "maps": [
+    {
+     "how": "plan",
+     "key": "min_shot_s"
+    }
+   ]
+  },
+  {
+   "name": "flashes",
+   "label": "Flashes",
+   "kind": "choice",
+   "choices": [
+    "ignore",
+    "cut"
+   ],
+   "default": "ignore",
+   "doc": "A flash is a picture that leaves and comes back within two frames while keeping its structure. 'ignore' types it apart and starts no shot; 'cut' reports its first frame as a hard cut.",
+   "maps": [
+    {
+     "how": "plan",
+     "key": "flashes"
+    }
+   ]
+  },
+  {
+   "name": "transitions",
+   "label": "Dissolves, fades and whips",
+   "kind": "choice",
+   "choices": [
+    "typed",
+    "as_cuts",
+    "ignore"
+   ],
+   "default": "typed",
+   "doc": "'typed' reports a ramp as one event with its interval (the cut instant is the cut the model placed inside it, or the middle of the ramp when it placed none); 'as_cuts' reports its instant as a hard cut; 'ignore' drops it (the change is then not a cut at all).",
+   "maps": [
+    {
+     "how": "plan",
+     "key": "transitions"
+    }
+   ]
+  }
+ ],
+ "secondary": [
+  {
+   "name": "dissolves",
+   "label": "Dissolves typed",
+   "kind": "bool",
+   "default": true,
+   "doc": "Type a cross-fade between two different pictures as a dissolve. On by default: the transition classifier (datasets/rhythm-ramps.json) decides, and it only types what it is almost certain of (score 0.99), which costs nothing held out (docs/ARCHITECTURE.md section 14). Off: a dissolve is then no cut and no event. With transitions.method 'rule' in params/rhythm.json this switches the threshold detector on instead, which finds 20, types 28 false ones and misses 11 on the references and the synthetic videos pooled.",
+   "maps": [
+    {
+     "how": "set",
+     "key": "types.dissolve"
+    }
+   ]
+  },
+  {
+   "name": "dissolve_min_change",
+   "label": "Dissolve: least end-to-end change",
+   "kind": "number",
+   "unit": "mean luma, 0 to 1",
+   "range": [
+    0.02,
+    0.4
+   ],
+   "default": 0.06,
+   "doc": "A cross-fade must change the picture by at least this much between its two ends. With the transition classifier (transitions.method learned, the default) this is a gate only once you move it off its declared default: the classifier already reads the same measure, and a gate set to the old detector's tuned value would refuse what it has learned to type.",
+   "maps": [
+    {
+     "how": "set",
+     "key": "types.dissolve_total_min"
+    }
+   ]
+  },
+  {
+   "name": "dissolve_fit",
+   "label": "Dissolve: largest mixing residual",
+   "kind": "number",
+   "unit": "mean luma, 0 to 1",
+   "range": [
+    0.005,
+    0.1
+   ],
+   "default": 0.022,
+   "doc": "How far the middle pictures may sit from the straight mix of the two ends. Lower is stricter (fewer dissolves). With the transition classifier (transitions.method learned, the default) this is a gate only once you move it off its declared default: the classifier already reads the same measure, and a gate set to the old detector's tuned value would refuse what it has learned to type.",
+   "maps": [
+    {
+     "how": "set",
+     "key": "types.dissolve_resid_max"
+    }
+   ]
+  },
+  {
+   "name": "fade_around_min",
+   "label": "Fade: difference of the two outer pictures",
+   "kind": "number",
+   "unit": "mean luma, 0 to 1",
+   "range": [
+    0.0,
+    0.5
+   ],
+   "default": 0.05,
+   "doc": "A fade through black or white must come out on a picture at least this different from the one it went in on. With the transition classifier (transitions.method learned, the default) this is a gate only once you move it off its declared default: the classifier already reads the same measure, and a gate set to the old detector's tuned value would refuse what it has learned to type.",
+   "maps": [
+    {
+     "how": "set",
+     "key": "types.fade_around_min"
+    }
+   ]
+  },
+  {
+   "name": "whips",
+   "label": "Whips typed",
+   "kind": "bool",
+   "default": true,
+   "doc": "Type a short run of blurred or swirled pictures between two different pictures as a whip transition. On by default for the same reason as dissolves (classifier score 0.99). Off: the whip is left to the cut model. With transitions.method 'rule' this switches the sharpness-collapse detector on, which finds 4, types 26 false ones and misses 15.",
+   "maps": [
+    {
+     "how": "set",
+     "key": "types.whip"
+    }
+   ]
+  },
+  {
+   "name": "whip_around_min",
+   "label": "Whip: difference of the two outer pictures",
+   "kind": "number",
+   "unit": "mean luma, 0 to 1",
+   "range": [
+    0.0,
+    0.5
+   ],
+   "default": 0.08,
+   "doc": "Used only when whips are on: the pictures on each side of the blur must differ by at least this much. With the transition classifier (transitions.method learned, the default) this is a gate only once you move it off its declared default: the classifier already reads the same measure, and a gate set to the old detector's tuned value would refuse what it has learned to type.",
+   "maps": [
+    {
+     "how": "set",
+     "key": "types.whip_around_min"
+    }
+   ]
+  },
+  {
+   "name": "flash_return",
+   "label": "Flash: return ratio",
+   "kind": "number",
+   "unit": "ratio of steps",
+   "range": [
+    0.05,
+    1.0
+   ],
+   "default": 0.45,
+   "doc": "A step undone within two frames to less than this share of itself is a flash. Raise it to type more impulses as flashes.",
+   "maps": [
+    {
+     "how": "set",
+     "key": "types.flash_return"
+    }
+   ]
+  },
+  {
+   "name": "tracked_veto",
+   "label": "Camera-move guard",
+   "kind": "number",
+   "unit": "share of corner features lost, 0 to 1",
+   "range": [
+    0.0,
+    1.0
+   ],
+   "default": 0.0,
+   "doc": "A boundary whose corner features are still tracked (a zoom, a fast pan) is not a cut when fewer than this share of them was lost. 0 switches the guard off.",
+   "maps": [
+    {
+     "how": "set",
+     "key": "guard.features_lost_min"
+    }
+   ]
+  }
+ ],
+ "tertiary": [
+  {
+   "name": "fine_size",
+   "value": [
+    240,
+    135
+   ],
+   "where": "zrmd/analyze/rhythm_fine.py FW, FH",
+   "doc": "resolution of the exhaustive pass"
+  },
+  {
+   "name": "coarse_size",
+   "value": [
+    160,
+    90
+   ],
+   "where": "zrmd/analyze/rhythm_cache.py COARSE",
+   "doc": "resolution of the decode cache read by every signal"
+  },
+  {
+   "name": "duplicate_floor",
+   "value": 0.0015,
+   "where": "zrmd/analyze/rhythm_pipeline.py FLOOR",
+   "doc": "coarse difference under which a boundary is a still hold and is not measured"
+  },
+  {
+   "name": "block_grid",
+   "value": [
+    16,
+    9
+   ],
+   "where": "zrmd/analyze/rhythm_fine.py _unexplained grid",
+   "doc": "blocks of the unexplained-share measure"
+  },
+  {
+   "name": "search_radius_px",
+   "value": 5,
+   "where": "zrmd/analyze/rhythm_fine.py _unexplained radius",
+   "doc": "block matching shift after global compensation"
+  },
+  {
+   "name": "change_threshold",
+   "value": 0.047,
+   "where": "zrmd/analyze/rhythm_fine.py _unexplained change (12/255)",
+   "doc": "mean difference above which a block is unexplained"
+  },
+  {
+   "name": "texture_threshold",
+   "value": 0.031,
+   "where": "zrmd/analyze/rhythm_fine.py _unexplained tex (8/255)",
+   "doc": "block spread above which a block carries structure"
+  },
+  {
+   "name": "dark_floor",
+   "value": 0.039,
+   "where": "zrmd/analyze/rhythm_fine.py _unexplained dark (10/255)",
+   "doc": "weight under which a block is not content"
+  },
+  {
+   "name": "edge_gradient",
+   "value": 0.35,
+   "where": "zrmd/analyze/rhythm_fine.py _edge_map",
+   "doc": "Sobel magnitude of an edge pixel"
+  },
+  {
+   "name": "edge_floor",
+   "value": 0.004,
+   "where": "zrmd/analyze/rhythm_fine.py _edge_keep",
+   "doc": "share of edge pixels under which a picture has no structure"
+  },
+  {
+   "name": "phase_response_min",
+   "value": 0.12,
+   "where": "zrmd/analyze/rhythm_fine.py measure_pair",
+   "doc": "phase-correlation response above which a global translation is removed"
+  },
+  {
+   "name": "translation_cap",
+   "value": 0.45,
+   "where": "zrmd/analyze/rhythm_fine.py measure_pair",
+   "doc": "largest removed translation, as a share of the frame"
+  },
+  {
+   "name": "feature_patch_tolerance",
+   "value": 14.0,
+   "where": "zrmd/analyze/rhythm_fine.py _features",
+   "doc": "patch difference above which a tracked corner is a false track"
+  },
+  {
+   "name": "fusion_depth_and_rounds",
+   "value": [
+    4,
+    200
+   ],
+   "where": "Scripts/RhythmSheet.py fit_model",
+   "doc": "depth and number of trees of the learned fusion"
+  },
+  {
+   "name": "score_tolerance_frames",
+   "value": 1,
+   "where": "params/rhythm.json score.tolerance_frames",
+   "doc": "frame distance at which a cut is found"
+  },
+  {
+   "name": "area_rule",
+   "value": {
+    "replaced_min": 0.55,
+    "persist_max": 0.2,
+    "features_lost_min": 0.85,
+    "structure_min": 0.7,
+    "empty_density": 0.008,
+    "destroyed_min": 0.5
+   },
+   "where": "params/rhythm.json hard.* (decision.method rule)",
+   "doc": "thresholds of the explainable area-rule conjunction, used when the learned fusion is switched off"
+  }
+ ]
+}

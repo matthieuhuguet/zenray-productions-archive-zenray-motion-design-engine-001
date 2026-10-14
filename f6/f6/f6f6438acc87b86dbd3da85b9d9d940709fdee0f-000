@@ -1,0 +1,59 @@
+# 14 October 2026: the in-process job registry of the V1 application (iterations, exports, music cooks). A job is a function run in a thread;
+# its state is queued, running, done or failed, with its result or its error text; at most `heavy` jobs run at once (renders are CPU bound).
+# FR : le registre de travaux de l'application V1 : un travail est une fonction dans un fil, etat et resultat lisibles.
+from __future__ import annotations
+
+import threading
+import time
+import uuid
+
+
+class Jobs:
+    def __init__(self, heavy: int = 2, keep: int = 200):
+        self._jobs: dict[str, dict] = {}
+        self._lock = threading.Lock()
+        self._slots = threading.BoundedSemaphore(heavy)
+        self._keep = keep
+
+    def submit(self, kind: str, fn, **meta) -> dict:
+        jid = uuid.uuid4().hex[:12]
+        job = {"id": jid, "kind": kind, "state": "queued", "createdAt": time.time(), "meta": meta, "steps": [], "result": None, "error": None}
+        with self._lock:
+            self._jobs[jid] = job
+            if len(self._jobs) > self._keep:
+                for old in sorted(self._jobs.values(), key=lambda j: j["createdAt"])[: len(self._jobs) - self._keep]:
+                    if old["state"] in ("done", "failed"):
+                        self._jobs.pop(old["id"], None)
+
+        def step(name: str, **detail):
+            job["steps"].append({"name": name, "at": round(time.time() - job["createdAt"], 2), **detail})
+
+        def run():
+            with self._slots:
+                job["state"] = "running"
+                job["startedAt"] = time.time()
+                try:
+                    job["result"] = fn(step)
+                    job["state"] = "done"
+                except Exception as error:  # a failure is reported with its cause, never swallowed
+                    job["error"] = f"{type(error).__name__}: {error}"
+                    job["state"] = "failed"
+                finally:
+                    job["finishedAt"] = time.time()
+
+        threading.Thread(target=run, daemon=True).start()
+        return self.view(job)
+
+    @staticmethod
+    def view(job: dict) -> dict:
+        return {k: job[k] for k in ("id", "kind", "state", "steps", "result", "error", "meta")} | {"createdAt": job["createdAt"]}
+
+    def get(self, jid: str) -> dict | None:
+        job = self._jobs.get(jid)
+        return self.view(job) if job else None
+
+    def list(self, limit: int = 30) -> list[dict]:
+        return [self.view(j) for j in sorted(self._jobs.values(), key=lambda j: -j["createdAt"])[:limit]]
+
+    def busy(self) -> bool:
+        return any(j["state"] in ("queued", "running") for j in self._jobs.values())

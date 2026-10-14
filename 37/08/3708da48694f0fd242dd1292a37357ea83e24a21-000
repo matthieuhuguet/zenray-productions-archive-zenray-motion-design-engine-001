@@ -1,0 +1,3 @@
+# 14 October 2026: the V1 application layer of ZenRay Motion Design (projects, scenes, parameter tiers, timeline). Everything here is a
+# pure function of files on disk plus the parameter interfaces in params/; the HTTP door is zrmd/orchestrator_server.py.
+# FR : la couche application de la V1 (projets, scenes, paliers de parametres, chronologie).

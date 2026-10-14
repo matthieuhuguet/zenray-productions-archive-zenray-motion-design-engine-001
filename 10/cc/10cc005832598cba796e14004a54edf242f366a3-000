@@ -1,0 +1,96 @@
+# 15 October 2026: two-way validation of the multi-layer residual pursuit (zrmd/vector/layerfit.py). Synthetic crops only. GREEN: a crop made of a
+# soft disc, a crisp rounded card and a thin line is rebuilt above 0.985 in CIEDE2000 fidelity, the model of the stack IS the skia render of the
+# layers it returns (to the pixel), the run is deterministic, the layers cook through the ordinary asset code. RED: a crop of pure noise is NOT
+# reproduced by a small budget (the fidelity measure looks at its input), and a layer scaled out and back is the same layer.
+# FR : validation dans les deux sens de la poursuite multi-calques.
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from skimage.color import deltaE_ciede2000, rgb2lab  # noqa: E402
+
+from zrmd.vector import asset as A  # noqa: E402
+from zrmd.vector import layerfit as LF  # noqa: E402
+from zrmd.vector import render as R  # noqa: E402
+
+W, H = 160, 100
+SMALL = {"levels": [{"scale": 1, "maxLayers": 60, "stopDE": 0.5, "minDE": 0.5}], "maxLayers": 60, "maxSeconds": 120, "sigmas": [0, 0.5, 1.0, 2.0, 4.0]}
+
+
+def scene() -> np.ndarray:
+    from PIL import Image, ImageDraw, ImageFilter
+    im = Image.new("RGB", (W, H), (22, 24, 30))
+    d = ImageDraw.Draw(im)
+    d.rounded_rectangle((90, 20, 150, 70), radius=8, fill=(230, 230, 235))
+    d.line((10, 90, 80, 60), fill=(255, 120, 60), width=2)
+    glow = Image.new("RGB", (W, H), (0, 0, 0))
+    ImageDraw.Draw(glow).ellipse((20, 15, 50, 45), fill=(80, 180, 255))
+    glow = glow.filter(ImageFilter.GaussianBlur(4))
+    return np.asarray(Image.fromarray(np.maximum(np.asarray(im), np.asarray(glow))))
+
+
+def fid(a: np.ndarray, b: np.ndarray) -> float:
+    de = deltaE_ciede2000(rgb2lab(a / 255.0), rgb2lab(b / 255.0))
+    return 1 - 0.01 * float((de ** 2).mean())
+
+
+def render(layers: list[dict]) -> np.ndarray:
+    svg = A.cook_svg({"canvas": {"width": W, "height": H}, "palette": {}, "layers": layers, "view": {}})
+    return R.render_svg(svg, W, H, engine="skia", ss=1)[..., :3]
+
+
+def test_rebuilds_a_layered_scene():
+    t = scene()
+    res = LF.fit(t, SMALL)
+    out = render(res["layers"])
+    assert fid(out.astype(float), t.astype(float)) > 0.985, fid(out.astype(float), t.astype(float))      # green: above 0.985 with at most 60 layers
+    assert len(res["layers"]) <= 61
+    assert np.array_equal(out, res["composite"]), int(np.abs(out.astype(int) - res["composite"].astype(int)).max())   # the model is the output
+
+
+def test_deterministic_and_cookable():
+    t = scene()
+    a, b = LF.fit(t, SMALL), LF.fit(t, SMALL)
+    assert json.dumps(a["layers"], sort_keys=True) == json.dumps(b["layers"], sort_keys=True)
+    kinds = {l["kind"] for l in a["layers"]}
+    assert kinds <= {"rect", "circle", "ellipse", "rounded_rect", "path"}, kinds
+    assert all(l["effects"]["blur"] >= 0 and l["z"] == i for i, l in enumerate(a["layers"]))
+
+
+def test_noise_is_not_reproduced_by_a_small_budget():
+    rng = np.random.default_rng(1)
+    noise = rng.integers(0, 255, (H, W, 3)).astype(np.uint8)
+    res = LF.fit(noise, SMALL)
+    assert fid(render(res["layers"]).astype(float), noise.astype(float)) < 0.5                              # red: the measure sees the failure
+
+
+def test_scale_round_trip():
+    t = scene()
+    res = LF.fit(t, {**SMALL, "levels": [{"scale": 1, "maxLayers": 12, "stopDE": 0.5, "minDE": 0.5}]})
+    for l in res["layers"]:
+        back = LF._scale_layer(LF._scale_layer(l, 4.0), 0.25)
+        assert back["kind"] == l["kind"]
+        assert abs(back["effects"]["blur"] - l["effects"]["blur"]) < 0.02
+
+
+def main() -> int:
+    bad = []
+    for name, fn in sorted(globals().items()):
+        if name.startswith("test_") and callable(fn):
+            try:
+                fn()
+                print("ok  ", name)
+            except AssertionError as e:
+                print("FAIL", name, e)
+                bad.append(name)
+    print(f"{len(bad)} failure(s)")
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

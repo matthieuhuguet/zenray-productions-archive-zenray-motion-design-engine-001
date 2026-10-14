@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+# 14 October 2026: the music corpus runner. One command builds the corpus (excerpts of every indexed video that carries music), runs the
+# music chain on each member one after the other (resumable: a member with a scored bench is skipped unless --force), and prints the
+# scoreboard: per stem tfBands against the 99.9 target. Sequential on purpose (MPS and numpy workers do not share the machine).
+#   MusicCorpus.py build                 cut the excerpts, register them (lossless FLAC in the reference cache)
+#   MusicCorpus.py status [--json]       the scoreboard: every member, every stem, the gap to 99.9
+#   MusicCorpus.py run [--only a,b] [--force] [--iterate]   run the chain (and with --iterate the stem iterations) on the members
+#   MusicCorpus.py run --rerender [--only a,b]               re-render the raw base with the current engine, then trim and polish (about 10 min)
+# FR : le corpus musical : decoupe, chaine sur chaque membre, tableau des scores par piste.
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+from zrmd import registry, settings  # noqa: E402
+from zrmd.audio import corpus as C  # noqa: E402
+
+STEMS = ("drums", "bass", "other", "vocals", "mix")
+
+
+def scoreboard() -> list[dict]:
+    """Per member: the best version by mix, its critic scores per stem, whether it is a trim version, the gate (every stem and the mix at the
+    target on the official critic) and the held-out audit mean. FR : tableau par membre, porte sur le critique officiel."""
+    cfg = C.cfg()
+    rows = []
+    for slug in C.corpus():
+        st = registry.status(slug)
+        best = st["music"]["best"]
+        row = {"slug": slug, "duration_s": registry.get(slug).get("duration_s"), "version": best["version"] if best else None, "scores": best["scores"] if best else {},
+               "trimmed": False, "auditMean": None, "polished": False}
+        bench = settings.path("sound_out") / slug / "music-bench"
+        tv = trimmed_versions(slug)
+        if tv:
+            t = json.loads((bench / tv[-1] / "trim.json").read_text(encoding="utf-8"))
+            row["trimVersion"] = tv[-1]
+            row["trimmed"] = True
+            crit = lambda v: v.get("gateCritic", (v.get("after", {}).get("critic") or {}).get("score"))  # noqa: E731  (older trim.json files)
+            row["scores"] = {**{k: crit(v) for k, v in t["stems"].items()}, "mix": crit(t["mix"])}
+            row["auditMean"] = round(sum(v.get("auditMean", 0) for v in t["stems"].values()) / len(t["stems"]), 2) if all("auditMean" in v for v in t["stems"].values()) else None
+            row["version"] = tv[-1]
+            row["polished"] = (bench / tv[-1] / "polish" / "mix.mp3").exists()
+        gate = [row["scores"].get(s) for s in cfg["targets"]["gateStems"]] + [row["scores"].get("mix")]
+        row["gate"] = bool(row["version"]) and all(v is not None and v >= cfg["targets"]["stem"] for v in gate)
+        row["worst"] = min(((s, row["scores"].get(s)) for s in cfg["targets"]["gateStems"] if row["scores"].get(s) is not None), key=lambda kv: kv[1], default=None)
+        rows.append(row)
+    return rows
+
+
+def print_table(rows: list[dict]) -> None:
+    t = C.cfg()["targets"]["stem"]
+    print(f"{'member':<44} {'dur':>6} {'ver':<6} " + " ".join(f"{s:>7}" for s in STEMS) + "   audit  trim polish gate")
+    for r in rows:
+        cells = " ".join(f"{r['scores'][s]:>7.2f}" if s in r["scores"] else f"{'-':>7}" for s in STEMS)
+        aud = f"{r['auditMean']:>6.1f}" if r.get("auditMean") is not None else f"{'-':>6}"
+        print(f"{r['slug']:<44} {r['duration_s'] or 0:>6.1f} {r['version'] or '-':<6} {cells}  {aud}  {'yes' if r['trimmed'] else '-':<4} {'yes' if r['polished'] else '-':<6} {'PASS' if r['gate'] else 'no'}")
+    done = [r for r in rows if r["version"]]
+    print(f"\n{len(rows)} members, {len(done)} scored, {sum(1 for r in rows if r['gate'])} at {t} on every stem")
+
+
+def trimmed_versions(slug: str) -> list[str]:
+    bench = settings.path("sound_out") / slug / "music-bench"
+    return sorted(p.name for p in bench.glob("V_*") if (p / "trim.json").exists())
+
+
+RERENDER_NOTE = "re-render with the drum tone fade-out (14 October 2026)"
+
+
+def rerender_member(slug: str, force: bool = False) -> int:
+    """Re-render the raw chain version a member's trim started from, with the CURRENT engine, then trim and polish from that render. The fitted
+    parameters (timbre models, equaliser, bus) are kept: only what the renderer itself does differently changes (14 October 2026: the drum tone
+    now ends with a fade instead of a cut, one click per kick). About 10 minutes against 25 for the whole chain. A member already re-rendered is
+    skipped unless force. FR : re-rendu de la version brute avec le moteur courant, puis calage et polish ; les parametres ajustes sont gardes."""
+    import re
+    py = str(settings.path("python"))
+    bench = settings.path("sound_out") / slug / "music-bench"
+    tv = trimmed_versions(slug)
+    if not tv:
+        return 2
+    base = json.loads((bench / tv[-1] / "params.json").read_text(encoding="utf-8")).get("trim", {}).get("base")
+    if not base:
+        return 2
+    meta = json.loads((bench / base / "meta.json").read_text(encoding="utf-8"))
+    if RERENDER_NOTE in str(meta.get("note", "")) and not force:
+        return 0
+    sys.path.insert(0, str(ENGINE / "Scripts"))
+    import MusicRun
+    env = MusicRun.env_for(slug)
+    log = settings.path("workshop") / "logs" / f"corpus-{slug}.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with open(log, "ab") as out:
+        out.write(f"\n$ ResynthMusic.py render --params {bench / base / 'params.json'} --score  (re-render of {base})\n".encode())
+        r = subprocess.run([py, "-I", str(ENGINE / "Scripts" / "ResynthMusic.py"), "render", "--params", str(bench / base / "params.json"), "--score",
+                            "--note", RERENDER_NOTE], env=env, capture_output=True, text=True)
+        out.write((r.stdout + r.stderr[-2000:]).encode())
+        m = re.findall(r'"version":\s*"(V_\d+)"', r.stdout)
+        if r.returncode or not m:
+            return r.returncode or 1
+        new = m[-1]
+        code = 0
+        for cmd in ([py, "-I", str(ENGINE / "Scripts" / "MusicTrim.py"), "--slug", slug, "--from", new],
+                    [py, "-I", str(ENGINE / "Scripts" / "MusicPolish.py"), "--slug", slug, "--force"]):
+            out.write(f"\n$ {' '.join(cmd[2:])}\n".encode())
+            out.flush()
+            code = subprocess.run(cmd, stdout=out, stderr=subprocess.STDOUT).returncode or code
+    return code
+
+
+def run_member(slug: str, force: bool, iterate: bool, trim: bool = True, retrim: bool = False) -> int:
+    """Chain (measured voices, bus, per-event deviation, gaps, retag), then the spectral trim of every stem, then the final mix, then the polish
+    of a track that passed the gate (a preview of the others). Each step is skipped when its result already exists, unless --force."""
+    cfg = C.cfg()
+    py = str(settings.path("python"))
+    st = registry.status(slug)
+    log = settings.path("workshop") / "logs" / f"corpus-{slug}.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    cmds = []
+    chain_done = bool(st["music"]["best"]) and any(
+        (settings.path("sound_out") / slug / "music-bench" / v / "meta.json").exists()
+        and json.loads((settings.path("sound_out") / slug / "music-bench" / v / "meta.json").read_text()).get("stage") in ("retag", "assemble", "trim")
+        for v in [p.name for p in (settings.path("sound_out") / slug / "music-bench").glob("V_*")])
+    if force or not chain_done:
+        cmds.append([py, "-I", str(ENGINE / "Scripts" / "MusicRun.py"), "--slug", slug, "--transcribe", "--stages", cfg["chain"]["stages"],
+                     *sum([["--set", s] for s in cfg["chain"]["set"]], []), "--critic"])
+    if iterate:
+        cmds.append([py, "-I", str(ENGINE / "Scripts" / "MusicIterate.py"), "--slug", slug, "--critic"])
+    if trim and (force or retrim or not trimmed_versions(slug) or cmds):
+        cmds.append([py, "-I", str(ENGINE / "Scripts" / "MusicTrim.py"), "--slug", slug])
+        cmds.append([py, "-I", str(ENGINE / "Scripts" / "MusicPolish.py"), "--slug", slug, "--force"])
+    code = 0
+    with open(log, "ab") as out:
+        for cmd in cmds:
+            out.write(f"\n$ {' '.join(cmd[2:])}\n".encode())
+            out.flush()
+            code = subprocess.run(cmd, stdout=out, stderr=subprocess.STDOUT).returncode or code
+    return code
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("build")
+    s = sub.add_parser("status"); s.add_argument("--json", action="store_true")
+    r = sub.add_parser("run"); r.add_argument("--only", default=""); r.add_argument("--force", action="store_true"); r.add_argument("--iterate", action="store_true")
+    r.add_argument("--retrim", action="store_true", help="redo the trim and the polish of members whose chain is done")
+    r.add_argument("--rerender", action="store_true", help="re-render each member's raw base with the current engine (parameters kept), then trim and polish")
+    a = ap.parse_args()
+    if a.cmd == "build":
+        print(json.dumps({"corpus": C.corpus()}))
+        return 0
+    if a.cmd == "status":
+        rows = scoreboard()
+        print(json.dumps(rows) if a.json else "", end="")
+        if not a.json:
+            print_table(rows)
+        return 0
+    only = [x for x in a.only.split(",") if x]
+    for slug in [s for s in C.corpus() if not only or s in only]:
+        t0 = time.time()
+        code = rerender_member(slug, a.force) if a.rerender else run_member(slug, a.force, a.iterate, retrim=a.retrim)
+        print(json.dumps({"member": slug, "exit": code, "seconds": round(time.time() - t0)}), flush=True)
+    print_table(scoreboard())
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

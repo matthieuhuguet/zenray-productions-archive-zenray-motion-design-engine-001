@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+# 14 October 2026: the honest-report audit of a music-trim bench version. Three questions a 99.9 on the official critic does not answer:
+#   (a) is it still CLEAN?        cleanliness (clicks, crackle, hiss, DC, rumble, true peak) of the reference mix, the raw chain mix, the trimmed mix
+#                                 and the polished mix, so a loss introduced by the trim is visible and not hidden behind the critic;
+#   (b) is it a COPY?             waveform correlation (zero lag and best lag within +-20 ms) and the correlation of the fine spectral structure
+#                                 (log magnitude minus its own smooth envelope) of each stem with its reference stem, raw and trimmed side by side:
+#                                 a trim that only applies smooth gains must leave both unchanged, a trim that copies would push them to 1;
+#   (c) what do the OTHER metrics say?  plossFull, onsetF, chroma, tfBands of the raw chain and of the trimmed version, from scores.json.
+#   MusicAudit.py --slug paper-mono-code-m1 [--version V_NNN]     writes <version>/audit.json and prints one table
+#   MusicAudit.py --all                                           every member that has a trim version, one JSON summary
+# FR : audit d'honnetete : propre ? copie ? que disent les autres mesures ? (le critique officiel ne repond a aucune des trois).
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
+import numpy as np
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+sys.path.insert(0, str(ENGINE / "Scripts"))
+import MusicRun  # noqa: E402
+
+STEMS = ("drums", "bass", "other", "vocals")
+
+
+def _mono(x: np.ndarray) -> np.ndarray:
+    return x if x.ndim == 1 else x.mean(axis=1)
+
+
+def waveform_corr(a: np.ndarray, b: np.ndarray, sr: int, max_lag_s: float = 0.02) -> dict:
+    """Pearson correlation at zero lag and the largest |correlation| within +-max_lag_s (FFT cross-correlation of the two mono signals)."""
+    n = min(len(a), len(b))
+    a, b = a[:n].astype(np.float64), b[:n].astype(np.float64)
+    a, b = a - a.mean(), b - b.mean()
+    den = float(np.sqrt((a ** 2).sum() * (b ** 2).sum()) + 1e-20)
+    size = 1 << (2 * n - 1).bit_length()
+    cc = np.fft.irfft(np.fft.rfft(a, size) * np.conj(np.fft.rfft(b, size)), size)
+    lag = int(max_lag_s * sr)
+    win = np.concatenate([cc[:lag + 1], cc[-lag:]]) / den
+    return {"zeroLag": round(float(cc[0] / den), 4), "bestLag": round(float(np.abs(win).max()), 4)}
+
+
+def band_wave_corr(a: np.ndarray, b: np.ndarray, sr: int, lo: float, hi: float) -> float:
+    """Best-lag waveform correlation of the two signals band-passed to lo..hi Hz. Above 1 kHz our synthesis cannot line up with the reference by
+    chance (a kick sine can, at 50 Hz): a copy of the reference's samples would show up here as a value near 1."""
+    from scipy import signal
+    sos = signal.butter(4, [lo, min(hi, sr / 2 - 100.0)], "bp", fs=sr, output="sos")
+    return waveform_corr(signal.sosfiltfilt(sos, a.astype(np.float64)), signal.sosfiltfilt(sos, b.astype(np.float64)), sr)["bestLag"]
+
+
+def fine_structure_corr(a: np.ndarray, b: np.ndarray, sr: int, n_fft: int = 4096, f_lo: float = 150.0, f_hi: float = 8000.0, smooth_bins: int = 25) -> float:
+    """Correlation of the FINE spectral structure of two signals: per frame, the log magnitude minus its own moving average along frequency
+    (the envelope the trim is allowed to reshape), over f_lo to f_hi. Our synthesis shares the notes with the reference, not the exact partials
+    and noise texture; a copy would share both. Frames both silent are skipped."""
+    from scipy import ndimage
+    n = min(len(a), len(b))
+    hop = n_fft // 2
+    idx = np.arange(n_fft)[None, :] + hop * np.arange(1 + (n - n_fft) // hop)[:, None]
+    win = np.hanning(n_fft + 1)[:-1]
+    f = np.fft.rfftfreq(n_fft, 1.0 / sr)
+    sel = (f >= f_lo) & (f <= f_hi)
+
+    def fine(x):
+        S = np.log(np.abs(np.fft.rfft(x[:n].astype(np.float64)[idx] * win, axis=1))[:, sel] + 1e-9)
+        return S - ndimage.uniform_filter1d(S, size=smooth_bins, axis=1)
+
+    A, B = fine(a), fine(b)
+    keep = (np.abs(A).mean(axis=1) > 1e-6) & (np.abs(B).mean(axis=1) > 1e-6)
+    A, B = A[keep].ravel(), B[keep].ravel()
+    return round(float(np.corrcoef(A, B)[0, 1]), 4) if A.size else float("nan")
+
+
+def audit(slug: str, version: str = "") -> dict:
+    os.environ["ZRMD_RESYNTH_OVERRIDES"] = MusicRun.env_for(slug)["ZRMD_RESYNTH_OVERRIDES"]
+    from zrmd.audio import earcheck, resynth as RS
+    P = RS.params()
+    sr = P["sampleRate"]
+    bench = Path(P["paths"]["bench"])
+    if not version:
+        vs = sorted(p.name for p in bench.glob("V_*") if (p / "trim.json").exists())
+        if not vs:
+            raise SystemExit(f"no music-trim version for {slug}")
+        version = vs[-1]
+    d = bench / version
+    prm = json.loads((d / "params.json").read_text(encoding="utf-8"))
+    base = prm.get("trim", {}).get("base")
+    ref = RS.load_reference(P)
+    out: dict = {"slug": slug, "version": version, "base": base, "sr": sr, "date": "14 October 2026", "stems": {}, "mix": {}}
+    raw = {s: RS._read(bench / base / "stems" / f"{s}.wav", sr) for s in STEMS} if base else {}
+    raw_mix = RS._read(bench / base / "mix.wav", sr) if base else None
+    for s in STEMS:
+        ours = RS._read(d / "stems" / f"{s}.wav", sr)
+        r = _mono(ref["stems"][s])
+        row = {"trimmed": {"wave": waveform_corr(r, _mono(ours), sr), "fine": fine_structure_corr(r, _mono(ours), sr),
+                           "waveHigh": band_wave_corr(r, _mono(ours), sr, 1000.0, 10000.0), "waveLow": band_wave_corr(r, _mono(ours), sr, 30.0, 250.0)},
+               "cleanliness": {"reference": earcheck.cleanliness(ref["stems"][s], sr), "trimmed": earcheck.cleanliness(ours, sr)}}
+        if base:
+            row["raw"] = {"wave": waveform_corr(r, _mono(raw[s]), sr), "fine": fine_structure_corr(r, _mono(raw[s]), sr),
+                          "waveHigh": band_wave_corr(r, _mono(raw[s]), sr, 1000.0, 10000.0), "waveLow": band_wave_corr(r, _mono(raw[s]), sr, 30.0, 250.0)}
+            row["cleanliness"]["raw"] = earcheck.cleanliness(raw[s], sr)
+        out["stems"][s] = row
+    mix = RS._read(d / "mix.wav", sr)
+    rm = _mono(ref["mix"])
+    out["mix"] = {"trimmed": {"wave": waveform_corr(rm, _mono(mix), sr), "fine": fine_structure_corr(rm, _mono(mix), sr),
+                              "waveHigh": band_wave_corr(rm, _mono(mix), sr, 1000.0, 10000.0), "waveLow": band_wave_corr(rm, _mono(mix), sr, 30.0, 250.0)},
+                  "cleanliness": {"reference": earcheck.cleanliness(ref["mix"], sr), "trimmed": earcheck.cleanliness(mix, sr)}}
+    if raw_mix is not None:
+        out["mix"]["raw"] = {"wave": waveform_corr(rm, _mono(raw_mix), sr), "fine": fine_structure_corr(rm, _mono(raw_mix), sr),
+                             "waveHigh": band_wave_corr(rm, _mono(raw_mix), sr, 1000.0, 10000.0), "waveLow": band_wave_corr(rm, _mono(raw_mix), sr, 30.0, 250.0)}
+        out["mix"]["cleanliness"]["raw"] = earcheck.cleanliness(raw_mix, sr)
+    pol = d / "polish" / "mix.wav"
+    if pol.exists():
+        out["mix"]["cleanliness"]["polished"] = earcheck.cleanliness(RS._read(pol, sr), sr)
+    # (c) the other metrics, from the version's own scores (the raw chain version for the "before")
+    def headline(v):
+        p = bench / v / "scores.json"
+        return json.loads(p.read_text(encoding="utf-8")).get("headline", {}) if p.exists() else {}
+    keys = ("tfBands", "plossFull", "onsetF", "chroma", "envCorr")
+    hb, ha = (headline(base) if base else {}), headline(version)
+    out["metrics"] = {k: {"raw": {m: hb.get(k, {}).get(m) for m in keys}, "trimmed": {m: ha.get(k, {}).get(m) for m in keys}} for k in (*STEMS, "mix")}
+    (d / "audit.json").write_text(json.dumps(out, indent=1, default=float) + "\n", encoding="utf-8")
+    return out
+
+
+def table(a: dict) -> str:
+    L = [f"{a['slug']} {a['version']} (raw chain {a['base']})",
+         f"{'':<7} {'wave0 raw':>9} {'wave0 trim':>10} {'best raw':>8} {'best trim':>9} {'>1k raw':>7} {'>1k trim':>8} {'fine raw':>8} {'fine trim':>9} | rumble ref/raw/trim  clicks/s ref/raw/trim"]
+    for k in (*STEMS, "mix"):
+        r = a["stems"][k] if k in a["stems"] else a["mix"]
+        raw = r.get("raw", {"wave": {}, "fine": None})
+        c = r["cleanliness"]
+        g = lambda who, key: c.get(who, {}).get(key, float("nan"))  # noqa: E731
+        L.append(f"{k:<7} {raw['wave'].get('zeroLag', float('nan')):>9} {r['trimmed']['wave']['zeroLag']:>10} {raw['wave'].get('bestLag', float('nan')):>8} "
+                 f"{r['trimmed']['wave']['bestLag']:>9} {raw.get('waveHigh', float('nan')):>7} {r['trimmed']['waveHigh']:>8} "
+                 f"{raw['fine'] if raw['fine'] is not None else float('nan'):>8} {r['trimmed']['fine']:>9} | "
+                 f"{g('reference', 'rumbleShare'):.4f}/{g('raw', 'rumbleShare'):.4f}/{g('trimmed', 'rumbleShare'):.4f}  "
+                 f"{g('reference', 'clicksPerSecond'):.2f}/{g('raw', 'clicksPerSecond'):.2f}/{g('trimmed', 'clicksPerSecond'):.2f}")
+    return "\n".join(L)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--slug", default="")
+    ap.add_argument("--version", default="")
+    ap.add_argument("--all", action="store_true")
+    a = ap.parse_args()
+    slugs = [a.slug] if a.slug else []
+    if a.all:
+        from zrmd import settings
+        slugs = sorted(p.parent.name for p in settings.path("sound_out").glob("*/music-bench") if any(p.glob("V_*/trim.json")))
+    for s in slugs:
+        # one process per member (the reference override is read once at import), so run the members through subprocesses
+        if a.all:
+            import subprocess
+            r = subprocess.run([sys.executable, "-I", __file__, "--slug", s], capture_output=True, text=True)
+            print(r.stdout + r.stderr[-300:], flush=True)
+        else:
+            print(table(audit(s, a.version)), flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

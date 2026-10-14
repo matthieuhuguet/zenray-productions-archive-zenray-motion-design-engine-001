@@ -1,0 +1,77 @@
+# 14 October 2026: the compiled tonal kernel proven against the reference implementation on REAL notes (flora raw base; skipped when the bench is
+# absent) and on synthetic notes with a glide and a deviation, in both directions: GREEN the kernel matches sms.tonal_note above 80 dB SNR and
+# draws the same random stream; RED a kernel fed a wrong table is far from the reference (the comparison really looks at the signal); and the
+# kernel is faster. FR : le noyau compile contre la reference sur de vraies notes.
+import json
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from zrmd.audio import sms, sms_fast  # noqa: E402
+
+BENCH = Path("/Users/zenray/.claude/tmp/tmp-zenray-motion-design/sound/flora-agents-on-canvas-m1/music-bench/V_006")
+FAIL = []
+
+
+def check(name, cond, detail=""):
+    print(("ok   " if cond else "FAIL ") + name + (f"  {detail}" if detail and not cond else ""))
+    if not cond:
+        FAIL.append(name)
+
+
+def snr(a, b):
+    a, b = a.astype(np.float64), b.astype(np.float64)
+    e = ((a - b) ** 2).sum()
+    return 999.0 if e == 0 else float(10 * np.log10((a ** 2).sum() / e))
+
+
+def run() -> int:
+    T = json.loads((ROOT / "datasets" / "resynth-params.json").read_text())["sms"]["tonal"]
+    sr = 44100
+    n = 6 * sr
+    knots = [0.0, 0.02, 0.05, 0.1, 0.18, 0.3, 0.45, 0.7, 1.0]
+    cen = [40.0 * 2 ** (i / 3) for i in range(24)]
+    rng = np.random.default_rng(3)
+    model = {"knotsS": knots, "centresHz": cen, "tableDb": (-30 - 2.0 * np.arange(24)[:, None] - 6.0 * np.arange(9)[None, :] + rng.uniform(-2, 2, (24, 9))).tolist()}
+    macros = {"gainDb": 0.0, "tiltDbOct": 0.5, "timeScale": 1.0, "releaseS": 0.3}
+    dev = {"bandsHz": [50.0, 200.0, 800.0, 3200.0], "segS": [0.0, 0.1, 0.3, 0.6], "db": rng.uniform(-3, 3, (4, 4)).tolist()}
+    notes = [{"t": 0.1, "dur": 0.4, "midi": 45, "levelDb": -12.0}, {"t": 1.0, "dur": 0.8, "midi": 57.3, "cents": 20.0, "levelDb": -9.0, "glide": {"fromMidi": 53, "ms": 60}},
+             {"t": 2.2, "dur": 0.15, "midi": 69, "levelDb": -15.0, "dev": dev}, {"t": 3.0, "dur": 1.2, "midi": 33, "levelDb": -6.0, "dev": {**dev, "devDur": 0.6}}]
+    ref = sms.render_tonal(notes, model, macros, T, sr, n, 7, 0.0)
+    fast = sms_fast.render_tonal(notes, model, macros, T, sr, n, 7, 0.0)
+    check("GREEN: synthetic notes (glide, deviation, stretched deviation) match the reference above 80 dB", snr(ref, fast) > 80.0, snr(ref, fast))
+    ref2 = sms.render_tonal(notes, model, macros, T, sr, n, 7, 3.0)
+    fast2 = sms_fast.render_tonal(notes, model, macros, T, sr, n, 7, 3.0)
+    check("GREEN: with a transposition of 3 semitones too", snr(ref2, fast2) > 80.0, snr(ref2, fast2))
+    bad_model = {**model, "tableDb": (np.asarray(model["tableDb"]) + 9.0).tolist()}
+    check("RED: a wrong table is far from the reference (the comparison sees the signal)", snr(ref, sms_fast.render_tonal(notes, bad_model, macros, T, sr, n, 7, 0.0)) < 30.0)
+    if BENCH.exists():
+        p = json.loads((BENCH / "params.json").read_text())
+        s = json.loads((BENCH / "score.json").read_text())
+        for role in ("bass", "otherMid"):
+            v = p["voices"][role]
+            ev = s["voices"][role]["notes"][:60]
+            nn = int(30 * sr)
+            t0 = time.time()
+            a = sms.render_tonal(ev, v["model"], v["macros"], T, sr, nn, 11, 0.0)
+            t_ref = time.time() - t0
+            sms_fast.render_tonal(ev[:2], v["model"], v["macros"], T, sr, nn, 11, 0.0)  # compile outside the timing
+            t0 = time.time()
+            b = sms_fast.render_tonal(ev, v["model"], v["macros"], T, sr, nn, 11, 0.0)
+            t_fast = time.time() - t0
+            check(f"GREEN: real {role} notes match the reference above 80 dB", snr(a, b) > 80.0, snr(a, b))
+            check(f"the kernel is at least 3 times faster on {role} ({t_ref:.2f} s against {t_fast:.2f} s)", t_ref / max(t_fast, 1e-9) >= 3.0, (t_ref, t_fast))
+    print(f"{len(FAIL)} failure(s)")
+    return 1 if FAIL else 0
+
+
+def test_sms_fast():
+    assert run() == 0
+
+
+if __name__ == "__main__":
+    sys.exit(run())

@@ -1,0 +1,231 @@
+// 14 October 2026: the music view of the V1 application. A list of the reproduced tracks, and a studio per track: reference against ours,
+// the 4 primary and the secondary values from params/music-studio.json (ordered by params/v1-tiers.json). Levels and tilt answer instantly
+// through WebAudio, tempo, transposition and release are recomputed by the engine a moment after the hand is lifted.
+// FR : la vue musique : liste des pistes et studio par piste ; niveaux instantanes (WebAudio), tempo et notes recalcules par le moteur.
+import { $, $$, esc, get, post, poll, toast, makeField } from './studio-core.js'
+
+const STEMS = ['drums', 'bass', 'other', 'vocals']
+// the studio reports critic scores already on 0..100
+const pc = (v) => (v == null ? '·' : Number(v).toFixed(1))
+const fmt = (n) => { n = Math.max(0, n || 0); return `${Math.floor(n / 60)}:${String(Math.floor(n % 60)).padStart(2, '0')}` }
+let ctx = null
+const audioCtx = () => (ctx ||= new (window.AudioContext || window.webkitAudioContext)())
+
+async function musicList(root) {
+  const { members } = await get('/api/v1/music/members')
+  document.title = 'Musique · ZenRay Motion Design'
+  root.innerHTML = `<h1 class="title">Musique</h1><p class="meta"><span class="num">${members.length}</span> pistes reproduites : ouvre-en une pour la comparer à la référence et changer ses réglages.</p><div class="grid" id="tracks" style="margin-top:16px"></div>`
+  const box = $('#tracks', root)
+  members.forEach((m) => {
+    const a = document.createElement('a')
+    a.className = 'card'
+    a.href = `#/music/${encodeURIComponent(m.slug)}`
+    a.dataset.testid = 'music-card'
+    a.innerHTML = `<div class="body"><div class="name">${esc(m.slug)}</div>
+      <div class="chips"><span class="chip ${m.mix >= 0.99 ? 'ok' : ''}">mix <b class="num">${pc(m.mix)}</b></span>
+      ${STEMS.map((s) => `<span class="chip">${s} <b class="num">${pc(m.stems?.[s])}</b></span>`).join('')}</div></div>`
+    box.append(a)
+  })
+  return () => {}
+}
+
+async function musicStudio(root, slug) {
+  const st = await get('/api/v1/music/state', { slug })
+  document.title = `${slug} · Musique`
+  const sliders = Object.fromEntries(st.sliders.map((s) => [s.id, s]))
+  const defaults = st.defaults
+  let rendered = { ...defaults }, current = { ...defaults }
+  let buf = {}, srcs = [], nodes = null, playing = false, startedAt = 0, offset = 0, which = 'ours', cooking = false, dirty = false, cookTimer = 0, dead = false
+  const fields = {}
+  root.innerHTML = `<p class="crumbs"><a href="#/music">Musique</a> › ${esc(slug)}</p>
+    <h1 class="title" data-testid="music-title">${esc(slug)}</h1>
+    <div class="meta"><span>calée : mix <b class="num">${pc(st.member.mix)}</b></span><span class="mono">${esc(st.member.trimVersion || '')}</span></div>
+    <div class="editor" style="margin-top:16px">
+      <section>
+        <div class="seg" role="group" aria-label="Écoute"><button type="button" id="bRef">Référence</button><button type="button" id="bOurs" class="on">Ours</button></div>
+        <div class="row transport" style="margin-top:12px">
+          <button class="icon-btn" id="play" type="button" aria-label="Lecture" disabled>▶</button>
+          <input type="range" id="seek" min="0" max="1000" value="0" aria-label="Position" style="flex:1">
+          <span class="num note" id="time">0:00 / 0:00</span>
+        </div>
+        <p class="note" id="oursLabel">Chargement des fichiers audio…</p>
+        <p class="note" id="cookState"></p>
+      </section>
+      <aside class="panel" id="panel"></aside>
+    </div>`
+  const panel = $('#panel', root), playBtn = $('#play', root), seek = $('#seek', root)
+
+  function levels() {
+    const mono = (b) => b.getChannelData(0)
+    const rms = (arrs) => { let s = 0, n = 0; const L = arrs[0].length; for (let i = 0; i < L; i += 7) { let v = 0; for (const a of arrs) v += a[i]; s += v * v; n++ } return Math.sqrt(s / n) || 1e-9 }
+    const ours = rms([mono(buf.mix)]), sum = rms(STEMS.map((s) => mono(buf[s]))), ref = rms([mono(buf.reference)])
+    return { refGain: ours / ref, stemsGain: ours / sum }
+  }
+  function graph() {
+    const c = audioCtx(), g = {}
+    g.master = c.createGain(); g.master.connect(c.destination)
+    g.ref = c.createGain(); g.ref.connect(g.master)
+    g.ours = c.createGain(); g.ours.connect(g.master)
+    g.mix = c.createGain(); g.mix.connect(g.ours)
+    g.stems = c.createGain(); g.stems.connect(g.ours)
+    g.lo = c.createBiquadFilter(); g.lo.type = 'lowshelf'; g.lo.frequency.value = 250
+    g.hi = c.createBiquadFilter(); g.hi.type = 'highshelf'; g.hi.frequency.value = 2000
+    g.lo.connect(g.hi); g.hi.connect(g.stems)
+    g.stem = {}
+    for (const s of STEMS) { g.stem[s] = c.createGain(); g.stem[s].connect(g.lo) }
+    return g
+  }
+  function applyLive() {
+    if (!nodes || !buf.mix) return
+    const c = audioCtx(), t = c.currentTime
+    const d = {}
+    for (const s of st.sliders) if (s.mode === 'live') d[s.id] = (current[s.id] ?? defaults[s.id]) - (rendered[s.id] ?? defaults[s.id])
+    const L = levels()
+    for (const s of STEMS) nodes.stem[s].gain.setTargetAtTime(Math.pow(10, (d[s] || 0) / 20), t, 0.015)
+    nodes.hi.gain.setTargetAtTime((d.tilt || 0) * 2, t, 0.015)
+    nodes.lo.gain.setTargetAtTime(-(d.tilt || 0) * 2, t, 0.015)
+    const moved = Object.values(d).some((v) => Math.abs(v) > 1e-6)
+    nodes.mix.gain.setTargetAtTime(moved ? 0 : 1, t, 0.02)
+    nodes.stems.gain.setTargetAtTime(moved ? L.stemsGain : 0, t, 0.02)
+    nodes.ref.gain.setTargetAtTime(which === 'ref' ? L.refGain : 0, t, 0.02)
+    nodes.ours.gain.setTargetAtTime(which === 'ours' ? 1 : 0, t, 0.02)
+  }
+  const stopSources = () => { for (const s of srcs) { try { s.stop() } catch { /* already stopped */ } } srcs = [] }
+  function start(at) {
+    stopSources()
+    const c = audioCtx()
+    nodes ||= graph()
+    const mk = (b, dest) => { const s = c.createBufferSource(); s.buffer = b; s.loop = true; s.connect(dest); s.start(0, at % b.duration); srcs.push(s) }
+    mk(buf.reference, nodes.ref); mk(buf.mix, nodes.mix)
+    STEMS.forEach((s) => mk(buf[s], nodes.stem[s]))
+    startedAt = c.currentTime - at
+    applyLive()
+  }
+  const position = () => (playing ? (audioCtx().currentTime - startedAt) % buf.mix.duration : offset)
+  async function playPause() {
+    if (!buf.mix) return
+    await audioCtx().resume()
+    if (playing) { offset = position(); stopSources(); playing = false; playBtn.textContent = '▶' }
+    else { start(offset); playing = true; playBtn.textContent = '❚❚' }
+  }
+  function setWhich(w) {
+    which = w
+    $('#bRef', root).classList.toggle('on', w === 'ref')
+    $('#bOurs', root).classList.toggle('on', w === 'ours')
+    applyLive()
+  }
+  const decode = async (url) => {
+    const r = await fetch(url)
+    if (!r.ok) throw new Error('Fichier audio introuvable.')
+    return audioCtx().decodeAudioData(await r.arrayBuffer())
+  }
+  const audioUrl = (kind, stem, key) => `/api/v1/music/audio?slug=${encodeURIComponent(slug)}&kind=${kind}&stem=${stem}${key ? `&key=${key}` : ''}`
+
+  function valueText(s, v) {
+    if (s.unit === 'x') return `×${v.toFixed(2)}`
+    if (s.unit === 'bpm') return `${v.toFixed(1)} bpm`
+    return `${v > 0 && s.min < 0 ? '+' : ''}${v.toFixed(s.step < 1 ? 1 : 0)} ${s.unit || ''}`.trim()
+  }
+  function drawPanel() {
+    panel.innerHTML = ''
+    const tiers = st.tiers
+    const group = (title, items, open) => {
+      if (!items.length) return
+      const wrap = document.createElement(open ? 'div' : 'details')
+      wrap.className = open ? 'group' : 'more-params'
+      if (!open) { wrap.open = true; wrap.innerHTML = `<summary>${esc(title)}</summary>` }
+      items.forEach((item) => {
+        const s = sliders[item.id]
+        if (!s) return
+        const f = makeField({ key: s.id, label: s.label, kind: 'number', min: s.min, max: s.max, step: s.step, unit: s.unit }, current[s.id], (v) => {
+          current[s.id] = v
+          f.el.querySelector('.num').textContent = valueText(s, v)
+          f.el.classList.toggle('changed', Math.abs(v - (rendered[s.id] ?? defaults[s.id])) > 1e-9)
+          applyLive()
+          schedule()
+        })
+        f.el.querySelector('.num').textContent = valueText(s, current[s.id])
+        fields[s.id] = f
+        wrap.append(f.el)
+      })
+      panel.append(wrap)
+    }
+    group('Réglages principaux', tiers.primary, true)
+    group('Plus de réglages', tiers.secondary.filter((x) => sliders[x.id]), false)
+    const bar = document.createElement('div')
+    bar.className = 'row'
+    bar.innerHTML = '<button class="btn" type="button" id="reset">Revenir à l\'original</button>'
+    panel.append(bar)
+    $('#reset', panel).addEventListener('click', () => { current = { ...defaults }; rendered = { ...defaults }; Object.entries(fields).forEach(([k, f]) => f.set(defaults[k])); Object.values(fields).forEach((f) => { const s = sliders[f.key]; f.el.querySelector('.num').textContent = valueText(s, defaults[f.key]) }); load() })
+    const note = document.createElement('p')
+    note.className = 'note'
+    note.textContent = '« Ours » vient du moteur, sans accès à la référence. Au départ, c\'est la version calée à 99,9 ; dès qu\'une valeur bouge, c\'est le rendu brut du moteur pour cette variation.'
+    panel.append(note)
+  }
+  function schedule() { dirty = true; clearTimeout(cookTimer); cookTimer = setTimeout(cook, 220) }
+  async function cook() {
+    if (cooking || !dirty || dead) return
+    cooking = true; dirty = false
+    const values = { ...current }
+    const state = $('#cookState', root)
+    state.textContent = 'Le moteur recalcule…'
+    const t0 = performance.now()
+    try {
+      const j = await post('/api/v1/music/cook', { slug, values })
+      const [mix, ...stems] = await Promise.all([decode(audioUrl('cook', 'mix', j.key)), ...STEMS.map((s) => decode(audioUrl('cook', s, j.key)))])
+      if (dead) return
+      buf.mix = mix; STEMS.forEach((s, i) => { buf[s] = stems[i] })
+      rendered = { ...values }
+      Object.values(fields).forEach((f) => f.el.classList.toggle('changed', Math.abs(current[f.key] - (rendered[f.key] ?? defaults[f.key])) > 1e-9))
+      $('#oursLabel', root).textContent = 'Ours : rendu du moteur, version brute (le calage 99,9 n\'est pas encore rejouable depuis les paramètres).'
+      const stt = j.stats || {}
+      state.textContent = `Calculé en ${j.seconds} s (${stt.voicesRecomputed ?? '?'} voix sur ${stt.voicesTotal ?? '?'} recalculées) · reçu en ${((performance.now() - t0) / 1000).toFixed(1)} s`
+      if (playing) start(position() % buf.mix.duration); else applyLive()
+    } catch (e) {
+      state.textContent = ''
+      toast(e.message, true)
+    }
+    cooking = false
+    if (dirty) schedule()
+  }
+  async function load() {
+    if (playing) await playPause()
+    try {
+      const [ref, mix, ...stems] = await Promise.all([decode(audioUrl('reference', 'mix')), decode(audioUrl('ours', 'mix')), ...STEMS.map((s) => decode(audioUrl('ours', s)))])
+      if (dead) return
+      buf = { reference: ref, mix }
+      STEMS.forEach((s, i) => { buf[s] = stems[i] })
+      offset = 0
+      $('#oursLabel', root).textContent = `Ours : version calée à 99,9 (${st.member.trimVersion}).`
+      playBtn.disabled = false
+      applyLive()
+    } catch (e) {
+      $('#oursLabel', root).textContent = e.message
+      toast(e.message, true)
+    }
+  }
+  $('#bRef', root).addEventListener('click', () => setWhich('ref'))
+  $('#bOurs', root).addEventListener('click', () => setWhich('ours'))
+  playBtn.addEventListener('click', playPause)
+  seek.addEventListener('input', () => { if (!buf.mix) return; offset = (seek.value / 1000) * buf.mix.duration; if (playing) start(offset) })
+  const onKey = (e) => {
+    if (e.target.matches('input, select, textarea')) return
+    if (e.code === 'Space') { e.preventDefault(); playPause() }
+    if (e.key === 'r') setWhich('ref')
+    if (e.key === 'o') setWhich('ours')
+  }
+  document.addEventListener('keydown', onKey)
+  const tick = setInterval(() => {
+    if (!buf.mix) return
+    const p = position()
+    $('#time', root).textContent = `${fmt(p)} / ${fmt(buf.mix.duration)}`
+    if (playing) seek.value = Math.round((p / buf.mix.duration) * 1000)
+  }, 120)
+  drawPanel()
+  load()
+  return () => { dead = true; clearInterval(tick); clearTimeout(cookTimer); document.removeEventListener('keydown', onKey); stopSources() }
+}
+
+export async function musicView(root, { slug }) {
+  return slug ? musicStudio(root, slug) : musicList(root)
+}

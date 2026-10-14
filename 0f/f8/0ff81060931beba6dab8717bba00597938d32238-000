@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+# 14 October 2026: one self-contained HTML page of the music corpus gate: every number is read from the files of each member's newest trim
+# version (via Scripts/MusicReport.py rows()), the final MIX is shown next to the stems, and the mix as it comes out of the calibrated stems
+# BEFORE the mix itself is calibrated (trim.json mix.before) so nobody can think the mix column is only a copy of the stems.
+#   MusicGateHtml.py [--out <file.html>]      default: <workshop>/reports/music-gate.html
+# FR : page HTML du portail musique, chaque nombre lu dans un fichier ; le mix final est montre avec son score avant calage du mix.
+from __future__ import annotations
+
+import argparse
+import html
+import json
+import sys
+from pathlib import Path
+from urllib.parse import quote
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+sys.path.insert(0, str(ENGINE / "Scripts"))
+from zrmd import registry, settings  # noqa: E402
+from zrmd.audio import corpus as C  # noqa: E402
+import MusicReport as MR  # noqa: E402
+import MusicCorpus as MC  # noqa: E402
+
+TARGET = C.cfg()["targets"]["stem"]
+STEMS = ("drums", "bass", "other", "vocals", "mix")
+
+
+def cell(v, target=TARGET) -> str:
+    if v is None:
+        return '<td class="n none">-</td>'
+    ok = v >= target
+    return f'<td class="n {"ok" if ok else "low"}">{v:.2f}</td>'
+
+
+def audio(label: str, path: Path) -> str:
+    if not path.exists():
+        return f'<span class="na">{label}: -</span>'
+    return f'<div class="a"><span>{label}</span><audio controls preload="none" src="file://{quote(str(path))}"></audio></div>'
+
+
+def build() -> str:
+    rows = [r for r in MR.rows() if r.get("version")]
+    body = []
+    for r in rows:
+        slug = r["slug"]
+        bench = settings.path("sound_out") / slug / "music-bench" / r["version"]
+        trim = json.loads((bench / "trim.json").read_text(encoding="utf-8"))
+        mix_before = (trim["mix"].get("before") or {}).get("critic", {}).get("score")
+        ref = settings.path("refcache") / slug / f"{slug}.flac"
+        if not ref.exists():  # a whole video of the registry: its own file carries the audio
+            try:
+                ref = Path(registry.reference_file(slug))
+            except Exception:
+                pass
+        tf = r.get("tfBands") or {}
+        pl = r.get("ploss") or {}
+        worst_stem_pl = min([v for k, v in pl.items() if k != "mix" and v is not None], default=None)
+        gate = bool(r.get("gate"))
+        players = audio("reference", ref) + audio("ours", bench / "mix.wav") + audio("ours polished", bench / "polish" / "mix.mp3")
+        body.append(
+            f'<tr class="{"pass" if gate else "fail"}"><th><b>{html.escape(slug)}</b><small>{html.escape(r["version"])}</small></th>'
+            + "".join(cell(tf.get(s)) for s in ("drums", "bass", "other", "vocals"))
+            + cell(mix_before) + cell(tf.get("mix"))
+            + cell(r.get("worstHeldOut"), 99.0) + cell(r.get("auditMean"), 99.0)
+            + f'<td class="n">{(pl.get("mix") or 0):.1f}</td><td class="n">{(worst_stem_pl or 0):.1f}</td>'
+            + cell(r.get("polishedCritic"))
+            + '<td class="n">' + ("-" if r.get("fine") is None else "%.2f" % r["fine"]) + "</td>"
+            + f'<td class="v {"ok" if gate else "low"}">{"99,9 atteint" if gate else "sous la cible"}</td>'
+            + f'<td class="p">{players}</td></tr>')
+    waiting = [s for s in C.corpus() if s not in {r["slug"] for r in rows}]
+    n_pass = sum(1 for r in rows if r.get("gate"))
+    css = """:root{--bg:#fff;--fg:#1a1a1a;--mut:#6b6b6b;--line:#e6e6e6;--ok:#1b7f3b;--low:#b3261e;--card:#f7f7f5}
+@media(prefers-color-scheme:dark){:root{--bg:#161616;--fg:#eee;--mut:#9a9a9a;--line:#2c2c2c;--ok:#5fd07e;--low:#ff8a80;--card:#1f1f1f}}
+body{margin:0;padding:32px 24px 64px;background:var(--bg);color:var(--fg);font:400 15px/1.5 InterVariable,Inter,system-ui,sans-serif}
+h1{font:350 30px AnthropicSerif,Georgia,serif;margin:0 0 4px}.sub{color:var(--mut);margin:0 0 20px}
+.box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 18px;margin:0 0 18px;max-width:1100px}
+.box p{margin:6px 0}table{border-collapse:collapse;width:100%;font-size:13.5px}th,td{padding:8px 10px;border-top:1px solid var(--line);text-align:left;vertical-align:top}
+thead th{color:var(--mut);font-weight:400;border-top:none;position:sticky;top:0;background:var(--bg)}th small{display:block;color:var(--mut);font-weight:400}
+.n{font-family:AnthropicSerif,Georgia,serif;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}.ok{color:var(--ok)}.low{color:var(--low)}.none{color:var(--mut)}
+.v{white-space:nowrap}.p{min-width:300px}.a{display:flex;gap:8px;align-items:center;margin:2px 0}.a span{width:92px;color:var(--mut);font-size:12px}audio{height:28px;width:230px}
+.group{color:var(--mut);font-size:12px;border-top:none;text-align:center}"""
+    head = ('<thead><tr><th rowspan="2">piste (extrait de 30 s)</th><th class="group" colspan="4">stems, critique officiel</th>'
+            '<th class="group" colspan="2">mixage final</th><th class="group" colspan="2">autres résolutions, jamais optimisées</th>'
+            '<th class="group" colspan="2">perte perceptive stricte</th><th rowspan="2">ours polished</th><th rowspan="2">structure fine</th><th rowspan="2">verdict</th><th rowspan="2">écoute</th></tr>'
+            '<tr><th>drums</th><th>bass</th><th>other</th><th>vocals</th><th>somme des stems</th><th>mix calé</th><th>pire</th><th>moyenne</th><th>mix</th><th>pire stem</th></tr></thead>')
+    wait = ("<p><b>Pas encore passés dans la chaîne (" + str(len(waiting)) + ") :</b> " + html.escape(", ".join(waiting)) + "</p>") if waiting else ""
+    return f"""<!doctype html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Musique, portail 99,9</title><style>{css}</style>
+<h1>Musique : où en est le portail 99,9</h1>
+<p class="sub">14 October 2026 · {n_pass} pistes sur {len(rows)} calées atteignent {TARGET} sur chaque stem ET sur le mixage final · chaque nombre est lu dans un fichier du banc</p>
+<div class="box">
+<p><b>Ce n'est pas seulement les stems.</b> Le mixage final est dans le tableau : les quatre stems calés passent par le bus de mixage (colonne « somme des stems »), puis le mix lui-même est calé sur le mix de la référence (colonne « mix calé »). La différence entre les deux colonnes montre ce que le calage du mix apporte.</p>
+<p><b>Ce que « 99,9 » mesure.</b> Le critique officiel compare l'énergie de la musique par bande de tiers d'octave et par image (4096 points), avec une tolérance de 2 dB. Il ne dit pas que chaque note est identique : la perte perceptive stricte (STFT, mel, enveloppe, attaques) reste autour de 92 à 98, et la structure fine (corrélation du détail du signal avec la référence) est basse, donc ce n'est pas une copie de l'onde.</p>
+<p><b>Les autres résolutions</b> (jamais utilisées pour caler) servent de contrôle : si elles restent hautes, le gain ne vient pas d'un seul découpage en bandes. Rouge sous 99,0.</p>
+{wait}</div>
+<table>{head}<tbody>{"".join(body)}</tbody></table></html>"""
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--out", default="")
+    a = ap.parse_args()
+    out = Path(a.out) if a.out else settings.path("workshop") / "reports" / "music-gate.html"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(build(), encoding="utf-8")
+    print(json.dumps({"ok": True, "html": str(out)}))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

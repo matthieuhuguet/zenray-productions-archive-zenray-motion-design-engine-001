@@ -1,0 +1,267 @@
+# 14 October 2026: shared building blocks of every rhythm method: context, adaptive peak picking (P2), verification (P3),
+# exact placement (P4) and the transition detectors (dissolve model, fade through black, whip). Everything operates on the
+# distinct-picture domain of rhythm_signals; a result is a list of {"frame", "kind", "start", "end", "score"} in FILE frames.
+# FR : briques communes des methodes : contexte, selection de pics (P2), verification (P3), placement exact (P4), transitions.
+from __future__ import annotations
+
+import cv2
+import numpy as np
+from scipy.ndimage import maximum_filter1d, median_filter
+
+from . import rhythm_signals as S
+
+
+class Ctx:
+    """Signals plus (lazily) the small grayscale pictures of the distinct sequence."""
+
+    def __init__(self, sig: dict, frames: np.ndarray | None = None):
+        self.sig = sig
+        self.src = np.asarray(sig["src"])
+        self.m = len(self.src)
+        self.fps = float(np.asarray(sig["fps"]).ravel()[0])
+        self._frames = frames
+        self._gray = None
+        self.n_file = len(sig["diff_full"])
+
+    @property
+    def gray(self) -> np.ndarray:
+        if self._gray is None:
+            self._gray = S.gray_of(np.asarray(self._frames[self.src]))
+        return self._gray
+
+    def frame_to_j(self, frame: int) -> int:
+        return int(np.searchsorted(self.src, frame, side="right") - 1)
+
+
+# ----------------------------------------------------------------------------------------------------------- P2: picking
+def peak_candidates(s: np.ndarray, *, half: int = 12, ratio_min: float = 4.0, abs_min: float = 0.0, radius: int = 2,
+                    floor_q: float = 0.5) -> np.ndarray:
+    """Local maxima whose value stands out of their own neighbourhood (ratio to the local median) and clears an absolute floor."""
+    s = np.asarray(s, dtype=np.float64)
+    if s.size < 3:
+        return np.array([], dtype=int)
+    base = median_filter(s, size=2 * half + 1, mode="nearest")
+    floor = max(float(np.quantile(s[s > 0], floor_q)) * 0.25, 1e-6) if np.any(s > 0) else 1.0
+    ratio = s / np.maximum(base, floor)
+    is_max = s >= maximum_filter1d(s, size=2 * radius + 1, mode="nearest")
+    ok = is_max & (ratio >= ratio_min) & (s >= abs_min) & (s > 0)
+    ok[0] = False
+    return np.nonzero(ok)[0]
+
+
+def global_candidates(s: np.ndarray, threshold: float, radius: int = 2) -> np.ndarray:
+    s = np.asarray(s, dtype=np.float64)
+    is_max = s >= maximum_filter1d(s, size=2 * radius + 1, mode="nearest")
+    ok = is_max & (s >= threshold)
+    ok[0] = False
+    return np.nonzero(ok)[0]
+
+
+# -------------------------------------------------------------------------------------------------------- P3: verification
+def pair_mad(ctx: Ctx, a: int, b: int) -> float:
+    g = ctx.gray
+    return float(np.abs(g[a] - g[b]).mean())
+
+
+def verify_hard(ctx: Ctx, cands: np.ndarray, *, persist_min: float = 0.02, flash_return: float = 0.35, iso_max: float = 0.7,
+                key: str = "mad") -> list[dict]:
+    """Keep a candidate only if (persistence) the pictures after it stay unlike the pictures before it, (flash) the picture
+    after one or two frames is not the picture before, and (isolation) its neighbours are far weaker than itself."""
+    s = ctx.sig[key]
+    w2 = ctx.sig["win2"]
+    out = []
+    for j in cands:
+        j = int(j)
+        if j < 1 or j >= ctx.m:
+            continue
+        step = pair_mad(ctx, j - 1, j)
+        kind = "hard"
+        if j + 1 < ctx.m and pair_mad(ctx, j - 1, j + 1) < flash_return * step:
+            kind = "flash"
+        elif j + 2 < ctx.m and pair_mad(ctx, j - 1, j + 2) < flash_return * step:
+            kind = "flash"
+        if kind == "hard":
+            if w2[j] < persist_min:
+                continue
+            nb = max(s[j - 1] if j > 1 else 0.0, s[j + 1] if j + 1 < ctx.m else 0.0)
+            if nb > iso_max * s[j] and s[j] > 0:
+                continue
+        out.append({"j": j, "kind": kind, "score": float(s[j])})
+    return out
+
+
+# ------------------------------------------------------------------------------------------------------------ P4: placement
+def to_cuts(ctx: Ctx, kept: list[dict]) -> list[dict]:
+    return [{"frame": int(ctx.src[k["j"]]), "kind": k["kind"], "score": round(float(k.get("score", 0.0)), 4)} for k in kept]
+
+
+# ------------------------------------------------------------------------------------------------------------- transitions
+def _thumbs(ctx: Ctx, w: int = 40, h: int = 23) -> np.ndarray:
+    if getattr(ctx, "_thumbs", None) is None:
+        g = ctx.gray
+        ctx._thumbs = np.stack([cv2.resize(g[j], (w, h), interpolation=cv2.INTER_AREA) for j in range(ctx.m)])
+    return ctx._thumbs
+
+
+def _ncc(a: np.ndarray, b: np.ndarray) -> float:
+    a, b = a - a.mean(), b - b.mean()
+    den = float(np.sqrt((a * a).sum() * (b * b).sum()))
+    return float((a * b).sum() / den) if den > 1e-9 else 1.0
+
+
+def _energy(img: np.ndarray) -> float:
+    gx = cv2.Sobel(img, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(img, cv2.CV_32F, 0, 1, ksize=3)
+    return float(np.sqrt(gx * gx + gy * gy).mean())
+
+
+def dissolve_spans(ctx: Ctx, max_len: int = 40, min_len: int = 3, total_min: float = 0.05, straight_min: float = 0.85,
+                   step_max: float = 0.4, resid_max: float = 0.03, ncc_max: float = 0.8, resid_full_max: float = 0.022, ncc_full_max: float = 0.7,
+                   moving: bool = True) -> list[dict]:
+    """Cross-fade model on thumbnails. A span of pictures s..e qualifies when: the path through the pictures is straight (path
+    length close to the end-to-end difference), no single step carries most of the change (that would be a hard cut), the best
+    convex mix of the two end pictures reproduces every middle picture, and the two ends really differ in structure (a pure
+    brightness ramp is not a dissolve). Among overlapping spans the longest wins."""
+    t = _thumbs(ctx)
+    m = ctx.m
+    step = np.zeros(m)
+    step[1:] = np.abs(t[1:] - t[:-1]).mean(axis=(1, 2))
+    cum = np.concatenate([[0.0], np.cumsum(step[1:])])
+    found = []
+    for s0 in range(0, m - min_len):
+        top = min(m - 1, s0 + max_len)
+        for e0 in range(s0 + min_len, top + 1):
+            path = cum[e0] - cum[s0]
+            if path < total_min:
+                continue
+            direct = float(np.abs(t[e0] - t[s0]).mean())
+            if direct < total_min or direct / path < straight_min:
+                continue
+            if step[s0 + 1:e0 + 1].max() / path > step_max:
+                continue
+            L = e0 - s0
+            alpha = (np.arange(1, L) / L)[:, None, None]
+            mix = t[s0][None] * (1 - alpha) + t[e0][None] * alpha
+            resid = float(np.abs(t[s0 + 1:e0] - mix).mean())
+            if resid > resid_max or _ncc(t[s0], t[e0]) > ncc_max:
+                continue
+            # the thumbnails are smooth enough for a pan of a soft texture to pass: check the mix again at 160x90
+            g = ctx.gray
+            full_mix = g[s0][None] * (1 - alpha) + g[e0][None] * alpha
+            full = float(np.abs(g[s0 + 1:e0] - full_mix).mean())
+            if full > resid_full_max or _ncc(g[s0], g[e0]) > ncc_full_max:
+                continue
+            found.append({"s": s0, "e": e0, "L": L, "direct": direct, "resid": full, "model": "static"})
+    # Second family: a cross-fade between two MOVING shots. The end pictures are no longer the mix partners (each shot keeps
+    # moving), so the path is longer than the end-to-end difference; the signature left is that the ends are unrelated
+    # (ncc), no step is a cut, and the structure of the two shots superposes: gradient energy dips in the middle.
+    if moving:
+        g = ctx.gray
+        for s0 in range(0, m - 6):
+            for e0 in range(s0 + 6, min(m - 1, s0 + max_len) + 1):
+                path = cum[e0] - cum[s0]
+                if path < 0.08:
+                    continue
+                direct = float(np.abs(t[e0] - t[s0]).mean())
+                if direct < 0.08 or direct / path < 0.35:
+                    continue
+                if step[s0 + 1:e0 + 1].max() > 0.25 * path or step[s0 + 1:e0 + 1].max() > 0.08:
+                    continue
+                if _ncc(t[s0], t[e0]) > 0.3:
+                    continue
+                L = e0 - s0
+                alpha = (np.arange(1, L) / L)[:, None, None]
+                full = float(np.abs(g[s0 + 1:e0] - (g[s0][None] * (1 - alpha) + g[e0][None] * alpha)).mean())
+                if full > 0.045 or _ncc(g[s0], g[e0]) > 0.3:
+                    continue
+                en = [_energy(g[j]) for j in range(s0, e0 + 1)]
+                if min(en[1:-1]) > 0.8 * min(en[0], en[-1]):
+                    continue
+                found.append({"s": s0, "e": e0, "L": L, "direct": direct, "resid": full, "model": "moving"})
+    found.sort(key=lambda d: (-d["L"], d["resid"]))
+    taken, used = [], np.zeros(m + 1, bool)
+    for d in found:
+        if used[d["s"] + 1:d["e"]].any() or (used[d["s"]] and used[d["e"]]):
+            continue
+        used[d["s"]:d["e"] + 1] = True
+        taken.append(d)
+    taken.sort(key=lambda d: d["s"])
+    return taken
+
+
+def fade_spans(ctx: Ctx, dark: float = 0.05, flat: float = 0.05, min_run: int = 1, around_min: float = 0.05,
+               max_len: int = 60, eps: float = 0.004) -> list[dict]:
+    """Fade through black (or white): a run of near-flat very dark (or very bright) pictures reached by a monotone luma ramp
+    and left by another, with a different picture on each side. The span runs from the last full-level picture before the
+    ramp to the first full-level picture after it; the instant is the middle of the dark run."""
+    luma, lstd = ctx.sig["luma"], ctx.sig["lstd"]
+    m = ctx.m
+    out = []
+    for tone, mask, sign in (("black", (luma < dark) & (lstd < flat), 1.0), ("white", (luma > 0.97) & (lstd < 0.02), -1.0)):
+        j = 0
+        while j < m:
+            if not mask[j]:
+                j += 1
+                continue
+            k = j
+            while k + 1 < m and mask[k + 1]:
+                k += 1
+            if k - j + 1 >= min_run:
+                s0 = j
+                while s0 > 0 and j - s0 < max_len and sign * (luma[s0 - 1] - luma[s0]) > -eps:
+                    peak = sign * np.max(sign * luma[max(0, s0 - 5):s0 + 1])
+                    if sign * luma[s0] >= 0.92 * sign * peak and j - s0 > 0:
+                        break
+                    s0 -= 1
+                e0 = k
+                # climb out of the flat run until the level plateaus (non-decreasing luma, stop at the plateau)
+                while e0 + 1 < m and e0 - k < max_len and sign * (luma[e0 + 1] - luma[e0]) > -eps:
+                    peak = sign * np.max(sign * luma[e0:e0 + 6])
+                    if sign * luma[e0] >= 0.92 * sign * peak and e0 - k > 0:
+                        break
+                    e0 += 1
+                def gentle(lo: int, hi: int) -> bool:
+                    """A ramp is several small steps; one step carrying most of the change is a cut, not a ramp."""
+                    steps = np.abs(np.diff(luma[lo:hi + 1]))
+                    return len(steps) >= 2 and float(steps.max()) <= 0.6 * float(steps.sum())
+                if s0 > 0 and e0 < m - 1 and gentle(s0, j) and gentle(k, e0):
+                    a, b = ctx.gray[s0], ctx.gray[e0]
+                    # a fade enters or leaves through the flat run: both outer pictures must be real pictures, and different
+                    lvl_ok = (luma[s0] >= 0.05 and luma[e0] >= 0.05) if sign > 0 else (luma[s0] <= 0.95 and luma[e0] <= 0.95)
+                    if lvl_ok and float(np.abs(a - b).mean()) >= around_min:
+                        out.append({"s": s0, "e": e0, "tone": tone, "mid": (j + k) // 2})
+            j = k + 1
+    out.sort(key=lambda d: d["s"])
+    return out
+
+
+def sharpness(ctx: Ctx) -> np.ndarray:
+    g = ctx.gray
+    out = np.empty(ctx.m, dtype=np.float64)
+    for j in range(ctx.m):
+        gx = cv2.Sobel(g[j], cv2.CV_32F, 1, 0, ksize=3)
+        gy = cv2.Sobel(g[j], cv2.CV_32F, 0, 1, ksize=3)
+        out[j] = float(np.sqrt(gx * gx + gy * gy).mean())
+    return out
+
+
+def whip_spans(ctx: Ctx, drop: float = 0.5, around_min: float = 0.08, max_run: int = 10, half: int = 15) -> list[dict]:
+    """Blur sweep: sharpness collapses for a few pictures while the picture on each side is a different one."""
+    sh = sharpness(ctx)
+    base = median_filter(sh, size=2 * half + 1, mode="nearest")
+    low = sh < drop * np.maximum(base, 1e-6)
+    out, j, m = [], 0, ctx.m
+    while j < m:
+        if not low[j]:
+            j += 1
+            continue
+        k = j
+        while k + 1 < m and low[k + 1]:
+            k += 1
+        run = k - j + 1
+        if 1 <= run <= max_run and j > 1 and k + 2 < m:
+            a, b = ctx.gray[j - 2], ctx.gray[k + 2]
+            if float(np.abs(a - b).mean()) >= around_min:
+                out.append({"s": j, "e": k, "mid": (j + k) // 2})
+        j = k + 1
+    return out

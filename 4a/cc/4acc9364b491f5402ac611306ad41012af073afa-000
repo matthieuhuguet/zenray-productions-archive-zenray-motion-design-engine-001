@@ -1,0 +1,165 @@
+# 14 October 2026: the spectral trim proven in both directions on synthetic music (no reference sample): a render with a wrong spectral tilt, band
+# fluctuations and a missing sub-bass is brought to the gate by gains plus carriers; the same render against ITSELF is left alone (no harm); with the
+# gain caps and the fill disabled nothing moves (red proof that the gain comes from the stages, not from a scoring artefact); a stereo track keeps
+# its channels (no runaway of an anti-phase side signal, the bug measured on 14 October 2026).
+# FR : le calibrage spectral prouve dans les deux sens sur une musique synthetique.
+import copy
+import sys
+from pathlib import Path
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from zrmd.audio import trim as T  # noqa: E402
+
+SR = 22050
+FAIL = []
+
+
+def check(name, cond, detail=""):
+    print(("ok   " if cond else "FAIL ") + name + (f"  {detail}" if detail and not cond else ""))
+    if not cond:
+        FAIL.append(name)
+
+
+def music(seconds=10.0, seed=1):
+    rng = np.random.default_rng(seed)
+    t = np.arange(int(seconds * SR)) / SR
+    out = np.zeros_like(t)
+    for k, f0 in enumerate([55.0, 82.4, 110.0, 164.8, 220.0, 329.6, 440.0, 659.3, 880.0, 1318.5]):
+        env = 0.5 + 0.5 * np.sin(2 * np.pi * (0.4 + 0.13 * k) * t + k) ** 2
+        out += (0.2 / (1 + 0.3 * k)) * env * np.sin(2 * np.pi * f0 * t)
+    hats = rng.standard_normal(len(t)) * (np.sin(2 * np.pi * 4 * t) > 0.6) * 0.02
+    kick = np.zeros_like(t)
+    for s in np.arange(0.2, seconds, 0.5):
+        i = int(s * SR)
+        n = min(int(0.25 * SR), len(t) - i)
+        kick[i:i + n] += 0.6 * np.sin(2 * np.pi * (48 + 60 * np.exp(-np.arange(n) / (0.04 * SR))) * np.arange(n) / SR) * np.exp(-np.arange(n) / (0.09 * SR))
+    x = out + hats + kick
+    return np.stack([x, 0.9 * x + 0.02 * np.sin(2 * np.pi * 300 * t)], axis=1).astype(np.float32)
+
+
+def distort(x):
+    """Wrong tilt (-6 dB per octave above 500 Hz), a slow +-5 dB fluctuation by band, and no sub-bass at all (below 90 Hz removed)."""
+    n = x.shape[0]
+    f = np.fft.rfftfreq(n, 1 / SR)
+    out = []
+    rng = np.random.default_rng(5)
+    for ch in range(x.shape[1]):
+        X = np.fft.rfft(x[:, ch])
+        tilt = 10 ** (-6.0 * np.log2(np.maximum(f, 500.0) / 500.0) / 20.0)
+        wob = 10 ** ((np.interp(np.log2(np.maximum(f, 20)), np.linspace(4.3, 13.4, 24), rng.uniform(-5, 5, 24))) / 20.0)
+        X = X * tilt * wob * (f >= 90.0)
+        out.append(np.fft.irfft(X, n))
+    return np.stack(out, axis=1).astype(np.float32)
+
+
+def run() -> int:
+    c = T.cfg()
+    c["iterations"] = 8
+    c["fill"]["rounds"] = 2
+    c["jitter"]["train"]["count"] = 3
+    c["jitter"]["audit"]["count"] = 2
+    c["scoreEvery"] = 99
+    ref = music()
+    bad = distort(ref)
+    before = T.score_spec(T.mono(ref).astype(np.float64), T.mono(bad).astype(np.float64), SR, c["specs"]["critic"])["score"]
+    out, rep = T.trim(ref, bad, SR, c)
+    after = rep["gateCritic"]
+    check("a wrong tilt, fluctuations and a missing sub-bass are corrected: critic up by at least 8 points", after - before >= 8.0, (before, after))
+    check("the corrected render reaches the critic gate", after >= 99.5, after)
+    sub_ref = np.sqrt((np.fft.irfft(np.fft.rfft(T.mono(ref)) * (np.fft.rfftfreq(len(ref), 1 / SR) < 90), len(ref)) ** 2).mean())
+    sub_out = np.sqrt((np.fft.irfft(np.fft.rfft(T.mono(out)) * (np.fft.rfftfreq(len(out), 1 / SR) < 90), len(out)) ** 2).mean())
+    check("the sub-bass energy is rebuilt by carriers (within 6 dB of the reference)", abs(20 * np.log10(sub_out / sub_ref)) < 6.0, (sub_ref, sub_out))
+    check("fill reported its work", rep.get("fill") and rep["fill"][0]["bandsFilled"] > 0, rep.get("fill"))
+    check("the output is finite and not louder than 4x the reference RMS", np.isfinite(out).all() and np.sqrt((out ** 2).mean()) < 4 * np.sqrt((ref ** 2).mean()))
+    check("the side channel does not run away (RMS of L-R within 4 dB of the reference)", abs(20 * np.log10((np.sqrt(((out[:, 0] - out[:, 1]) ** 2).mean()) + 1e-9) / (np.sqrt(((ref[:, 0] - ref[:, 1]) ** 2).mean()) + 1e-9))) < 4.0)
+
+    # mid/side (14 October 2026): both channels have the reference's band power one by one, only their COHERENCE differs, so the mono sum (what
+    # the critic reads) is about 3 dB short everywhere. A per-channel trim sees nothing to do; the mid/side trim must close it.
+    rng = np.random.default_rng(11)
+    mono_ref = T.mono(ref)
+    spec_r = np.fft.rfft(mono_ref)
+    decor = np.fft.irfft(np.abs(spec_r) * np.exp(1j * rng.uniform(0, 2 * np.pi, len(spec_r))), len(mono_ref)).astype(np.float32)
+    coh_ref = np.stack([mono_ref, mono_ref], axis=1).astype(np.float32)
+    coh_bad = np.stack([mono_ref, decor], axis=1).astype(np.float32)
+    b_coh = T.score_spec(T.mono(coh_ref).astype(np.float64), T.mono(coh_bad).astype(np.float64), SR, c["specs"]["critic"])["score"]
+    o_coh, r_coh = T.trim(coh_ref, coh_bad, SR, c)
+    check("a coherence mismatch hides the render from a per-channel view (mono critic below 99 before the trim)", b_coh < 99.0, b_coh)
+    check("RED/GREEN: the mid/side trim closes the coherence mismatch (mono critic at the gate)", r_coh["gateCritic"] >= 99.5, r_coh["gateCritic"])
+
+    # RED: with the old per-channel view the same render stays short (the verifier looks at the file: it fails on the old code)
+    keep = (T._channels, T._from_channels)
+    T._channels = lambda x: [x] if x.ndim == 1 else [x[:, i] for i in range(x.shape[1])]
+    T._from_channels = lambda ch, like: ch[0] if like.ndim == 1 else np.stack(ch, axis=1)
+    try:
+        _, r_old = T.trim(coh_ref, coh_bad, SR, c)
+    finally:
+        T._channels, T._from_channels = keep
+    check("RED: a per-channel trim leaves the coherence mismatch (mono critic stays below the mid/side result by 0.5)", r_old["gateCritic"] < r_coh["gateCritic"] - 0.5, (r_old["gateCritic"], r_coh["gateCritic"]))
+
+    # no harm: the reference against itself
+    # (the high-pass is switched off for the two checks below: they are about what the GAINS do, and a zero-phase filter rings at the file edges)
+    same, rep_same = T.trim(ref, ref, SR, {**c, "highpassHz": 0.0})
+    drift = float(np.sqrt(((same - ref) ** 2).mean()) / np.sqrt((ref ** 2).mean()))
+    check("a render identical to the reference stays identical (relative RMS change below 3 percent)", drift < 0.03, drift)
+    check("identical render scores at the ceiling", rep_same["gateCritic"] >= 99.9, rep_same["gateCritic"])
+
+    # red: caps at zero and no fill, nothing moves
+    off = copy.deepcopy(c)
+    off["maxBoostDb"], off["maxCutDb"], off["fill"]["enabled"], off["finisher"]["enabled"], off["highpassHz"] = 0.0, 0.0, False, False, 0.0
+    frozen, rep_off = T.trim(ref, bad, SR, off)
+    check("RED: with every cap at zero and no fill the render does not change", float(np.abs(frozen - bad).max()) < 1e-3 and abs(rep_off["gateCritic"] - before) < 0.2, rep_off["gateCritic"])
+    only_gain = copy.deepcopy(c)
+    only_gain["fill"]["enabled"] = False
+    g_out, g_rep = T.trim(ref, bad, SR, only_gain)
+    sub_g = np.sqrt((np.fft.irfft(np.fft.rfft(T.mono(g_out)) * (np.fft.rfftfreq(len(g_out), 1 / SR) < 90), len(g_out)) ** 2).mean())
+    err_fill = abs(20 * np.log10(sub_out / sub_ref))
+    err_gain = abs(20 * np.log10(max(sub_g, 1e-12) / sub_ref))
+    check("RED: without the fill the sub-bass is further from the reference than with it (gains alone amplify leakage, carriers rebuild)",
+          err_gain > err_fill, (err_gain, err_fill))
+    # sub-resolution guard and high-pass (14 October 2026). A 50 Hz bass note is a fraction of a period in a 512-point frame at 48 kHz (94 Hz bins):
+    # a gain on that frame's bin 1 turns it into a sub-10 Hz thump. Measured on a real bass stem: 4.7 percent of its energy under 10 Hz after the trim,
+    # against 0.01 percent in the reference. Two synthetic proofs, each in both directions.
+    sr2 = 48000
+
+    def bass_stem(seed, rate):
+        rng2 = np.random.default_rng(seed)
+        t = np.arange(8 * sr2) / sr2
+        env = np.abs(np.sin(2 * np.pi * rate * t + rng2.uniform(0, 6))) ** 1.5
+        x = 0.4 * np.sin(2 * np.pi * 50 * t) * env + 0.12 * np.sin(2 * np.pi * 100 * t) * env ** 2
+        return np.stack([x, x], axis=1).astype(np.float32)
+
+    def under10(x):
+        m = x.mean(axis=1)
+        S = np.abs(np.fft.rfft(m * np.hanning(len(m)))) ** 2
+        return float(S[np.fft.rfftfreq(len(m), 1 / sr2) < 10.0].sum() / S.sum())
+
+    ref_b, ours_b = bass_stem(1, 1.7), bass_stem(2, 1.1)
+    base = T.cfg()
+    base.update({"iterations": 6, "scoreEvery": 99, "jitter": None, "finisher": {"enabled": False}, "fill": {**base["fill"], "enabled": False}})
+    fast_only = {**base, "train": ["fast"], "audit": ["critic", "auditMid"]}
+    off = {**fast_only, "minResolvedBins": 0, "highpassHz": 0.0}
+    on = {**fast_only, "minResolvedBins": 2, "highpassHz": 0.0}
+    y_off, _ = T.trim(ref_b, ours_b, sr2, off)
+    y_on, _ = T.trim(ref_b, ours_b, sr2, on)
+    floor = max(under10(ours_b), 1e-9)
+    check("RED: without the guard a gain on the unresolved bins makes a sub-10 Hz thump (at least 100x the input's share)", under10(y_off) > 100 * floor, (under10(y_off), floor))
+    check("GREEN: with the guard the same trim adds no sub-10 Hz energy (below 2x the input's share)", under10(y_on) < 2 * floor, (under10(y_on), floor))
+    full = {**base, "train": ["critic", "mel", "fast", "bass", "lines"], "audit": ["auditMid", "auditBass"], "minResolvedBins": 2}
+    y_nohp, r_nohp = T.trim(ref_b, ours_b, sr2, {**full, "highpassHz": 0.0})
+    y_hp, r_hp = T.trim(ref_b, ours_b, sr2, {**full, "highpassHz": 18.0})
+    check("RED: the finer specs alone still spread the bass below 10 Hz (more than 1e-4 of the energy) when the high-pass is off", under10(y_nohp) > 1e-4, under10(y_nohp))
+    check("GREEN: the high-pass leaves less than 1e-6 under 10 Hz", under10(y_hp) < 1e-6, under10(y_hp))
+    check("the high-pass costs the critic less than 0.1 point", r_hp["gateCritic"] >= r_nohp["gateCritic"] - 0.1, (r_hp["gateCritic"], r_nohp["gateCritic"]))
+    print(f"{len(FAIL)} failure(s)")
+    return 1 if FAIL else 0
+
+
+def test_trim():
+    assert run() == 0
+
+
+if __name__ == "__main__":
+    sys.exit(run())

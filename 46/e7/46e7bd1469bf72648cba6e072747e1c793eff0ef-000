@@ -1,0 +1,427 @@
+// 14 October 2026: the in-browser check of every function of the V1 application. Open the app, then in the console (or through the browser tool):
+//   const m = await import('/app/studio-selftest.js'); await m.run({ heavy: false })
+// It drives the REAL page (hash routes, clicks, drops, drags) and returns [{name, ok, detail}]. `heavy: true` also cooks a music variation, applies a
+// scene edit (a new version, then the previous main version is restored) and exports a montage. It generates its own media (WAV, PNG) in the page
+// and removes what it created (a dropped project, its saved montage); nothing of the corpus is touched.
+// FR : la verification dans le navigateur de chaque fonction de l'application V1.
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+const $ = (s, r = document) => r.querySelector(s)
+const $$ = (s, r = document) => [...r.querySelectorAll(s)]
+
+async function until(fn, ms = 15000, label = 'condition') {
+  const t0 = performance.now()
+  while (performance.now() - t0 < ms) {
+    let v
+    try { v = await fn() } catch { v = null }
+    if (v) return v
+    await sleep(80)
+  }
+  throw new Error(`timeout: ${label}`)
+}
+const go = async (hash) => { if (location.hash === hash) { window.dispatchEvent(new HashChangeEvent('hashchange')) } else location.hash = hash; await sleep(60) }
+const fire = (el, type = 'input') => el.dispatchEvent(new Event(type, { bubbles: true }))
+const csrf = { 'x-zr-orchestrator-client': '1' }
+const api = async (path, body) => (await fetch(path, body ? { method: 'POST', headers: { ...csrf, 'content-type': 'application/json' }, body: JSON.stringify(body) } : {})).json()
+
+function wavFile(name, seconds = 2, hz = 440) {
+  const rate = 22050, n = Math.floor(rate * seconds)
+  const buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf)
+  const w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)))
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVEfmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true)
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true)
+  for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.sin(2 * Math.PI * hz * i / rate) * 12000, true)
+  return new File([buf], name, { type: 'audio/wav' })
+}
+async function pngFile(name, color = '#cc7c5e') {
+  const c = document.createElement('canvas'); c.width = 320; c.height = 180
+  const g = c.getContext('2d'); g.fillStyle = color; g.fillRect(0, 0, 320, 180)
+  return new File([await new Promise((r) => c.toBlob(r, 'image/png'))], name, { type: 'image/png' })
+}
+const drop = (el, files) => {
+  const dt = new DataTransfer()
+  files.forEach((f) => dt.items.add(f))
+  el.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }))
+}
+
+export async function run(opts = {}) {
+  const results = []
+  const step = async (name, fn) => {
+    try { const detail = await fn(); results.push({ name, ok: true, detail: detail ?? '' }) } catch (e) { results.push({ name, ok: false, detail: e.message }) }
+  }
+  const must = (cond, msg) => { if (!cond) throw new Error(msg) }
+  const confirmWas = window.confirm
+  window.confirm = () => true
+  let dropped = null
+  const montageIds = []
+  try {
+    // ------------------------------------------------------------------------------------------------ home
+    await step('home: the header, the drop zone and the first page of projects', async () => {
+      await go('#/'); await until(() => $$('[data-testid=project-card]').length > 0, 15000, 'project cards')
+      must($('#drop'), 'no drop zone')
+      return `${$$('[data-testid=project-card]').length} cards, ${$('#count').textContent}`
+    })
+    await step('home: the list is paged (a "more" button when the total exceeds a page)', async () => {
+      const total = Number(($('#count').textContent.match(/^(\d+)/) || [])[1])
+      await sleep(900)                       // a tall window loads the next pages by itself (the observer sentinel is in view)
+      const shown = $$('[data-testid=project-card]').length
+      if (total > shown) {
+        const more = await until(() => $('[data-more]'), 3000, 'more button')
+        more.click()
+        await until(() => $$('[data-testid=project-card]').length > shown, 8000, 'next page')
+      }
+      must($$('[data-testid=project-card]').length <= total, 'more cards than projects')
+      return `total ${total}, shown ${$$('[data-testid=project-card]').length}`
+    })
+    await step('home: a dropped sound becomes a project (slug from its title) and opens it', async () => {
+      await go('#/'); await until(() => $('#drop'), 5000)
+      drop($('#drop'), [wavFile('selftest-tone.wav', 2)])
+      await until(() => location.hash.startsWith('#/p/selftest-tone'), 20000, 'project page')
+      dropped = decodeURIComponent(location.hash.split('/')[2])
+      await until(() => $('[data-testid=project-title]'), 8000, 'title')
+      must($('[data-testid=project-title]').textContent.includes('selftest-tone'), 'wrong title')
+      return dropped
+    })
+    await step('project: the pipelines are offered; the audio ones are on, the picture ones follow the file', async () => {
+      const b = $$('[data-pipeline]').map((x) => `${x.dataset.pipeline}${x.disabled ? ':off' : ':on'}`)
+      must(b.length === 4, `expected 4 pipelines, got ${b.join(',')}`)
+      return b.join(' ')
+    })
+    await step('project: the dropped project can be deleted (and is then gone)', async () => {
+      $('[data-testid=delete-project]').click()
+      await until(() => location.hash === '#/', 8000, 'back home')
+      const r = await api(`/api/v1/project?slug=${dropped}`)
+      must(r.ok === false, 'project still there')
+      dropped = null
+      return 'deleted'
+    })
+    // ------------------------------------------------------------------------------------------------ project and scenes
+    let editable = null
+    let shader = null
+    let vector = null
+    await step('project: scenes are listed progressively and link to the editor', async () => {
+      const probe = await api('/api/v1/projects?limit=50')
+      for (const p of probe.items.filter((x) => x.shots)) {
+        const sc = await api(`/api/v1/scenes?slug=${p.slug}&limit=100`)
+        const e = sc.items.find((x) => x.editable && x.motions.some((m) => m.recipe === 'textcard'))
+        if (e && !editable) editable = { slug: p.slug, id: e.id, total: sc.total, motion: e.motions.find((m) => m.recipe === 'textcard').id }
+        const sh = sc.items.find((x) => x.editable && x.motions.some((m) => m.recipe === 'shader-field'))
+        if (sh && !shader) shader = { slug: p.slug, id: sh.id }
+        const vc = sc.items.find((x) => x.vector)
+        if (vc && !vector) vector = { slug: p.slug, id: vc.id }
+        if (editable && shader && vector) break
+      }
+      must(editable, 'no editable textcard scene in the corpus')
+      await go(`#/p/${editable.slug}`)
+      await until(() => $$('[data-testid=scene-card]').length > 0, 15000, 'scene cards')
+      return `${editable.slug}: ${$$('[data-testid=scene-card]').length} of ${editable.total}`
+    })
+    await step('project: the cut detection panel lists 4 primary and 8 secondary values and previews without touching the project', async () => {
+      await go(`#/p/${editable.slug}`)
+      await until(() => $('#cuts'), 8000, 'cuts panel')
+      $('#cuts').open = true; $('#cuts').dispatchEvent(new Event('toggle'))
+      await until(() => $$('#cutsPrimary .field').length === 4 && $$('#cutsSecondary .field').length === 8, 15000, 'cut fields')
+      const before = await api(`/api/v1/rhythm?slug=${editable.slug}`)
+      const m = $('#cutsPrimary .field[data-key=min_shot_s] input'); m.value = 3; fire(m)
+      $('#cutsPreview').click()
+      await until(() => /Avec ces valeurs/.test($('#cutsStatus').textContent), 120000, 'preview done')
+      const after = await api(`/api/v1/rhythm?slug=${editable.slug}`)
+      must(JSON.stringify(before.current) === JSON.stringify(after.current), 'the preview changed the project')
+      must(!$('#cutsAdopt').disabled, 'adopt not enabled after a preview')
+      return $('#cutsStatus').textContent.slice(0, 80)
+    })
+    // ------------------------------------------------------------------------------------------------ scene editor
+    let motionId = null
+    await step('scene: the editor shows 4 primary values, the live preview and the version chips', async () => {
+      await go(`#/p/${editable.slug}/s/${editable.id}`)
+      await until(() => $('.stage iframe') && $$('.panel .field').length >= 4, 15000, 'editor')
+      await until(() => $('.stage iframe').contentDocument?.querySelector('#caption'), 10000, 'composition loaded')
+      motionId = $('.panel .name')?.textContent.trim()
+      must($$('[data-version]').length > 0, 'no version chips')
+      return `${$$('.panel .field').length} fields, ${$$('[data-version]').length} versions`
+    })
+    await step('scene: typing a text and a colour changes the preview instantly and enables Apply', async () => {
+      const doc = $('.stage iframe').contentDocument
+      const t = $('.field[data-key="layers.@caption.text"] input')
+      t.value = 'Selftest'; fire(t)
+      const bg = $('.field[data-key="layers.@bg.color"] input[type=text]')
+      bg.value = '#223355'; fire(bg)
+      await sleep(150)
+      must(doc.querySelector('#caption .ink').textContent === 'Selftest', 'text not updated')
+      must(getComputedStyle(doc.querySelector('#bg')).backgroundColor === 'rgb(34, 51, 85)', 'background not updated')
+      must(!$('#apply').disabled, 'apply still disabled')
+      must($$('.field.changed').length === 2, 'changed marks missing')
+      return 'text and background drawn live'
+    })
+    await step('scene: the scrubber moves the timeline and the transport plays and pauses', async () => {
+      const s = $('#scrub'); s.value = 700; fire(s)
+      await sleep(250)
+      const tl = $('.stage iframe').contentWindow.__timelines.main
+      must(Math.abs(tl.time() - 0.7 * tl.duration()) < 0.05, `timeline at ${tl.time()}`)
+      $('#play').click(); await sleep(400)
+      must($('#play').textContent === '❚❚', 'not playing')
+      $('#play').click(); await sleep(100)
+      must($('#play').textContent === '▶', 'not paused')
+      return `duration ${tl.duration().toFixed(2)} s`
+    })
+    await step('scene: the three views switch (reference, live, render)', async () => {
+      const labels = $$('#views button').map((b) => b.textContent)
+      for (const b of $$('#views button')) { b.click(); await sleep(250); must($('#views button.on')?.textContent === b.textContent, `view ${b.textContent} not selected`) }
+      return labels.join(' | ')
+    })
+    await step('scene: "Annuler mes changements" restores the values', async () => {
+      $('#revert').click(); await sleep(400)
+      must($$('.field.changed').length === 0, 'still changed')
+      must($('#apply').disabled, 'apply enabled with no change')
+      return 'restored'
+    })
+    if (shader) {
+      await step('scene: a shader scene offers its colour and light values and its rendered version (no live preview)', async () => {
+        await go(`#/p/${shader.slug}/s/${shader.id}`)
+        await until(() => $$('.panel .field').length >= 4, 15000, 'shader editor')
+        must(!$('.stage iframe'), 'a shader scene has no live composition in V1')
+        const keys = $$('.panel .field').map((f) => f.dataset.key)
+        must(keys.includes('look.colourMain') && keys.includes('look.colourEnd'), `colour values missing: ${keys}`)
+        must($('#apply').disabled, 'apply enabled with no change')
+        const c = $('.field[data-key="look.colourMain"] input[type=text]'); c.value = '#336699'; fire(c)
+        await sleep(100)
+        must(!$('#apply').disabled, 'apply not enabled after a change')
+        return `${keys.length} values, view ${$('#views button.on')?.textContent}`
+      })
+      await go(`#/p/${editable.slug}/s/${editable.id}`)
+      await until(() => $('.stage iframe') && $$('.panel .field').length >= 4, 15000, 'editor back')
+    }
+    if (vector) {
+      await step('scene: a vector scene offers its colour and scale values and previews colours live', async () => {
+        await go(`#/p/${vector.slug}/s/${vector.id}`)
+        await until(() => $('.stage iframe') && $$('.panel .field').length >= 2, 60000, 'vector editor')
+        await until(() => $('.stage iframe').contentDocument?.querySelector('svg'), 20000, 'component loaded')
+        const keys = $$('.panel .field').map((f) => f.dataset.key)
+        must(keys.includes('shapeColour') || keys.includes('text'), `no primary vector value in ${keys}`)
+        if (keys.includes('shapeColour')) {
+          const doc = $('.stage iframe').contentDocument
+          const hex = $('.field[data-key=shapeColour] input[type=text]'); hex.value = '#ff6a2b'; fire(hex)
+          await sleep(120)
+          const used = [...doc.documentElement.style].filter((n) => n.startsWith('--'))
+          must(used.length === 1 && doc.documentElement.style.getPropertyValue(used[0]).trim() === '#ff6a2b', `css variables ${used}`)
+        }
+        must(!$('#addMontage'), 'a vector component has no montage render')
+        return `${keys.length} values`
+      })
+      await go(`#/p/${editable.slug}/s/${editable.id}`)
+      await until(() => $('.stage iframe') && $$('.panel .field').length >= 4, 15000, 'editor back')
+    }
+    await step('scene: a refused value is reported, not applied (RED)', async () => {
+      const r = await api('/api/v1/scene/apply', { motion: $('.panel .name') ? motionIdFromVersions() : '', baseVersion: null, values: { 'layers.@caption.font.size': 99999 } })
+      must(r.ok === false && /font\.size/.test(r.error || ''), `expected a refusal naming the key, got ${JSON.stringify(r).slice(0, 120)}`)
+      return r.error
+    })
+    function motionIdFromVersions() {
+      return editable.motion
+    }
+    if (opts.heavy) {
+      await step('scene (heavy): Apply cooks a new version and shows it; the previous main version is restored', async () => {
+        const motion = motionIdFromVersions()
+        const before = (await api(`/api/v1/motion?motion=${motion}`)).latest
+        const t = $('.field[data-key="layers.@caption.text"] input'); t.value = 'Selftest apply'; fire(t)
+        $('#apply').click()
+        await until(() => /Version V_\d+ créée/.test($('#toast').textContent), 120000, 'job done')
+        const now = (await api(`/api/v1/motion?motion=${motion}`)).latest
+        must(now !== before, 'no new version')
+        const p = await api('/api/v1/motion/promote', { motion, version: before })
+        must(p.ok, 'promote refused')
+        await until(async () => (await api(`/api/v1/motion?motion=${motion}`)).latest === before, 30000, 'promote done')
+        return `${before} -> ${now} -> ${before}`
+      })
+    }
+    if (opts.heavy && shader) {
+      await step('scene (heavy): a shader-field edit is rendered by its own GLSL pipeline and the previous main version is restored', async () => {
+        const sc = await api(`/api/v1/scene?slug=${shader.slug}&id=${shader.id}`)
+        const m = sc.motionDetails.find((x) => x.recipe === 'shader-field')
+        const before = m.latest
+        const r = await api('/api/v1/scene/apply', { motion: m.id, baseVersion: before, values: { 'look.colourMain': '#d9cfb8' }, note: 'selftest shader' })
+        must(r.ok, JSON.stringify(r).slice(0, 120))
+        const job = await until(async () => { const j = (await api(`/api/v1/job?id=${r.job.id}`)).job; return ['done', 'failed'].includes(j.state) ? j : null }, 180000, 'shader job')
+        must(job.state === 'done', job.error)
+        must((await api(`/api/v1/motion?motion=${m.id}`)).latest === job.result.version, 'the new version is not the latest')
+        const p = await api('/api/v1/motion/promote', { motion: m.id, version: before })
+        must(p.ok, 'promote refused')
+        await until(async () => (await api(`/api/v1/motion?motion=${m.id}`)).latest === before, 30000, 'promote done')
+        return `${before} -> ${job.result.version} -> ${before}`
+      })
+    }
+    // ------------------------------------------------------------------------------------------------ music
+    await step('music: the list shows the reproduced tracks with their scores', async () => {
+      await go('#/music'); await until(() => $$('[data-testid=music-card]').length > 0, 10000, 'music cards')
+      return `${$$('[data-testid=music-card]').length} tracks`
+    })
+    await step('music: a studio shows 4 primary and the secondary values, audio ready', async () => {
+      $$('[data-testid=music-card]')[0].click()
+      await until(() => $$('.panel .field').length >= 4 && !$('#play').disabled, 120000, 'studio ready (five audio files are decoded)')
+      const ids = $$('.panel .field').map((f) => f.dataset.key)
+      must(['drums', 'bass', 'other', 'vocals'].every((k) => ids.includes(k)), `primary missing in ${ids}`)
+      return ids.join(',')
+    })
+    await step('music: switching reference and ours, and play/pause', async () => {
+      $('#bRef').click(); must($('#bRef').classList.contains('on'), 'ref not on')
+      $('#bOurs').click(); must($('#bOurs').classList.contains('on'), 'ours not on')
+      $('#play').click()
+      await until(() => $('#play').textContent === '❚❚', 10000, 'playing (the browser may hold the audio until a real click)')
+      $('#play').click(); await sleep(150); must($('#play').textContent === '▶', 'not paused')
+      return 'ok'
+    })
+    if (opts.heavy) {
+      await step('music (heavy): a transposition is recomputed by the engine', async () => {
+        const i = $('.field[data-key="transpose"] input'); i.value = 2; fire(i)
+        await until(() => /^Calculé en/.test($('#cookState').textContent), 120000, 'cook done')
+        return $('#cookState').textContent
+      })
+    }
+    // ------------------------------------------------------------------------------------------------ montage
+    await step('montage: a blank montage with the library, three tracks and four formats', async () => {
+      await go('#/montage/new'); await until(() => $$('#libList [data-testid=lib-item]').length > 0, 15000, 'library')
+      must($$('.tl .track').length === 3, 'tracks')
+      must($$('#formats button').length === 4, 'formats')
+      return `${$$('#libList [data-testid=lib-item]').length} library items`
+    })
+    await step('montage: the library is searchable', async () => {
+      const q = $('#libq'); q.value = 'caption'; fire(q)
+      await until(() => $$('#libList [data-testid=lib-item]').length > 0 && $$('#libList [data-testid=lib-item]').every((i) => /caption/i.test(i.textContent)), 8000, 'filtered')
+      return `${$$('#libList [data-testid=lib-item]').length} matches`
+    })
+    let motionName = ''
+    await step('montage: a motion is added to the video track and a title to the text track', async () => {
+      const it = $$('#libList [data-testid=lib-item]')[0]
+      motionName = it.querySelector('.name').textContent.trim()
+      it.querySelector('button').click(); await sleep(200)
+      $('[data-testid=add-text]').click(); await sleep(200)
+      must($$('.tl .track[data-kind=video] .clip').length === 1, 'video clip missing')
+      must($$('.tl .track[data-kind=text] .clip').length === 1, 'text clip missing')
+      return motionName
+    })
+    await step('montage: an uploaded image and sound are listed and added (own media)', async () => {
+      $('[data-tab=files]').click(); await sleep(200)
+      drop($('#fdrop'), [await pngFile('selftest-image.png'), wavFile('selftest-sound.wav', 3)])
+      await until(() => $$('#libList [data-testid=lib-item]').some((i) => /selftest-image\.png/.test(i.textContent)), 15000, 'image listed')
+      const find = (n) => $$('#libList [data-testid=lib-item]').find((i) => i.textContent.includes(n))
+      find('selftest-image.png').querySelector('button').click(); await sleep(150)
+      find('selftest-sound.wav').querySelector('button').click(); await sleep(150)
+      must($$('.tl .track[data-kind=audio] .clip').length === 1, 'audio clip missing')
+      must($$('.tl .track[data-kind=video] .clip').length === 2, 'image clip missing')
+      return 'image on video, sound on audio'
+    })
+    await step('montage: the inspector edits the selected title (text, colour) and the preview follows', async () => {
+      $$('.tl .track[data-kind=text] .clip')[0].dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 5, clientY: 5, pointerId: 1 }))
+      $('.tl').dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }))
+      await until(() => $('.field[data-key=text] input'), 3000, 'inspector')
+      const t = $('.field[data-key=text] input'); t.value = 'Selftest titre'; fire(t)
+      const c = $('.field[data-key=color] input[type=text]'); c.value = '#ffcc00'; fire(c)
+      await sleep(150)
+      must($$('.tl .clip.text')[0].textContent.includes('Selftest titre'), 'clip label not updated')
+      must(getComputedStyle($('#pv .ptxt')).color === 'rgb(255, 204, 0)', 'preview colour not updated')
+      return 'ok'
+    })
+    await step('montage: a clip is moved by dragging, trimmed by its handle, split, duplicated and deleted', async () => {
+      const clip = $$('.tl .track[data-kind=video] .clip')[0]
+      const x0 = clip.getBoundingClientRect().left + 10, y0 = clip.getBoundingClientRect().top + 8
+      clip.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: x0, clientY: y0, pointerId: 2 }))
+      $('.tl').dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: x0 + 160, clientY: y0, pointerId: 2 }))
+      $('.tl').dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: x0 + 160, clientY: y0, pointerId: 2 }))
+      await sleep(150)
+      const moved = parseFloat($$('.tl .track[data-kind=video] .clip')[0].style.left)
+      must(moved > 100, `clip not moved (${moved})`)
+      const txt = $$('.tl .track[data-kind=text] .clip')[0]
+      const w0 = parseFloat(txt.style.width)
+      const handle = txt.querySelector('.h.r'), hr = handle.getBoundingClientRect()
+      handle.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: hr.left + 2, clientY: hr.top + 4, pointerId: 3 }))
+      $('.tl').dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: hr.left + 82, clientY: hr.top + 4, pointerId: 3 }))
+      $('.tl').dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: hr.left + 82, clientY: hr.top + 4, pointerId: 3 }))
+      await sleep(150)
+      const w1 = parseFloat($$('.tl .track[data-kind=text] .clip')[0].style.width)
+      must(w1 > w0 + 40, `trim failed (${w0} -> ${w1})`)
+      const before = $$('.tl .clip').length
+      $('#dup').click(); await sleep(150)
+      must($$('.tl .clip').length === before + 1, 'duplicate failed')
+      $('#del').click(); await sleep(150)
+      must($$('.tl .clip').length === before, 'delete failed')
+      return `moved to ${moved}px, trimmed ${w0} -> ${w1}px`
+    })
+    await step('montage: the four formats change the preview ratio and the cadrage switches', async () => {
+      const seen = []
+      for (const b of $$('#formats button')) { b.click(); await sleep(120); seen.push($('#pv').style.aspectRatio) }
+      must(new Set(seen).size === 4, `ratios: ${seen}`)
+      $('[data-f="16x9"]').click()
+      $('[data-fit=blur]').click(); await sleep(100); must($('[data-fit=blur]').classList.contains('on'), 'fit not selected')
+      $('[data-fit=contain]').click()
+      return seen.join(' | ')
+    })
+    await step('montage: play, seek by the ruler, and the clock follows', async () => {
+      const r = $('#ruler')
+      r.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: r.getBoundingClientRect().left + 80, clientY: 10, pointerId: 4 }))
+      await sleep(100)
+      must(/0:01\.0/.test($('#clock').textContent), `clock ${$('#clock').textContent}`)
+      $('#play').click(); await sleep(500); $('#play').click()
+      return $('#clock').textContent
+    })
+    await step('montage: it is saved, appears in the saved list and reopens identical', async () => {
+      const id = `selftest-${Date.now().toString(36)}`
+      montageIds.push(id)
+      const name = $('#tid'); name.value = id; fire(name, 'change')
+      $('[data-testid=save]').click()
+      await until(() => $$('#open option').some((o) => o.value === id), 8000, 'saved list')
+      const n = $$('.tl .clip').length
+      await go('#/montage/new'); await sleep(400)
+      const sel = $('#open'); sel.value = id; fire(sel, 'change')
+      await until(() => $$('.tl .clip').length === n, 8000, 'reopened')
+      return `${id}: ${n} clips`
+    })
+    await step('montage: a used file cannot be removed from the library (RED) and a saved montage can be deleted', async () => {
+      const mine = await api('/api/v1/uploads?limit=100')
+      const used = mine.items.find((x) => x.name === 'selftest-image.png')
+      const r = await api('/api/v1/upload/delete', { id: used.id })
+      must(r.ok === false && /used by the montage/.test(r.error), `expected a refusal, got ${JSON.stringify(r).slice(0, 100)}`)
+      return r.error.slice(0, 80)
+    })
+    await step('montage: an invalid montage is refused with its cause shown (RED)', async () => {
+      $$('.tl .track[data-kind=text] .clip')[0]?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 5, clientY: 5, pointerId: 5 }))
+      $('.tl').dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 5 }))
+      await sleep(100)
+      const t = $('.field[data-key=text] input'); t.value = '   '; fire(t)
+      $('[data-testid=export]').click()
+      await until(() => $('#outStatus').classList.contains('err'), 8000, 'error shown')
+      must(/empty text|text/i.test($('#outStatus').textContent), $('#outStatus').textContent)
+      return $('#outStatus').textContent
+    })
+    if (opts.heavy) {
+      await step('montage (heavy): a valid montage exports with the chosen size', async () => {
+        const t = $('.field[data-key=text] input'); t.value = 'Selftest'; fire(t)
+        $('[data-f="4x5"]').click()
+        $('[data-testid=export]').click()
+        await until(() => /^Terminé/.test($('#outStatus').textContent), 180000, 'export done')
+        must(/1080×1350/.test($('#outStatus').textContent), $('#outStatus').textContent)
+        return $('#outStatus').textContent
+      })
+    }
+    // ------------------------------------------------------------------------------------------------ misc
+    await step('theme: the toggle switches light and dark and keeps the page readable', async () => {
+      const before = document.documentElement.dataset.theme || 'auto'
+      $('#theme').click(); await sleep(80)
+      const after = document.documentElement.dataset.theme
+      $('#theme').click()
+      must(after && after !== before, `theme did not change (${before} -> ${after})`)
+      return `${before} -> ${after}`
+    })
+    await step('routing: an unknown page and an unknown project show a message and a way back', async () => {
+      await go('#/nowhere'); await until(() => /n'existe pas/.test($('#app').textContent), 3000, 'unknown page')
+      await go('#/p/does-not-exist'); await until(() => $('[data-testid=view-error]'), 5000, 'view error')
+      return $('[data-testid=view-error]').textContent.trim().slice(0, 60)
+    })
+  } finally {
+    window.confirm = confirmWas
+    if (dropped) await api('/api/v1/project/delete', { slug: dropped })
+    for (const id of montageIds) await api('/api/v1/timeline/delete', { id })
+    const mine = await api('/api/v1/uploads?limit=100')
+    for (const f of mine.items.filter((x) => /^selftest-/.test(x.name))) await api('/api/v1/upload/delete', { id: f.id })
+    await go('#/')
+  }
+  return { passed: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length, results, savedMontages: montageIds }
+}

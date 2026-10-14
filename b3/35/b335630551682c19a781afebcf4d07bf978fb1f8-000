@@ -18,3 +18,7 @@ python -I Scripts/RunTests.py                                                   
 ```
 
 Everything tunable lives in `params/orchestrator.json` (pipeline, targets, port, import rules) and `settings.json` (paths). The reference cache is never archived or published. Assets archiving: `node Scripts/AssetsLink.mjs register | inventory | archive`.
+
+## Release 1.1.0 (14 October 2026)
+
+State of the six modules, measured ceilings, what is not reached and the research chantiers to resume: `docs/RELEASE-1.1.0.md`. The release number lives once in `params/v1-app.json` (`release`) and is checked against `pyproject.toml`. (14 October 2026)

@@ -1,0 +1,217 @@
+# 14 October 2026: the learned fusion of the rhythm module, and the active-labelling loop around it.
+#   cv       leave-one-reference-out evaluation of the fusion on the labelled boundaries (the unit that matters: a reference the
+#            model has never seen);
+#   propose  score every pool boundary of a reference with the model trained on the OTHER references, so that the eye labels
+#            first the boundaries the model is unsure about (and a sample of the confident ones, to measure its error);
+# The fusion reads the evidence matrix (zrmd.analyze.rhythm_features) and nothing else.
+# Run: /Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/RhythmModel.py cv [--no-synth]
+# FR : fusion apprise des preuves, evaluee reference par reference, et boucle d'etiquetage actif.
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+from sklearn.ensemble import HistGradientBoostingClassifier
+from sklearn.metrics import average_precision_score, roc_auc_score
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+sys.path.insert(0, str(ENGINE / "Scripts"))
+from zrmd import settings  # noqa: E402
+from zrmd.analyze import rhythm_cache, rhythm_features as RF, rhythm_truth as T  # noqa: E402
+import RhythmSignals as RS  # noqa: E402
+import RhythmSynth  # noqa: E402
+
+WORKSHOP = settings.path("workshop")
+REFS = ["claude-opus-5-5", "fin-4", "flora-agents-on-canvas", "motion-opus-5-5", "kardashev-0-7", "memo", "paper-mono-code",
+        "onekey-pro-2", "interface", "x-anabology-2106157622986748377", "x-anabology-2105325733312884869", "yt-4Q-o_ylnVnc"]
+SYNTH = ["S1", "S2", "S3", "S4"]
+EXCLUDE = {"need", "GX", "GY"}
+
+
+def folder_for(name: str) -> Path:
+    return RhythmSynth.root() / name / "cache" if name in SYNTH else RS.folder_of(name)
+
+
+def matrix_of(name: str) -> dict:
+    folder = folder_for(name)
+    sig = RS.load_signals(folder)
+    z = np.load(folder / "fine.npz")
+    fine = {k: z[k] for k in z.files}
+    frames = rhythm_cache.load(folder)["frames"]
+    return RF.matrix(sig, fine, frames)
+
+
+def feature_names(mat: dict) -> list[str]:
+    return [k for k in mat if k not in EXCLUDE]
+
+
+def labelled(name: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """(frame indices, y, weight) of the judged boundaries of `name`. y = 1 for a hard cut, 0 for not a cut; transitions and
+    ambiguous boundaries are left out; a sample of the never-flagged boundaries is added as certain negatives."""
+    if name in SYNTH:
+        truth = json.loads((RhythmSynth.root() / name / "truth.json").read_text(encoding="utf-8"))
+        n = truth["frames"]
+        y = np.full(n, -1)
+        mat = matrix_of(name)
+        need = mat["need"]
+        y[need] = 0
+        for f in truth["hard"]:
+            y[f] = 1
+        for t in truth["transitions"]:
+            y[t["start"]:t["end"] + 1] = -1
+        for f in truth["region"]:
+            y[f] = 0   # a replaced canvas under a fixed chrome is not a cut by the area rule
+        idx = np.nonzero(y >= 0)[0]
+        return idx, y[idx], np.ones(len(idx))
+    data = T.load_labels(WORKSHOP, name)
+    mat = matrix_of(name)
+    n = len(mat["need"])
+    y = np.full(n, -1)
+    for k, c in data["labels"].items():
+        f = int(k)
+        if c == "C":
+            y[f] = 1
+        elif c == "N":
+            y[f] = 0
+    for f in data.get("auto", []):
+        y[int(f)] = 1
+    for sp in data.get("spans", []):
+        y[int(sp["start"]):int(sp["end"]) + 1] = -1
+    for k, c in data["labels"].items():
+        if c == "A":
+            y[int(k)] = -1
+    if not any(c in ("C", "N") for c in data["labels"].values()):
+        return np.array([], dtype=int), np.array([], dtype=int), np.array([])
+    # boundaries never flagged by the pool are certain negatives: add a sample, down-weighted
+    judged = T.judged_frames(data)
+    rng = np.random.default_rng(7)
+    free = np.nonzero(mat["need"] & (y < 0) & ~np.isin(np.arange(n), list(judged)))[0]
+    take = rng.choice(free, size=min(len(free), 150), replace=False) if len(free) else np.array([], dtype=int)
+    y[take] = 0
+    idx = np.nonzero(y >= 0)[0]
+    w = np.ones(len(idx))
+    w[np.isin(idx, take)] = max(len(free) / max(len(take), 1), 1.0) * 0.1
+    return idx, y[idx], w
+
+
+def build_sets(names: list[str]) -> dict:
+    out = {}
+    for n in names:
+        idx, y, w = labelled(n)
+        if len(idx) == 0:
+            continue
+        mat = matrix_of(n)
+        keys = feature_names(mat)
+        X = np.stack([np.asarray(mat[k], dtype=np.float64)[idx] for k in keys], axis=1)
+        out[n] = {"idx": idx, "X": X, "y": y, "w": w, "keys": keys}
+    return out
+
+
+def fit(Xs: list[np.ndarray], ys: list[np.ndarray], ws: list[np.ndarray]) -> HistGradientBoostingClassifier:
+    X, y, w = np.concatenate(Xs), np.concatenate(ys), np.concatenate(ws)
+    clf = HistGradientBoostingClassifier(max_depth=4, learning_rate=0.08, max_iter=200, l2_regularization=1.0,
+                                         min_samples_leaf=5, random_state=0)
+    clf.fit(X, y, sample_weight=w)
+    return clf
+
+
+def cv(use_synth: bool) -> dict:
+    names = [n for n in REFS] + (SYNTH if use_synth else [])
+    sets = build_sets(names)
+    print(f"{'set':34s} {'n':>5} {'C':>4} {'AUC':>6} {'AP':>6} {'P@0.5':>6} {'R@0.5':>6} {'FP':>4} {'FN':>4}")
+    for held in sets:
+        train = [k for k in sets if k != held]
+        if not train:
+            continue
+        clf = fit([sets[k]["X"] for k in train], [sets[k]["y"] for k in train], [sets[k]["w"] for k in train])
+        d = sets[held]
+        p = clf.predict_proba(d["X"])[:, 1]
+        y = d["y"]
+        pred = p >= 0.5
+        tp = int((pred & (y == 1)).sum())
+        fp = int((pred & (y == 0)).sum())
+        fn = int((~pred & (y == 1)).sum())
+        auc = roc_auc_score(y, p) if 0 < y.sum() < len(y) else float("nan")
+        ap = average_precision_score(y, p) if y.sum() > 0 else float("nan")
+        print(f"{held:34s} {len(y):5d} {int(y.sum()):4d} {auc:6.3f} {ap:6.3f} {tp / max(tp + fp, 1):6.3f} {tp / max(int(y.sum()), 1):6.3f} {fp:4d} {fn:4d}")
+    return sets
+
+
+def propose(target: str, out: Path, lo: float = 0.02, hi: float = 0.5, sample: int = 40, seed: int = 11) -> dict:
+    """Active-labelling pool for `target`: every boundary the model trained on the OTHER labelled sets calls a cut (p >= hi) or
+    is unsure about (lo <= p < hi), plus a random sample of the confident negatives of the permissive universe, so that the
+    error rate of the confident part is measured and not assumed. Already judged boundaries are left out."""
+    labelled_names = [n for n in REFS if n != target and (WORKSHOP / "rhythm" / "truth" / f"{n}.json").exists()] + SYNTH
+    sets = build_sets(labelled_names)
+    clf = fit([d["X"] for d in sets.values()], [d["y"] for d in sets.values()], [d["w"] for d in sets.values()])
+    mat = matrix_of(target)
+    keys = sets[next(iter(sets))]["keys"]
+    X = np.stack([np.asarray(mat[k], dtype=np.float64) for k in keys], axis=1)
+    need = np.asarray(mat["need"]).astype(bool)
+    p = np.zeros(len(need))
+    p[need] = clf.predict_proba(X[need])[:, 1]
+    data = T.load_labels(WORKSHOP, target)
+    judged = T.judged_frames(data)
+    floor = {"U": 0.15, "S": 0.2, "F": 0.7, "F_mad": 0.04, "CH": 0.08, "CL": 0.08}
+    sig = RS.load_signals(folder_for(target))
+    z = np.load(folder_for(target) / "fine.npz")
+    uni = T.universe({k: z[k] for k in z.files}, sig, floor)
+    rng = np.random.default_rng(seed)
+    pool = {}
+    for f in np.nonzero(need & (p >= lo))[0]:
+        if int(f) not in judged and f > 0:
+            pool[int(f)] = f"p{p[f]:.2f}"
+    conf = [f for f in uni if p[f] < lo and f not in judged]
+    take = rng.choice(conf, size=min(sample, len(conf)), replace=False) if conf else []
+    for f in take:
+        pool[int(f)] = f"rnd p{p[f]:.2f}"
+    out.write_text(json.dumps({str(k): v for k, v in sorted(pool.items())}) + "\n", encoding="utf-8")
+    return {"target": target, "pool": len(pool), "positives": int((p[need] >= hi).sum()), "unsure": int(((p[need] >= lo) & (p[need] < hi)).sum()),
+            "random_negatives": len(take), "confident_negatives_in_universe": len(conf)}
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    c = sub.add_parser("cv")
+    c.add_argument("--no-synth", action="store_true")
+    pr = sub.add_parser("propose")
+    pr.add_argument("target")
+    pr.add_argument("--out", required=True)
+    pr.add_argument("--lo", type=float, default=0.02)
+    pr.add_argument("--sample", type=int, default=40)
+    f = sub.add_parser("fn")
+    f.add_argument("held")
+    f.add_argument("--no-synth", action="store_true")
+    a = ap.parse_args()
+    if a.cmd == "cv":
+        cv(not a.no_synth)
+    elif a.cmd == "propose":
+        print(json.dumps(propose(a.target, Path(a.out), a.lo, 0.5, a.sample)))
+    elif a.cmd == "fn":
+        fn_report(a.held, not a.no_synth)
+
+
+def fn_report(held: str, use_synth: bool = True, thr: float = 0.5) -> None:
+    """Missed cuts and false alarms of the model trained on every OTHER set, with their strongest evidences."""
+    names = [n for n in REFS] + (SYNTH if use_synth else [])
+    sets = build_sets(names)
+    train = [k for k in sets if k != held]
+    clf = fit([sets[k]["X"] for k in train], [sets[k]["y"] for k in train], [sets[k]["w"] for k in train])
+    d = sets[held]
+    p = clf.predict_proba(d["X"])[:, 1]
+    keys = d["keys"]
+    show = ["U", "UZ", "F", "ED", "EN", "S", "CH", "d", "r1", "r2", "q1", "MAD"]
+    ix = [keys.index(k) for k in show]
+    for kind, sel in (("MISSED", (p < thr) & (d["y"] == 1)), ("FALSE", (p >= thr) & (d["y"] == 0))):
+        for j in np.nonzero(sel)[0]:
+            row = {k: round(float(d["X"][j, i]), 2) for k, i in zip(show, ix)}
+            print(kind, int(d["idx"][j]), f"p={p[j]:.2f}", row)
+
+
+if __name__ == "__main__":
+    main()

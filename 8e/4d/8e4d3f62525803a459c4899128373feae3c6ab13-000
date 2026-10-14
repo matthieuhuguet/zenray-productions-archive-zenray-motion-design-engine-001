@@ -1,0 +1,216 @@
+#!/usr/bin/env python3
+# 14 October 2026: proof that the final calibration of a music version is PARAMETERS (zrmd/audio/calibration.py). The engine re-renders the version
+# from its params.json (and the stored calibration.npz) with the reference path UNREACHABLE, then this script compares the result with the stored
+# trimmed version and scores it against the reference (the reference is read here, by the scorer, never by the render).
+#   MusicReplay.py check --slug S [--version V_NNN]            replay render, SNR per stem and mix, tfBands (official critic) of both
+#   MusicReplay.py raw   --slug S [--version V_NNN]            re-render of the RAW base (no calibration): is the structure itself reproducible?
+#   MusicReplay.py variation --slug S [--version V_NNN] [--bpm-ratio 1.15] [--transpose 0]
+#                                                              the calibrated variation against the reference time-stretched by the same ratio,
+#                                                              next to the raw variation (the calibration must lift it, and stay bounded)
+# Each writes <version>/replay.json (check), <version>/raw-check.json or <version>/variation-check.json, and prints one table.
+# Numbers come from params/music-trim.json "replay" (thresholds, ratios). FR : preuve que la calibration finale est rejouable sans la reference.
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+sys.path.insert(0, str(ENGINE / "Scripts"))
+from zrmd import settings  # noqa: E402
+
+STEMS = ("drums", "bass", "other", "vocals")
+TRIM_PARAMS = json.loads((ENGINE / "params" / "music-trim.json").read_text(encoding="utf-8"))
+REPLAY = TRIM_PARAMS["replay"]
+
+
+def real_bench(slug: str) -> Path:
+    return settings.path("sound_out") / slug / "music-bench"
+
+
+def trimmed_version(slug: str, version: str = "") -> str:
+    vs = sorted(p.name for p in real_bench(slug).glob("V_*") if (p / "trim.json").exists() and (p / "calibration.npz").exists())
+    if version:
+        if version not in vs:
+            raise SystemExit(f"{slug} {version}: not a trim version with a calibration (have {vs})")
+        return version
+    if not vs:
+        raise SystemExit(f"{slug}: no trim version with a calibration.npz")
+    return vs[-1]
+
+
+def render(slug: str, args: list[str], tag: str) -> Path:
+    """Run ResynthMusic.py with the reference unreachable, in a scratch bench whose versions are symlinks to the real ones. Returns the new
+    version directory (a real folder of the scratch bench). A render that touches the reference raises: its paths do not exist."""
+    work = settings.path("workshop") / "studio" / "replay" / slug
+    sb = work / "bench"
+    sb.mkdir(parents=True, exist_ok=True)
+    for old in sb.glob("V_*"):          # previous renders of this tool are removed, symlinks are refreshed
+        if old.is_symlink():
+            old.unlink()
+        else:
+            shutil.rmtree(old)
+    real = real_bench(slug)
+    for v in real.glob("V_*"):
+        (sb / v.name).symlink_to(v)
+    shutil.copy(real / "score.json", sb / "score.json")
+    un = REPLAY["referenceUnreachable"]
+    over = {"paths": {"score": str(sb / "score.json"), "bench": str(sb), "stems": f"{un}/stems", "referenceVideo": f"{un}/ref.mp4",
+                      "cache": str(work / "cache"), "instruments": "music-instruments"}}
+    env = {**os.environ, "ZRMD_RESYNTH_OVERRIDES": json.dumps(over)}
+    before = {p.name for p in sb.glob("V_*")}
+    cmd = [str(settings.path("python")), "-I", str(ENGINE / "Scripts" / "ResynthMusic.py"), *args, "--note", f"replay check {tag}"]
+    t0 = time.time()
+    r = subprocess.run(["nice", "-n", "5", *cmd], env=env, capture_output=True, text=True)
+    if r.returncode != 0:
+        raise SystemExit("render failed:\n" + (r.stderr or r.stdout)[-1200:])
+    new = sorted(p for p in sb.glob("V_*") if p.name not in before and not p.is_symlink())
+    if not new:
+        raise SystemExit("the render wrote no version")
+    print(f"render {tag}: {time.time() - t0:.0f} s -> {new[-1].name}", flush=True)
+    return new[-1]
+
+
+def read(path: Path) -> np.ndarray:
+    import soundfile as sf
+    y, _ = sf.read(path, dtype="float32")
+    return y
+
+
+def snr_db(test: np.ndarray, truth: np.ndarray) -> float:
+    n = min(len(test), len(truth))
+    e = test[:n].astype(np.float64) - truth[:n].astype(np.float64)
+    return float(10 * np.log10((truth[:n].astype(np.float64) ** 2).sum() / ((e ** 2).sum() + 1e-30)))
+
+
+def compare_dirs(a: Path, b: Path) -> dict:
+    """SNR in dB of b against a for every stem and the mix (a is the truth)."""
+    out = {s: round(snr_db(read(b / "stems" / f"{s}.wav"), read(a / "stems" / f"{s}.wav")), 1) for s in STEMS}
+    out["mix"] = round(snr_db(read(b / "mix.wav"), read(a / "mix.wav")), 1)
+    return out
+
+
+def reference_scores(slug: str, got: dict[str, np.ndarray], stretch: float = 1.0, semitones: float = 0.0) -> dict:
+    """Official critic score (third-octave, the benchmark's own metric: params/music-trim.json specs.critic) of each signal against its reference
+    stem, the reference moved by `stretch` (rate: above one is faster) and `semitones` when asked. The scorer reads the reference, the render
+    never did. FR : le scoreur lit la reference, jamais le rendu."""
+    os.environ["ZRMD_RESYNTH_OVERRIDES"] = __import__("MusicRun").env_for(slug)["ZRMD_RESYNTH_OVERRIDES"]
+    from zrmd.audio import resynth as RS, trim as T
+    P = RS.params()
+    sr = P["sampleRate"]
+    ref = RS.load_reference(P)
+    spec = TRIM_PARAMS["specs"]["critic"]
+    out = {}
+    for k, y in got.items():
+        r = np.asarray(ref["mix"] if k == "mix" else ref["stems"][k])
+        r = T.mono(r).astype(np.float32)
+        if stretch != 1.0 or semitones:
+            import librosa
+            if stretch != 1.0:
+                r = librosa.effects.time_stretch(r, rate=stretch)
+            if semitones:
+                r = librosa.effects.pitch_shift(r, sr=sr, n_steps=semitones)
+        n = min(len(r), len(T.mono(y)))
+        out[k] = T.score_spec(r[:n].astype(np.float64), T.mono(y)[:n].astype(np.float64), sr, spec)["score"]
+    return out
+
+
+def table(title: str, rows: dict[str, dict]) -> str:
+    cols = sorted({c for r in rows.values() for c in r})
+    L = [title, f"{'':<8}" + "".join(f"{c:>14}" for c in cols)]
+    for k, r in rows.items():
+        L.append(f"{k:<8}" + "".join(f"{r.get(c, float('nan')):>14}" for c in cols))
+    return "\n".join(L)
+
+
+def cmd_check(a) -> int:
+    v = trimmed_version(a.slug, a.version)
+    real = real_bench(a.slug) / v
+    new = render(a.slug, ["render", "--params", str(real / "params.json")], f"{v}")
+    snr = compare_dirs(real, new)
+    got = {s: read(new / "stems" / f"{s}.wav") for s in STEMS}
+    got["mix"] = read(new / "mix.wav")
+    truth = {s: read(real / "stems" / f"{s}.wav") for s in STEMS}
+    truth["mix"] = read(real / "mix.wav")
+    crit_replay = reference_scores(a.slug, got)
+    crit_stored = reference_scores(a.slug, truth)
+    rows = {k: {"snrDb": snr[k], "criticStored": crit_stored[k], "criticReplay": crit_replay[k]} for k in (*STEMS, "mix")}
+    ok_snr = all(snr[k] >= REPLAY["snrMinDb"] for k in rows)
+    ok_crit = all(abs(crit_replay[k] - crit_stored[k]) <= REPLAY["criticTolerance"] for k in rows)
+    out = {"slug": a.slug, "version": v, "date": "14 October 2026", "referenceUnreachable": REPLAY["referenceUnreachable"], "rows": rows,
+           "snrMinDb": REPLAY["snrMinDb"], "criticTolerance": REPLAY["criticTolerance"], "snrOk": ok_snr, "criticOk": ok_crit,
+           "calibrationBytes": (real / "calibration.npz").stat().st_size}
+    (real / "replay.json").write_text(json.dumps(out, indent=1) + "\n", encoding="utf-8")
+    print(table(f"{a.slug} {v} replay (reference unreachable): SNR >= {REPLAY['snrMinDb']} dB {'OK' if ok_snr else 'FAIL'}, "
+                f"critic within {REPLAY['criticTolerance']} {'OK' if ok_crit else 'FAIL'}", rows))
+    return 0 if ok_snr and ok_crit else 1
+
+
+def cmd_raw(a) -> int:
+    v = trimmed_version(a.slug, a.version)
+    real = real_bench(a.slug)
+    prm = json.loads((real / v / "params.json").read_text(encoding="utf-8"))
+    base = prm["calibration"]["base"]
+    new = render(a.slug, ["render", "--params", str(real / base / "params.json")], f"raw {base}")
+    snr = compare_dirs(real / base, new)
+    out = {"slug": a.slug, "base": base, "snrDb": snr, "date": "14 October 2026"}
+    (real / v / "raw-check.json").write_text(json.dumps(out, indent=1) + "\n", encoding="utf-8")
+    print(f"{a.slug} raw re-render of {base} against its stored stems (dB SNR): {json.dumps(snr)}")
+    return 0
+
+
+def cmd_variation(a) -> int:
+    v = trimmed_version(a.slug, a.version)
+    real = real_bench(a.slug)
+    prm = json.loads((real / v / "params.json").read_text(encoding="utf-8"))
+    bpm0 = float(prm["tempo"]["bpm"])
+    bpm = round(bpm0 * a.bpm_ratio, 4)
+    args = ["variation", "--base", v, "--bpm", str(bpm), "--transpose", str(a.transpose)]
+    cal = render(a.slug, args, f"variation {bpm} bpm {a.transpose:+.0f} st calibrated")
+    cal_dir = cal
+    got = {s: read(cal_dir / "stems" / f"{s}.wav") for s in STEMS}
+    got["mix"] = read(cal_dir / "mix.wav")
+    raw = render(a.slug, [*args, "--no-calibration"], f"variation {bpm} bpm {a.transpose:+.0f} st raw")
+    got_raw = {s: read(raw / "stems" / f"{s}.wav") for s in STEMS}
+    got_raw["mix"] = read(raw / "mix.wav")
+    s_cal = reference_scores(a.slug, got, stretch=a.bpm_ratio, semitones=a.transpose)
+    s_raw = reference_scores(a.slug, got_raw, stretch=a.bpm_ratio, semitones=a.transpose)
+    rows = {}
+    for k in (*STEMS, "mix"):
+        rc, rr = float(np.sqrt((got[k].astype(np.float64) ** 2).mean()) + 1e-12), float(np.sqrt((got_raw[k].astype(np.float64) ** 2).mean()) + 1e-12)
+        rows[k] = {"criticRaw": s_raw[k], "criticCalibrated": s_cal[k], "gainDb": round(20 * np.log10(rc / rr), 2),
+                   "peak": round(float(np.abs(got[k]).max()), 3), "finite": bool(np.isfinite(got[k]).all())}
+    ok = all(rows[k]["criticCalibrated"] - rows[k]["criticRaw"] >= REPLAY["variation"]["minLift"] and rows[k]["finite"] and rows[k]["peak"] <= REPLAY["variation"]["maxPeak"]
+             for k in rows)
+    out = {"slug": a.slug, "version": v, "bpmRatio": a.bpm_ratio, "transposeSemitones": a.transpose, "bpm": [bpm0, bpm], "rows": rows, "ok": ok,
+           "minLift": REPLAY["variation"]["minLift"], "date": "14 October 2026",
+           "note": "scored against the reference time-stretched (and pitch-shifted) by the same amounts: an approximation of what the variation should be"}
+    (real / v / "variation-check.json").write_text(json.dumps(out, indent=1) + "\n", encoding="utf-8")
+    print(table(f"{a.slug} {v} variation x{a.bpm_ratio} {a.transpose:+.0f} st: lift >= {REPLAY['variation']['minLift']} {'OK' if ok else 'FAIL'}", rows))
+    return 0 if ok else 1
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    for name in ("check", "raw", "variation"):
+        s = sub.add_parser(name)
+        s.add_argument("--slug", required=True)
+        s.add_argument("--version", default="")
+        if name == "variation":
+            s.add_argument("--bpm-ratio", type=float, default=REPLAY["variation"]["bpmRatio"])
+            s.add_argument("--transpose", type=float, default=REPLAY["variation"]["transposeSemitones"])
+    a = ap.parse_args()
+    return {"check": cmd_check, "raw": cmd_raw, "variation": cmd_variation}[a.cmd](a)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,132 @@
+# 14 October 2026: the final calibration as PARAMETERS (zrmd/audio/calibration.py), proven in both directions on synthetic music with no reference
+# sample. GREEN: the stored calibration, replayed on the render it was made from, gives the trimmed signal (more than 80 dB SNR) with the reference
+# unreachable; a variation keeps the edit (a +6 dB render comes out 6 dB above the calibrated one) and a tempo change follows the warp. RED: a
+# replay never touches the reference (its measuring functions are made to raise), a missing or foreign calibration file raises an error that names
+# it, and re-calibrating the +6 dB render against the reference WOULD have cancelled the edit. FR : calibration rejouable sans la reference.
+import copy
+import sys
+import tempfile
+from pathlib import Path
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import test_trim as TT  # noqa: E402
+from zrmd.audio import calibration as CAL, trim as T  # noqa: E402
+
+SR = TT.SR
+FAIL = []
+
+
+def check(name, cond, detail=""):
+    print(("ok   " if cond else "FAIL ") + name + (f"  {detail}" if detail and not cond else ""))
+    if not cond:
+        FAIL.append(name)
+
+
+def snr_db(a, b):
+    e = a - b
+    return float(10 * np.log10((b.astype(np.float64) ** 2).sum() / ((e.astype(np.float64) ** 2).sum() + 1e-30)))
+
+
+def critic(ref, ours, c):
+    return T.score_spec(T.mono(ref).astype(np.float64), T.mono(ours).astype(np.float64), SR, c["specs"]["critic"])["score"]
+
+
+def run() -> int:
+    c = T.cfg()
+    c["iterations"], c["scoreEvery"] = 4, 99
+    c["fill"]["rounds"] = 2
+    c["jitter"]["train"]["count"], c["jitter"]["audit"]["count"] = 3, 2
+    ref = TT.music()
+    bad = TT.distort(ref)
+    y_c, rep, cal = T.trim_calibrated(ref, bad, SR, c)
+    y_plain, _ = T.trim(ref, bad, SR, c)
+    check("trim_calibrated gives the same signal as trim", float(np.abs(y_c - y_plain).max()) == 0.0)
+
+    # --- GREEN: save, load, replay with the reference unreachable
+    with tempfile.TemporaryDirectory() as tmp:
+        f = Path(tmp) / "calibration.npz"
+        blk = CAL.save(f, {"mix": cal})
+        loaded = CAL.load(f)["mix"]
+        keep = (T.reference_targets, T.reference_channels)
+
+        def boom(*a, **k):
+            raise AssertionError("the reference was touched during a replay")
+        T.reference_targets, T.reference_channels = boom, boom
+        try:
+            y_r, info = T.replay(bad, loaded, SR)
+        finally:
+            T.reference_targets, T.reference_channels = keep
+        check("GREEN: replay from the stored file equals the trimmed signal (more than 80 dB SNR)", snr_db(y_r, y_c) > 80.0, snr_db(y_r, y_c))
+        check("GREEN: the replayed signal has the same critic score as the trimmed one (within 0.01)", abs(critic(ref, y_r, c) - critic(ref, y_c, c)) < 0.01,
+              (critic(ref, y_r, c), critic(ref, y_c, c)))
+        check("RED/GREEN: the replay never called a reference measuring function (they raise)", True)
+        check("the calibration block names its file, size and hash", blk["file"] == "calibration.npz" and blk["bytes"] > 1000 and len(blk["sha256"]) == 64, blk)
+
+        # --- RED: a missing file and a foreign file raise an error that names them
+        missing = Path(tmp) / "nowhere" / "calibration.npz"
+        try:
+            CAL.load(missing)
+            ok_missing = False
+        except CAL.CalibrationError as e:
+            ok_missing = str(missing) in str(e)
+        check("RED: a missing calibration file raises CalibrationError naming the file", ok_missing)
+        foreign = Path(tmp) / "foreign.npz"
+        np.savez(foreign, meta=np.array('{"schema": "other@9"}'))
+        try:
+            CAL.load(foreign)
+            ok_foreign = False
+        except CAL.CalibrationError as e:
+            ok_foreign = str(foreign) in str(e) and "schema" in str(e)
+        check("RED: a file of another schema raises CalibrationError naming the file", ok_foreign)
+        try:
+            CAL.locate({"calibration": {"file": "calibration.npz", "version": "V_999"}}, Path(tmp) / "V_010")
+            located = True
+        except CAL.CalibrationError:
+            located = False
+        check("a params block that points at another version resolves to that version's file path", located)
+        try:
+            CAL.apply({"calibration": {"file": "calibration.npz", "version": "V_999"}}, Path(tmp) / "V_010", {"drums": bad}, lambda s: bad, SR)
+            ok_apply = False
+        except CAL.CalibrationError as e:
+            ok_apply = "calibration.npz" in str(e)
+        check("RED: applying a version whose calibration file does not exist raises an error that names the file", ok_apply)
+
+        # --- variation: an edit survives (relative), re-calibrating against the reference would cancel it
+        up = (bad * 2.0).astype(np.float32)             # +6 dB everywhere, as a voice macro gainDb 6 would do on a stem
+        y_up, info_up = T.replay(up, loaded, SR)
+        check("GREEN: a +6 dB render replays to 6 dB above the calibrated signal (SNR of y/2 against y_c above 50 dB)", snr_db(y_up / 2.0, y_c) > 50.0,
+              snr_db(y_up / 2.0, y_c))
+        y_re, _ = T.trim(ref, up, SR, c)
+        lvl = lambda x: 20 * np.log10(np.sqrt((x ** 2).mean()) + 1e-12)  # noqa: E731
+        check("RED: re-calibrating the +6 dB render against the reference cancels the edit (within 2 dB of the reference level)",
+              abs(lvl(y_re) - lvl(y_c)) < 2.0, (lvl(y_re), lvl(y_c)))
+        check("GREEN: the replay kept the edit (level 5.5 to 6.5 dB above the calibrated signal)", 5.5 < lvl(y_up) - lvl(y_c) < 6.5, lvl(y_up) - lvl(y_c))
+
+        # --- tempo: the calibration moves with the time warp
+        import librosa
+        rate = 1.0 / 1.25                                # 25 percent slower: the render is 1.25 times as long
+        slow_ours = np.stack([librosa.effects.time_stretch(bad[:, i].astype(np.float32), rate=rate) for i in range(2)], axis=1)
+        slow_ref = np.stack([librosa.effects.time_stretch(ref[:, i].astype(np.float32), rate=rate) for i in range(2)], axis=1)
+        n = min(len(slow_ours), len(slow_ref))
+        slow_ours, slow_ref = slow_ours[:n], slow_ref[:n]
+        before = critic(slow_ref, slow_ours, c)
+        y_w, info_w = T.replay(slow_ours, loaded, SR, {"timeRatio": 1.25, "semitones": 0.0})
+        y_nw, _ = T.replay(slow_ours, loaded, SR, {"timeRatio": 1.0, "semitones": 0.0})
+        after_w, after_nw = critic(slow_ref, y_w, c), critic(slow_ref, y_nw, c)
+        check("GREEN: with the time warp the calibration improves a slowed render a lot (critic up by more than 8 points)", after_w - before > 8.0, (before, after_w))
+        check("RED: without the warp the same stored calibration is worse (at least 2 points below)", after_w - after_nw > 2.0, (after_w, after_nw))
+        check("the warped replay stays bounded (finite, RMS within 4x of the slowed render)", np.isfinite(y_w).all() and np.sqrt((y_w ** 2).mean()) < 4 * np.sqrt((slow_ours ** 2).mean()))
+    print(f"{len(FAIL)} failure(s)")
+    return 1 if FAIL else 0
+
+
+def test_calibration():
+    assert run() == 0
+
+
+if __name__ == "__main__":
+    sys.exit(run())

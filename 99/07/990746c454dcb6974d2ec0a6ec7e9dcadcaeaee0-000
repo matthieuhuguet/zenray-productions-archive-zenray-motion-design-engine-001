@@ -1,0 +1,81 @@
+# 14 October 2026: how a cut list is scored. One definition, used by the method sheet, the final report, the tests and the
+# orchestrator reader. A truth entry is {"frame", "kind": hard|dissolve|fade|whip, "start", "end"}; a prediction is the same
+# shape (only "frame" and "kind" are required).
+#   hard      matches a prediction whose frame is within +-tol of the truth frame (tol 0 and tol 1 are both reported);
+#   transition (dissolve, fade, whip) matches a prediction whose frame lies inside [start - tol, end + tol]: the instant of a
+#             cross-fade is not defined to the frame, the interval is the truth, the position error to the middle is
+#             reported on the side.
+# Matching is one to one, greedy by distance. Precision = matched / predictions, recall = matched / truth, F1 = their
+# harmonic mean, extra jumps = unmatched predictions, missed = unmatched truth. FR : definition unique du score d'une liste.
+from __future__ import annotations
+
+import numpy as np
+
+TRANSITIONS = ("dissolve", "fade", "whip")
+
+
+def _dist(truth: dict, p: int) -> int:
+    if truth.get("kind") in TRANSITIONS and truth.get("start") is not None:
+        if truth["start"] <= p <= truth["end"]:
+            return 0
+        return min(abs(p - truth["start"]), abs(p - truth["end"]))
+    return abs(p - truth["frame"])
+
+
+def score(truth: list[dict], pred: list[dict], tol: int = 1, kinds: tuple | None = None) -> dict:
+    """One-to-one matching; `kinds` restricts the truth entries that count (predictions of other kinds are ignored
+    only when they match a truth entry of an excluded kind)."""
+    T = [t for t in truth if kinds is None or t.get("kind") in kinds]
+    P = list(pred)
+    pairs = []
+    for ti, t in enumerate(T):
+        for pi, p in enumerate(P):
+            d = _dist(t, p["frame"])
+            if d <= tol:
+                pairs.append((d, abs(p["frame"] - t["frame"]), ti, pi))
+    pairs.sort()
+    used_t, used_p, matches = set(), set(), []
+    for d, e, ti, pi in pairs:
+        if ti in used_t or pi in used_p:
+            continue
+        used_t.add(ti)
+        used_p.add(pi)
+        matches.append((ti, pi))
+    tp = len(matches)
+    # Predictions that fall on a truth entry of an excluded kind are not penalised.
+    ignored = 0
+    if kinds is not None:
+        others = [t for t in truth if t.get("kind") not in kinds]
+        for pi, p in enumerate(P):
+            if pi in used_p:
+                continue
+            if any(_dist(t, p["frame"]) <= tol for t in others):
+                ignored += 1
+    fp = len(P) - tp - ignored
+    fn = len(T) - tp
+    precision = tp / max(len(P) - ignored, 1) if (len(P) - ignored) else (1.0 if not T else 0.0)
+    recall = tp / len(T) if T else 1.0
+    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+    errors = [P[pi]["frame"] - T[ti]["frame"] for ti, pi in matches]
+    return {"tp": tp, "fp": fp, "fn": fn, "precision": round(precision, 4), "recall": round(recall, 4), "f1": round(f1, 4),
+            "truth": len(T), "predicted": len(P) - ignored, "errors": errors,
+            "missed": [T[i]["frame"] for i in range(len(T)) if i not in used_t],
+            "extra": [P[i]["frame"] for i in range(len(P)) if i not in used_p]}
+
+
+CUT_KINDS = ("hard", "dissolve", "fade", "whip")
+
+
+def summary(truth: list[dict], pred: list[dict]) -> dict:
+    """The row printed in every report. `truth` may carry kind "region" entries (events that are not cuts by the area rule):
+    a prediction that lands on one is neutral, never an extra jump. F1 at 0 and +-1 frame for hard cuts alone, then for every
+    cut kind (transitions by interval)."""
+    out = {}
+    for tol in (0, 1):
+        out[f"cuts_tol{tol}"] = score(truth, pred, tol, kinds=CUT_KINDS)
+        out[f"hard_tol{tol}"] = score(truth, pred, tol, kinds=("hard",))
+    return out
+
+
+def flat(row: dict) -> dict:
+    return {k: row[k] for k in ("tp", "fp", "fn", "precision", "recall", "f1", "truth", "predicted")}

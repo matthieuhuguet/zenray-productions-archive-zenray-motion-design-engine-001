@@ -1,0 +1,392 @@
+// 14 October 2026: ZenRay Motion Design V1, the application shell: hash router, home (drop a video or a sound, paged projects) and the project
+// page (named pipelines with live progress, paged scenes). The scene editor, the music studio and the montage are their own modules.
+// Every list is paged and every value of the product comes from /api/v1/config; this file owns layout and flow only.
+// FR : la coquille de l'application V1 : routeur, accueil (depot d'un fichier, projets pagines) et page projet (pipelines, scenes).
+import { $, $$, esc, get, post, upload, poll, toast, initTheme, pagedList, moduleChips, clock, sec, pct, makeField } from './studio-core.js'
+import { sceneView } from './studio-scene.js'
+import { musicView } from './studio-music.js'
+import { montageView } from './studio-montage.js'
+
+const app = $('#app')
+let cleanup = null
+let config = null
+
+const ICON = {
+  drop: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0l-4 4m4-4l4 4M4 15v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>',
+}
+
+// ------------------------------------------------------------------------------------------------------------ routing
+function parseHash() {
+  const [path, query] = (location.hash || '#/').replace(/^#/, '').split('?')
+  return { parts: path.split('/').filter(Boolean).map(decodeURIComponent), q: Object.fromEntries(new URLSearchParams(query || '')) }
+}
+const link = (nav) => $$('.tabs a').forEach((a) => a.classList.toggle('on', a.dataset.nav === nav))
+
+async function route() {
+  cleanup?.()
+  cleanup = null
+  const { parts, q } = parseHash()
+  const [a, b, c, d] = parts
+  app.innerHTML = '<div class="state">Chargement…</div>'
+  window.scrollTo(0, 0)
+  try {
+    if (!a) { link('home'); document.title = 'ZenRay Motion Design'; cleanup = await homeView(app) }
+    else if (a === 'p' && b && c === 's' && d) { link('home'); cleanup = await sceneView(app, { slug: b, id: d, config }) }
+    else if (a === 'p' && b) { link('home'); cleanup = await projectView(app, b) }
+    else if (a === 'music') { link('music'); cleanup = await musicView(app, { slug: b || null, config }) }
+    else if (a === 'montage') { link('montage'); cleanup = await montageView(app, { id: b || null, q, config }) }
+    else app.innerHTML = '<div class="state">Cette page n\'existe pas. <a href="#/">Retour aux projets</a></div>'
+  } catch (e) {
+    app.innerHTML = `<div class="state err" data-testid="view-error">${esc(e.message)} <a href="#/">Retour aux projets</a></div>`
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------- home
+function projectCard(p) {
+  const a = document.createElement('a')
+  a.className = 'card'
+  a.href = `#/p/${encodeURIComponent(p.slug)}`
+  a.dataset.testid = 'project-card'
+  a.innerHTML = `<div class="thumb">${p.shots ? `<img alt="" loading="lazy" src="/api/v1/frame?slug=${encodeURIComponent(p.slug)}&name=S01-mid.jpg">` : ''}${p.durationS ? `<span class="badge">${clock(p.durationS)}</span>` : ''}${p.hasAudio ? '' : '<span class="badge l">sans son</span>'}</div>
+    <div class="body"><div class="name">${esc(p.title)}</div>
+    <div class="chips">${p.shots ? `<span class="chip"><b class="num">${p.shots}</b> scènes</span>` : '<span class="chip">pas encore découpé</span>'}${p.motions ? `<span class="chip"><b class="num">${p.motions}</b> motions</span>` : ''}${moduleChips(p.modules)}</div></div>`
+  $('img', a)?.addEventListener('error', (e) => e.target.remove())
+  return a
+}
+
+function fileKind(name) {
+  const ext = (name.match(/\.[^.]+$/) || [''])[0].toLowerCase()
+  if (config.upload.video.includes(ext)) return 'video'
+  if (config.upload.audio.includes(ext)) return 'audio'
+  return null
+}
+
+async function homeView(root) {
+  root.innerHTML = `<h1 class="title">Projets</h1>
+    <p class="meta" id="count">Dépose une vidéo ou un MP3 : il est découpé en petites scènes que tu peux modifier.</p>
+    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Déposer un fichier ou en choisir un">
+      ${ICON.drop}
+      <div><strong>Dépose une vidéo ou un MP3 ici</strong><div class="note">ou clique pour choisir un fichier (vidéo : ${esc(config.upload.video.join(' '))} · son : ${esc(config.upload.audio.join(' '))})</div></div>
+      <span class="grow"></span>
+      <div class="progress" id="prog" hidden><i></i></div>
+      <input type="file" id="pick" hidden accept="${esc([...config.upload.video, ...config.upload.audio].join(','))}">
+    </div>
+    <div id="list"></div>`
+  const drop = $('#drop', root), pick = $('#pick', root), prog = $('#prog', root)
+  let busy = false
+  async function handle(file) {
+    if (busy || !file) return
+    const kind = fileKind(file.name)
+    if (!kind) return toast(`Format non pris en charge : ${file.name}`, true)
+    if (file.size > config.upload.maxMB * 1048576) return toast(`Fichier trop gros (maximum ${config.upload.maxMB} Mo).`, true)
+    busy = true
+    prog.hidden = false
+    try {
+      const sent = await upload(file, (r) => { $('i', prog).style.width = `${Math.round(r * 100)}%` })
+      toast('Fichier reçu, création du projet…')
+      const made = await post('/api/v1/project/create', { upload: sent.id, title: file.name.replace(/\.[^.]+$/, ''), run: kind === 'video' ? config.firstPipeline : null })
+      toast(made.created ? 'Projet créé.' : 'Ce fichier est déjà un projet.')
+      location.hash = `#/p/${encodeURIComponent(made.slug)}`
+    } catch (e) {
+      toast(e.message, true)
+    } finally {
+      busy = false
+      prog.hidden = true
+    }
+  }
+  drop.addEventListener('click', () => pick.click())
+  drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick.click() } })
+  pick.addEventListener('click', (e) => e.stopPropagation())
+  pick.addEventListener('change', () => handle(pick.files[0]))
+  for (const ev of ['dragenter', 'dragover']) drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over') })
+  for (const ev of ['dragleave', 'drop']) drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('over') })
+  drop.addEventListener('drop', (e) => handle(e.dataTransfer.files[0]))
+  const stop = pagedList({
+    container: $('#list', root), pageSize: config.paging.projects,
+    fetchPage: (offset, limit) => get('/api/v1/projects', { offset, limit }),
+    renderItem: projectCard, emptyText: 'Aucun projet : dépose une vidéo ou un MP3 pour commencer.',
+    onCount: (n) => { $('#count', root).textContent = `${n} projet${n > 1 ? 's' : ''} · dépose une vidéo ou un MP3 pour en créer un.` },
+  })
+  return stop
+}
+
+// ------------------------------------------------------------------------------------------------------------ project
+const STATE_LABEL = { pending: 'en attente', running: 'en cours', done: 'fait', failed: 'échec', 'below-target': 'sous la cible', skipped: 'ignoré', cancelled: 'annulé' }
+
+function sceneCard(slug, s) {
+  const a = document.createElement('a')
+  a.className = 'card'
+  a.href = `#/p/${encodeURIComponent(slug)}/s/${encodeURIComponent(s.id)}`
+  a.dataset.testid = 'scene-card'
+  a.innerHTML = `<div class="thumb"><img alt="" loading="lazy" src="${esc(s.poster)}"><span class="badge">${clock(s.start)} → ${clock(s.end)}</span></div>
+    <div class="body"><div class="name"><span class="num">${esc(s.id)}</span>${s.content ? ' · ' + esc(s.content) : ''}</div>
+    <div class="chips">${s.family ? `<span class="chip">${esc(s.family)}</span>` : ''}<span class="chip"><b class="num">${sec(s.duration)}</b></span>
+    ${s.motions.length ? `<span class="chip ${s.editable ? 'ok' : ''}">${s.motions.length} motion${s.motions.length > 1 ? 's' : ''}${s.editable ? ' · modifiable' : ''}</span>` : '<span class="chip">pas encore reproduite</span>'}</div></div>`
+  $('img', a).addEventListener('error', (e) => e.target.remove())
+  return a
+}
+
+function runHtml(run) {
+  return `<div class="panel" data-testid="run-panel">
+    <div class="row"><strong>${esc(run.state === 'running' || run.state === 'queued' ? 'Travail en cours' : 'Dernier travail')}</strong>
+      <span class="chip ${run.state === 'done' ? 'ok' : ''}">${esc(STATE_LABEL[run.state] || run.state)}</span><span class="grow"></span>
+      ${run.state === 'running' || run.state === 'queued' ? '<button class="btn" type="button" data-cancel>Annuler</button>' : ''}</div>
+    <div class="steps">${run.steps.map((s) => `<div class="row step ${s.state}"><span class="chip ${s.state === 'done' ? 'ok' : ''}">${esc(STATE_LABEL[s.state] || s.state)}</span>
+      <span>${esc(s.label)}</span>${s.seconds != null ? `<span class="note num">${s.seconds < 90 ? s.seconds.toFixed(0) + ' s' : (s.seconds / 60).toFixed(1) + ' min'}</span>` : ''}${s.score != null ? `<span class="note num">${pct(s.score)}</span>` : ''}</div>`).join('')}</div></div>`
+}
+
+async function projectView(root, slug) {
+  const p = await get('/api/v1/project', { slug })
+  document.title = `${p.title} · ZenRay Motion Design`
+  const meta = p.meta || {}
+  root.innerHTML = `<p class="crumbs"><a href="#/">Projets</a> › ${esc(p.title)}</p>
+    <h1 class="title" data-testid="project-title">${esc(p.title)}</h1>
+    <div class="meta">${p.durationS ? `<span class="num">${clock(p.durationS)}</span>` : ''}${meta.width ? `<span><span class="num">${meta.width}×${meta.height}</span> à <span class="num">${meta.fps}</span> i/s</span>` : ''}
+      <span class="mono">${esc(p.slug)}</span>${p.hasAudio ? '' : '<span>sans son</span>'}</div>
+    <div class="chips" style="margin-top:10px">${moduleChips(p.modules)}</div>
+    <div class="row" id="actions" style="margin:18px 0 10px"></div>
+    <div id="run"></div>
+    <details class="panel" id="publish" data-testid="publish-panel" style="margin-top:var(--gap)"><summary>Publication sur le site</summary><div id="publishBody" class="note" style="margin-top:10px">Chargement…</div></details>
+    <details class="panel" id="cuts" data-testid="cuts-panel" style="margin-top:var(--gap)"><summary>Réglages du découpage (rythme)</summary><div id="cutsBody" class="note" style="margin-top:10px">Chargement…</div></details>
+    <h2 class="sec">Scènes <span class="note" id="sceneCount"></span></h2>
+    <div id="scenes"></div>`
+  const actions = $('#actions', root), runBox = $('#run', root)
+  let stopScenes = null, stopRun = null
+  const hasVideo = p.hasFile
+  Object.entries(config.pipelines).forEach(([id, spec]) => {
+    const b = document.createElement('button')
+    b.className = `btn ${id === config.firstPipeline ? 'primary' : ''}`
+    b.type = 'button'
+    b.textContent = spec.label
+    b.dataset.pipeline = id
+    const ok = spec.needs === 'audio' ? p.hasAudio : hasVideo
+    b.disabled = !ok
+    if (!ok) b.title = spec.needs === 'audio' ? 'Ce projet n\'a pas de son.' : 'Ce projet n\'a pas de fichier vidéo.'
+    b.addEventListener('click', async () => {
+      b.disabled = true
+      try {
+        const r = await post('/api/v1/project/run', { slug, pipeline: id })
+        attachRun(r.run.id)
+      } catch (e) { toast(e.message, true) } finally { b.disabled = !ok }
+    })
+    actions.append(b)
+  })
+  const open = document.createElement('a')
+  open.className = 'btn'
+  open.href = '#/montage'
+  open.textContent = 'Aller au montage'
+  actions.append(open)
+  if (p.origin === 'dropped') {
+    const del = document.createElement('button')
+    del.className = 'btn'
+    del.type = 'button'
+    del.dataset.testid = 'delete-project'
+    del.textContent = 'Supprimer ce projet'
+    del.title = 'Supprime le projet déposé et ses calculs. Tes montages et tes motions ne sont pas touchés.'
+    del.addEventListener('click', async () => {
+      if (!confirm(`Supprimer le projet « ${p.title} » et ses calculs ? Tes montages et tes motions ne sont pas touchés.`)) return
+      del.disabled = true
+      try {
+        await post('/api/v1/project/delete', { slug })
+        toast('Projet supprimé.')
+        location.hash = '#/'
+      } catch (e) { toast(e.message, true); del.disabled = false }
+    })
+    actions.append(del)
+  }
+  if (p.hasAudio) {
+    get('/api/v1/music/members').then((m) => {
+      if (!m.members.some((x) => x.slug === slug)) return
+      const a = document.createElement('a')
+      a.className = 'btn'
+      a.href = `#/music/${encodeURIComponent(slug)}`
+      a.textContent = 'Ouvrir la musique'
+      actions.insertBefore(a, open)
+    }).catch(() => {})
+  }
+  const loadScenes = () => {
+    stopScenes?.()
+    $('#scenes', root).innerHTML = ''
+    stopScenes = pagedList({
+      container: $('#scenes', root), pageSize: config.paging.scenes,
+      fetchPage: (offset, limit) => get('/api/v1/scenes', { slug, offset, limit }),
+      renderItem: (s) => sceneCard(slug, s),
+      emptyText: hasVideo ? 'Pas encore de scènes : lance « Découper en scènes ».' : 'Ce projet n\'a pas d\'image : il n\'y a pas de scènes à découper.',
+      onCount: (n) => { $('#sceneCount', root).textContent = n ? `(${n})` : '' },
+    })
+  }
+  // ---- publication: the plan sends nothing; rights are validated by the person; the run needs a confirmation
+  let pubLoaded = false
+  const pubBody = $('#publishBody', root)
+  const STATUS = { ready: 'prêt', rights: 'droits à valider', problem: 'problème', excluded: 'jamais publié' }
+  async function loadPublish() {
+    pubBody.innerHTML = '<p class="note">Chargement…</p>'
+    let list
+    try { list = (await get('/api/v1/publish/motions', { slug })).motions } catch (err) { pubBody.textContent = err.message; return }
+    if (!list.length) { pubBody.textContent = 'Ce projet n\'a pas encore de motion reproduit.'; return }
+    const cleared = list.filter((m) => m.rights.cleared).length
+    const extracts = list.filter((m) => m.excluded).length
+    pubBody.innerHTML = `<p class="note"><b class="num">${list.length}</b> motions, dont <b class="num">${extracts}</b> extraits de la vidéo (jamais publiés) et <b class="num">${cleared}</b> avec les droits validés. Seuls la reproduction, ses paramètres et ses scores partent ; jamais la vidéo de référence.</p>
+      <div class="row"><button class="btn" id="pubPlan" type="button" data-testid="publish-plan">Préparer (rien ne part)</button>
+      <button class="btn primary" id="pubRun" type="button" data-testid="publish-run" disabled>Publier les motions prêts</button></div>
+      <div id="pubRows" class="steps" style="margin-top:10px"></div><p class="note" id="pubStatus"></p>`
+    const rowsBox = $('#pubRows', pubBody), status = $('#pubStatus', pubBody)
+    let ready = []
+    const draw = (rows) => {
+      rowsBox.innerHTML = rows.map((m) => `<div class="row step"><span class="chip ${m.status === 'ready' ? 'ok' : ''}">${esc(STATUS[m.status] || m.status)}</span><span>${esc(m.title)}</span><span class="note num">${esc(m.version || '')}</span><span class="note">${esc(m.detail || '')}</span></div>`).join('')
+    }
+    draw(list.map((m) => (m.excluded ? { ...m, status: 'excluded', detail: 'extrait de la vidéo de référence' }
+      : m.rights.cleared ? { ...m, status: 'ready', detail: 'à vérifier par Préparer' } : { ...m, status: 'rights', detail: 'droits à valider dans l\'éditeur de scène' })))
+    const waitJob = (r) => new Promise((resolve, reject) => {
+      poll(async () => {
+        const { job } = await get('/api/v1/job', { id: r.job.id })
+        if (job.state === 'queued' || job.state === 'running') { status.textContent = `En cours : ${job.steps.at(-1)?.detail || '…'}`; return false }
+        job.state === 'failed' ? reject(new Error(job.error)) : resolve(job.result)
+        return true
+      }, config.poll.jobMs)
+    })
+    $('#pubPlan', pubBody).addEventListener('click', async (ev) => {
+      const b = ev.currentTarget
+      b.disabled = true
+      status.classList.remove('err')
+      try {
+        status.textContent = 'Préparation : un essai à blanc de chaque motion…'
+        const res = await waitJob(await post('/api/v1/publish/plan', { slug }))
+        draw(res.motions)
+        ready = res.motions.filter((m) => m.status === 'ready').map((m) => m.id)
+        status.textContent = `${res.count.ready} prêt${res.count.ready > 1 ? 's' : ''}, ${res.count.rights} à valider, ${res.count.problem} en problème, ${res.count.excluded} extraits jamais publiés. Rien n'est parti.`
+        $('#pubRun', pubBody).disabled = !ready.length
+      } catch (err) { status.textContent = err.message; status.classList.add('err'); toast(err.message, true) }
+      b.disabled = false
+    })
+    $('#pubRun', pubBody).addEventListener('click', async (ev) => {
+      if (!ready.length) return
+      if (!confirm(`Publier ${ready.length} motion${ready.length > 1 ? 's' : ''} sur le site ? Les rendus partent en public sur le CDN (chemins neutres, jamais la vidéo de référence). Cette action ne se défait pas simplement.`)) return
+      const b = ev.currentTarget
+      b.disabled = true
+      try {
+        status.textContent = 'Publication en cours…'
+        const res = await waitJob(await post('/api/v1/publish/run', { slug, motions: ready, confirm: true }))
+        status.textContent = `${res.published.length} publié${res.published.length > 1 ? 's' : ''}${res.failed.length ? `, ${res.failed.length} en échec : ${res.failed.map((f) => f.id + ' (' + f.error + ')').join(' ; ')}` : ''}.`
+        toast(`${res.published.length} motion(s) publié(s).`, res.failed.length > 0)
+      } catch (err) { status.textContent = err.message; status.classList.add('err'); toast(err.message, true); b.disabled = false }
+    })
+  }
+  $('#publish', root).addEventListener('toggle', (e) => { if (e.target.open && !pubLoaded) { pubLoaded = true; loadPublish() } })
+  // ---- the cut detection: 4 primary and 8 secondary values, a preview that touches nothing, an adoption on request
+  let cutsLoaded = false
+  $('#cuts', root).addEventListener('toggle', async (e) => {
+    if (!e.target.open || cutsLoaded || !hasVideo) { if (!hasVideo) $('#cutsBody', root).textContent = 'Ce projet n\'a pas d\'image : il n\'y a pas de coupes à régler.'; return }
+    cutsLoaded = true
+    const body = $('#cutsBody', root)
+    let data
+    try { data = await get('/api/v1/rhythm', { slug }) } catch (err) { body.textContent = err.message; cutsLoaded = false; return }
+    const cur = data.current
+    body.innerHTML = `<p class="note">${cur ? `Découpage actuel : <b class="num">${cur.shots}</b> scènes, <b class="num">${cur.cuts}</b> coupes.` : 'Pas encore découpé : lance « Découper en scènes ».'}</p>
+      <div class="group" id="cutsPrimary"></div><details class="more-params" id="cutsSecondary"><summary>Plus de réglages (${data.interface.secondary.length})</summary></details>
+      <div class="row" style="margin-top:12px"><button class="btn" id="cutsPreview" type="button" data-testid="cuts-preview">Voir l'effet</button>
+        <button class="btn primary" id="cutsAdopt" type="button" data-testid="cuts-adopt" disabled>Adopter ce découpage</button>
+        <button class="btn" id="cutsReset" type="button">Valeurs d'origine</button></div>
+      <p class="note" id="cutsStatus">Voir l'effet ne change rien au projet. Adopter garde l'ancien découpage à côté et refait le storyboard.</p>`
+    const values = {}
+    const fields = {}
+    const mk = (r, into) => {
+      const kind = r.kind === 'choice' ? 'select' : r.kind
+      const step = r.kind === 'number' ? Number(((r.max - r.min) / 100).toPrecision(2)) : undefined
+      const f = makeField({ key: r.name, label: r.label, kind, min: r.min, max: r.max, step, unit: r.unit ? '' : '', options: r.choices }, r.value, (v) => {
+        values[r.name] = v
+        previewed = null
+        $('#cutsAdopt', body).disabled = true
+      })
+      f.el.title = r.doc || ''
+      values[r.name] = r.value
+      fields[r.name] = f
+      into.append(f.el)
+    }
+    data.interface.primary.forEach((r) => mk(r, $('#cutsPrimary', body)))
+    data.interface.secondary.forEach((r) => mk(r, $('#cutsSecondary', body)))
+    let previewed = null
+    const status = $('#cutsStatus', body)
+    const runJob = (path) => new Promise((resolve, reject) => post(path, { slug, values }).then((r) => {
+      const stop = poll(async () => {
+        const { job } = await get('/api/v1/job', { id: r.job.id })
+        if (job.state === 'queued' || job.state === 'running') { status.textContent = `Calcul en cours : ${job.steps.at(-1)?.detail || '…'}`; return false }
+        job.state === 'failed' ? reject(new Error(job.error)) : resolve(job.result)
+        return true
+      }, config.poll.jobMs)
+      void stop
+    }, reject))
+    $('#cutsPreview', body).addEventListener('click', async (ev) => {
+      const b = ev.currentTarget
+      b.disabled = true
+      status.classList.remove('err')
+      try {
+        status.textContent = 'Calcul en cours…'
+        const r = await runJob('/api/v1/rhythm/preview')
+        previewed = JSON.stringify(values)
+        status.textContent = `Avec ces valeurs : ${r.shots} scènes, ${r.cuts} coupes (avant : ${r.before.shots ?? '·'} scènes). ${r.added.length ? `Nouvelles coupes à ${r.added.slice(0, 8).map((t) => t.toFixed(1) + ' s').join(', ')}${r.added.length > 8 ? '…' : ''}. ` : ''}${r.removed.length ? `Coupes retirées à ${r.removed.slice(0, 8).map((t) => t.toFixed(1) + ' s').join(', ')}${r.removed.length > 8 ? '…' : ''}.` : ''}`
+        $('#cutsAdopt', body).disabled = false
+      } catch (err) { status.textContent = err.message; status.classList.add('err'); toast(err.message, true) }
+      b.disabled = false
+    })
+    $('#cutsAdopt', body).addEventListener('click', async (ev) => {
+      if (previewed !== JSON.stringify(values)) return
+      const b = ev.currentTarget
+      b.disabled = true
+      try {
+        status.textContent = 'Adoption en cours : nouveau découpage et storyboard…'
+        const r = await runJob('/api/v1/rhythm/adopt')
+        toast(`Découpage adopté : ${r.shots} scènes.`)
+        status.textContent = `Adopté : ${r.shots} scènes, ${r.cuts} coupes. L'ancien découpage est gardé à côté.`
+        const fresh = await get('/api/v1/project', { slug })
+        $('.chips', root).innerHTML = moduleChips(fresh.modules)
+        loadScenes()
+      } catch (err) { status.textContent = err.message; status.classList.add('err'); toast(err.message, true); b.disabled = false }
+    })
+    $('#cutsReset', body).addEventListener('click', () => {
+      data.interface.primary.concat(data.interface.secondary).forEach((r) => { values[r.name] = r.default; fields[r.name].set(r.default) })
+      previewed = null
+      $('#cutsAdopt', body).disabled = true
+    })
+  })
+  function attachRun(id) {
+    stopRun?.()
+    stopRun = poll(async () => {
+      const { run } = await get('/api/v1/run', { id })
+      runBox.innerHTML = runHtml(run)
+      const cancel = $('[data-cancel]', runBox)
+      if (cancel) cancel.addEventListener('click', async () => { cancel.disabled = true; try { await post('/api/v1/run/cancel', { id }) } catch (e) { toast(e.message, true) } }, { once: true })
+      if (run.state === 'running' || run.state === 'queued') return false
+      toast(run.state === 'done' ? 'Travail terminé.' : `Travail ${STATE_LABEL[run.state] || run.state}.`, run.state === 'failed')
+      const fresh = await get('/api/v1/project', { slug })
+      $('.chips', root).innerHTML = moduleChips(fresh.modules)
+      loadScenes()
+      return true
+    }, config.poll.runMs)
+  }
+  const active = (p.runs || []).find((r) => r.state === 'running' || r.state === 'queued')
+  if (active) attachRun(active.id)
+  loadScenes()
+  return () => { stopScenes?.(); stopRun?.() }
+}
+
+// ------------------------------------------------------------------------------------------------------------- boot
+async function boot() {
+  initTheme()
+  try {
+    config = await get('/api/v1/config')
+  } catch (e) {
+    app.innerHTML = `<div class="state err">${esc(e.message)}</div>`
+    return
+  }
+  const busy = $('#busy')
+  poll(async () => {
+    const s = await get('/api/v1/status')
+    busy.hidden = !(s.busy || (s.runs || []).length)
+    busy.textContent = (s.runs || []).length ? `${s.runs.length} travail${s.runs.length > 1 ? 'aux' : ''} en cours` : 'calcul en cours'
+    return false
+  }, config.poll.busyMs)
+  window.addEventListener('hashchange', route)
+  route()
+}
+boot()

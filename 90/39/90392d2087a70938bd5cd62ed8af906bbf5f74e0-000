@@ -1,0 +1,214 @@
+# 14 October 2026: from a dropped file to a project, and the named pipelines the buttons start. A file reaches the app through the upload
+# route (it lands in the timelines root under _uploads/), and only its upload id comes back from the page: no path is ever sent by the page.
+# A sound without picture rides on a still black frame so the pipeline keeps one input shape (params/v1-app.json audioWrap).
+# FR : d'un fichier depose a un projet, et les pipelines nommes que les boutons lancent ; seul l'identifiant d'upload revient de la page.
+from __future__ import annotations
+
+import json
+import re
+import subprocess
+from pathlib import Path
+
+from .. import orchestrator as orch, settings
+from ..emit import montage as legacy
+from . import timeline as TL
+from .projects import AppError
+
+APP = settings.REPO / "params" / "v1-app.json"
+UPLOAD_ID = re.compile(r"^\d{9,12}-[A-Za-z0-9][A-Za-z0-9._ \-\[\]()]{0,120}$")
+
+
+def config() -> dict:
+    return json.loads(APP.read_text(encoding="utf-8"))
+
+
+def uploads_dir() -> Path:
+    return TL.root() / "_uploads"
+
+
+def upload_path(upload_id: str) -> Path:
+    if not UPLOAD_ID.match(upload_id or ""):
+        raise AppError("bad upload id")
+    p = uploads_dir() / upload_id
+    if not p.is_file():
+        raise AppError("unknown upload", 404)
+    return p
+
+
+def kind_of(path: Path) -> str | None:
+    fam = TL.family()
+    ext = path.suffix.lower()
+    if ext in fam["clipExtensions"]:
+        return "video"
+    if ext in fam["audioExtensions"]:
+        return "audio"
+    if ext in fam["imageExtensions"]:
+        return "image"
+    return None
+
+
+def describe(path: Path) -> dict:
+    """What the montage needs to place an uploaded file: its kind, duration, sound and size, probed once."""
+    fam = TL.family()
+    kind = kind_of(path)
+    try:
+        info = legacy.probe(path)
+    except (subprocess.CalledProcessError, ValueError):
+        raise AppError(f"{path.name} is not readable as media")
+    duration = fam["imageSeconds"] if kind == "image" else round(float(info["duration"]), 3)
+    return {"id": path.name, "name": re.sub(r"^\d+-", "", path.name), "kind": kind, "duration": duration, "audio": bool(info["audio"]),
+            "width": info["width"], "height": info["height"], "path": str(path)}
+
+
+def _wrap_audio(src: Path) -> Path:
+    cfg = config()["audioWrap"]
+    out = uploads_dir() / "_wrapped" / (src.stem + ".mp4")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    seconds = float(legacy.probe(src)["duration"])
+    cmd = ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c={cfg['color']}:s={cfg['size']}:r={cfg['fps']}:d={seconds:.3f}", "-i", str(src),
+           "-t", f"{seconds:.3f}", "-c:v", "libx264", "-tune", "stillimage", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", f"{cfg['audioKbps']}k", str(out)]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0 or not out.exists():
+        raise AppError(f"cannot read the sound: {r.stderr.strip()[-160:]}")
+    return out
+
+
+def create_project(upload_id: str, title: str | None = None) -> dict:
+    """Register the uploaded file as a reference (idempotent for the same bytes) and return its slug."""
+    src = upload_path(upload_id)
+    kind = kind_of(src)
+    if kind not in ("video", "audio"):
+        raise AppError("a project starts from a video or a sound")
+    cfg = config()
+    media = _wrap_audio(src) if kind == "audio" else src
+    if kind == "video" and src.suffix.lower() not in cfg["upload"]["video"]:
+        raise AppError(f"extension {src.suffix} refused")
+    clean_title = (title or re.sub(r"^\d+-", "", src.stem)).strip()[:80] or src.stem
+    slug = orch.slugify(clean_title, orch.definition()["ingest"]["slugMaxChars"])
+    try:
+        # the file is MOVED into the reference cache: a dropped video is stored once, not twice
+        got = orch.ingest_local(media, slug, clean_title, move=True)
+    except orch.OrchestratorError as e:
+        raise AppError(str(e))
+    src.unlink(missing_ok=True)  # a sound rode on a picture: its own upload is no longer needed
+    meta_path(upload_id).unlink(missing_ok=True)
+    return {"slug": got["slug"], "created": bool(got["created"]), "kind": kind, "title": clean_title}
+
+
+def start_run(slug: str, pipeline: str) -> dict:
+    cfg = config()
+    spec = cfg["pipelines"].get(pipeline)
+    if not spec:
+        raise AppError(f"unknown pipeline {pipeline!r}, expected one of {list(cfg['pipelines'])}")
+    try:
+        run = orch.new_run(slug, spec["steps"])
+        orch.start_detached(run["id"])
+    except orch.OrchestratorError as e:
+        raise AppError(str(e))
+    return run_view(orch.load_run(run["id"]))
+
+
+def run_view(run: dict) -> dict:
+    return {"id": run["id"], "slug": run["slug"], "state": run["state"], "created": run.get("created"),
+            "steps": [{"id": s["id"], "label": s["label"], "module": s["module"], "state": s["state"], "seconds": s.get("seconds"),
+                       "score": s.get("score"), "note": s.get("note")} for s in run["steps"] if s["state"] != "skipped"]}
+
+
+def active_runs() -> list[dict]:
+    return [run_view(r) for r in orch.list_runs(None, 30) if r["state"] in ("running", "queued")]
+
+
+def meta_path(upload_id: str) -> Path:
+    return uploads_dir() / "_meta" / f"{upload_id}.json"
+
+
+def remember(desc: dict) -> None:
+    """Write the descriptor of an upload beside it so the media list never probes a file twice."""
+    p = meta_path(desc["id"])
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(desc, ensure_ascii=False), encoding="utf-8")
+
+
+def list_uploads(offset: int = 0, limit: int = 24) -> dict:
+    """The user's own media, most recent first, paged; the descriptor comes from the sidecar (probed once at upload)."""
+    base = uploads_dir()
+    files = sorted((f for f in base.glob("*") if f.is_file() and UPLOAD_ID.match(f.name)), key=lambda f: f.stat().st_mtime, reverse=True) if base.exists() else []
+    page = files[offset: offset + limit]
+    items = []
+    for f in page:
+        mp = meta_path(f.name)
+        try:
+            desc = json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else None
+        except ValueError:
+            desc = None
+        if desc is None:
+            try:
+                desc = describe(f)
+                remember(desc)
+            except AppError:
+                continue
+        items.append({**desc, "url": f"/api/v1/upload-file?id={f.name}"})
+    return {"total": len(files), "offset": offset, "limit": limit, "hasMore": offset + len(page) < len(files), "items": items}
+
+
+def remove_dropped(slug: str, *, dry_run: bool = False) -> dict:
+    """Remove a project the user DROPPED (origin "dropped"): reference folder, cached media, registry entry and runs. Any other origin is
+    refused, so a reference of the corpus can never be removed from the app. Motions and montages made from it are never touched."""
+    import shutil
+    if not orch.SLUG_RE.match(slug or ""):
+        raise AppError("bad project id")
+    data = orch.read_json(orch.dropped_path(), {"schema": "zrmd/references-dropped@1", "references": []})
+    entry = next((r for r in data["references"] if r["slug"] == slug), None)
+    if not entry or entry.get("origin") != "dropped":
+        raise AppError(f"'{slug}' is not a dropped project, only a dropped project can be removed", 403)
+    runs = [p.parent for p in orch.runs_dir().glob("run-*/run.json") if (orch.read_json(p, {}) or {}).get("slug") == slug]
+    for r in runs:
+        info = orch.read_json(r / "run.json", {}) or {}
+        if info.get("state") in ("running", "queued") and info.get("pid") and orch._alive(info["pid"]):
+            raise AppError("a run of this project is still working: cancel it first", 409)
+    targets = [settings.path("workshop") / "references" / slug, settings.path("refcache") / slug, *runs]
+    plan = [str(p) for p in targets if p.exists()]
+    if dry_run:
+        return {"dryRun": True, "remove": plan}
+    for p in targets:
+        if p.exists():
+            shutil.rmtree(p)
+    data["references"] = [r for r in data["references"] if r["slug"] != slug]
+    orch.atomic_json(orch.dropped_path(), data)
+    return {"removed": plan}
+
+
+def timelines_using(path: Path) -> list[str]:
+    """Ids of the saved montages whose spec names this file (a file in use is not deleted from under a montage)."""
+    base = TL.root()
+    needle = str(path)
+    out = []
+    for f in sorted(base.glob("*/spec.json")) if base.exists() else []:
+        try:
+            if needle in f.read_text(encoding="utf-8"):
+                out.append(f.parent.name)
+        except OSError:
+            continue
+    return out
+
+
+def delete_upload(upload_id: str) -> dict:
+    p = upload_path(upload_id)
+    used = timelines_using(p)
+    if used:
+        raise AppError(f"this file is used by the montage(s) {', '.join(used)}: remove it there first", 409)
+    p.unlink()
+    meta_path(upload_id).unlink(missing_ok=True)
+    (uploads_dir() / "_wrapped" / (p.stem + ".mp4")).unlink(missing_ok=True)
+    return {"removed": upload_id}
+
+
+def delete_timeline(timeline_id: str) -> dict:
+    import shutil
+    if not re.match(TL.family()["idPattern"], timeline_id or ""):
+        raise AppError("bad timeline id")
+    folder = TL.root() / timeline_id
+    if not (folder / "spec.json").is_file():
+        raise AppError("unknown timeline", 404)
+    shutil.rmtree(folder)
+    return {"removed": timeline_id}

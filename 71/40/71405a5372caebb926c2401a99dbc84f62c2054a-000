@@ -1,0 +1,166 @@
+# 14 October 2026: the rhythm pipeline of a single video, from the file to shots.json. One entry point, `detect`, used by the
+# CLI (`zrmd shots`), the bible, the film and the orchestrator, so they all read the SAME cut list.
+#   1. decode once (160x90 RGB, every frame exact, plus codec packets)            -> <video folder>/rhythm/frames-160x90.npy
+#   2. per-boundary signals on distinct pictures (duplicate cadence collapsed)    -> signals.npz
+#   3. exhaustive fine pass (240x135, global translation removed)                 -> fine.npz
+#   4. cut probabilities (learned fusion), typed transitions (learned classifier or rule ramps), then the decision per
+#      boundary, which never cuts inside a typed transition                         (zrmd.analyze.rhythm_detect, rhythm_ramps)
+#   5. the V1 user parameters (sensitivity, minimum shot, flashes, transitions)   (zrmd.analyze.rhythm_params)
+#   6. shots, cuts and curves in the shots.json contract the bible reads.
+# Every file is derived from reference pixels and stays beside the video in the private reference cache.
+# FR : pipeline du rythme d'une video : decode, signaux, passe fine, rampes, decision, parametres V1, puis shots.json.
+from __future__ import annotations
+
+import json
+import os
+import time
+from pathlib import Path
+
+import numpy as np
+
+from . import (rhythm_cache, rhythm_detect, rhythm_features, rhythm_fine, rhythm_fusion, rhythm_params, rhythm_ramps,
+               rhythm_signals as S)
+
+FLOOR = 0.0015   # coarse RGB mean absolute difference below which a boundary is a duplicate or a still hold (never measured)
+
+
+def folder_for(video: str | Path) -> Path:
+    """The cache folder of a video: `rhythm/` beside it (the layout of the reference cache and of dropped videos)."""
+    return Path(video).resolve().parent / "rhythm"
+
+
+def _fresh(folder: Path, video: Path) -> bool:
+    meta = folder / "cache.json"
+    if not meta.exists() or not (folder / "frames-160x90.npy").exists():
+        return False
+    m = json.loads(meta.read_text(encoding="utf-8"))
+    return m.get("bytes") in (None, os.path.getsize(video)) and Path(m.get("video", "")).name == video.name
+
+
+def ensure(video: str | Path, threads: int = 2, log=None) -> dict:
+    """Decode cache, signals and fine pass of `video`, each built once and reused. Returns the arrays the detector reads."""
+    video = Path(video)
+    folder = folder_for(video)
+    t0 = time.time()
+    say = log or (lambda *_: None)
+    force = not _fresh(folder, video)
+    if force:
+        for stale in ("signals.npz", "fine.npz", "matrix.npz"):
+            (folder / stale).unlink(missing_ok=True)
+    rhythm_cache.build(str(video), folder, force=force, threads=threads)
+    say(f"decoded {time.time() - t0:.1f}s")
+    cache = rhythm_cache.load(folder)
+    frames = cache["frames"]
+    sp = folder / "signals.npz"
+    if sp.exists():
+        z = np.load(sp, allow_pickle=False)
+        sig = {k: z[k] for k in z.files}
+    else:
+        sig = S.compute(np.asarray(frames))
+        sizes, keys = np.asarray(cache["size"]), np.asarray(cache["key"])
+        if len(sizes) != len(frames):
+            # the container's packets do not line up with the decoded pictures (recorded as packets_aligned false in cache.json):
+            # the codec evidence is unavailable, so it is zero rather than a crash or a shifted guess
+            sizes, keys = np.zeros(len(frames)), np.zeros(len(frames))
+        sig.update(S.codec_signal(sizes, keys, sig["src"]))
+        sig["fps"] = np.array([cache["meta"]["fps"]])
+        np.savez_compressed(sp, **{k: np.asarray(v) for k, v in sig.items() if k != "m"})
+        sig = {k: np.asarray(v) for k, v in sig.items() if k != "m"}
+    say(f"signals {time.time() - t0:.1f}s")
+    fp = folder / "fine.npz"
+    if fp.exists():
+        z = np.load(fp)
+        fine = {k: z[k] for k in z.files}
+    else:
+        need = sig["diff_full"] >= FLOOR
+        res = rhythm_fine.exhaustive(str(video), need)
+        np.savez_compressed(fp, need=need, **res)
+        fine = {**res, "need": need}
+    say(f"fine {time.time() - t0:.1f}s")
+    return {"folder": folder, "meta": cache["meta"], "frames": frames, "sig": sig, "fine": fine}
+
+
+def _to_file_frames(values: np.ndarray, src: np.ndarray, n: int) -> np.ndarray:
+    """Per distinct picture -> per file frame (a duplicated frame shows the picture it repeats)."""
+    j = np.clip(np.searchsorted(src, np.arange(n), side="right") - 1, 0, len(src) - 1)
+    return np.asarray(values)[j]
+
+
+def cuts_and_shots(cuts: list[dict], frames_n: int, fps: float) -> list[dict]:
+    """Shots between the cut instants (a flash is typed apart and never starts a shot)."""
+    entries = {c["frame"]: c for c in cuts if c["kind"] != "flash"}
+    bounds = [0] + sorted(f for f in entries if 0 < f < frames_n) + [frames_n]
+    shots = []
+    for a, b in zip(bounds[:-1], bounds[1:]):
+        if b <= a:
+            continue
+        e = entries.get(a)
+        shots.append({"id": f"S{len(shots) + 1:02d}", "start_frame": a, "end_frame": b, "start": a / fps, "end": b / fps,
+                      "duration": (b - a) / fps, "enter": e["kind"] if e else "start", "enter_score": e.get("score") if e else None})
+    return shots
+
+
+def typed_spans(sig: dict, frames, prm: dict, plan: dict, probs: np.ndarray | None, base: list[dict] | None = None,
+                cache: dict | None = None) -> list[dict]:
+    """The typed transitions (dissolve, fade, whip) of a video under the parameters in force, in FILE frames.
+    transitions.method "learned" (params/rhythm.json): the classifier of datasets/rhythm-ramps.json over the candidate spans, which
+    reads the cut model's probabilities (so it needs the fusion decision) and keeps what it scores at or above transitions.threshold;
+    the V1 switches dissolves and whips and the thresholds fade_around_min, dissolve_min_change, dissolve_fit and whip_around_min
+    gate what it types. transitions.method "rule", or no probabilities: the threshold detectors of rhythm_detect.ramps.
+    transitions=ignore types nothing. `base` and `cache` let a caller that runs several probability sources reuse the slow part."""
+    if plan["ramps"] == "ignore":
+        return []
+    tm = prm.setdefault("transitions", {})
+    if tm.get("method", "rule") == "learned" and probs is not None:
+        model = rhythm_ramps.load()
+        if model is None:
+            raise FileNotFoundError(f"transitions.method is 'learned' but {rhythm_ramps.MODEL} does not exist (Scripts/RhythmRamps.py train)")
+        gates = {k: v for k, v in prm["types"].items() if k in ("fade", "dissolve", "whip")}
+        for name, key in (("fade_around_min", "fade_around_min"), ("whip_around_min", "whip_around_min"),
+                          ("dissolve_min_change", "dissolve_total_min"), ("dissolve_fit", "dissolve_resid_max")):
+            if name in plan["values"] and plan["values"][name] != rhythm_params.defaults().get(name):
+                gates[key] = prm["types"][key]
+        found, _ = rhythm_ramps.spans(sig, frames, probs, model, float(tm.get("threshold", 0.5)), gates, base=base, cache=cache)
+        # the decision then anchors each typed span on the cut the model already placed inside it (rhythm_detect.decide); `prm` is
+        # the caller's resolved copy, which is why this is written here and not read from the file again
+        tm["anchor"] = tm.get("anchor_learned", "cut")
+        return found
+    return rhythm_detect.ramps(sig, frames, prm["types"])
+
+
+def detect(video: str | Path, cfg: dict | None = None, v1: dict | None = None, threads: int = 2, log=None) -> dict:
+    """The shots.json document of `video` (cuts with kind hard|dissolve|fade|whip|flash, shots, cadence, curves).
+    `v1` holds the user values of params/rhythm-v1-parameters.json (names to values); missing names keep their default."""
+    from .shots import effective_fps
+    built = ensure(video, threads=threads, log=log)
+    sig, fine, frames, meta = built["sig"], built["fine"], built["frames"], built["meta"]
+    prm, plan = rhythm_params.resolve(v1)
+    n, fps = len(sig["diff_full"]), float(meta["fps"])
+    probs = None
+    if prm.get("decision", {}).get("method") == "fusion":
+        model = rhythm_fusion.load()
+        if model is None:
+            raise FileNotFoundError(f"decision.method is 'fusion' but {rhythm_fusion.MODEL} does not exist (Scripts/RhythmSheet.py train)")
+        mat = rhythm_features.cached(built["folder"], sig, fine, frames)
+        probs = rhythm_fusion.probabilities(model, mat)
+    spans = typed_spans(sig, frames, prm, plan, probs)
+    out = rhythm_detect.decide(sig, fine, frames, spans, prm, probs=probs)
+    cuts = rhythm_params.apply(out, plan, fps, n)
+    for c in cuts:
+        c.setdefault("t", c["frame"] / fps)
+        c["score"] = round(float(c.get("score", c.get("U", 1.0) or 1.0)), 3)
+    shots = cuts_and_shots(cuts, n, fps)
+    src = np.asarray(sig["src"])
+    diff = np.asarray(sig["diff_full"], dtype=np.float64)
+    chi = np.zeros(n)
+    chi[src] = np.asarray(sig["chi"], dtype=np.float64)
+    luma = _to_file_frames(np.asarray(sig["luma"]), src, n)
+    cadence = effective_fps(diff, chi, fps)
+    size = meta.get("size") or [None, None]
+    return {"fps": fps, "cadence": cadence, "frames": n, "duration": n / fps, "width": size[0], "height": size[1],
+            "cuts": cuts, "shots": shots,
+            "curves": {"mad": [round(float(v), 5) for v in diff], "chi": [round(float(v), 5) for v in chi],
+                       "luma": [round(float(v), 4) for v in luma]},
+            "rhythm": {"engine": "zrmd/rhythm@1", "boundaries_measured": int(np.asarray(fine["need"]).astype(bool).sum()),
+                       "flashes": [f["frame"] for f in out["flashes"]], "transitions": prm.get("transitions", {}).get("method", "rule"),
+                       "v1": plan["values"]}}

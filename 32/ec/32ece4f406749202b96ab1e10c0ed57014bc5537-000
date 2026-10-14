@@ -1,0 +1,225 @@
+# 14 October 2026: per-event last-mile calibration of the sound-effect track (the SFX counterpart of zrmd/audio/trim.py for music). The fitted bank
+# chain of an event is reshaped by a smooth time-varying EQ whose gains (dB per band and frame) are optimised by gradient descent on ploss, the
+# official perceptual loss the event score is built from, against the reference window of the event's own stem. B1 (describe.compare) is the audit:
+# it is read before and after and never optimised. The gains are stored with the event (fit["trim"]) and applied by every renderer through render().
+# Only measured band levels of the reference window are used, never its samples. FR : EQ par evenement optimise sur la perte officielle.
+# 14 October 2026 (second pass): a stored trim may also carry a BAKE, the event body as it ships after the shared multi-resolution spectral trim
+# (zrmd/audio/sfxspectral.py) and the EQ in cascade. That trim is a time-varying filter at several framings plus carriers, which no single gain
+# table of this module can hold (measured: writing it as 2048/256 gains loses 6 to 9 points of the official score), so the result of the
+# deterministic cook is stored with the hash of the chain it was cooked from; a renderer uses it only while the chain is unchanged.
+# FR : une calibration peut porter son resultat cuit, valable tant que la chaine n'a pas change.
+from __future__ import annotations
+
+import base64
+import hashlib
+import json
+import math
+import zlib
+from pathlib import Path
+
+import numpy as np
+import torch
+
+from . import bank, config, fit as _fit, ploss
+
+PARAMS = Path(__file__).resolve().parents[2] / "params" / "sfx-trim.json"
+
+
+def cfg() -> dict:
+    return json.loads(PARAMS.read_text(encoding="utf-8"))
+
+
+def band_centres(sr: int, c: dict) -> np.ndarray:
+    return np.geomspace(c["bands"]["fMin"], min(c["bands"]["fMax"], sr / 2 - 100.0), c["bands"]["count"])
+
+
+def _band_matrix(sr: int, n_fft: int, centres: np.ndarray) -> np.ndarray:
+    """[bins, bands] interpolation (log frequency) from band gains to bin gains. The centres are STORED with a trim, so a later change of the
+    band count in params/sfx-trim.json never breaks an event already trimmed. FR : les centres sont stockes avec le calibrage."""
+    f = np.fft.rfftfreq(n_fft, 1.0 / sr)
+    lf, lc = np.log2(np.maximum(f, 1.0)), np.log2(np.asarray(centres, np.float64))
+    M = np.zeros((len(f), len(lc)), np.float32)
+    for k in range(len(f)):
+        j = int(np.searchsorted(lc, lf[k]))
+        if j <= 0:
+            M[k, 0] = 1.0
+        elif j >= len(lc):
+            M[k, -1] = 1.0
+        else:
+            w = (lf[k] - lc[j - 1]) / (lc[j] - lc[j - 1])
+            M[k, j - 1], M[k, j] = 1.0 - w, w
+    return M
+
+
+def _apply_torch(x: torch.Tensor, g_db: torch.Tensor, M: torch.Tensor, n_fft: int, hop: int) -> torch.Tensor:
+    win = torch.hann_window(n_fft, device=x.device)
+    S = torch.stft(x, n_fft, hop, window=win, return_complex=True)                    # [bins, frames]
+    gain = 10 ** ((M @ g_db) / 20.0)                                                  # [bins, frames]
+    f = min(S.shape[1], gain.shape[1])
+    return torch.istft(S[:, :f] * gain[:, :f], n_fft, hop, window=win, length=x.shape[0])
+
+
+def n_frames(n_samples: int, hop: int) -> int:
+    return 1 + n_samples // hop
+
+
+def trim_event(body: np.ndarray, target: np.ndarray, sr: int, c: dict | None = None, cfg_all: dict | None = None, log=None) -> tuple[np.ndarray, dict]:
+    """Optimise the EQ of one event. body and target have the same length. Returns the trimmed body and the stored trim record (None when the
+    optimiser found nothing better than the untouched chain)."""
+    import copy
+    c = c or cfg()
+    cfg_all = copy.deepcopy(cfg_all or config.cfg())
+    # objective: "official" optimises the A0 perceptual loss on the exact cells (it asks a noise to reproduce the reference's own noise
+    # realisation, which a procedural chain cannot do), "stochastic" the seed-invariant variant that judges a noise by its expected spectrum.
+    # The one not used is reported beside it as the audit (and B1 always is). FR : l'autre variante sert d'audit.
+    w_sto = float(c.get("stochasticWeight", 0.0))                    # 0 = official only, 1 = stochastic only, between = blend
+    cfg_off, cfg_sto = copy.deepcopy(cfg_all), copy.deepcopy(cfg_all)
+    cfg_off["ploss"]["stochastic"]["enabled"] = False
+    cfg_sto["ploss"]["stochastic"]["enabled"] = True
+    n = len(target)
+    body = np.asarray(body, np.float32)[:n]
+    if len(body) < n:
+        body = np.pad(body, (0, n - len(body)))
+    n_fft, hop = c["stft"]["nFft"], c["stft"]["hop"]
+    centres = band_centres(sr, c)
+    M = torch.as_tensor(_band_matrix(sr, n_fft, centres))
+    frames = n_frames(n, hop)
+    x = torch.as_tensor(body)
+    tgt_o = ploss.Target(np.asarray(target, np.float32), sr, "cpu", cfg_off)
+    tgt_s = ploss.Target(np.asarray(target, np.float32), sr, "cpu", cfg_sto) if w_sto > 0 else None
+
+    def e2_of(sig):
+        v = (1.0 - w_sto) * ploss.loss(sig, tgt_o)[0]
+        if tgt_s is not None:
+            v = v + w_sto * ploss.loss(sig, tgt_s)[0]
+        return v
+    g = torch.zeros(len(centres), frames, requires_grad=True)
+    opt = torch.optim.Adam([g], lr=c["optimiser"]["lr"])
+    lim = c["limits"]
+    reg = c["regularisation"]
+    with torch.no_grad():
+        e2_0 = float(e2_of(x))
+    best, best_g, since = e2_0, torch.zeros_like(g.detach()), 0
+    for step in range(c["optimiser"]["steps"]):
+        opt.zero_grad()
+        y = _apply_torch(x, g, M, n_fft, hop)
+        e2 = e2_of(y)
+        tv_t = (g[:, 1:] - g[:, :-1]).pow(2).mean() if frames > 1 else g.sum() * 0
+        tv_f = (g[1:] - g[:-1]).pow(2).mean()
+        obj = e2 + reg["timeDb"] * tv_t / 10.0 + reg["freqDb"] * tv_f / 10.0 + reg["ridgeDb"] * g.pow(2).mean() / 10.0
+        obj.backward()
+        opt.step()
+        with torch.no_grad():
+            g.clamp_(-lim["maxCutDb"], lim["maxBoostDb"])
+        v = float(e2.detach())
+        if v < best - 1e-5:
+            best, best_g, since = v, g.detach().clone(), 0
+        else:
+            since += 1
+            if since >= c["optimiser"]["patience"]:
+                break
+    if best >= e2_0 - 1e-6:
+        return body, {}
+    y = _apply_torch(x, best_g, M, n_fft, hop).detach().numpy().astype(np.float32)
+    dec = c["storeDecimals"]
+    trim = {"nFft": n_fft, "hop": hop, "centresHz": [round(float(v), 2) for v in centres], "gainsDb": np.round(best_g.numpy(), dec).tolist(),
+            "e2Before": round(e2_0, 5), "e2After": round(best, 5)}
+    return y, trim
+
+
+def apply(body: np.ndarray, trim: dict | None, sr: int) -> np.ndarray:
+    """Re-apply a stored trim to a freshly rendered chain (the same call every renderer makes)."""
+    if not trim or not trim.get("gainsDb"):
+        return np.asarray(body, np.float32)
+    n_fft, hop = trim["nFft"], trim["hop"]
+    M = torch.as_tensor(_band_matrix(sr, n_fft, np.asarray(trim["centresHz"])))
+    g = torch.as_tensor(np.asarray(trim["gainsDb"], np.float32))
+    x = torch.as_tensor(np.asarray(body, np.float32))
+    with torch.no_grad():
+        return _apply_torch(x, g, M, n_fft, hop).numpy().astype(np.float32)
+
+
+def chain_sha(chain: dict) -> str:
+    """Short hash of a chain description: a baked trim is valid only for the chain it was cooked from."""
+    return hashlib.sha256(json.dumps(chain, sort_keys=True, default=float).encode("utf-8")).hexdigest()[:16]
+
+
+def bake_encode(y: np.ndarray, c: dict | None = None) -> dict:
+    """The cooked body as 16-bit samples scaled to its own peak (noise floor 90 dB under the peak, far below the 60 dB floor of the loss),
+    deflated and base64 so it travels inside events.json. FR : le corps cuit, entiers 16 bits, deflate, base64."""
+    y = np.asarray(y, np.float32)
+    peak = float(np.max(np.abs(y))) if len(y) else 0.0
+    scale = peak / 32767.0 if peak > 0 else 1.0
+    q = np.round(y / scale).astype("<i2")
+    return {"codec": "int16-deflate-base64", "n": int(len(y)), "scale": scale, "data": base64.b64encode(zlib.compress(q.tobytes(), 6)).decode("ascii")}
+
+
+def bake_decode(bake: dict) -> np.ndarray:
+    if bake.get("codec") != "int16-deflate-base64":
+        raise ValueError(f"unknown bake codec {bake.get('codec')!r}")
+    q = np.frombuffer(zlib.decompress(base64.b64decode(bake["data"])), dtype="<i2")
+    return (q.astype(np.float32) * np.float32(bake["scale"]))[: int(bake["n"])]
+
+
+def render(fit_record: dict) -> np.ndarray:
+    """The event body exactly as it ships: the fitted chain, then its stored trim when it has one. A stored BAKE (cascade of the shared spectral
+    trim and the EQ) is the body itself while the chain still hashes to the one it was cooked from; a stale bake is ignored and the chain plays
+    untouched (the next SfxTrim run cooks it again), never a bake of another chain. FR : le cuit ne vaut que pour sa chaine."""
+    ch = fit_record["chain"]
+    trim = fit_record.get("trim") or {}
+    if trim.get("bake") and trim.get("chainSha") == chain_sha(ch):
+        return bake_decode(trim["bake"])
+    return apply(bank.render_chain(ch), trim, ch.get("sr") or config.get("bank.sampleRate"))
+
+
+def verify_render(events: dict, track: np.ndarray, sr: int, tol_rel: float = 0.01) -> dict:
+    """Replay the SFX track of a sound version from what the version STORES and nothing else (the chain of every event, its stored trim and baked
+    body), the way every renderer ships it, and compare it with the track written next to events.json. No reference window, no stem, no cache is
+    read here: a caller that wants the proof that the reference is unreachable makes it unreachable first (SfxCorpus.py verify does). A baked trim
+    whose chain hash no longer matches is reported as stale. Returns {"ok", "relRmsError", "maxAbs", "stale", "events"}. FR : rejoue la piste SFX
+    depuis ce que la version stocke, sans aucune lecture de la reference.
+    """
+    n_total = len(track)
+    out = np.zeros(n_total, np.float64)
+    rows = []
+    for e in events["events"]:
+        f = e.get("fit") or {}
+        if not f.get("chain"):
+            continue
+        trim = f.get("trim") or {}
+        baked = bool(trim.get("bake"))
+        valid = (not baked) or trim.get("chainSha") == chain_sha(f["chain"])
+        body = render(f).astype(np.float64)
+        a0 = int(round(e["windowStart"] * sr))
+        body = body[: max(0, n_total - a0)]
+        out[a0:a0 + len(body)] += body
+        rows.append({"id": e["id"], "baked": baked, "bakeValid": bool(valid), "samples": int(len(body))})
+    ref = np.asarray(track, np.float64)
+    over = int((np.abs(out) > 1.0).sum())                         # samples the stored 24-bit track cannot hold: it is written clipped
+    diff = np.clip(out, -1.0, 1.0) - ref
+    rel = float(np.sqrt(np.mean(diff ** 2)) / (np.sqrt(np.mean(ref ** 2)) + 1e-12)) if n_total else 0.0
+    stale = [r["id"] for r in rows if r["baked"] and not r["bakeValid"]]
+    return {"ok": bool(rel <= tol_rel and not stale), "relRmsError": round(rel, 6), "maxAbs": round(float(np.max(np.abs(diff))) if n_total else 0.0, 6),
+            "overFullScale": over, "peak": round(float(np.abs(out).max()) if n_total else 0.0, 4), "stale": stale, "events": rows}
+
+
+def identity_ceiling(chain: dict, sr: int) -> dict:
+    """What the best parametric reproduction of this event can score: the chain against ITSELF rendered with other noise seeds, on the official
+    ploss and on its seed-invariant variant (100 for a deterministic chain). An event within 0.3 of its ceiling is at the ceiling of the metric,
+    not short of it. FR : plafond d'identite de l'evenement, la chaine contre elle-meme avec d'autres graines."""
+    import copy
+    import itertools
+    c = cfg()
+    base = config.cfg()
+    c_off, c_sto = copy.deepcopy(base), copy.deepcopy(base)
+    c_off["ploss"]["stochastic"]["enabled"], c_sto["ploss"]["stochastic"]["enabled"] = False, True
+    outs = [bank.render_chain(dict(chain, blocks=[dict(b, seed=s) for b in chain["blocks"]])) for s in c["ceilingSeeds"]]
+    off, sto = [], []
+    for i, j in itertools.permutations(range(len(outs)), 2):
+        off.append(ploss.score(outs[i], outs[j], sr, c_off)["score"])
+        sto.append(ploss.score(outs[i], outs[j], sr, c_sto)["score"])
+    return {"official": round(float(np.mean(off)), 3), "stochastic": round(float(np.mean(sto)), 3)}
+
+
+def scores(ours: np.ndarray, target: np.ndarray, sr: int) -> dict:
+    return _fit.score_window(ours, target, sr)

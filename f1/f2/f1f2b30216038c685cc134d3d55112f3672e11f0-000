@@ -1,0 +1,106 @@
+# 14 October 2026: the music studio proven in both directions without a heavy render: the eight values edit the right keys of a copy of
+# params.json (and nothing else), an unknown or out-of-range value is refused BEFORE any work, the HTTP guard refuses a foreign origin and a POST
+# without the client header, a bad slug or stem never reaches the file system. A real render is covered by a command-line run in the report.
+# FR : le studio musical se prouve dans les deux sens sans rendu lourd.
+import copy
+import json
+import sys
+import threading
+import urllib.error
+import urllib.request
+from http.server import ThreadingHTTPServer
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "Scripts"))
+import MusicStudio as MS  # noqa: E402
+
+FAIL = []
+
+
+def check(name, cond, detail=""):
+    print(("ok   " if cond else "FAIL ") + name + (f"  {detail}" if detail and not cond else ""))
+    if not cond:
+        FAIL.append(name)
+
+
+def refuses(fn):
+    try:
+        fn()
+    except MS.Refusal:
+        return True
+    return False
+
+
+def call(port, path, method="GET", headers=None, body=None):
+    req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=body, method=method, headers=headers or {})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return r.status, json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read() or b"{}")
+
+
+def run() -> int:
+    prm = {"tempo": {"bpm": 120.0, "referenceBpm": 120.0}, "transposeSemitones": 0.0, "version": "V_001", "stemGainsDb": {},
+           "voices": {"kick": {"kind": "drum", "macros": {"gainDb": 0.0, "tiltDbOct": 0.0}},
+                      "bass": {"kind": "tonal", "macros": {"gainDb": 0.0, "tiltDbOct": 0.0, "releaseS": 0.25}},
+                      "pad": {"kind": "tonal", "macros": {"gainDb": 0.0, "releaseS": 0.5}}}}
+    keep = copy.deepcopy(prm)
+    out = MS.apply_values(prm, {"bpm": 100, "transpose": 3, "bass": 6, "tilt": 1.5, "release": 2.0})
+    check("tempo and transposition reach the params", out["tempo"]["bpm"] == 100 and out["transposeSemitones"] == 3)
+    check("a stem gain reaches stemGainsDb", out["stemGainsDb"].get("bass") == 6 and out["stemGainsDb"].get("drums") == 0)
+    check("tilt reaches every voice that has the macro and only those", out["voices"]["kick"]["macros"]["tiltDbOct"] == 1.5 and out["voices"]["bass"]["macros"]["tiltDbOct"] == 1.5 and "tiltDbOct" not in out["voices"]["pad"]["macros"])
+    check("release scales the tonal voices from their OWN value", out["voices"]["bass"]["macros"]["releaseS"] == 0.5 and out["voices"]["pad"]["macros"]["releaseS"] == 1.0)
+    check("the base params are never modified", prm == keep)
+    check("RED: an unknown value is refused", refuses(lambda: MS.apply_values(prm, {"volume": 3})))
+    check("RED: an out-of-range value is refused", refuses(lambda: MS.apply_values(prm, {"bpm": 400})))
+    check("the interface exposes at most twelve values (4 primary, 8 secondary)", len(MS.SLIDERS) <= 12, len(MS.SLIDERS))
+    drums = {"kick": {"kind": "drum", "macros": {"gainDb": 1.5, "timeScale": 1.0}}, "snare": {"kind": "drum", "macros": {"gainDb": -2.0, "timeScale": 1.2}},
+             "clap": {"kind": "drum", "macros": {"gainDb": 0.0, "timeScale": 1.0}}, "hatClosed": {"kind": "drum", "macros": {"gainDb": 0.0, "timeScale": 1.0}},
+             "bass": {"kind": "tonal", "macros": {"gainDb": 0.5, "releaseS": 0.25}}}
+    prm2 = {"tempo": {"bpm": 120.0}, "transposeSemitones": 0.0, "version": "V_002", "stemGainsDb": {}, "voices": drums}
+    keep2 = copy.deepcopy(prm2)
+    o2 = MS.apply_values(prm2, {"kick": 3.0, "snareClap": -1.0, "hats": 2.0, "drumLength": 0.5})
+    v2 = o2["voices"]
+    check("a named voice gain is added to the voice's OWN calibrated value", v2["kick"]["macros"]["gainDb"] == 4.5 and v2["snare"]["macros"]["gainDb"] == -3.0)
+    check("a group slider reaches only its voices (hats, not the bass)", v2["hatClosed"]["macros"]["gainDb"] == 2.0 and v2["bass"]["macros"]["gainDb"] == 0.5)
+    check("a scale slider multiplies the voice's own macro", v2["snare"]["macros"]["timeScale"] == 0.6 and v2["kick"]["macros"]["timeScale"] == 0.5)
+    check("a voice that does not exist in this track is skipped, not invented", "hatOpen" not in v2)
+    check("the base params are never modified (named voices)", prm2 == keep2)
+    check("RED: a named-voice slider out of range is refused", refuses(lambda: MS.apply_values(prm2, {"kick": 40})))
+    o3 = MS.apply_values(prm2, {"kick": 0, "drumLength": 1.0})
+    check("a slider left at its default leaves every voice byte-identical", o3["voices"] == prm2["voices"])
+    check("each tier id of v1-tiers music is a slider", {s["id"] for s in MS.SLIDERS} >= set(json.load(open(ROOT / "params" / "v1-tiers.json"))["music"]["built"]))
+    check("members all have a raw base", all(m["baseVersion"] for m in MS.members()))
+
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), MS.Handler)
+    port = srv.server_port
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        s, j = call(port, "/api/config")
+        check("config lists the sliders", s == 200 and len(j["sliders"]) == len(MS.SLIDERS))
+        s, _ = call(port, "/api/config", headers={"Origin": "http://evil.example"})
+        check("RED: a foreign origin is refused", s == 403)
+        s, _ = call(port, "/api/cook", "POST", {"Content-Type": "application/json"}, b"{}")
+        check("RED: a POST without the client header is refused", s == 403)
+        h = {"Content-Type": "application/json", MS.SERVER["clientHeader"]: MS.SERVER["clientValue"]}
+        s, _ = call(port, "/api/cook", "POST", h, json.dumps({"slug": "nope", "values": {}}).encode())
+        check("RED: an unknown member is refused before any cook", s == 404)
+        s, _ = call(port, "/audio?slug=../../etc&kind=ours&stem=mix")
+        check("RED: a path-like slug never reaches the file system", s == 400)
+        s, _ = call(port, "/audio?slug=memo-m1&kind=ours&stem=../x")
+        check("RED: a bad stem is refused", s == 400)
+    finally:
+        srv.shutdown()
+    print(f"{len(FAIL)} failure(s)")
+    return 1 if FAIL else 0
+
+
+def test_music_studio():
+    assert run() == 0
+
+
+if __name__ == "__main__":
+    sys.exit(run())

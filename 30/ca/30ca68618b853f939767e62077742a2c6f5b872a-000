@@ -1,0 +1,114 @@
+# 14 October 2026: fit the V1 shader look (zrmd/shaders/look.py) to a reference frame, on the numpy twins.
+# Start: the best ramp angle by closed-form least squares (the two end colours of a linear ramp), the glow by a grid
+# on the residual (zrmd/shaders/field.py search), the backdrop colour from the darkest corner. Then a bounded nonlinear
+# refinement of every exposed value, with the robust weights of field.py (absolute cut, never our own percentile).
+# The reference frame is analysis data: it stays in memory and never becomes a texture.
+# FR : ajuste le look shader V1 sur une image de reference, sur les jumeaux numpy.
+from __future__ import annotations
+
+import numpy as np
+from scipy.optimize import least_squares
+
+from . import field, look
+
+# name, lo, hi : the nonlinear vector (colours are three consecutive entries each).
+VEC = ([("colourMain", 3), ("colourEnd", 3), ("gradientAngle", 1), ("exposure", 1), ("glow", 1), ("glowColour", 3),
+        ("glowX", 1), ("glowY", 1), ("glowRadius", 1), ("vignette", 1), ("backdrop", 3)])
+
+
+def _pack(lk: dict) -> np.ndarray:
+    out = []
+    for name, n in VEC:
+        out += look.hex_to_rgb(lk[name]) if n == 3 else [float(lk[name])]
+    return np.array(out, float)
+
+
+def _bounds() -> tuple[np.ndarray, np.ndarray]:
+    lo, hi = [], []
+    for name, n in VEC:
+        if n == 3:
+            lo += [0.0] * 3
+            hi += [1.0] * 3
+        else:
+            _, _, a, b = look.SPEC[name]
+            lo.append(a)
+            hi.append(b)
+    return np.array(lo), np.array(hi)
+
+
+def _unpack(x: np.ndarray, base: dict) -> dict:
+    lk, i = dict(base), 0
+    for name, n in VEC:
+        if n == 3:
+            lk[name] = look.rgb_to_hex(x[i:i + 3])
+        else:
+            lk[name] = float(x[i])
+        i += n
+    return lk
+
+
+def initial(frame_u8: np.ndarray, weights: np.ndarray | None = None) -> dict:
+    """A starting look from the frame by closed forms (angle by LS of a two-colour ramp, glow by the field grid)."""
+    h, w = frame_u8.shape[:2]
+    U, V, _ = field.basis(w, h)
+    Y = frame_u8.reshape(-1, 3).astype(float) / 255.0
+    wt = np.ones(len(Y)) if weights is None else weights
+    best = None
+    for ang in (90.0, 0.0, 180.0, -90.0, 45.0, -45.0, 135.0, -135.0):
+        a = np.radians(ang)
+        dx, dy = np.cos(a), np.sin(a)
+        t = np.clip(0.5 + ((U - 0.5) * dx + (V - 0.5) * dy) / (abs(dx) + abs(dy)), 0, 1).reshape(-1, 1)
+        Bt = np.hstack([1.0 - t, t])
+        coef = np.clip(field._solve(Bt, Y, wt), 0.0, 1.0)
+        r = field._wrms(Bt @ coef - Y, wt)
+        if best is None or r < best[0]:
+            best = (r, ang, coef)
+    _, ang, coef = best
+    lk = dict(look.DEFAULT_LOOK)
+    lk.update({"gradientAngle": ang, "colourMain": look.rgb_to_hex(coef[0]), "colourEnd": look.rgb_to_hex(coef[1]),
+               "exposure": 0.0, "glow": 0.0, "vignette": 0.0})
+    # glow: field.fit_frame on the same frame gives the best (centre, sigma, colour) on a flat base; reuse its grid
+    r = field.fit_frame(frame_u8, use_glow=True, models=["bilinear"])
+    if r["glow"] is not None:
+        cx, cy, sg, k = r["glow"]
+        gain = float(np.clip(max(float(np.max(k)), 0.2), 0.2, 2.0))
+        lk.update({"glow": gain, "glowColour": look.rgb_to_hex(np.clip(np.asarray(k) / gain, 0, 1)),
+                   "glowX": float(np.clip(cx, 0, 1)), "glowY": float(np.clip(cy, 0, 1)), "glowRadius": float(np.clip(sg, 0.02, 0.3))})
+    corners = np.array([frame_u8[0, 0], frame_u8[0, -1], frame_u8[-1, 0], frame_u8[-1, -1]], float) / 255.0
+    lk["backdrop"] = look.rgb_to_hex(corners[np.argmin(corners.sum(axis=1))])
+    return lk
+
+
+def fit(frame_u8: np.ndarray, start: dict | None = None, cfg: dict | None = None, nfev: int = 60, grain: float | None = None) -> dict:
+    """Refine every exposed value on one frame. Returns {look, metrics}. `start` warm-starts (a neighbouring keyframe)."""
+    cfg = cfg or field.config()
+    h, w = frame_u8.shape[:2]
+    base = dict(look.DEFAULT_LOOK)
+    if start:
+        base.update(start)
+    if not start:
+        base.update(initial(frame_u8))
+    if grain is not None:
+        base["grain"] = float(np.clip(grain, 0.0, 0.2))
+    lo, hi = _bounds()
+    x0 = np.clip(_pack(base), lo + 1e-6, hi - 1e-6)
+    target = frame_u8.astype(float)
+    weights = np.ones(target.shape[:2])
+    for _ in range(int(cfg["irlsPasses"])):
+        def residual(x, wts=weights):
+            img = look.render(_unpack(x, base), w, h)
+            return ((img - target) / 255.0 * wts[..., None]).ravel()
+        res = least_squares(residual, x0, bounds=(lo, hi), max_nfev=nfev, x_scale="jac", diff_step=1e-3)
+        x0 = res.x
+        de = field.de00(frame_u8, np.round(look.render(_unpack(x0, base), w, h)))
+        cut = max(float(cfg["fieldCutoffDE"]), float(np.percentile(de, 100.0 * float(cfg["minFieldShare"]))))
+        weights = (de <= cut).astype(float)
+    lk = _unpack(x0, base)
+    # a glow or vignette fitted to nothing is switched off, so the layer list stays the shortest that draws the look
+    if lk["glow"] < 0.2:
+        lk["glow"] = 0.0
+    if lk["vignette"] < 0.02:
+        lk["vignette"] = 0.0
+    out = np.round(look.render(lk, w, h))
+    return {"look": look.resolve({k: (round(v, 4) if isinstance(v, float) else v) for k, v in lk.items()}),
+            "metrics": field.frame_metrics(frame_u8, out, cfg)}

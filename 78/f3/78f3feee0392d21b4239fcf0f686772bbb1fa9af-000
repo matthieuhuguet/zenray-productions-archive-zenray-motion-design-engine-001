@@ -1,0 +1,47 @@
+# 14 October 2026: score the rhythm detector against the frame-by-frame eye labels (C cut, N not a cut, A ambiguous = excluded).
+# Run: /Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/RhythmLabels.py
+# FR : note le detecteur de rythme contre les jugements a l'oeil image par image.
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+sys.path.insert(0, str(ENGINE / "Scripts"))
+from zrmd import settings  # noqa: E402
+import RhythmDetect as RD  # noqa: E402
+import RhythmSignals as RS  # noqa: E402
+
+
+def labels() -> dict:
+    return json.loads((settings.path("workshop") / "rhythm" / "eye-labels.json").read_text(encoding="utf-8"))
+
+
+def main() -> None:
+    lab = labels()
+    tp = fn = fp = tn = 0
+    for slug, d in lab.items():
+        if slug.startswith("_"):
+            continue
+        out = RD.run_folder(RS.folder_of(slug))
+        found = {c["frame"]: c["kind"] for c in out["cuts"]}
+        spans = [(c["start"], c["end"], c["kind"]) for c in out["cuts"] if c["kind"] != "hard"]
+
+        def hit(f):
+            k = next((k for g, k in found.items() if abs(g - f) <= 1 and k == "hard"), None)
+            return k
+        miss = [f for f in d.get("C", []) if hit(f) is None]
+        false = [f for f in d.get("N", []) if hit(f) is not None]
+        tp += len(d.get("C", [])) - len(miss)
+        fn += len(miss)
+        fp += len(false)
+        tn += len(d.get("N", [])) - len(false)
+        inspan = [f for f in d.get("N", []) if any(a <= f <= b for a, b, _ in spans)]
+        print(f"{slug:36s} C {len(d.get('C', [])):2d} found {len(d.get('C', [])) - len(miss):2d} miss {miss} | N {len(d.get('N', [])):2d} false {false} (in a typed span, not a hard cut: {inspan})")
+    print(f"TOTAL cuts found {tp}/{tp + fn}, not-cuts rejected {tn}/{tn + fp}")
+
+
+if __name__ == "__main__":
+    main()

@@ -72,9 +72,20 @@
    "label": "Image",
    "hint": "shaders, 3D, 2D, fonts",
    "steps": [
+    "image",
     "film"
    ],
    "score": "visual"
+  },
+  {
+   "id": "vector",
+   "label": "Vector UI",
+   "hint": "multi-layer SVG: composite fidelity in CIEDE2000, layers editable",
+   "steps": [
+    "vector",
+    "layers"
+   ],
+   "score": "vector"
   },
   {
    "id": "music",
@@ -83,7 +94,8 @@
    "steps": [
     "stems",
     "music",
-    "music-iter"
+    "music-trim",
+    "music-polish"
    ],
    "score": "music"
   },
@@ -92,7 +104,8 @@
    "label": "Sound effects",
    "hint": "events and synthesis",
    "steps": [
-    "sfx"
+    "sfx",
+    "sfx-trim"
    ],
    "score": "sfx"
   },
@@ -146,6 +159,52 @@
    ]
   },
   {
+   "id": "vector",
+   "label": "Vector UI scene",
+   "module": "vector",
+   "timeoutS": 3600,
+   "okCodes": [
+    0
+   ],
+   "argv": [
+    "{py}",
+    "-I",
+    "{engine}/Scripts/VectorScene.py",
+    "--slug",
+    "{slug}"
+   ],
+   "cwd": "{engine}",
+   "score": "vector",
+   "outputs": [
+    "{workshop}/vector/{slug}/scene.json"
+   ]
+  },
+  {
+   "id": "layers",
+   "label": "Multi-layer vector fit",
+   "module": "vector",
+   "timeoutS": 7200,
+   "okCodes": [
+    0
+   ],
+   "argv": [
+    "{py}",
+    "-I",
+    "{engine}/Scripts/VectorLayers.py",
+    "--slug",
+    "{slug}",
+    "--max-layers",
+    "4000",
+    "--max-seconds",
+    "3000"
+   ],
+   "cwd": "{engine}",
+   "score": "vector",
+   "outputs": [
+    "{workshop}/vector/{slug}/layered.json"
+   ]
+  },
+  {
    "id": "stems",
    "label": "Stem separation",
    "module": "music",
@@ -188,23 +247,41 @@
    "score": "music"
   },
   {
-   "id": "music-iter",
-   "label": "Music stem iteration",
+   "id": "music-trim",
+   "label": "Music calibration (stems then mix)",
    "module": "music",
-   "timeoutS": 43200,
+   "timeoutS": 7200,
    "okCodes": [
     0
    ],
    "argv": [
     "{py}",
     "-I",
-    "{engine}/Scripts/MusicIterate.py",
+    "{engine}/Scripts/MusicTrim.py",
     "--slug",
-    "{slug}",
-    "--critic"
+    "{slug}"
    ],
    "cwd": "{engine}",
-   "watch": "{workshop}/sound/{slug}/music-bench",
+   "score": "music",
+   "watch": "{workshop}/sound/{slug}/music-bench"
+  },
+  {
+   "id": "music-polish",
+   "label": "Music polish (official above the gate, preview below)",
+   "module": "music",
+   "timeoutS": 3600,
+   "okCodes": [
+    0
+   ],
+   "argv": [
+    "{py}",
+    "-I",
+    "{engine}/Scripts/MusicPolish.py",
+    "--slug",
+    "{slug}",
+    "--force"
+   ],
+   "cwd": "{engine}",
    "score": "music"
   },
   {
@@ -228,6 +305,25 @@
    "cwd": "{engine}",
    "watch": "{workshop}/sound/{slug}",
    "score": "sfx"
+  },
+  {
+   "id": "sfx-trim",
+   "label": "Sound effects calibration (per event)",
+   "module": "sfx",
+   "timeoutS": 3600,
+   "okCodes": [
+    0
+   ],
+   "argv": [
+    "{py}",
+    "-I",
+    "{engine}/Scripts/SfxTrim.py",
+    "--slug",
+    "{slug}"
+   ],
+   "cwd": "{engine}",
+   "score": "sfx",
+   "watch": "{workshop}/sound/{slug}"
   },
   {
    "id": "soundtrack",
@@ -256,6 +352,27 @@
    "cwd": "{engine}",
    "watch": "{workshop}/sound/{slug}",
    "score": "mix"
+  },
+  {
+   "id": "image",
+   "label": "Image field survey",
+   "module": "visual",
+   "timeoutS": 1800,
+   "okCodes": [
+    0
+   ],
+   "argv": [
+    "{py}",
+    "-I",
+    "{engine}/Scripts/ReproduceFieldSurvey.py",
+    "--slug",
+    "{slug}"
+   ],
+   "cwd": "{engine}",
+   "outputs": [
+    "{workshop}/image/{slug}/survey.json"
+   ],
+   "score": "visual"
   },
   {
    "id": "film",
@@ -288,11 +405,12 @@
   }
  ],
  "defaults": {
-  "musicStages": "own,sms,bus,dev,gap,retag,bus"
+  "musicStages": "sms,bus,dev,gap,retag,bus"
  },
  "honestLimits": [
   "visual: only text cards and graphic shots are reproduced by code; photographed plates stay colour animatics",
-  "sfx: not yet near the target on a new video",
-  "the music chain and its stem iterations were proven by hand on OneKey (99.1) and on one more video (97.3); the automatic iteration is new"
+  "music: the gate is the official critic at 99.9 on every stem, then the final mix; a stem limited by note transcription (pads, chords) stays below it and the report says which",
+  "sfx: each event is calibrated by an EQ on the perceptual loss; deterministic events with a wrong chain structure stay below their identity ceiling",
+  "vector: one scene per reference is traced; blur, glow and gradient fields are sorted as shader work, photographs as plates, only shapes, text outlines and UI components count as vector"
  ]
 }

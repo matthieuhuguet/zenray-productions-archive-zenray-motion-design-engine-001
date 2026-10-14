@@ -1,0 +1,175 @@
+# 14 October 2026: run the rhythm detector (zrmd.analyze.shots.detect, the SAME call the CLI, the bible and the film make) on every
+# picture reference, write its shots.json and shots-curves.json, score it against the adjudicated truth and give, for each miss and
+# each extra jump, the measured cause. One row per reference: found, true, extra, F1 at 0 and at +-1 frame (hard cuts, then all cut
+# kinds), and next to it the leave-one-reference-out F1 of ALL cut kinds (Scripts/RhythmLoro.py all: the honest number for a video the
+# model never saw; before 14 October 2026, second pass, the hard-cut LORO of the sheet).
+# Run: nice -n 5 /Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/RhythmReport.py [--slug X ...] [--no-write] [--v1 name=json ...]
+# FR : lance le detecteur sur les references, ecrit shots.json, note contre la verite et donne la cause mesuree de chaque erreur.
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+sys.path.insert(0, str(ENGINE / "Scripts"))
+from zrmd import settings  # noqa: E402
+from zrmd.analyze import rhythm_detect as D, rhythm_eval as E, rhythm_features as RF, rhythm_fusion as FU, rhythm_truth as T, shots  # noqa: E402
+import RhythmSignals as RS  # noqa: E402
+
+WORKSHOP = settings.path("workshop")
+SLUGS = ["claude-opus-5-5", "fin-4", "flora-agents-on-canvas", "motion-opus-5-5", "kardashev-0-7", "memo", "paper-mono-code", "onekey-pro-2",
+         "interface", "x-anabology-2106157622986748377", "x-anabology-2105325733312884869", "yt-4Q-o_ylnVnc"]
+
+
+def video_of(slug: str) -> str:
+    meta = json.loads((WORKSHOP / "references" / slug / "reference.json").read_text(encoding="utf-8"))
+    return str(settings.path("refcache") / slug / meta["file_name"])
+
+
+def evidence(mat: dict, f: int) -> dict:
+    return {k: (None if f < 0 or f >= len(mat[k]) or np.isnan(mat[k][f]) else round(float(mat[k][f]), 2)) for k in ("U", "F", "ED", "EN", "r1", "q1")}
+
+
+def miss_cause(frame: int, mat: dict, frames, ramps: list[dict], p: np.ndarray | None, thr: float) -> str:
+    """What a true cut that was not found looked like, from the measures at that boundary (never a guess)."""
+    for sp in ramps:
+        if sp["start"] - 1 <= frame <= sp["end"] + 1:
+            return f"inside a typed {sp['kind']} ramp ({sp['start']}-{sp['end']})"
+    ev = evidence(mat, frame)
+    r, c = D.flash_evidence(frames, frame) if 1 <= frame < len(frames) - 3 else (9.0, 0.0)
+    u, f = ev["U"], ev["F"]
+    if r < 0.45 and c >= 0.7:
+        return f"flash: the picture comes back within two frames (return {r:.2f})"
+    if ev["r1"] is not None and ev["r1"] < 0.5:
+        return f"strobe: the previous picture returns one frame later (r1={ev['r1']})"
+    if f is not None and f < 0.85:
+        return f"camera cut inside a long take: corner features still tracked (F={f})"
+    if u is not None and u < 0.6:
+        return f"text-only or element change over a persisting picture (U={u})"
+    pp = "" if p is None else f", p={p[frame]:.2f} under {thr}"
+    return f"evidence below the decision (U={u}, ED={ev['ED']}, EN={ev['EN']}{pp})"
+
+
+def run_one(slug: str, write: bool, loro: dict | None, v1: dict | None = None) -> dict:
+    t0 = time.time()
+    video = video_of(slug)
+    det = shots.detect(video, v1=v1)
+    folder = Path(video).parent / "rhythm"
+    ref_dir = WORKSHOP / "references" / slug / "analysis"
+    if write:
+        ref_dir.mkdir(parents=True, exist_ok=True)
+        (ref_dir / "shots.json").write_text(json.dumps({k: v for k, v in det.items() if k != "curves"}, indent=1, default=float) + "\n", encoding="utf-8")
+        (ref_dir / "shots-curves.json").write_text(json.dumps(det["curves"], default=float) + "\n", encoding="utf-8")
+    row = {"slug": slug, "fps": det["fps"], "frames": det["frames"], "cuts": len([c for c in det["cuts"] if c["kind"] != "flash"]),
+           "hard": len([c for c in det["cuts"] if c["kind"] == "hard"]), "shots": len(det["shots"]), "seconds": round(time.time() - t0, 1)}
+    tp = T.labels_path(WORKSHOP, slug)
+    if not tp.exists():
+        row["truth"] = None
+        return row
+    lab = T.load_labels(WORKSHOP, slug)
+    truth = T.truth_list(lab)
+    # scores count the cuts of every kind; flashes are typed apart and are not cuts
+    pred = [c for c in det["cuts"] if c["kind"] != "flash"]
+    r = E.summary(truth, pred)
+    h1, h0, a1 = r["hard_tol1"], r["hard_tol0"], r["cuts_tol1"]
+    row.update({"truth": {"hard": h1["truth"], "all": a1["truth"], "ambiguous": sum(1 for v in lab["labels"].values() if v == "A"),
+                          "judged": len(T.judged_frames(lab))},
+                "found": h1["tp"], "extra": h1["fp"], "missed": h1["fn"], "f1_tol0": h0["f1"], "f1_tol1": h1["f1"],
+                "cuts_found": a1["tp"], "cuts_true": a1["truth"], "cuts_extra": a1["fp"], "cuts_f1_tol1": a1["f1"],
+                "cuts_f1_tol0": r["cuts_tol0"]["f1"], "errors_frames": h1["errors"]})
+    if loro and slug in loro:
+        row["loro_f1_tol1"] = loro[slug]
+    # causes
+    sig = RS.load_signals(folder)
+    z = np.load(folder / "fine.npz")
+    fine = {k: z[k] for k in z.files}
+    from zrmd.analyze import rhythm_cache
+    frames = rhythm_cache.load(folder)["frames"]
+    mat = RF.cached(folder, sig, fine, frames)
+    ramps = [c for c in det["cuts"] if c["kind"] in ("dissolve", "fade", "whip")]
+    prm = D.params()
+    model = FU.load() if prm.get("decision", {}).get("method") == "fusion" else None
+    p = FU.probabilities(model, mat) if model else None
+    thr = prm["fusion"]["threshold"]
+    row["miss_causes"] = [{"frame": int(f), "cause": miss_cause(int(f), mat, frames, ramps, p, thr)} for f in h1["missed"]]
+    judged = {int(k): c for k, c in lab["labels"].items()}
+    inside = [(t["start"] - 1, t["end"] + 1, t["kind"]) for t in truth if t["kind"] in E.TRANSITIONS and t.get("start") is not None]
+
+    def where(f: int) -> str:
+        hit = next((k for a, b, k in inside if a <= f <= b), None)
+        return f"inside a true {hit} interval (neutral for hard cuts, an extra jump for all kinds)" if hit else \
+            str(judged.get(f, judged.get(f - 1, judged.get(f + 1, "unjudged"))))
+    row["extra_causes"] = [{"frame": int(f), "label": where(int(f)), "evidence": evidence(mat, int(f))} for f in h1["extra"]]
+    return row
+
+
+def table(rows: list[dict]) -> str:
+    head = ("| reference | frames | fps | true cuts | found | extra | missed | F1 @0 | F1 @+-1 | all kinds F1 @+-1 | LORO all kinds F1 @+-1 |\n"
+            "|---|---|---|---|---|---|---|---|---|---|---|")
+    out = [head]
+    for r in rows:
+        if r.get("truth") is None:
+            out.append(f"| {r['slug']} | {r['frames']} | {r['fps']:.2f} | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |")
+            continue
+        loro = r.get("loro_f1_tol1")
+        out.append(f"| {r['slug']} | {r['frames']} | {r['fps']:.2f} | {r['truth']['hard']} | {r['found']} | {r['extra']} | {r['missed']} | "
+                   f"{r['f1_tol0']:.3f} | {r['f1_tol1']:.3f} | {r['cuts_f1_tol1']:.3f} | {'n/a' if loro is None else f'{loro:.3f}'} |")
+    return "\n".join(out)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--slug", action="append")
+    ap.add_argument("--no-write", action="store_true")
+    ap.add_argument("--v1", action="append", default=[], help="a V1 value by name, name=json (true, 0.3, \"cut\")")
+    ap.add_argument("--json", default=str(WORKSHOP / "rhythm" / "results.json"))
+    ap.add_argument("--md", default=str(WORKSHOP / "docs" / "methods" / "rhythm-results.md"))
+    a = ap.parse_args()
+    loro = None
+    res = WORKSHOP / "rhythm" / "loro-results.json"
+    sheet = WORKSHOP / "rhythm" / "sheet.json"
+    if res.exists():
+        loro = {k: v["f1"] for k, v in json.loads(res.read_text(encoding="utf-8"))["default"].items()}
+    elif sheet.exists():
+        m20 = next(m for m in json.loads(sheet.read_text(encoding="utf-8"))["methods"] if m["id"] == "M20")
+        loro = {k: v["p4_1"] for k, v in m20["per"].items()}
+    v1 = {}
+    for item in a.v1:
+        name, _, raw = item.partition("=")
+        v1[name] = json.loads(raw)
+    rows = []
+    for slug in a.slug or SLUGS:
+        r = run_one(slug, not a.no_write, loro, v1 or None)
+        rows.append(r)
+        print(json.dumps({k: r[k] for k in ("slug", "cuts", "found", "extra", "missed", "f1_tol0", "f1_tol1") if k in r}), flush=True)
+    Path(a.json).write_text(json.dumps(rows, indent=1, default=float) + "\n", encoding="utf-8")
+    lines = ["# Rhythm: results of the winner on the picture references (14 October 2026)", "",
+             "Hard cuts, F1 at 0 and at +-1 frame against the pooled-adjudication truth (`<workshop>/rhythm/truth/<slug>.json`). `found` is the number "
+             "of true hard cuts found at +-1 frame, `extra` the cuts reported where the truth has none, `missed` the true cuts not found. The final "
+             "models are trained on these same references, so F1 columns are RESUBSTITUTION numbers; `LORO` is the leave-one-reference-out F1 of "
+             "ALL cut kinds (the fusion and the transition classifier both trained on the other videos), the number to expect on a video the "
+             "model never saw. fin-4 has no boundary above the duplicate floor: no cut can exist. "
+             "FR : resultats du gagnant par reference. (14 October 2026)", "", table(rows), ""]
+    for r in rows:
+        if r.get("truth") is None:
+            continue
+        lines += [f"## {r['slug']} (14 October 2026)", ""]
+        if r["miss_causes"]:
+            lines += ["Missed cuts and their measured cause:", ""] + [f"- frame {m['frame']}: {m['cause']}" for m in r["miss_causes"]] + [""]
+        if r["extra_causes"]:
+            lines += ["Extra jumps (reported where the truth has no cut):", ""]
+            lines += [f"- frame {m['frame']}: truth {m['label']}, evidence {json.dumps(m['evidence'])}" for m in r["extra_causes"]] + [""]
+        if not r["miss_causes"] and not r["extra_causes"]:
+            lines += ["No miss and no extra jump.", ""]
+    Path(a.md).write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(table(rows))
+
+
+if __name__ == "__main__":
+    main()

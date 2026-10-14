@@ -1,0 +1,13 @@
+{
+ "schema": "zrmd/sfx-corpus@1",
+ "date": "14 October 2026",
+ "doc": "The SFX corpus (HDA law): the sound-effect events of every member of the music corpus (params/music-corpus.json), fitted with a FAST profile (the per-event calibration of params/sfx-trim.json closes the gap the shorter search leaves) and then calibrated. A claim on sound effects only counts on the whole corpus. Reference windows and stems stay in the reference cache. FR : le corpus SFX, profil rapide puis calibrage par evenement.",
+ "fastProfile": [
+  "fit.sfxDfit.screenTop=4", "fit.sfxDfit.pairTop=2", "fit.sfxDfit.effectTop=1", "fit.sfxDfit.growTop=1", "fit.sfxDfit.growSources=2",
+  "fit.sfxDfit.maxBlocks=2", "fit.sfxDfit.fullTop=1", "fit.sfxDfit.fullOverrides.scanRounds=0", "fit.sfxDfit.fullOverrides.cmaIters=30",
+  "fit.sfxDfit.pairOverrides.starts=2", "fit.sfxDfit.pairOverrides.steps=200", "fit.sfxDfit.pairOverrides.cmaIters=30",
+  "fit.sfxDfit.seedChoices=[0,1,2,3,4,5,6,7]"
+ ],
+ "workers": 8,
+ "gate": {"event": "atCeiling", "atCeilingMargin": 0.3, "stochasticMin": 99.0}
+}

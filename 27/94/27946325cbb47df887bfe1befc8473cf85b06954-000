@@ -1,0 +1,44 @@
+{
+ "schema": "zrmd/rhythm@2",
+ "date": "14 October 2026",
+ "doc": "The single parameter interface of the rhythm module (HDA law): at most 8 exposed per category, everything else is a measured constant inside the code. A cut is the first picture of a new composition (the area rule: after the camera or the canvas has moved, no persistent content covers half of the frame). decision.method 'fusion' (the winner of the method sheet, docs/ARCHITECTURE.md section 14) reads datasets/rhythm-fusion.json; 'rule' is the explainable area-rule conjunction of the `hard` thresholds. transitions.method 'learned' (second pass, 14 October 2026) types dissolves, fades and whips with the classifier of datasets/rhythm-ramps.json at confidence transitions.threshold and anchors each typed event on the cut the model placed inside it (anchor_learned 'cut'); 'rule' keeps the threshold detectors of `types`. The V1 user values live in params/rhythm-v1-parameters.json and are applied on top of this file. FR : interface unique du module rythme.",
+ "decision": {
+  "method": "fusion"
+ },
+ "fusion": {
+  "threshold": 0.5,
+  "model": "datasets/rhythm-fusion.json"
+ },
+ "guard": {
+  "features_lost_min": 0.0,
+  "flash_calm": 0.7
+ },
+ "hard": {
+  "replaced_min": 0.55,
+  "persist_max": 0.2,
+  "features_lost_min": 0.85,
+  "structure_min": 0.7,
+  "empty_density": 0.008,
+  "destroyed_min": 0.5
+ },
+ "types": {
+  "flash_return": 0.45,
+  "dissolve": true,
+  "dissolve_total_min": 0.06,
+  "dissolve_resid_max": 0.022,
+  "fade": true,
+  "fade_around_min": 0.05,
+  "whip": true,
+  "whip_around_min": 0.08
+ },
+ "transitions": {
+  "method": "learned",
+  "threshold": 0.99,
+  "anchor_learned": "cut",
+  "model": "datasets/rhythm-ramps.json"
+ },
+ "score": {
+  "tolerance_frames": 1,
+  "target": 0.999
+ }
+}

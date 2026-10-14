@@ -1,0 +1,171 @@
+# 14 October 2026: the Image (shader) module score of a reference, read from the disk, never stored.
+# Two sources, each labelled in the output so a number never passes for another metric:
+#   survey  <workshop>/image/<slug>/survey.json   written by Scripts/ReproduceFieldSurvey.py: the backdrop field of EVERY
+#           shot fitted as a shader-bank composition and measured in CIEDE2000 (definition in params/image-survey.json)
+#   motions <workshop>/motions/*                  the code-reproduced shots that already exist (text cards, graphics,
+#           shader backdrops, device 3D) with the fidelity.json of their best version (zrmd/verify/fidelity.py contract)
+# Plates (photographs, footage, 3D renders, screen recordings) are animatics by design: reported as a slot share, never
+# a failure. FR : le score du module Image d'une reference, lu sur le disque, jamais stocke ; deux sources etiquetees.
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from .. import settings, versions
+
+FILM_FPS = 60  # frames of a motion window (motion.json source start and end are seconds)
+REPRODUCED_RECIPES = ("textcard", "graphic", "shader-backdrop", "shader-field", "device3d")
+
+
+def _read(path: Path, default=None):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return default
+
+
+def survey_path(slug: str, tag: str | None = None) -> Path:
+    # 14 October 2026: survey.json is the current best; survey-<tag>.json keeps a round (before/after of an improvement).
+    return settings.path("workshop") / "image" / slug / (f"survey-{tag}.json" if tag else "survey.json")
+
+
+def read_survey(slug: str) -> dict | None:
+    return _read(survey_path(slug))
+
+
+def aggregate(shots: list[dict], families: list[str] | None = None) -> dict:
+    """Time-weighted aggregate of survey shots. Each shot: {family, frames, share, within1, score}.
+    coverage = share of cells that are field; within1 = share of ALL cells within one JND (no mask);
+    value = mean field fidelity over field cells (weights: frames x share)."""
+    total = sum(s["frames"] for s in shots) or 1
+    w = [s["frames"] * (s.get("share") or 0.0) for s in shots]
+    scored = [(s["frames"] * (s.get("share") or 0.0), s["score"]) for s in shots if s.get("score") is not None]
+    wsum = sum(x for x, _ in scored)
+    return {"shots": len(shots), "frames": total,
+            "coverage": round(sum(w) / total, 4),
+            "within1Jnd": round(sum(s["frames"] * (s.get("within1") or 0.0) for s in shots) / total, 4),
+            "value": round(sum(x * sc for x, sc in scored) / wsum, 4) if wsum > 0 else None}
+
+
+def cutoff_curve(shots: list[dict], cutoffs: list[float]) -> dict:
+    """{cutoff: [coverage, value]} over the shots: the value-versus-coverage trade of the field mask, time weighted
+    (coverage by frames, value by frames x coverage at that cutoff)."""
+    total = sum(s["frames"] for s in shots) or 1
+    out = {}
+    for c in cutoffs:
+        key = str(c)
+        pts = [(s["frames"], s["curve"][key]) for s in shots if s.get("curve", {}).get(key) and s["curve"][key][0] is not None]
+        cov = sum(f * v[0] for f, v in pts) / total
+        sc = [(f * v[0], v[1]) for f, v in pts if v[1] is not None]
+        w = sum(a for a, _ in sc)
+        out[key] = [round(cov, 4), round(sum(a * b for a, b in sc) / w, 5) if w > 0 else None]
+    return out
+
+
+def by_family(shots: list[dict]) -> dict:
+    out = {}
+    total = sum(s["frames"] for s in shots) or 1
+    for fam in sorted({s["family"] for s in shots}):
+        part = [s for s in shots if s["family"] == fam]
+        agg = aggregate(part)
+        agg["timeShare"] = round(sum(s["frames"] for s in part) / total, 4)
+        out[fam] = agg
+    return out
+
+
+def best_version(folder: Path) -> str | None:
+    """The reproduction is the best-scoring version (a variation derived from it scores lower by design); the film step
+    picks the same one. Latest version when no version carries a score."""
+    best = None
+    for v in versions.list_versions(folder):
+        fid = _read(folder / v / "fidelity.json")
+        if isinstance(fid, dict) and isinstance(fid.get("score"), (int, float)) and (best is None or fid["score"] > best[1]):
+            best = (v, float(fid["score"]))
+    return best[0] if best else versions.latest_version(folder)
+
+
+def motion_results(slug: str) -> list[dict]:
+    """Every code-reproduced motion of a reference: recipe, version, score, dimensions, window in frames at 60 fps."""
+    root = settings.path("workshop") / "motions"
+    out = []
+    if not root.exists():
+        return out
+    for folder in sorted(root.iterdir()):
+        m = _read(folder / "motion.json", {}) or {}
+        src = m.get("source") or {}
+        if src.get("slug") != slug or m.get("recipe") not in REPRODUCED_RECIPES:
+            continue
+        v = best_version(folder)
+        fid = _read(folder / v / "fidelity.json", {}) if v else {}
+        dims = fid.get("dimensions") if isinstance(fid, dict) else None
+        out.append({"motion": folder.name, "recipe": m.get("recipe"), "version": v,
+                    "score": fid.get("score") if isinstance(fid, dict) else None,
+                    "dimensions": dims if isinstance(dims, dict) else {},
+                    "frames": max(0, int(round((src.get("end", 0) - src.get("start", 0)) * FILM_FPS)))})
+    return out
+
+
+def plate_results(slug: str) -> list[dict]:
+    root = settings.path("workshop") / "motions"
+    out = []
+    for folder in sorted(root.iterdir()) if root.exists() else []:
+        m = _read(folder / "motion.json", {}) or {}
+        src = m.get("source") or {}
+        if src.get("slug") == slug and m.get("recipe") == "plate":
+            v = versions.latest_version(folder)
+            fid = _read(folder / v / "fidelity.json", {}) if v else {}
+            dims = (fid or {}).get("dimensions") or {}
+            out.append({"motion": folder.name, "grade": dims.get("grade"),
+                        "frames": max(0, int(round((src.get("end", 0) - src.get("start", 0)) * FILM_FPS)))})
+    return out
+
+
+def stale_against_bible(slug: str, survey: dict) -> dict | None:
+    """The survey is built on the bible's shot list; when the bible is rebuilt with other cuts (the rhythm module does that)
+    the survey no longer describes the same shots. Returns None when they agree, else what differs."""
+    bible = _read(settings.path("workshop") / "references" / slug / "bible.json")
+    if not bible or not bible.get("shots"):
+        return None
+    now = {(int(s["start_frame"]), int(s["end_frame"])) for s in bible["shots"]}
+    then = {(int(s["start_frame"]), int(s["end_frame"])) for s in survey.get("shots", [])}
+    if now == then:
+        return None
+    return {"surveyShots": len(then), "bibleShots": len(now), "onlyInSurvey": len(then - now), "onlyInBible": len(now - then)}
+
+
+def reference_image(slug: str) -> dict | None:
+    """The reading the orchestrator shows for the Image module, or None when nothing was measured for this reference."""
+    survey = read_survey(slug)
+    motions = motion_results(slug)
+    if not survey and not motions:
+        return None
+    detail: dict = {}
+    value = coverage = None
+    if survey and survey.get("aggregate"):
+        agg = survey["aggregate"]
+        value, coverage = agg.get("value"), agg.get("coverage")
+        fam = survey.get("byFamily", {})
+        total_t = sum(f.get("timeShare", 0) for f in fam.values()) or 1.0
+        reproducible = settings_families(survey)
+        detail.update({"source": "survey (backdrop field, CIEDE2000, JND 1)", "fieldCoverage": agg.get("coverage"),
+                       "within1Jnd": agg.get("within1Jnd"), "shots": agg.get("shots"),
+                       "reproducibleTimeShare": round(sum(fam.get(f, {}).get("timeShare", 0) for f in reproducible) / total_t, 4),
+                       "slotTimeShare": round(fam.get("plate", {}).get("timeShare", 0) / total_t, 4),
+                       "glowShare": survey.get("glowShare")})
+        stale = stale_against_bible(slug, survey)
+        if stale:
+            detail["stale"] = stale  # the value is real for the shots it was measured on; re-run ReproduceFieldSurvey.py
+    if motions:
+        scored = [m for m in motions if isinstance(m["score"], (int, float)) and m["frames"] > 0]
+        tf = sum(m["frames"] for m in scored)
+        detail["motions"] = {"reproducedShots": len(motions), "scored": len(scored),
+                             "meanScore": round(sum(m["score"] * m["frames"] for m in scored) / tf, 4) if tf else None,
+                             "framesAt60": sum(m["frames"] for m in motions)}
+        if value is None:
+            value = detail["motions"]["meanScore"]
+    return {"value": value, "coverage": coverage, "detail": detail,
+            "version": (survey or {}).get("date")}
+
+
+def settings_families(survey: dict) -> list[str]:
+    return list(survey.get("reproducibleFamilies") or ["textcard", "graphic"])

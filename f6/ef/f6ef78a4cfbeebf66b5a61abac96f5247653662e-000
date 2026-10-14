@@ -1,0 +1,103 @@
+# 14 October 2026: the V1 parameter tiers (params/v1-tiers.json): primary (4), secondary (8), tertiary (16) per chantier, resolved against the
+# definitions that live ONCE elsewhere (params/exposed.json for a scene recipe, params/music-studio.json for the music, params/timeline.json for the
+# montage). check() is the guard: a tier key that has no definition, a tier over its size, or a key listed twice fails loudly.
+# FR : les paliers V1 : primaire, secondaire, tertiaire ; chaque cle est definie une seule fois ailleurs, check() le verifie.
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from .. import exposed, settings, versions
+
+TIERS = settings.REPO / "params" / "v1-tiers.json"
+STUDIO = settings.REPO / "params" / "music-studio.json"
+NAMES = ("primary", "secondary", "tertiary")
+
+
+def load() -> dict:
+    data = json.loads(TIERS.read_text(encoding="utf-8"))
+    data["chantiers"] = {}
+    for rel in data.get("includes", []):
+        p = settings.REPO / rel
+        if p.exists():
+            try:
+                data["chantiers"][p.stem.replace("-v1-parameters", "")] = json.loads(p.read_text(encoding="utf-8"))
+            except ValueError:
+                data["chantiers"][p.stem.replace("-v1-parameters", "")] = {"error": "unreadable"}
+    return data
+
+
+def _definitions(recipe: str) -> dict:
+    cats = exposed.definitions()["recipes"].get(recipe, {})
+    return {i["key"]: {**i, "category": cat} for cat, items in cats.items() for i in items}
+
+
+def scene(recipe: str | None, params: dict | None) -> dict:
+    """Tiers of one scene (a motion version): each item is the exposed definition plus the tier, the live preview binding and the current
+    value read in params (an item whose key does not resolve in this version is simply not offered)."""
+    data = load()
+    spec = data["scene"].get(recipe or "")
+    if not spec:
+        return {"recipe": recipe, "tiers": {n: [] for n in NAMES}, "supported": False}
+    defs = _definitions(recipe)
+    out = {}
+    for name in NAMES:
+        items = []
+        for key in spec.get(name, []):
+            d = defs.get(key)
+            if not d:
+                continue
+            value = versions.get_path(params or {}, key) if params is not None else None
+            if params is not None and value is None:
+                continue
+            items.append({**d, "tier": name, "value": value, "preview": data["preview"].get(key)})
+        out[name] = items
+    return {"recipe": recipe, "tiers": out, "supported": True}
+
+
+def music() -> dict:
+    data = load()["music"]
+    studio = json.loads(STUDIO.read_text(encoding="utf-8"))
+    by_id = {s["id"]: s for s in studio["sliders"]}
+    out = {name: [{**by_id[i], "tier": name} for i in data.get(name, []) if i in by_id] for name in ("primary", "secondary")}
+    out["tertiary"] = [{"id": i, "label": i, "tier": "tertiary", "built": False} for i in data.get("tertiary", [])]
+    return {"tiers": out}
+
+
+def check() -> list[str]:
+    """Every problem found, empty when the tiers are sound."""
+    data = load()
+    lim = data["limits"]
+    problems = []
+    for recipe, spec in data["scene"].items():
+        defs = _definitions(recipe)
+        seen = []
+        for name in NAMES:
+            keys = spec.get(name, [])
+            if len(keys) > lim[name]:
+                problems.append(f"scene.{recipe}.{name} has {len(keys)} keys, above {lim[name]}")
+            for k in keys:
+                if k not in defs:
+                    problems.append(f"scene.{recipe}.{name}: {k} is not defined in params/exposed.json recipe {recipe}")
+                if k in seen:
+                    problems.append(f"scene.{recipe}: {k} listed twice")
+                seen.append(k)
+    studio = {s["id"] for s in json.loads(STUDIO.read_text(encoding="utf-8"))["sliders"]}
+    m = data["music"]
+    for name in NAMES:
+        if len(m.get(name, [])) > lim[name]:
+            problems.append(f"music.{name} above {lim[name]}")
+    for i in m.get("built", []):
+        if i not in studio:
+            problems.append(f"music built id {i} is not a slider of params/music-studio.json")
+    for name in ("primary", "secondary"):
+        for i in m.get(name, []):
+            if i not in studio:
+                problems.append(f"music.{name}: {i} is not a slider of params/music-studio.json")
+    for name in NAMES:
+        if len(data["montage"].get(name, [])) > lim[name]:
+            problems.append(f"montage.{name} above {lim[name]}")
+    for key in data["preview"]:
+        if not any(key in spec.get(n, []) for spec in data["scene"].values() for n in NAMES):
+            problems.append(f"preview binding for {key} which no scene tier lists")
+    return problems

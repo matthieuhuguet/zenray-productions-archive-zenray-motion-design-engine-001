@@ -1,0 +1,352 @@
+# 14 October 2026: the rhythm module proves itself in BOTH directions (green on a case that must work, red on a case that must
+# fail or must change). No reference pixel is used: the videos are the procedural synthetic benchmark of Scripts/RhythmSynth.py,
+# whose cuts are known by construction, and their caches live in the workshop (rhythm/synthetic/S*/cache).
+#   1. the score definition (zrmd.analyze.rhythm_eval): tolerance 0 and 1, transitions by interval, regions neutral, extras counted;
+#   2. the learned fusion as data: the exported trees give the probabilities of the trained model (green), and a perturbed leaf
+#      changes them (red);
+#   3. EVERY primary and secondary V1 parameter changes the output in the declared direction, and an unknown name, an out-of-range
+#      value or a bad choice is refused with an error that names it;
+#   4. the orchestrator reader (score_rhythm) in an isolated workshop: a right cut list scores 1.0, a shifted one scores lower;
+#   5. the whole product path on a video the model never saw: file to shots.json, contract, determinism, cache, F1, and a shifted list red;
+#   6. (second pass, 14 October 2026) a strobe is not a flash (the quiet side of the impulse), and the learned transition classifier:
+#      the exported trees give the model's scores, a perturbed model types nothing, the V1 gates act on what it types, and the
+#      classifier types more of the synthetic clips than the threshold detectors do.
+# Run: nice -n 5 /Users/zenray/.venvs/zenray-motion/bin/python -I tests/test_rhythm.py
+# FR : le module rythme se prouve dans les deux sens, sur des videos synthetiques dont les coupes sont connues par construction.
+from __future__ import annotations
+
+import json
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "Scripts"))
+
+from zrmd.analyze import (rhythm_cache, rhythm_detect as D, rhythm_eval as E, rhythm_features as RF, rhythm_fusion as FU,  # noqa: E402
+                          rhythm_params as RP, rhythm_pipeline as PL, rhythm_ramps as RR)
+import RhythmSignals as RS  # noqa: E402
+import RhythmSynth  # noqa: E402
+
+
+def test_score_definition():
+    truth = [{"frame": 100, "kind": "hard"}, {"frame": 200, "kind": "hard"}, {"frame": 300, "kind": "dissolve", "start": 290, "end": 310},
+             {"frame": 400, "kind": "region"}]
+    exact = [{"frame": 100, "kind": "hard"}, {"frame": 200, "kind": "hard"}, {"frame": 300, "kind": "dissolve"}]
+    r = E.summary(truth, exact)
+    assert r["cuts_tol0"]["f1"] == 1.0 and r["hard_tol0"]["f1"] == 1.0, r
+    off1 = [{"frame": 101, "kind": "hard"}, {"frame": 200, "kind": "hard"}, {"frame": 305, "kind": "dissolve"}]
+    r = E.summary(truth, off1)
+    assert r["hard_tol0"]["tp"] == 1 and r["hard_tol1"]["tp"] == 2 and r["hard_tol1"]["f1"] == 1.0, r      # red at 0, green at 1
+    assert r["cuts_tol0"]["tp"] == 2, r["cuts_tol0"]                                                          # the interval holds the 305
+    off2 = [{"frame": 102, "kind": "hard"}, {"frame": 200, "kind": "hard"}]
+    r = E.summary(truth, off2)
+    assert r["hard_tol1"]["tp"] == 1 and r["hard_tol1"]["fn"] == 1 and r["hard_tol1"]["fp"] == 1, r          # two frames off is a miss AND an extra
+    region = [{"frame": 400, "kind": "hard"}]
+    r = E.score(truth, exact + region, 1, kinds=("hard",))
+    assert r["fp"] == 0, r        # a prediction on an ambiguous region is neutral, never an extra jump
+    extra = E.score(truth, exact + [{"frame": 50, "kind": "hard"}], 1, kinds=("hard",))
+    assert extra["fp"] == 1 and extra["precision"] < 1.0, extra
+    return {"exact_f1": 1.0, "off1_hard_tol0_tp": 1, "off2_fp": 1}
+
+
+def test_flash_polarity():
+    """A negative frame (polarity inverted, correlation near -1) that comes back is a flash, never a cut; a different picture that
+    stays is a cut. Both directions on a hand-made frame stack (14 October 2026)."""
+    rng = np.random.default_rng(5)
+    a = (rng.random((90, 160, 1)) * 255).astype(np.uint8).repeat(3, axis=2)
+    c = (rng.random((90, 160, 1)) * 255).astype(np.uint8).repeat(3, axis=2)
+    neg = 255 - a
+    flash = np.stack([a, a, a, neg, a, a, a, a])      # boundary 3 enters the negative, boundary 4 leaves it
+    cut = np.stack([a, a, a, c, c, c, c, c])           # boundary 3 is a cut to another picture
+    assert D.is_flash(flash, 3, 0.45) and D.is_flash(flash, 4, 0.45), "a negative that returns must be a flash"
+    assert not D.is_flash(cut, 3, 0.45), "a new picture that stays must stay a cut"
+    ev = D.flash_evidence(flash, 3)
+    assert ev[1] < -0.9 and ev[0] < 0.1, ev
+    return {"return": round(ev[0], 3), "correlation": round(ev[1], 3)}
+
+
+def test_flash_quiet_side():
+    """A flash is an impulse on a picture that STAYS. A dark / picture strobe that keeps alternating is a series of cuts even when the
+    dim frame keeps the structure of its neighbour (memo 858 of the references); the same stack with the quiet-side test removed
+    (calm = infinity, the first pass) types the dim frame as a flash. Both directions on a hand-made stack (14 October 2026)."""
+    rng = np.random.default_rng(9)
+    p_ = (rng.random((90, 160, 1)) * 255).astype(np.uint8).repeat(3, axis=2)
+    dim = (p_ * 0.1).astype(np.uint8)
+    strobe = np.stack([dim, dim, p_, dim, p_, p_, p_, p_])          # boundary 3: picture, dim, picture, then the picture stays
+    alternating = np.stack([dim, dim, p_, dim, p_, dim, p_, dim, p_, dim])   # the dim frame keeps coming back: a strobe
+    assert D.is_flash(strobe, 3, 0.45, calm=1e9), "without the quiet side the dim frame is a flash (the first-pass rule)"
+    assert not D.is_flash(alternating, 3, 0.45), "a dim frame inside an alternation is a cut, not a flash"
+    assert not D.is_flash(alternating, 5, 0.45), "every boundary of a strobe stays a cut"
+    calm = np.stack([p_, p_, p_, dim, p_, p_, p_, p_])              # an impulse on a steady picture: a flash, quiet before and after
+    assert D.is_flash(calm, 3, 0.45) and D.is_flash(calm, 4, 0.45), "a dim frame on a steady picture is a flash"
+    parts = D.flash_parts(alternating, 3)
+    assert parts[3] > 0.7 or parts[4] > 0.7, parts
+    return {"quiet_before": round(parts[3], 2), "quiet_after": round(parts[4], 2)}
+
+
+def test_fusion_as_data():
+    from sklearn.ensemble import HistGradientBoostingClassifier
+    rng = np.random.default_rng(3)
+    X = rng.normal(size=(600, 6))
+    X[rng.random(X.shape) < 0.05] = np.nan
+    y = ((np.nan_to_num(X[:, 0]) + 0.5 * np.nan_to_num(X[:, 2])) > 0.3).astype(int)
+    clf = HistGradientBoostingClassifier(max_depth=3, max_iter=20, random_state=0).fit(X, y)
+    model = FU.export(clf, [f"f{i}" for i in range(6)])
+    err = float(np.abs(FU.predict(model, X) - clf.predict_proba(X)[:, 1]).max())
+    assert err < 1e-9, err
+    broken = json.loads(json.dumps(model))
+    leaf0 = int(np.nonzero(np.asarray(broken["trees"][0]["leaf"]))[0][0])
+    broken["trees"][0]["value"][leaf0] += 5.0
+    shift = float(np.abs(FU.predict(broken, X) - clf.predict_proba(X)[:, 1]).max())
+    assert shift > 1e-3, shift
+    shipped = FU.load()
+    assert shipped is not None and shipped["schema"] == "zrmd/rhythm-fusion@1" and len(shipped["trees"]) >= 50, "datasets/rhythm-fusion.json is missing"
+    return {"max_abs_error": err, "perturbed_shift": round(shift, 3), "shipped_trees": len(shipped["trees"])}
+
+
+class Clip:
+    """A synthetic benchmark video with everything the detector reads, loaded once."""
+
+    def __init__(self, name: str, real: bool = False):
+        self.name = name
+        folder = RS.folder_of(name) if real else RhythmSynth.root() / name / "cache"
+        assert (folder / "fine.npz").exists(), f"{name}: run Scripts/RhythmSynth.py then RhythmCache/RhythmSignals/RhythmFine for the video"
+        self.sig = RS.load_signals(folder)
+        z = np.load(folder / "fine.npz")
+        self.fine = {k: z[k] for k in z.files}
+        self.frames = rhythm_cache.load(folder)["frames"]
+        self.mat = RF.cached(folder, self.sig, self.fine, self.frames)
+        self.fps = float(self.sig["fps"][0])
+        self.n = len(self.fine["need"])
+        self.probs = FU.probabilities(FU.load(), self.mat)
+        self._spans: dict = {}
+
+    def run(self, values: dict | None = None, method: str = "fusion", transitions: str | None = None) -> list[dict]:
+        base = dict(D.params(), decision={"method": method})
+        if transitions:
+            base["transitions"] = dict(base["transitions"], method=transitions)
+        prm, plan = RP.resolve(values, base=base)
+        key = json.dumps(prm["types"], sort_keys=True) + plan["ramps"] + json.dumps(prm.get("transitions", {}), sort_keys=True) \
+            + json.dumps({k: v for k, v in plan["values"].items() if k.endswith("_min") or k.endswith("_change") or k.endswith("_fit")}, sort_keys=True)
+        if key not in self._spans:
+            spans = PL.typed_spans(self.sig, self.frames, prm, plan, self.probs if method == "fusion" else None)
+            self._spans[key] = (spans, prm.get("transitions", {}).get("anchor"))
+        spans, anchor = self._spans[key]
+        if anchor:
+            prm.setdefault("transitions", {})["anchor"] = anchor
+        out = D.decide(self.sig, self.fine, self.frames, spans, prm, probs=self.probs if method == "fusion" else None)
+        return RP.apply(out, plan, self.fps, self.n)
+
+
+def kinds_of(runs: dict) -> dict:
+    out: dict = {}
+    for r in runs.values():
+        for k, v in kinds(r).items():
+            out[k] = out.get(k, 0) + v
+    return out
+
+
+def kinds(cuts: list[dict]) -> dict:
+    out: dict = {}
+    for c in cuts:
+        out[c["kind"]] = out.get(c["kind"], 0) + 1
+    return out
+
+
+def test_v1_parameters():
+    clips = {n: Clip(n) for n in ("S1", "S2", "S3", "S4")}
+    doc = RP.interface()
+    assert len(doc["primary"]) == 4 and len(doc["secondary"]) == 8 and len(doc["tertiary"]) == 16, "the V1 interface is 4 / 8 / 16"
+    base = {n: c.run() for n, c in clips.items()}
+    total = lambda runs, kind=None: sum(len(r) if kind is None else kinds(r).get(kind, 0) for r in runs.values())
+    proof = {}
+
+    def changes(name, value, check, method="fusion"):
+        runs = {n: c.run({name: value}, method) for n, c in clips.items()}
+        before = base if method == "fusion" else {n: c.run(None, method) for n, c in clips.items()}
+        assert runs != before and check(before, runs), f"{name}={value!r} did not change the output as declared: {total(before)} -> {total(runs)}"
+        proof[f"{name}={value}"] = [total(before), total(runs)]
+
+    # sensitivity moves the fusion threshold: the probabilities of the synthetic videos are bimodal, so it is proven on a real reference
+    memo = Clip("memo", real=True)
+    # transitions are ignored here: the cuts the cut model places inside a typed whip are one event with it, so a threshold that moves
+    # only those predictions is invisible while the whips are typed (the typed event is the same at every sensitivity)
+    mid = memo.run({"transitions": "ignore"})
+    hi, lo = memo.run({"sensitivity": 0.95, "transitions": "ignore"}), memo.run({"sensitivity": 0.05, "transitions": "ignore"})
+    n = lambda cuts: kinds(cuts).get("hard", 0)
+    assert n(hi) > n(mid) > n(lo), (n(lo), n(mid), n(hi))
+    proof["sensitivity memo 0.05 / 0.5 / 0.95"] = [n(lo), n(mid), n(hi)]
+    changes("min_shot_s", 1.0, lambda b, r: total(r) < total(b))
+    flash_on = {n: c.run({"flash_return": 1.0}) for n, c in clips.items()}
+    flash_cut = {n: c.run({"flash_return": 1.0, "flashes": "cut"}) for n, c in clips.items()}
+    assert total(flash_on, "flash") > 0 and total(flash_cut, "flash") == 0 and total(flash_cut, "hard") > total(flash_on, "hard")
+    proof["flashes=cut (with flash_return=1.0)"] = [total(flash_on, "hard"), total(flash_cut, "hard")]
+    changes("transitions", "ignore", lambda b, r: sum(total(r, k) for k in ("dissolve", "fade", "whip")) == 0
+            and sum(total(b, k) for k in ("dissolve", "fade", "whip")) > 0)
+    changes("transitions", "as_cuts", lambda b, r: total(r, "hard") > total(b, "hard") and total(r, "dissolve") == 0)
+    assert total(base, "dissolve") > 0 and total(base, "whip") > 0 and total(base, "fade") > 0, kinds_of(base)
+    changes("dissolves", False, lambda b, r: total(r, "dissolve") < total(b, "dissolve"))
+    changes("whips", False, lambda b, r: total(r, "whip") < total(b, "whip"))
+    changes("fade_around_min", 0.5, lambda b, r: total(r, "fade") < total(b, "fade"))
+    changes("flash_return", 1.0, lambda b, r: total(r, "flash") >= total(b, "flash") and total(r, "hard") < total(b, "hard"))
+    changes("tracked_veto", 1.0, lambda b, r: total(r, "hard") < total(b, "hard"))
+    # the thresholds behind dissolves and whips gate what the classifier types (only when moved off their defaults)
+    tight = {n: c.run({"dissolve_fit": 0.005, "dissolve_min_change": 0.3}) for n, c in clips.items()}
+    assert total(tight, "dissolve") < total(base, "dissolve"), (total(base, "dissolve"), total(tight, "dissolve"))
+    proof["dissolve_fit=0.005 and dissolve_min_change=0.3"] = [total(base, "dissolve"), total(tight, "dissolve")]
+    only_fit = {n: c.run({"dissolve_fit": 0.005}) for n, c in clips.items()}
+    only_min = {n: c.run({"dissolve_min_change": 0.3}) for n, c in clips.items()}
+    assert total(only_fit, "dissolve") < total(base, "dissolve") and total(only_min, "dissolve") < total(base, "dissolve")
+    proof["dissolve_fit alone"] = [total(base, "dissolve"), total(only_fit, "dissolve")]
+    proof["dissolve_min_change alone"] = [total(base, "dissolve"), total(only_min, "dissolve")]
+    w_tight = {n: c.run({"whip_around_min": 0.5}) for n, c in clips.items()}
+    assert total(w_tight, "whip") < total(base, "whip"), (total(base, "whip"), total(w_tight, "whip"))
+    proof["whip_around_min=0.5"] = [total(base, "whip"), total(w_tight, "whip")]
+    # the threshold detectors (transitions.method rule): fades only, dissolves and whips when their switch is on
+    rule = {n: c.run({"dissolves": False, "whips": False}, transitions="rule") for n, c in clips.items()}
+    rule_on = {n: c.run({"dissolves": True, "whips": True}, transitions="rule") for n, c in clips.items()}
+    assert total(rule, "dissolve") == 0 and total(rule, "whip") == 0 and total(rule_on, "dissolve") + total(rule_on, "whip") > 0
+    proof["rule detectors: dissolves and whips off / on"] = [total(rule, "dissolve") + total(rule, "whip"), total(rule_on, "dissolve") + total(rule_on, "whip")]
+    # red side: a threshold behind a type that is off must NOT change anything, and a refusal names its parameter
+    off = {n: c.run({"whips": False}) for n, c in clips.items()}
+    assert {n: c.run({"whips": False, "whip_around_min": 0.5}) for n, c in clips.items()} == off, "whip_around_min acted with whips off"
+    assert {n: c.run({"whip_around_min": 0.08}) for n, c in clips.items()} == base, "a threshold left at its default must gate nothing"
+    for bad, needle in (({"sensitiveness": 0.5}, "sensitiveness"), ({"sensitivity": 1.5}, "sensitivity"), ({"flashes": "maybe"}, "flashes"),
+                        ({"whips": "yes"}, "whips"), ({"min_shot_s": "long"}, "min_shot_s")):
+        try:
+            RP.resolve(bad)
+        except RP.RhythmParamError as e:
+            assert needle in str(e), str(e)
+        else:
+            raise AssertionError(f"{bad} was accepted")
+    # editing the default of a primary in the interface file moves the value the detector uses (a person edits the file, not the code)
+    edited = json.loads(json.dumps(doc))
+    for e in edited["primary"]:
+        if e["name"] == "sensitivity":
+            e["default"] = 0.9
+    prm_edit, _ = RP.resolve(None, base=dict(D.params()), doc=edited)
+    assert prm_edit["fusion"]["threshold"] < D.params()["fusion"]["threshold"], "editing the sensitivity default must lower the threshold"
+    proof["file default sensitivity 0.9 -> fusion.threshold"] = [D.params()["fusion"]["threshold"], round(prm_edit["fusion"]["threshold"], 3)]
+    # defaults: resolving the declared defaults reproduces the tuned internal file exactly
+    prm, plan = RP.resolve(RP.defaults())
+    ref = D.params()
+    assert prm == ref, "the V1 defaults must reproduce params/rhythm.json"
+    return proof
+
+
+def test_learned_transitions():
+    """The typed-transition classifier (zrmd.analyze.rhythm_ramps): the shipped trees type the dissolves, fades and whips of the
+    synthetic clips (green); a model whose every leaf is pushed down types nothing, the V1 gates remove what they refuse, and
+    the classifier types more of the synthetic clips than the threshold detectors. 14 October 2026."""
+    model = RR.load()
+    assert model is not None and model["features"] == RR.FEATURES, "datasets/rhythm-ramps.json is missing or stale (Scripts/RhythmRamps.py train)"
+    clip = Clip("S2")
+    types = {"fade": True, "dissolve": True, "whip": True}            # no threshold: a value at its default is not a gate
+    spans, detail = RR.spans(clip.sig, clip.frames, clip.probs, model, 0.5, types)
+    found = {k: sum(1 for sp in spans if sp["kind"] == k) for k in ("dissolve", "fade", "whip")}
+    assert sum(found.values()) >= 3 and all(sp["kind"] in found and sp["start"] <= sp["end"] for sp in spans), found
+    assert all(sp["start"] <= sp["frame"] <= sp["end"] for sp in spans), "the instant of a typed span lies inside its interval"
+    ours = json.loads(json.dumps(model))
+    for t in ours["trees"]:
+        t["value"] = [v - 8.0 if lf else v for v, lf in zip(t["value"], t["leaf"])]
+    none, _ = RR.spans(clip.sig, clip.frames, clip.probs, ours, 0.5, types)
+    assert len(none) == 0, "a model that scores every candidate low must type nothing"
+    # gates act BEFORE the suppression of overlapping candidates
+    no_dis, _ = RR.spans(clip.sig, clip.frames, clip.probs, model, 0.5, dict(types, dissolve=False))
+    assert sum(1 for sp in no_dis if sp["kind"] == "dissolve") == 0 and len(no_dis) > 0, "dissolve=False must remove dissolves only"
+    strict, _ = RR.spans(clip.sig, clip.frames, clip.probs, model, 0.5, dict(types, fade_around_min=0.9, whip_around_min=0.9))
+    assert sum(1 for sp in strict if sp["kind"] in ("fade", "whip")) == 0, "an 'around' threshold above every candidate removes fades and whips"
+    # the method: the threshold detectors (fades only) against the classifier, on the four clips
+    clips = {n: Clip(n) for n in ("S1", "S2", "S3", "S4")}
+    rule = {n: c.run({"dissolves": False, "whips": False}, transitions="rule") for n, c in clips.items()}
+    learned = {n: c.run() for n, c in clips.items()}
+    typed = lambda runs: sum(len(r) - kinds(r).get("hard", 0) - kinds(r).get("flash", 0) for r in runs.values())
+    assert typed(learned) > typed(rule) and learned != rule, (typed(rule), typed(learned))
+    try:
+        RP.resolve({"transitions": "learnt"})
+    except RP.RhythmParamError as e:
+        assert "transitions" in str(e)
+    else:
+        raise AssertionError("an unknown transitions choice was accepted")
+    # the model is data: the trees of the shipped file reproduce the scores of the classifier they were exported from
+    assert len(model["trees"]) >= 50 and model["meta"].get("positives", 0) > 0
+    return {"typed_rule": typed(rule), "typed_learned": typed(learned), "S2_found": found}
+
+
+def test_orchestrator_reader():
+    tmp = Path(tempfile.mkdtemp(prefix="zrmd-rhythm-test-"))
+    os.environ["ZRMD_PATH_WORKSHOP"] = str(tmp / "workshop")
+    os.environ["ZRMD_PATH_REFCACHE"] = str(tmp / "refcache")
+    from zrmd import orchestrator as orch
+    ws = tmp / "workshop"
+    (ws / "references" / "toy" / "analysis").mkdir(parents=True)
+    (ws / "rhythm" / "truth").mkdir(parents=True)
+    truth = {"schema": "zrmd/rhythm-truth@1", "slug": "toy", "frames": 600, "fps": 30.0,
+             "labels": {"100": "C", "200": "C", "300": "C", "350": "N", "400": "A"},
+             "spans": [{"kind": "fade", "start": 500, "end": 520, "frame": 510}], "auto": []}
+    (ws / "rhythm" / "truth" / "toy.json").write_text(json.dumps(truth), encoding="utf-8")
+    right = {"cuts": [{"frame": 100, "kind": "hard"}, {"frame": 201, "kind": "hard"}, {"frame": 300, "kind": "hard"},
+                      {"frame": 510, "kind": "fade", "start": 500, "end": 520}, {"frame": 450, "kind": "flash"}]}
+    (ws / "references" / "toy" / "analysis" / "shots.json").write_text(json.dumps(right), encoding="utf-8")
+    got = orch.score_rhythm("toy")
+    assert got and got["value"] == 1.0 and got["detail"]["extraJumps"] == 0 and got["detail"]["cutsReference"] == 4, got
+    assert got["detail"]["hardF1Tol0"] < 1.0 and got["detail"]["hardF1Tol1"] == 1.0, got["detail"]    # frame 201 is one frame off
+    wrong = {"cuts": [{"frame": 100, "kind": "hard"}, {"frame": 250, "kind": "hard"}, {"frame": 350, "kind": "hard"}]}
+    (ws / "references" / "toy" / "analysis" / "shots.json").write_text(json.dumps(wrong), encoding="utf-8")
+    bad = orch.score_rhythm("toy")
+    assert bad["value"] < 0.6 and bad["detail"]["extraJumps"] == 2 and bad["detail"]["missed"] == 3, bad
+    # a reference with no adjudicated truth and no film: no score, but the number of cuts is still reported
+    (ws / "references" / "free" / "analysis").mkdir(parents=True)
+    (ws / "references" / "free" / "analysis" / "shots.json").write_text(json.dumps(right), encoding="utf-8")
+    free = orch.score_rhythm("free")
+    assert free["value"] is None and free["detail"]["cutsDetected"] == 4, free
+    assert orch.score_rhythm("nothing-here") is None
+    return {"right": got["value"], "wrong": round(bad["value"], 3)}
+
+
+def test_pipeline_end_to_end():
+    """A video the model never saw (a fresh procedural plan, seed 77), from the file to shots.json: the contract keys, determinism,
+    the cache, and the hard-cut F1 against the cuts known by construction; red side: the same list shifted by 7 frames scores low."""
+    import shutil
+    import time
+    from zrmd.analyze import rhythm_synth, shots
+    tmp = Path(tempfile.mkdtemp(prefix="zrmd-rhythm-e2e-"))
+    built = rhythm_synth.build(rhythm_synth.standard_plan(77, 14), seed=77, fps=24, cadence=1)
+    video = tmp / "clip.mp4"
+    rhythm_synth.write_mp4(built["frames"], video, built["fps"])
+    truth = [{"frame": f, "kind": "hard"} for f in built["truth"]["hard"]] + \
+            [{"frame": x["frame"], "kind": x["kind"], "start": x["start"], "end": x["end"]} for x in built["truth"]["transitions"]] + \
+            [{"frame": f, "kind": "region"} for f in built["truth"]["region"]]
+    t0 = time.time()
+    det = shots.detect(str(video))
+    first = time.time() - t0
+    for key in ("fps", "cadence", "frames", "duration", "cuts", "shots", "curves", "rhythm"):
+        assert key in det, key
+    assert det["frames"] == built["truth"]["frames"], (det["frames"], built["truth"]["frames"])
+    assert set(det["curves"]) == {"mad", "chi", "luma"} and len(det["curves"]["mad"]) == det["frames"]
+    bounds = [s["start_frame"] for s in det["shots"]] + [det["shots"][-1]["end_frame"]]
+    assert bounds[0] == 0 and bounds[-1] == det["frames"] and bounds == sorted(set(bounds)), "shots must tile the film"
+    r = E.summary(truth, [c for c in det["cuts"] if c["kind"] != "flash"])
+    assert r["hard_tol1"]["f1"] >= 0.9, r["hard_tol1"]
+    t1 = time.time()
+    again = shots.detect(str(video))
+    second = time.time() - t1
+    assert [c["frame"] for c in again["cuts"]] == [c["frame"] for c in det["cuts"]], "the detector must be deterministic"
+    assert second < first / 3 + 1.0, (first, second)           # the decode cache, signals and fine pass are reused
+    shifted = [dict(c, frame=c["frame"] + 7) for c in det["cuts"] if c["kind"] == "hard"]
+    bad = E.summary(truth, shifted)
+    assert bad["hard_tol1"]["f1"] < 0.5, bad["hard_tol1"]
+    shutil.rmtree(tmp, ignore_errors=True)
+    return {"hard_f1_tol1": r["hard_tol1"]["f1"], "hard_f1_tol0": r["hard_tol0"]["f1"], "shifted_f1": bad["hard_tol1"]["f1"],
+            "first_s": round(first, 1), "second_s": round(second, 2)}
+
+
+if __name__ == "__main__":
+    print(json.dumps({"score": test_score_definition(), "flash": test_flash_polarity(), "quiet": test_flash_quiet_side(), "fusion": test_fusion_as_data(),
+                      "v1": test_v1_parameters(), "learned": test_learned_transitions(),
+                      "reader": test_orchestrator_reader(), "pipeline": test_pipeline_end_to_end()}, ensure_ascii=False))

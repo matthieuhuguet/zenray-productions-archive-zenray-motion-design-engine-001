@@ -1,0 +1,447 @@
+# 14 October 2026: the vector module on a scene, proven in both directions on a synthetic UI frame (no reference pixel):
+# the window with sharp edges and few colours wins over a noisy photograph-like patch; blur and gradient fields are sorted as
+# SHADER, plain shapes as VECTOR; the HTML component carries the palette as CSS variables; a changed threshold changes the sorting
+# (red proof). FR : le module vecteur sur une scene, prouve dans les deux sens sur une image synthetique.
+import copy
+import json
+import sys
+import tempfile
+from pathlib import Path
+
+import numpy as np
+from scipy import ndimage as ndi
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from zrmd.vector import scene as S  # noqa: E402
+from zrmd.vector import trace as TR  # noqa: E402
+
+FAIL = []
+
+
+def check(name, cond, detail=""):
+    print(("ok   " if cond else "FAIL ") + name + (f"  {detail}" if detail and not cond else ""))
+    if not cond:
+        FAIL.append(name)
+
+
+def synthetic_frame() -> np.ndarray:
+    H, W = 360, 640
+    img = np.zeros((H, W, 3), np.float32)
+    img[:] = np.linspace([16, 24, 48], [32, 40, 72], H)[:, None, :]            # gradient field (shader)
+    rng = np.random.default_rng(1)
+    img[20:140, 20:200] = rng.integers(0, 255, (120, 180, 3))                 # photograph-like noise patch (residual)
+    img[180:330, 330:600] = (242, 242, 242)                                    # card (vector)
+    img[200:230, 350:560] = (30, 30, 34)                                       # bar inside the card (vector)
+    yy, xx = np.mgrid[0:H, 0:W]
+    img[((yy - 280) ** 2 + (xx - 400) ** 2) < 28 ** 2] = (255, 106, 43)        # disc (vector)
+    glow = np.exp(-(((yy - 100) ** 2 + (xx - 480) ** 2) / (2 * 22.0 ** 2)))    # glow (shader)
+    img += glow[..., None] * np.array([40, 60, 200])
+    return np.clip(img, 0, 255).astype(np.uint8)
+
+
+def run() -> int:
+    frame = synthetic_frame()
+    crop = S.pick_crop(frame)
+    cx, cy = crop["x"] + crop["w"] / 2, crop["y"] + crop["h"] / 2
+    check("crop avoids the noisy photograph patch", not (cx < 200 and cy < 140), crop)
+    check("crop lands on the UI card region", 300 <= cx <= 620 and 150 <= cy <= 340, crop)
+    flat = np.full((360, 640, 3), 40, np.uint8)
+    check("a frame with no edge returns the centre window flagged by a zero score", S.pick_crop(flat)["score"] == 0.0)
+    check("colour bins: flat window 1, noise window many", S.colour_bins(flat[:50, :50], 4, 0.95) == 1 and S.colour_bins(frame[20:140, 20:200], 4, 0.95) > 300)
+
+    # 14 October 2026: a window of WHOLE objects. A text line wider than the smallest window is held whole by a larger one (green) and
+    # cannot be held when only a small window exists (red proof, so the test is not vacuous); a blurred field has no sharp edge at all.
+    from zrmd.vector import render as R
+    line = R.render_text("Whole line of text", str(ROOT / "datasets/fonts/files/Inter/Inter[opsz,wght].ttf"), 30, {"wght": 500}, canvas=(420, 60))
+    page = np.full((360, 640, 3), 20, np.uint8)
+    page[150:210, 100:520] = np.where(line.mask[..., None] > 0.5, 235, 20).astype(np.uint8)
+    ink_cols = np.nonzero((page[150:210, 100:520, 0] > 100).any(axis=0))[0]
+    ink_x0, ink_x1 = 100 + int(ink_cols.min()), 100 + int(ink_cols.max()) + 1
+    held = S.pick_crop(page)
+    check("a window holds the whole text line", held["x"] <= ink_x0 and held["x"] + held["w"] >= ink_x1 and held["cutObjects"] == 0, (held, ink_x0, ink_x1))
+    small = dict(S.cfg()["crop"], windows=[[0.12, 0.12]])
+    cut = S.pick_crop(page, small)
+    check("red proof: with only small windows the line cannot be held", not (cut["x"] <= ink_x0 and cut["x"] + cut["w"] >= ink_x1))
+    yy, xx = np.mgrid[0:360, 0:640]
+    blob = np.stack([np.clip(255 * np.exp(-(((yy - 180) ** 2 + (xx - 320) ** 2) / (2 * 70.0 ** 2))), 0, 255)] * 3, axis=2).astype(np.uint8)
+    check("a blurred field has no sharp edge: zero score, flagged", S.pick_crop(blob)["score"] == 0.0)
+    thin = np.full((360, 640, 3), 245, np.uint8)
+    thin[100:101, 100:220] = 180       # a one pixel light outline of a small card on white, which a Sobel response misses
+    thin[159:160, 100:220] = 180
+    thin[100:160, 100:101] = 180
+    thin[100:160, 219:220] = 180
+    check("a one pixel line frame is seen as sharp edges", S.pick_crop(thin)["score"] > 0.0)
+
+    # the cost budget, both ways: a spent CPU allowance keeps the unrefined contour and says so; no budget fits fully
+    from zrmd.vector import asset as A
+    small_ui = np.full((90, 150, 3), 24, np.uint8)
+    small_ui[20:70, 30:120] = (240, 240, 240)
+    small_ui[35:55, 50:100] = (255, 106, 43)
+    full = A.vectorise(small_ui, "budget-full", workers=1)
+    layers_full = [l for l in full["params"]["layers"] if not (l.get("fit") or {}).get("background")]
+    check("without a budget no layer is flagged unrefined", layers_full and not any((l["fit"]).get("unrefined") for l in layers_full))
+    spent = A.vectorise(small_ui, "budget-spent", workers=1, cfg={**A._cfg(), "budget": {"maxRefined": 0, "maxBoundaryPx": 99999, "maxAreaPx": 999999, "specklePx": 0, "layerCpuS": 5, "workers": 1}})
+    layers_spent = [l for l in spent["params"]["layers"] if not (l.get("fit") or {}).get("background")]
+    check("with maxRefined 0 every layer keeps the unrefined contour, flagged", layers_spent and all((l["fit"]).get("unrefined") for l in layers_spent))
+    # 14 October 2026: the rank cap spares layers of a short boundary (budget.rankFreeBoundaryPx), both ways. maxRefined 0 would leave
+    # every layer unrefined (checked above); with the exemption wide enough the same layers are fitted, with a floor of zero they are not.
+    exempt = A.vectorise(small_ui, "rank-free", workers=1, cfg={**A._cfg(), "budget": {"maxRefined": 0, "maxBoundaryPx": 99999, "maxAreaPx": 999999, "specklePx": 0,
+                                                                                   "layerCpuS": 60, "workers": 1, "rankFreeBoundaryPx": 10 ** 6}})
+    lx = [l for l in exempt["params"]["layers"] if not (l.get("fit") or {}).get("background")]
+    check("a layer of a short boundary is fitted past the rank cap", lx and not any((l["fit"]).get("unrefined") for l in lx), [l["fit"].get("unrefined") for l in lx])
+    stingy = A.vectorise(small_ui, "rank-stingy", workers=1, cfg={**A._cfg(), "budget": {"maxRefined": 0, "maxBoundaryPx": 99999, "maxAreaPx": 999999, "specklePx": 0,
+                                                                                     "layerCpuS": 60, "workers": 1, "rankFreeBoundaryPx": 1}})
+    ls = [l for l in stingy["params"]["layers"] if not (l.get("fit") or {}).get("background")]
+    check("red proof: with an exemption of 1 px the same layers stay unrefined", ls and all((l["fit"]).get("unrefined") for l in ls))
+    # 14 October 2026: with a scene allowance that only the FIRST layer can start under (1e-9 CPU seconds, one worker), the layer that is
+    # fitted is the first submitted: the short-boundary bar when the exemption covers it, the big card (the old order, biggest first)
+    # when it does not. Red proof: the exemption is the only difference between the two runs.
+    def fitted_colour(rankfree):
+        r = A.vectorise(small_ui, f"order-{rankfree}", workers=1, cfg={**A._cfg(), "budget": {"maxRefined": 9, "maxBoundaryPx": 99999, "maxAreaPx": 999999, "specklePx": 0,
+                                                                                         "layerCpuS": 60, "workers": 1, "sceneCpuS": 1e-9, "rankFreeBoundaryPx": rankfree}})
+        pal = r["params"]["palette"]
+        return {pal[l["paint"]["colour"][1:]]: not (l["fit"] or {}).get("unrefined") for l in r["params"]["layers"] if not (l.get("fit") or {}).get("background")}
+    first_short, first_big = fitted_colour(160), fitted_colour(0)
+    check("short boundary first: the bar is fitted and the card keeps the unrefined contour", first_short.get("#ff6a2b") is True and first_short.get("#f0f0f0") is False, first_short)
+    check("red proof: without the exemption the card (biggest) is the one fitted", first_big.get("#f0f0f0") is True and first_big.get("#ff6a2b") is False, first_big)
+    # 14 October 2026: the short layers may spend only `shortShare` of the scene allowance. Three tiny squares and a card; the total
+    # allowance is huge, the short share is ~0 (one worker): the first small square is fitted, the other two keep the unrefined contour with
+    # the scene-cpu flag, the card (not short) is fitted. Red proof: with a share of 1 the three squares are fitted.
+    sq = np.full((130, 150, 3), 24, np.uint8)
+    sq[10:30, 10:30] = (255, 106, 43)
+    sq[10:30, 50:70] = (40, 200, 120)
+    sq[10:30, 90:110] = (60, 120, 255)
+    sq[50:120, 20:130] = (240, 240, 240)
+
+    def fitted_by_colour(share):
+        r = A.vectorise(sq, f"share-{share}", workers=1, cfg={**A._cfg(), "budget": {"maxRefined": 9, "maxBoundaryPx": 99999, "maxAreaPx": 999999, "specklePx": 0,
+                                                                                 "layerCpuS": 60, "workers": 1, "sceneCpuS": 1e9, "rankFreeBoundaryPx": 100, "shortShare": share}})
+        pal = r["params"]["palette"]
+        return {pal[l["paint"]["colour"][1:]]: not (l["fit"] or {}).get("unrefined") for l in r["params"]["layers"] if not (l.get("fit") or {}).get("background")}
+    stingy_share, full_share = fitted_by_colour(1e-12), fitted_by_colour(1.0)
+    small = ["#ff6a2b", "#28c878", "#3c78ff"]
+    check("short share ~0: exactly one of the three small squares is fitted, the card is", sum(stingy_share[c] for c in small) == 1 and stingy_share["#f0f0f0"] is True, stingy_share)
+    check("red proof: with a share of 1 the three small squares are fitted too", all(full_share[c] for c in small) and full_share["#f0f0f0"] is True, full_share)
+    # 14 October 2026: the scene allowance (budget.sceneCpuS), both ways, through the pool (workers 2) and in process (workers 1). An
+    # allowance of zero is spent before the first layer: every layer keeps the unrefined contour and says "scene-cpu"; a huge one never
+    # triggers and every layer is fitted as without a budget (red proof: the flag is what the allowance sets, not a side effect).
+    base_bud = {"maxRefined": 9, "maxBoundaryPx": 99999, "maxAreaPx": 999999, "specklePx": 0, "layerCpuS": 60, "workers": 2}
+    for wk in (2, 1):
+        zero = A.vectorise(small_ui, f"scene-zero-{wk}", workers=wk, cfg={**A._cfg(), "budget": {**base_bud, "workers": wk, "sceneCpuS": 0.0}})
+        lz = [l for l in zero["params"]["layers"] if not (l.get("fit") or {}).get("background")]
+        cz = zero["params"]["trace"]["cost"]
+        check(f"allowance 0 (workers {wk}): every layer unrefined with the scene-cpu flag", lz and all((l["fit"]).get("unrefined") and (l["fit"]).get("budget") == "scene-cpu" for l in lz)
+              and cz["sceneCapHits"] == len(lz), cz)
+        big = A.vectorise(small_ui, f"scene-big-{wk}", workers=wk, cfg={**A._cfg(), "budget": {**base_bud, "workers": wk, "sceneCpuS": 1e9}})
+        lb = [l for l in big["params"]["layers"] if not (l.get("fit") or {}).get("background")]
+        cb = big["params"]["trace"]["cost"]
+        check(f"allowance 1e9 (workers {wk}): no layer flagged, the cost is measured", lb and not any((l["fit"]).get("unrefined") for l in lb) and cb["sceneCapHits"] == 0
+              and cb["cpuS"] > 0 and cb["layers"] == len(lb), cb)
+    check("the allowance never leaks into the next call (no budget, no flag)", not any((l.get("fit") or {}).get("budget") == "scene-cpu" for l in full["params"]["layers"]))
+    # 14 October 2026: evaluate() renders and measures every layer inside the box of its ink; the numbers must be the ones of the whole
+    # canvas reading (crop=False): rects, discs, a blurred disc and a gradient card, a layer that touches the canvas border. Red proof: a
+    # box that cuts a layer in half changes its coverage, so the comparison is not vacuous.
+    yy, xx = np.mgrid[0:140, 0:220]
+    scene_ui = np.zeros((140, 220, 3), np.float64)
+    scene_ui[:] = (18, 20, 28)
+    scene_ui[10:60, 8:90] = np.linspace((40, 60, 200), (200, 80, 90), 82)[None, :, :]       # gradient card
+    for k in range(5):
+        scene_ui[70:90, 10 + 24 * k:26 + 24 * k] = (230, 230, 235)                          # small rects
+    scene_ui[((yy - 40) ** 2 + (xx - 160) ** 2) < 18 ** 2] = (255, 106, 43)                  # disc
+    blur_disc = np.exp(-(((yy - 105) ** 2 + (xx - 170) ** 2) / (2 * 6.0 ** 2)))
+    scene_ui += blur_disc[..., None] * np.array([20, 120, 230])                                # soft glow
+    scene_ui[120:140, 0:60] = (240, 200, 40)                                                 # touches the border
+    scene_ui = np.clip(scene_ui, 0, 255).astype(np.uint8)
+    ev = A.vectorise(scene_ui, "eval-crop", workers=1)
+    f_full = A.evaluate(ev["params"], scene_ui, ev["analysis"], crop=False)
+    f_crop = A.evaluate(ev["params"], scene_ui, ev["analysis"], crop=True)
+    d_max = max([max(abs(a["iou"] - b["iou"]), abs(a["edge_mean"] - b["edge_mean"])) for a, b in zip(f_full["layers"], f_crop["layers"])] or [9.0])
+    check("cropped evaluate gives the whole-canvas numbers on every layer", len(f_full["layers"]) >= 6 and len(f_full["layers"]) == len(f_crop["layers"]) and d_max < 1e-5
+          and [l["ok"] for l in f_full["layers"]] == [l["ok"] for l in f_crop["layers"]] and f_full["colour"] == f_crop["colour"], (len(f_full["layers"]), d_max))
+    lid = f_full["layers"][0]["id"]
+    full_cov = A._layer_coverage(ev["params"], lid, (0, 0, 220, 140), 1)
+    ys, xs = np.nonzero(full_cov > 0)
+    half = A._layer_coverage(ev["params"], lid, (0, 0, int((xs.min() + xs.max()) // 2), 140), 1)
+    check("red proof: a box that cuts the layer loses coverage", half.sum() < 0.9 * full_cov.sum())
+    box_ok = A._layer_box(ev["params"], lid, np.zeros((140, 220)), np.ones((140, 220)), 220, 140, 4)
+    check("the ink box holds all of the layer coverage", abs(A._layer_coverage(ev["params"], lid, box_ok, 1).sum() - full_cov.sum()) < 1e-6)
+    # 14 October 2026: the edge distance around an occluder, both ways. A layer with a hole under an upper layer has alpha 0 and weight 0
+    # in the hole: the target gets a fake edge half a pixel from the visible pixels, which the fitted coverage (free under the occluder)
+    # does not have. Without the margin that edge counts (a page-sized layer measured 50 to 106 px at an IoU of 0.99999); with it the
+    # coverage that equals the target where it is visible measures 0. Red proof: a layer really 3 px off is still seen.
+    from zrmd.vector import metrics as MT
+    tg3, wt3, cov3 = np.zeros((80, 120)), np.ones((80, 120)), np.zeros((80, 120))
+    tg3[10:70, 10:110] = 1.0
+    tg3[20:60, 20:100] = 0.0
+    wt3[20:60, 20:100] = 0.0
+    cov3[10:70, 10:110] = 1.0
+    e_raw, e_margin = MT.subpixel_edge_distance(cov3, tg3, wt3), MT.subpixel_edge_distance(cov3, tg3, wt3, occluder_margin_px=1)
+    check("the fake edge around an occluder counts without the margin", e_raw["mean"] > 1.0 and e_raw["max"] > 5.0, e_raw)
+    check("the occluder margin removes it (the coverage is the target where it is visible)", e_margin["mean"] < 0.05, e_margin)
+    off3 = np.zeros((80, 120))
+    off3[10:70, 13:113] = 1.0
+    e_off = MT.subpixel_edge_distance(off3, tg3, wt3, occluder_margin_px=1)
+    check("red proof: a layer 3 px off is still seen with the margin", e_off["p95"] >= 2.5 and e_off["mean"] > 0.5, e_off)
+    specks = A.vectorise(small_ui, "budget-speck", workers=1, cfg={**A._cfg(), "budget": {"maxRefined": 9, "maxBoundaryPx": 99999, "maxAreaPx": 999999, "specklePx": 10 ** 6, "layerCpuS": 5, "workers": 1}})
+    check("a layer under the speck floor is rejected as a speck, never traced", len(specks["params"]["layers"]) == 1 and all(r["kind"] == "speck" for r in specks["params"]["trace"]["rejected"]) and specks["params"]["trace"]["rejected"])
+    cls_speck = S.classify(specks["params"], specks["analysis"], None)
+    check("a speck is reported residual with its reason", cls_speck["specks"] >= 1 and cls_speck["counts"]["residual"] >= 1)
+
+    # 14 October 2026: the primitive gates, both ways. A letter is not a primitive: its attempts are abandoned after the first stage (default
+    # gates); with the gates off the same attempts run to the end (red proof that the gate is what abandons them). A true circle is never
+    # abandoned and is accepted.
+    from zrmd.vector import primitives as PR, trace as TR
+    glyph = R.render_text("k", str(ROOT / "datasets/fonts/files/Inter/Inter[opsz,wght].ttf"), 70, {"wght": 600}, pad=8)
+    canvas_g = np.where(glyph.mask[..., None] > 0.5, 235, 20).astype(np.uint8).repeat(3, axis=2)
+    an_g = A.analyse(canvas_g, A._cfg())
+    lg = [L for L in an_g["layers"] if not L["background"]][0]
+    ys, xs = np.nonzero(lg["contour_mask"] | (lg["alpha"] > 0.01))
+    box = (ys.min(), ys.max() + 1, xs.min(), xs.max() + 1)
+    tg, wg, cg = (lg[k][box[0]:box[1], box[2]:box[3]] for k in ("alpha", "weight", "contour_mask"))
+    cfg_on = A._cfg()
+    rec_on = PR.recognise(tg, wg, cg, (box[2], box[0]), 0.0, cfg_on)
+    check("a letter is not a primitive", not rec_on["accepted"])
+    check("its attempts are abandoned at a gate", any(t.get("abandoned") for t in rec_on["tried"]) and all(not t.get("ok") for t in rec_on["tried"]), rec_on["tried"][:2])
+    cfg_off = {**cfg_on, "primitives": {**cfg_on["primitives"], "stage_gate": 0, "polish_gate": 0}}
+    rec_off = PR.recognise(tg, wg, cg, (box[2], box[0]), 0.0, cfg_off)
+    check("red proof: with the gates off nothing is abandoned and the answer is the same", not any(t.get("abandoned") for t in rec_off["tried"]) and not rec_off["accepted"])
+    disc = R.render_svg("<svg xmlns='http://www.w3.org/2000/svg' width='90' height='90'><rect width='90' height='90' fill='#141414'/>"
+                        "<circle cx='45.3' cy='44.6' r='27.4' fill='#ff6a2b'/></svg>", 90, 90, engine="skia", ss=4)[..., :3]
+    an_d = A.analyse(disc, A._cfg())
+    ld = [L for L in an_d["layers"] if not L["background"]][0]
+    ys, xs = np.nonzero(ld["contour_mask"] | (ld["alpha"] > 0.01))
+    bd = (ys.min() - 3, ys.max() + 4, xs.min() - 3, xs.max() + 4)
+    rec_d = PR.recognise(ld["alpha"][bd[0]:bd[1], bd[2]:bd[3]], ld["weight"][bd[0]:bd[1], bd[2]:bd[3]], ld["contour_mask"][bd[0]:bd[1], bd[2]:bd[3]], (bd[2], bd[0]), 0.0, cfg_on)
+    check("a true circle passes both gates and is accepted", rec_d["accepted"] and rec_d["best"]["kind"] == "circle" and not any(t.get("abandoned") for t in rec_d["tried"]), rec_d["tried"])
+
+    # 14 October 2026: stack_order and merge_revealed work on bounding boxes now; they must give EXACTLY what the all-pairs scan of
+    # 12 October gave (the old code is kept here as the reference). Red proof: a deliberately wrong containment threshold changes depth.
+    from scipy import ndimage as ndi2
+
+    def ref_stack(labels, n, cfg):
+        h, w = labels.shape
+        area = np.bincount(labels.ravel(), minlength=n)
+        filled = [ndi2.binary_fill_holes(labels == i) for i in range(n)]
+        depth = np.zeros(n, int)
+        for b in range(n):
+            mb = labels == b
+            for a in range(n):
+                if a != b and filled[a].sum() > area[b] and filled[a][mb].mean() >= cfg["containment_min"]:
+                    depth[b] += 1
+        return depth.tolist(), area.tolist(), filled
+
+    def ref_merge(rgb, labels, models, st, cfg):
+        img = np.asarray(rgb, np.float64)[..., :3]
+        h, w = labels.shape
+        xs, ys = TR._centres(h, w)
+        order, depth = st["order"], st["depth"]
+        merged = {}
+        for pos, b in enumerate(order):
+            mb = labels == b
+            core = ndi2.binary_erosion(mb, iterations=2)
+            if core.sum() >= 4:
+                mb = core
+            best, best_rms = None, None
+            for a in order[:pos]:
+                if depth[a] >= depth[b] or a in merged:
+                    continue
+                col = TR.eval_model(models[a], xs[mb], ys[mb])
+                rms = float(np.sqrt(((col - img[mb]) ** 2).mean()))
+                if rms <= cfg["hole_rms_max"] and (best_rms is None or rms < best_rms):
+                    best, best_rms = a, rms
+            if best is not None:
+                merged[b] = best
+        return merged
+
+    rng = np.random.default_rng(7)
+    H2, W2 = 96, 128
+    lab = np.zeros((H2, W2), np.int32)
+    k = 1
+    for _ in range(40):                                   # nested and overlapping rectangles, rings, speckle
+        y0, x0 = int(rng.integers(0, H2 - 8)), int(rng.integers(0, W2 - 8))
+        hh, ww = int(rng.integers(4, 44)), int(rng.integers(4, 60))
+        lab[y0:y0 + hh, x0:x0 + ww] = k
+        if rng.random() < 0.5 and hh > 10 and ww > 10:
+            lab[y0 + 3:y0 + hh - 3, x0 + 3:x0 + ww - 3] = k + 1     # a ring with its inside as another label
+            k += 1
+        k += 1
+    lab[60:92, 90:126] = k                                 # a card with a window that shows the background again
+    lab[66:86, 96:120] = k + 1
+    lab = (np.unique(lab, return_inverse=True)[1].reshape(lab.shape)).astype(np.int32)
+    n2 = int(lab.max()) + 1
+    pal = rng.integers(0, 255, (n2, 3))
+    pal[::4] = pal[0]                                      # several regions share the background colour: revealed counters to merge
+    pal[lab[75, 105]] = pal[lab[0, 0]]                     # the window is the colour of the background
+    rgb2 = pal[lab].astype(np.uint8)
+    models2 = {i: {"type": "flat", "colour": "#%02x%02x%02x" % tuple(int(v) for v in pal[i])} for i in range(n2)}
+    tcfg = TR._cfg()
+    new_st = TR.stack_order(lab, n2, tcfg)
+    d_ref, a_ref, f_ref = ref_stack(lab, n2, tcfg)
+    check("stack_order depth equals the all-pairs scan", new_st["depth"] == d_ref and new_st["area"] == a_ref)
+    check("filled outlines equal the all-pairs scan", all(np.array_equal(new_st["filled"][i], f_ref[i]) for i in range(n2)))
+    got_lab, got_models, got_merged = TR.merge_revealed(rgb2, lab, models2, new_st, tcfg)
+    check("merge_revealed merges the same regions as the all-pairs scan", got_merged == ref_merge(rgb2, lab, models2, new_st, tcfg) and len(got_merged) > 0, got_merged)
+    wrong = TR.stack_order(lab, n2, {**tcfg, "containment_min": 1.5})
+    check("red proof: another containment threshold changes the depths (the comparison is not vacuous)", wrong["depth"] != d_ref)
+
+    # layer_target on boxes equals the canvas-wide transforms of 12 October (reference copied here), for every layer of the same map
+    def ref_layer_target(rgb, labels, models, order, idx, filled, cfg, band=None):
+        band = cfg["band_px"] if band is None else band
+        img = np.asarray(rgb, np.float64)[..., :3]
+        h, w = labels.shape
+        me = order[idx]
+        rank = np.empty(max(order) + 1, int)
+        rank[np.array(order)] = np.arange(len(order))
+        rank_map = rank[labels]
+        above, below, region = rank_map > idx, rank_map < idx, labels == me
+        cand = above & filled[me]
+        if cand.any():
+            comp, nc = ndi2.label(cand)
+            ring = ndi2.binary_dilation(cand) & ~cand & below
+            touching = np.unique(ndi2.grey_dilation(comp, size=3)[ring])
+            cand &= ~np.isin(comp, touching[touching > 0])
+        stacked = region | cand
+        weight = np.where(above & ~stacked, 0.0, 1.0)
+        occl = above & ~stacked & ndi2.binary_dilation(region, iterations=cfg["occlusion_extend_px"])
+        xs, ys = TR._centres(h, w)
+        _, (iy, ix) = ndi2.distance_transform_edt(~stacked, return_indices=True)
+        top_lab = labels[iy, ix]
+        low = below
+        if low.any():
+            _, (jy, jx) = ndi2.distance_transform_edt(~low, return_indices=True)
+            low_lab = labels[jy, jx]
+        d_in, d_out = ndi2.distance_transform_edt(stacked), ndi2.distance_transform_edt(~stacked)
+        near = (np.where(stacked, d_in, d_out) <= band) & (weight > 0)
+        alpha = stacked.astype(np.float64)
+        if low.any() and near.any():
+            yy, xx = np.nonzero(near)
+            top, bot = np.zeros((len(yy), 3)), np.zeros((len(yy), 3))
+            for lab_id in np.unique(top_lab[yy, xx]):
+                m_ = top_lab[yy, xx] == lab_id
+                top[m_] = TR.eval_model(models[int(lab_id)], xs[yy, xx][m_], ys[yy, xx][m_])
+            for lab_id in np.unique(low_lab[yy, xx]):
+                m_ = low_lab[yy, xx] == lab_id
+                bot[m_] = TR.eval_model(models[int(lab_id)], xs[yy, xx][m_], ys[yy, xx][m_])
+            seg = top - bot
+            n2_ = (seg ** 2).sum(-1)
+            t_ = ((img[yy, xx] - bot) * seg).sum(-1) / np.maximum(n2_, 1e-9)
+            alpha[yy, xx] = np.where(np.sqrt(n2_) >= cfg["min_edge_contrast"], np.clip(t_, 0, 1), alpha[yy, xx])
+        signed = np.where(stacked, d_in - 0.5, 0.5 - d_out)
+        return alpha, weight, stacked, stacked | occl, signed
+
+    # a smooth gradient inside every region so the colour models are not all flat and the band has real contrast
+    rgb3 = np.clip(rgb2.astype(np.float64) + (np.mgrid[0:H2, 0:W2][1] * 0.15)[..., None], 0, 255)
+    models3 = {i: {"type": "flat", "colour": "#%02x%02x%02x" % tuple(int(v) for v in pal[i])} for i in range(n2)}
+    same = True
+    detail = ""
+    for ix_ in range(len(new_st["order"])):
+        ref = ref_layer_target(rgb3, lab, models3, new_st["order"], ix_, new_st["filled"], tcfg)
+        got = TR.layer_target(rgb3, lab, models3, new_st["order"], ix_, new_st["filled"], tcfg)
+        band_ok = np.abs(ref[4]) <= tcfg["blur_band_px"]
+        same &= np.array_equal(ref[0], got["alpha"]) and np.array_equal(ref[1], got["weight"]) and np.array_equal(ref[2], got["stacked"]) \
+            and np.array_equal(ref[3], got["contour_mask"]) and np.allclose(ref[4][band_ok], got["signed_dist"][band_ok])
+        if not same:
+            detail = f"layer {ix_}"
+            break
+    check("layer_target on boxes equals the canvas-wide transforms for every layer", same, detail)
+
+    # classification, both ways, on handcrafted layers
+    def layer(i, kind, blur=0.0, paint="flat", bg=False):
+        return {"id": f"L{i:02d}", "name": f"L{i:02d}-{kind}", "z": i, "kind": kind, "geometry": {}, "paint": {"type": paint, "colour": "#ffffff"},
+                "effects": {"blur": blur, "opacity": 1.0}, "fit": {"background": bg}, "shader_hint": ["blur_disc_gaussian"] if blur else []}
+    P = {"layers": [layer(0, "rect", paint="linear", bg=True), layer(1, "rounded_rect"), layer(2, "circle", blur=2.5), layer(3, "path")], "trace": {"rejected": [{"z": 4, "kind": None}]}}
+    an = {"layers": [{"background": True, "alpha": np.ones((4, 4))}, {"background": False, "alpha": np.ones((4, 4))}, {"background": False, "alpha": np.ones((4, 4))},
+                     {"background": False, "alpha": np.ones((4, 4))}, {"background": False, "alpha": np.ones((4, 4))}]}
+    fid = {"layers": [{"id": "L01", "iou": 0.995, "edge_mean": 0.1, "ok": True}, {"id": "L03", "iou": 0.97, "edge_mean": 0.2, "ok": False}]}
+    cls = S.classify(P, an, fid)
+    by = {r["id"]: r["class"] for r in cls["layers"]}
+    check("gradient background is a shader", by["L00"] == "shader")
+    check("blurred disc is a shader, never a vector", by["L02"] == "shader")
+    check("plain rounded rect and path are vector", by["L01"] == "vector" and by["L03"] == "vector")
+    check("rejected layer is residual", by["L04"] == "residual")
+    check("vector IoU mean and ok count are read", cls["vectorLayerIouMean"] == 0.9825 and cls["vectorLayersOk"] == "1/2", cls)
+    red = copy.deepcopy(S.cfg()["classes"])
+    red["shaderBlurPx"] = 99.0   # sabotage: blur never counts as shader
+    cls_red = S.classify(P, an, fid, red)
+    check("sabotaged threshold puts the blurred disc back among vector (red proof)", {r["id"]: r["class"] for r in cls_red["layers"]}["L02"] == "vector")
+    ver = S.verdict(cls, {"colour": {"share_over_16": 0.01}})
+    check("verdict explains with the explained share", ver["explained"] == 0.99)
+
+    # 14 October 2026: soft layers, both ways. L01 tiny and SHARP and badly traced stays vector (a tracing failure), L02 tiny and SOFT on the
+    # reference and unexplained is a residual fragment, L03 tiny and soft but well explained stays vector, L04 BIG, soft and unexplained
+    # is a SHADER value (a blur or a glow, whatever blur the fit kept), L05 big, soft and explained stays vector (codec softness on a real
+    # shape). Red proofs: areaMaxPx 0 puts the fragment back among vector, softIouMax 0 puts the soft unexplained layer back among vector.
+    PF = {"layers": [layer(0, "rect", bg=True), layer(1, "path"), layer(2, "path"), layer(3, "path"), layer(4, "path"), layer(5, "path")], "trace": {"rejected": []}}
+    tiny, big = np.ones((4, 4)), np.ones((80, 80))
+    anf = {"layers": [{"background": True, "alpha": tiny, "blur": 0.0}, {"background": False, "alpha": tiny, "blur": 0.2},
+                      {"background": False, "alpha": tiny, "blur": 2.0}, {"background": False, "alpha": tiny, "blur": 2.0},
+                      {"background": False, "alpha": big, "blur": 2.0}, {"background": False, "alpha": big, "blur": 2.0}]}
+    fidf = {"layers": [{"id": "L01", "iou": 0.5, "edge_mean": 1.0, "ok": False}, {"id": "L02", "iou": 0.5, "edge_mean": 1.0, "ok": False},
+                       {"id": "L03", "iou": 0.95, "edge_mean": 0.2, "ok": False}, {"id": "L04", "iou": 0.5, "edge_mean": 1.0, "ok": False},
+                       {"id": "L05", "iou": 0.95, "edge_mean": 0.2, "ok": False}]}
+    clsf = S.classify(PF, anf, fidf)
+    byf = {r["id"]: r["class"] for r in clsf["layers"]}
+    check("tiny sharp layer badly traced stays vector", byf["L01"] == "vector", byf)
+    check("tiny soft layer that no path explains is residual, marked as a fragment", byf["L02"] == "residual" and clsf["fragments"] == 1
+          and [r for r in clsf["layers"] if r["id"] == "L02"][0].get("fragment") is True, byf)
+    check("tiny soft layer that is explained stays vector", byf["L03"] == "vector", byf)
+    check("big soft layer the sharp fit does not explain is a shader value", byf["L04"] == "shader", byf)
+    check("big soft layer the sharp fit explains stays vector", byf["L05"] == "vector", byf)
+    check("the vector mean is read over L01, L03, L05 only", clsf["vectorLayerIouMean"] == round((0.5 + 0.95 + 0.95) / 3, 4), clsf["vectorLayerIouMean"])
+    redf = copy.deepcopy(S.cfg()["classes"])
+    redf["fragment"]["areaMaxPx"] = 0
+    check("red proof: with areaMaxPx 0 the fragment is no longer residual (the soft rule takes it as a shader value)",
+          {r["id"]: r["class"] for r in S.classify(PF, anf, fidf, redf)["layers"]}["L02"] == "shader")
+    redb = copy.deepcopy(redf)
+    redb["softIouMax"] = 0.0
+    check("red proof: with both rules off the fragment is vector again", {r["id"]: r["class"] for r in S.classify(PF, anf, fidf, redb)["layers"]}["L02"] == "vector")
+    reds = copy.deepcopy(S.cfg()["classes"])
+    reds["softIouMax"] = 0.0
+    check("red proof: with softIouMax 0 the big soft unexplained layer is vector again", {r["id"]: r["class"] for r in S.classify(PF, anf, fidf, reds)["layers"]}["L04"] == "vector")
+
+    # export: the palette becomes CSS variables
+    html = S.export_html({"asset": "x", "canvas": {"width": 10, "height": 10}, "palette": {"c0": "#ff6a2b"},
+                          "layers": [{"id": "L00", "name": "L00-rect", "z": 0, "kind": "rect", "geometry": {"cx": 5, "cy": 5, "w": 10, "h": 10, "angle": 0},
+                                      "paint": {"type": "flat", "colour": "@c0"}, "effects": {"blur": 0.0, "opacity": 1.0}}]})
+    check("component html carries the palette as a CSS variable", "--c0:#ff6a2b" in html and 'fill="var(--c0)"' in html)
+
+    # end to end on the synthetic UI region (private asset, numbers, html, svg)
+    out = Path(tempfile.mkdtemp(prefix="zrmd-vscene-"))
+    ui = {"x": 320, "y": 170, "w": 300, "h": 180, "score": 1.0, "edgeShare": 0.1, "colourBins": 5}
+    res = S.analyse_frame(frame, "synthetic", out, {"slug": "synthetic"}, compare_dir=out / "cmp", crop=ui)
+    folder = Path(res["dir"])
+    check("end to end writes svg, html, render and numbers", all((folder / f).exists() for f in ("asset.svg", "component.html", "render.png", "scene.json", "params.json")))
+    check("end to end finds vector layers on the card, bar and disc", res["classes"]["counts"]["vector"] >= 2, res["classes"]["counts"])
+    check("end to end explains the UI crop", res["verdict"]["explained"] >= 0.95, res["verdict"])
+    check("comparison picture goes to the compare dir only", (out / "cmp" / "compare-synthetic.png").exists() and not list(folder.glob("compare*")))
+
+    # 14 October 2026: the frame grab, both ways. The LAST frame of a 30 fps clip is stamped 29/30 = 0.9667 s: asked at the rounded
+    # 0.967 it is after the last frame, ffmpeg exits 0 and writes nothing (motion-opus-5-5 shot S09 failed this way). The time is floored
+    # to the millisecond now. Red proof 1: the old rounded request really writes nothing on this clip. Red proof 2: a time past the end
+    # raises an error that names the time and the video instead of a FileNotFoundError from the image reader.
+    import subprocess
+    clip = out / "clip.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=64x48:r=30", "-frames:v", "30", "-pix_fmt", "yuv420p", str(clip)], check=True, timeout=60)
+    last_t = 29 / 30.0
+    got = S.grab_frame(clip, last_t, out / "last.png")
+    check("the last frame of the clip is grabbed at its own time stamp", got.shape == (48, 64, 3), got.shape)
+    probe = out / "rounded.png"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{last_t:.3f}", "-i", str(clip), "-frames:v", "1", str(probe)], check=True, timeout=60)
+    check("red proof: the old rounded request writes no frame on this clip", not probe.exists())
+    try:
+        S.grab_frame(clip, 5.0, out / "past.png")
+        named = False
+    except FileNotFoundError as e:
+        named = "5.000" in str(e) and "clip.mp4" in str(e)
+    check("a time past the end raises an error naming the time and the video", named)
+    print(f"{len(FAIL)} failure(s)")
+    return 1 if FAIL else 0
+
+
+def test_vector_scene():
+    assert run() == 0
+
+
+if __name__ == "__main__":
+    sys.exit(run())

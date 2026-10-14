@@ -1,0 +1,264 @@
+#!/usr/bin/env python3
+# 14 October 2026: the SFX corpus runner. For every member of the music corpus (excerpts of every indexed video, plus Opus and OneKey whole):
+# ReproduceSound with the FAST profile (params/sfx-corpus.json), then SfxTrim, then the scoreboard: per member the event count, the official
+# score before and after the calibration, the share of events AT their identity ceiling, the seed-invariant score and the B1 audit.
+#   SfxCorpus.py run [--only a,b] [--force] [--wait-busy]   sequential, resumable (a member with a trim version is skipped)
+#   SfxCorpus.py retrim [--only a,b]             only the calibration, for members that have a fit but whose trim predates the current pipeline
+#   SfxCorpus.py status [--json]
+#   SfxCorpus.py verify [--only a,b]             replays the shipped SFX track of every member from its stored chains and bakes with the reference
+#                                                made unreachable (ZRMD_PATH_REFCACHE pointed at nothing); exit code 1 if one differs or is stale
+# One runner at a time (14 October 2026, after two runners and 16 orphan pool workers were found on a machine at load 216): a second `run` or
+# `retrim` refuses to start while another one lives (--allow-parallel overrides), a member that another ReproduceSound / SfxTrim process is
+# working on is skipped (or waited for with --wait-busy), and every step runs in its own process group so that stopping the runner stops the
+# pool workers too, never leaving parentless workers burning cores.
+# FR : le corpus SFX ; profil rapide puis calibrage par evenement ; tableau par membre. Un seul coureur a la fois, jamais d'orphelins.
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+sys.path.insert(0, str(ENGINE / "Scripts"))
+from zrmd import settings, versions  # noqa: E402
+from zrmd.audio import corpus as C  # noqa: E402
+
+PARAMS = ENGINE / "params" / "sfx-corpus.json"
+
+
+def _processes() -> list[tuple[int, str]]:
+    out = subprocess.run(["ps", "-eo", "pid=,command="], capture_output=True, text=True).stdout
+    rows = []
+    for line in out.splitlines():
+        m = re.match(r"\s*(\d+)\s+(.*)", line)
+        if m:
+            rows.append((int(m.group(1)), m.group(2)))
+    return rows
+
+
+def other_runners() -> list[int]:
+    """Pids of other SfxCorpus.py run / retrim processes (this one excluded)."""
+    me = os.getpid()
+    return [p for p, c in _processes() if p != me and re.search(r"^\S*[Pp]ython\S*\s.*SfxCorpus\.py\s+(run|retrim)\b", c)]   # an interpreter only, never a shell that quotes the line
+
+
+def busy_pids(slug: str) -> list[int]:
+    """Pids of ReproduceSound / SfxTrim processes (any launcher) working on this member right now."""
+    pat = re.compile(r"^\S*[Pp]ython\S*\s.*(ReproduceSound|SfxTrim)\.py\s+--slug\s+" + re.escape(slug) + r"(\s|$)")
+    return [p for p, c in _processes() if pat.search(c)]
+
+
+_CHILD = {"pgid": None}
+
+
+def _stop_group(signum=None, frame=None):
+    if _CHILD["pgid"]:
+        try:
+            os.killpg(_CHILD["pgid"], signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    if signum is not None:
+        sys.exit(128 + signum)
+
+
+def run_step(cmd: list[str], out) -> int:
+    """One step in its own process group, so a SIGTERM to the runner reaches the pool workers as well (no orphans)."""
+    p = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
+    _CHILD["pgid"] = p.pid
+    try:
+        return p.wait()
+    finally:
+        _stop_group()
+        _CHILD["pgid"] = None
+
+
+def cfg() -> dict:
+    return json.loads(PARAMS.read_text(encoding="utf-8"))
+
+
+def sound_dir(slug: str) -> Path:
+    return settings.path("sound_out") / slug
+
+
+def trim_version(slug: str) -> str | None:
+    root = sound_dir(slug)
+    for v in reversed(versions.list_versions(root)) if root.exists() else []:
+        if (versions.read_json(root / v / "version.json", {}) or {}).get("kind") == "sfx-trim":
+            return v
+    return None
+
+
+def fit_version(slug: str) -> str | None:
+    """The latest sound version that holds fitted chains and is not itself a trim (the input of SfxTrim)."""
+    root = sound_dir(slug)
+    for v in reversed(versions.list_versions(root)) if root.exists() else []:
+        if (root / v / "events.json").exists() and not (versions.read_json(root / v / "version.json", {}) or {}).get("kind"):
+            return v
+    return None
+
+
+def trim_is_current(slug: str) -> bool:
+    """A trim version exists and was made by the pipeline now in params/sfx-trim.json (recorded in its version.json)."""
+    from zrmd.audio import sfxspectral, sfxtrim
+    v = trim_version(slug)
+    if not v:
+        return False
+    rec = versions.read_json(sound_dir(slug) / v / "version.json", {}) or {}
+    pipe = sfxtrim.cfg()["pipeline"]
+    return rec.get("pipeline") == pipe and rec.get("spectralSha") == sfxspectral.config_sha(pipe["variant"])
+
+
+def retrim_member(slug: str, force: bool = False) -> dict:
+    py = str(settings.path("python"))
+    log = settings.path("workshop") / "logs" / f"sfxcorpus-{slug}.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    t0 = time.time()
+    if not fit_version(slug):
+        return {"member": slug, "skipped": "no fitted version yet", "seconds": 0}
+    if trim_is_current(slug) and not force:
+        return {"member": slug, "skipped": "trim already made by the current pipeline", "seconds": 0}
+    cmd = [py, "-I", str(ENGINE / "Scripts" / "SfxTrim.py"), "--slug", slug, "--workers", str(cfg()["workers"])]
+    with open(log, "ab") as out:
+        out.write(f"\n$ {' '.join(cmd[2:])}\n".encode())
+        out.flush()
+        code = run_step(cmd, out)
+    return {"member": slug, "exit": code, "seconds": round(time.time() - t0)}
+
+
+def run_member(slug: str, force: bool) -> dict:
+    c = cfg()
+    py = str(settings.path("python"))
+    root = sound_dir(slug)
+    log = settings.path("workshop") / "logs" / f"sfxcorpus-{slug}.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    t0 = time.time()
+    stems = settings.path("refcache") / slug / "stems" / "out" / "htdemucs" / "mix" / "drums.wav"
+    if not stems.exists():                                 # never start a second separation next to the music corpus (one torch job at a time)
+        return {"member": slug, "skipped": "no Demucs stems yet (the music corpus makes them)", "seconds": 0}
+    steps = []
+    if force or not (root.exists() and any((root / v / "events.json").exists() and not (versions.read_json(root / v / "version.json", {}) or {}).get("kind") for v in versions.list_versions(root))):
+        sets = sum([["--set", s] for s in c["fastProfile"]], [])
+        steps.append([py, "-I", str(ENGINE / "Scripts" / "ReproduceSound.py"), "--slug", slug, "--out", str(root), "--workers", str(c["workers"]), *sets, "--note", "SFX corpus, fast profile"])
+    if force or not trim_version(slug) or steps:
+        steps.append([py, "-I", str(ENGINE / "Scripts" / "SfxTrim.py"), "--slug", slug, "--workers", str(c["workers"])])
+    code = 0
+    with open(log, "ab") as out:
+        for cmd in steps:
+            out.write(f"\n$ {' '.join(cmd[2:])}\n".encode())
+            out.flush()
+            r = run_step(cmd, out)
+            code = r if r not in (0, 1) else code              # ReproduceSound exits 1 when the sound score is below its pass threshold: normal here
+    return {"member": slug, "exit": code, "seconds": round(time.time() - t0)}
+
+
+def scoreboard() -> list[dict]:
+    c = cfg()["gate"]
+    rows = []
+    for slug in C.corpus():
+        v = trim_version(slug)
+        row = {"slug": slug, "version": v}
+        if v:
+            f = versions.read_json(sound_dir(slug) / v / "sound-fidelity.json", {}) or {}
+            t = f.get("trim", {})
+            ev = t.get("events", [])
+            sc = (f.get("reports", {}).get("full", {}) or {}).get("scores", {})
+            g = t.get("gate") or {}
+            row.update(events=len(ev), sfxBefore=t.get("sfx", {}).get("before"), sfxAfter=t.get("sfx", {}).get("after"),
+                       normalised=sc.get("sfxCeilingNormalised"),
+                       atCeiling=sum(1 for e in ev if e.get("atCeiling")),
+                       stochastic=round(sum(e["plossStochastic"][1] for e in ev if e.get("plossStochastic")) / max(len(ev), 1), 2) if ev else None,
+                       critic=(t.get("critic") or {}).get("after"), auditMean=(t.get("auditMean") or {}).get("after"),
+                       passed=g.get("pass"), passedMusic=g.get("passMusic"), eqRejected=g.get("eqRejectedByB1Guard"), current=trim_is_current(slug),
+                       b1=t.get("b1Mean", {}).get("after"))
+        rows.append(row)
+    return rows
+
+
+def verify_members(only: list[str]) -> list[dict]:
+    """The reproducibility check: no reference, no stem, no cache. The stored track must be replayed from chains and bakes alone."""
+    import numpy as np
+    members = C.corpus()                                      # the member list is read from the reference cache: take it BEFORE making it unreachable
+    os.environ["ZRMD_PATH_REFCACHE"] = str(ENGINE / ".reference-unreachable")        # nothing lives there: any read of a stem raises
+    assert not settings.path("refcache").exists(), "the reference cache must be unreachable for this check"
+    from zrmd.audio import config, sfxtrim
+    from zrmd.media import load_audio
+    sr = config.cfg()["audio"]["sampleRate"]
+    out = []
+    for slug in [m for m in members if not only or m in only]:
+        v = trim_version(slug)
+        if not v:
+            continue
+        vdir = sound_dir(slug) / v
+        ev = versions.read_json(vdir / "events.json")
+        if not any((e.get("fit") or {}).get("chain") for e in ev["events"]):
+            continue
+        st = load_audio(vdir / "sfx.wav", sr, mono=False)[0].astype(np.float64)       # two identical channels written by SfxTrim; a mono load applies its own downmix gain
+        track = st[:, 0] if st.ndim == 2 else st
+        rep = sfxtrim.verify_render(ev, track, sr)
+        out.append({"member": slug, "version": v, "ok": rep["ok"], "relRmsError": rep["relRmsError"], "maxAbs": rep["maxAbs"], "stale": rep["stale"],
+                    "peak": rep["peak"], "overFullScale": rep["overFullScale"],
+                    "events": len(rep["events"]), "baked": sum(1 for r in rep["events"] if r["baked"])})
+    return out
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    r = sub.add_parser("run"); r.add_argument("--only", default=""); r.add_argument("--force", action="store_true")
+    r.add_argument("--wait-busy", action="store_true", help="wait (poll every 60 s) for a member another process is working on, instead of skipping it")
+    r.add_argument("--allow-parallel", action="store_true")
+    t = sub.add_parser("retrim"); t.add_argument("--only", default="")
+    t.add_argument("--wait-busy", action="store_true"); t.add_argument("--allow-parallel", action="store_true")
+    t.add_argument("--force", action="store_true", help="recook even when the recorded pipeline is the current one (a version written while the code changed under it)")
+    s = sub.add_parser("status"); s.add_argument("--json", action="store_true")
+    v = sub.add_parser("verify"); v.add_argument("--only", default="")
+    a = ap.parse_args()
+    if a.cmd == "verify":
+        rows = verify_members([x for x in a.only.split(",") if x])
+        for r in rows:
+            print(json.dumps(r))
+        bad = [r["member"] for r in rows if not r["ok"]]
+        print(json.dumps({"verified": len(rows), "failed": bad}))
+        return 1 if bad or not rows else 0
+    if a.cmd == "status":
+        rows = scoreboard()
+        if a.json:
+            print(json.dumps(rows))
+        else:
+            # raw = the exact official score, loudness weighted (the strict number); norm = raw over the identity ceiling of each event, capped at 100;
+            # inv/crit/aud = the readings of the headline gate (seed-invariant loss, music critic, held-out audit); head/music = events passing each gate.
+            print(f"{'member':<34} {'ver':<6} {'ev':>3} {'chain':>6} {'raw':>6} {'norm':>6} {'at-ceil':>7} {'inv':>6} {'crit':>6} {'aud':>6} {'head':>6} {'music':>6} {'b1':>5} {'eqRej':>5} {'cur':>4}")
+            for x in rows:
+                n = x.get('events', '-')
+                print(f"{x['slug']:<34} {x.get('version') or '-':<6} {n:>3} {x.get('sfxBefore') or 0:>6.1f} {x.get('sfxAfter') or 0:>6.1f} {x.get('normalised') or 0:>6.1f} "
+                      f"{(str(x.get('atCeiling', '-')) + '/' + str(n)):>7} {x.get('stochastic') or 0:>6.2f} {x.get('critic') or 0:>6.2f} {x.get('auditMean') or 0:>6.2f} "
+                      f"{(str(x.get('passed', '-')) + '/' + str(n)):>6} {(str(x.get('passedMusic', '-')) + '/' + str(n)):>6} {x.get('b1') or 0:>5.1f} "
+                      f"{x.get('eqRejected') if x.get('eqRejected') is not None else '-':>5} {'yes' if x.get('current') else '-':>4}")
+        return 0
+    if not a.allow_parallel and other_runners():
+        print(json.dumps({"refused": "another SfxCorpus run/retrim is alive", "pids": other_runners(), "hint": "wait for it, stop it, or pass --allow-parallel"}))
+        return 3
+    signal.signal(signal.SIGTERM, _stop_group)
+    only = [x for x in a.only.split(",") if x]
+    for slug in [m for m in C.corpus() if not only or m in only]:
+        while busy_pids(slug):
+            if not getattr(a, "wait_busy", False):
+                break
+            print(json.dumps({"member": slug, "waiting": "another process works on it", "pids": busy_pids(slug)}), flush=True)
+            time.sleep(60)
+        if busy_pids(slug):
+            print(json.dumps({"member": slug, "skipped": "another ReproduceSound/SfxTrim process works on it", "pids": busy_pids(slug), "seconds": 0}), flush=True)
+            continue
+        print(json.dumps(retrim_member(slug, a.force) if a.cmd == "retrim" else run_member(slug, a.force)), flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

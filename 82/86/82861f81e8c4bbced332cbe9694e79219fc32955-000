@@ -1,0 +1,94 @@
+# 14 October 2026: the incremental cook proven in both directions on a REAL version (flora raw base, skipped when the bench is absent):
+# GREEN the cook renders the same samples as the batch render (bit identical), a second call with nothing changed recomputes nothing, and a
+# change of ONE voice macro recomputes only that voice; RED a deliberately wrong cache (the key ignoring the macros) would have returned the
+# stale voice, which the macro test would catch. FR : la cuisson incrementale rend les memes echantillons que le rendu par lot.
+import copy
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+BENCH = Path("/Users/zenray/.claude/tmp/tmp-zenray-motion-design/sound/flora-agents-on-canvas-m1/music-bench")
+FAIL = []
+
+
+def check(name, cond, detail=""):
+    print(("ok   " if cond else "FAIL ") + name + (f"  {detail}" if detail and not cond else ""))
+    if not cond:
+        FAIL.append(name)
+
+
+def run() -> int:
+    import numpy as np
+    over = {"paths": {"score": str(BENCH / "score.json"), "bench": str(BENCH), "stems": "/nonexistent/stems", "referenceVideo": "/nonexistent/ref.mp4",
+                      "cache": "/nonexistent/cache", "instruments": "music-instruments"}}
+    os.environ["ZRMD_RESYNTH_OVERRIDES"] = json.dumps(over)
+    from zrmd.audio import cook as CK, resynth as RS
+    P = RS.params()
+    base = BENCH / "V_006"
+    if not (base / "params.json").exists():
+        print("skip: bench version absent on this machine")
+        return 0
+    prm = json.loads((base / "params.json").read_text())
+    score = json.loads((base / "score.json").read_text())
+    RS.install(P)
+    t0 = time.time()
+    batch = RS.render(prm, score, P)
+    t_batch = time.time() - t0
+    c = CK.Cook(P, workers=6, fast=False)
+    try:
+        first = c.render(prm, score)
+        s1 = dict(c.stats)
+        same = all(np.array_equal(first["stems"][k], batch["stems"][k]) for k in RS.STEMS) and np.array_equal(first["mix"], batch["mix"])
+        check("GREEN: the cook is bit identical to the batch render (stems and mix)", same)
+        check("the first call computes every voice", s1["voicesRecomputed"] == s1["voicesTotal"] > 0, s1)
+        c.render(prm, score)
+        s2 = dict(c.stats)
+        check("a second call with nothing changed recomputes no voice and no stem", s2["voicesRecomputed"] == 0 and s2["stemsRecomputed"] == 0, s2)
+        p2 = copy.deepcopy(prm)
+        p2["voices"]["bass"]["macros"]["gainDb"] = 4.0
+        second = c.render(p2, score)
+        s3 = dict(c.stats)
+        check("a macro of ONE voice recomputes only that voice", s3["voicesRecomputed"] == 1 and s3["stemsRecomputed"] == 1, s3)
+        ref2 = RS.render(p2, score, P)
+        check("GREEN: and the result is still identical to the batch render of the edited params",
+              all(np.array_equal(second["stems"][k], ref2["stems"][k]) for k in RS.STEMS) and np.array_equal(second["mix"], ref2["mix"]))
+        check("RED: the edit really changed the sound (bass stem differs from the unedited render)", not np.array_equal(second["stems"]["bass"], first["stems"]["bass"]))
+        p3 = copy.deepcopy(prm)
+        p3["stemGainsDb"] = {"drums": -3.0}
+        c.render(p3, score)
+        s4 = dict(c.stats)
+        check("a stem gain recomputes no voice", s4["voicesRecomputed"] == 0, s4)
+        # the compiled tonal kernel: not bit identical (arithmetic), but within 70 dB of the batch render on every stem and on the mix
+        cf = CK.Cook(P, workers=6, fast=True)
+        try:
+            cf.render(prm, score)  # compile and warm
+            cf.voices.clear()
+            fastr = cf.render(prm, score)
+            sf_ = dict(cf.stats)
+            def snr(a, b):
+                a, b = a.astype(np.float64), b.astype(np.float64)
+                e = ((a - b) ** 2).sum()
+                return 999.0 if e == 0 else float(10 * np.log10((a ** 2).sum() / e))
+            worst = min([snr(batch["stems"][k], fastr["stems"][k]) for k in RS.STEMS] + [snr(batch["mix"], fastr["mix"])])
+            check("GREEN: the fast cook is within 70 dB of the batch render on every stem and the mix", worst > 70.0, worst)
+            print(f"fast cook, every voice recomputed: {sf_['seconds']}")
+        finally:
+            cf.close()
+        print(f"timings: batch {t_batch:.1f} s, cook first {s1['seconds']['total']} s, nothing changed {s2['seconds']['total']} s, one macro {s3['seconds']['total']} s, stem gain {s4['seconds']['total']} s")
+    finally:
+        c.close()
+    print(f"{len(FAIL)} failure(s)")
+    return 1 if FAIL else 0
+
+
+def test_cook():
+    assert run() == 0
+
+
+if __name__ == "__main__":
+    sys.exit(run())

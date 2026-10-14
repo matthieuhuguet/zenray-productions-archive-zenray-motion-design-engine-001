@@ -1,0 +1,98 @@
+# 14 October 2026: the exposed keys of the `graphic` family (the orb, a field layer cooked by zrmd/emit/hyperframes.py) change the
+# RENDERED frame, proven on HyperFrames stills of the cooked project (one browser launch per variant, about 20 s each).
+# Green: base (all controls neutral) is deterministic (two stills identical), and each exposed key moves the picture:
+# hue, saturate, brightness, scale, shape (blend with n and aspect), and the background colour. Red: a variant with the same
+# neutral controls is identical to the base. offset_frames and speed move time, not a still at a fixed instant: they are
+# covered by the cook-level check that their value reaches the cooked controls.
+# Slow: set ZRMD_SLOW=1 under pytest, or run directly: python -I tests/test_image_graphic.py (JSON, exit code 0 when all pass).
+# FR : les cles exposees de la famille graphic changent l'image RENDUE (stills HyperFrames du projet cuit).
+from __future__ import annotations
+
+import copy
+import json
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from zrmd import exposed, settings, versions  # noqa: E402
+from zrmd.emit import hyperframes as hf  # noqa: E402
+from zrmd.render import still  # noqa: E402
+
+NEUTRAL = {"scale": 1, "speed": 1, "offset_frames": 0, "shape": {"blend": 0, "n": 2, "aspect": 1}, "hue": 0, "saturate": 1, "brightness": 1}
+VARIANTS = {
+    "hue": {"layers.@orb.controls.hue": 120},
+    "saturate": {"layers.@orb.controls.saturate": 0.2},
+    "brightness": {"layers.@orb.controls.brightness": 0.4},
+    "scale": {"layers.@orb.controls.scale": 0.5},
+    "shape": {"layers.@orb.controls.shape.blend": 1, "layers.@orb.controls.shape.aspect": 1.8, "layers.@orb.controls.shape.n": 4},
+    "background": {"layers.@bg.color": "#202060"},
+}
+MIN_CHANGE = 0.2
+
+
+def source_params() -> dict:
+    """The measured orb of the first reference (version V_005, the faithful reproduction) with every control written neutral."""
+    path = settings.path("workshop") / "motions" / "onekey-s01-orb-ignition" / "V_005" / "params.json"
+    p = json.loads(path.read_text(encoding="utf-8"))
+    for layer in p["layers"]:
+        if layer["id"] == "orb":
+            layer["controls"] = copy.deepcopy(NEUTRAL)
+    return p
+
+
+def run() -> dict:
+    results = []
+
+    def check(name, ok, **info):
+        results.append({"test": name, "pass": bool(ok), **info})
+
+    base_params = source_params()
+    cats = exposed.exposed_for(base_params, "graphic")
+    offered = {i["key"] for items in cats.values() for i in items}
+    check("all_ten_graphic_keys_offered", len(offered) == 10 and all(len(v) <= 8 for v in cats.values()), count=len(offered))
+    for key, value in (("layers.@orb.controls.offset_frames", 12), ("layers.@orb.controls.speed", 2)):
+        p = copy.deepcopy(base_params)
+        versions.set_path(p, key, value)
+        with tempfile.TemporaryDirectory() as tmp:
+            html = (hf.cook(p, Path(tmp) / "c") / "index.html").read_text(encoding="utf-8")
+        check(f"cook_carries_{key.split('.')[-1]}", f'"{key.split(".")[-1]}":{value}' in html.replace(" ", ""))
+    try:
+        exposed.validate(base_params, "graphic", {"layers.@orb.controls.hue": 999})
+        check("red_hue_out_of_range_refused", False)
+    except ValueError:
+        check("red_hue_out_of_range_refused", True)
+
+    imgs = {}
+    with tempfile.TemporaryDirectory() as tmp:
+        for name, overrides in {"base": {}, "base_again": {}, **VARIANTS}.items():
+            p = copy.deepcopy(base_params)
+            for k, v in overrides.items():
+                versions.set_path(p, k, v)
+            project = hf.cook(p, Path(tmp) / name)
+            png = still(project, [0.5], Path(tmp) / f"{name}-still")[0]
+            from PIL import Image
+            imgs[name] = np.asarray(Image.open(png).convert("RGB")).astype(float)
+    base = imgs["base"]
+    check("red_same_controls_identical_render", float(np.abs(imgs["base_again"] - base).max()) == 0.0)
+    for name in VARIANTS:
+        d = float(np.abs(imgs[name] - base).mean())
+        check(f"changes_rendered_frame_{name}", d >= MIN_CHANGE, mean_abs_levels=round(d, 3))
+    return {"date": "14 October 2026", "min_change_levels": MIN_CHANGE, "all_pass": all(r["pass"] for r in results), "results": results}
+
+
+def test_image_graphic():
+    import pytest
+    if not os.environ.get("ZRMD_SLOW"):
+        pytest.skip("slow (HyperFrames stills); set ZRMD_SLOW=1")
+    report = run()
+    assert report["all_pass"], json.dumps([r for r in report["results"] if not r["pass"]], indent=2)
+
+
+if __name__ == "__main__":
+    report = run()
+    print(json.dumps(report, indent=2))
+    sys.exit(0 if report["all_pass"] else 1)

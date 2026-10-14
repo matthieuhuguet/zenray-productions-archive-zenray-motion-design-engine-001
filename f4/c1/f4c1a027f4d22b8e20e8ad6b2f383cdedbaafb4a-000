@@ -1,0 +1,43 @@
+{
+ "schema": "zrmd/vector-bank@1",
+ "date": "15 October 2026",
+ "doc": "The BANK of the multi-layer vector fit (zrmd/vector/layerfit.py): the shapes it may stack, the softness and effect presets it tries, the roles a layer can play and where the fonts come from. One place (HDA law): the fitter reads this file, a new shape, a new softness or a new font source is a line here, not a change of code. FR : la banque de formes, d'effets et de fontes du trace multi-calques.",
+ "shapes": {
+  "doc": "Primitives are tried from the moments of the soft alpha of the place to repair (subpixel, one geometry per blur); the free-form path is the level set of that soft alpha (marching squares). Every candidate is scored by the EXACT skia render of the patch and the best few win; a primitive is preferred over a path when it scores at least preferPrimitive of it (an editable shape beats a polygon of equal worth).",
+  "primitives": ["ellipse", "rounded_rect", "rect"],
+  "path": true,
+  "isoLevels": [0.5, 0.35, 0.65],
+  "preferPrimitive": 0.97,
+  "simplifyPx": 0.08
+ },
+ "softness": {
+  "doc": "Edge softness presets in px of gaussian sigma. An edge softness off by 0.2 px costs more fidelity than a missing layer (measured on the interface scene: 0.9916 with 6 values, 0.9953 with 12, 0.9955 with 19).",
+  "presets": {
+   "crisp": [0.0],
+   "antialias": [0.2, 0.3, 0.4, 0.5, 0.6],
+   "soft-edge": [0.7, 0.8, 0.9, 1.0, 1.15, 1.3, 1.5],
+   "haze": [1.8, 2.2, 2.7, 3.5],
+   "glow": [5.0, 7.0]
+  }
+ },
+ "roles": {
+  "doc": "What a layer is for, inferred from its blur and size when the stack is written (fit.role), so a panel can group and switch them: the background, a body (crisp fill), an edge (thin crisp stroke), a halo (soft, large), a glow (very soft).",
+  "background": {"blurMax": 0.0, "first": true},
+  "body": {"blurMax": 0.65},
+  "halo": {"blurMax": 3.6},
+  "glow": {"blurMin": 3.6}
+ },
+ "fonts": {
+  "doc": "Where the text layers find their faces (zrmd/vector/fontfit.py, texts.py). Families that match a scene better than the bank's best are added here, not in code.",
+  "sources": ["fonts", "~/Library/Fonts", "/System/Library/Fonts", "/Library/Fonts"],
+  "preferred": ["Inter", "InterVariable", "Archivo", "Anthropic Sans", "Anthropic Serif", "Anthropic Mono", "Instrument Serif", "Vogun"]
+ },
+ "effects": {
+  "doc": "Effect recipes that are STACKS of layers (the way an illustrator builds them), tried as one candidate when a place needs more than one layer: a soft shadow is a darker copy of the shape, offset and blurred, under it; a glow is a wide blurred copy over it; a rim is a thin brighter copy inside. Not built in 1.1.0 (the pursuit finds the same stacks one layer at a time); listed so a fitter and a panel share the vocabulary.",
+  "recipes": {
+   "shadow": {"layers": [{"copy": "shape", "colour": "darker", "offset": [0, 2], "blur": 4, "z": "below"}], "built": false},
+   "glow": {"layers": [{"copy": "shape", "colour": "same", "blur": 6, "opacity": 0.6, "z": "above"}], "built": false},
+   "rim": {"layers": [{"copy": "shape", "colour": "lighter", "inset": 1, "blur": 0.4, "z": "above"}], "built": false}
+  }
+ }
+}

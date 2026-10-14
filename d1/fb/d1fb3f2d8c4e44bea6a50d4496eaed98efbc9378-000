@@ -1,0 +1,662 @@
+# 15 October 2026: MULTI-LAYER residual pursuit. A video crop is rarely one vector per visible thing: a glow is a core, a halo and a wider
+# haze, a glyph is a fill and a soft edge, a card is a body, a border and a shadow. This module paints the crop the way an illustrator
+# stacks it: it renders what it has, finds the place where the composite is most wrong (CIELAB), proposes ONE layer for that place from a
+# bank (circle, ellipse, rect, rounded rect, free-form path), solves its colour, opacity and blur in closed form and by a small search,
+# keeps it only if the composite error falls, and repeats. Every layer is an ordinary params.json layer (zrmd/vector/asset.py cooks it),
+# so the result stays editable and parametric: colour, blur, opacity, geometry per layer. Nothing is a pixel of the reference.
+# FR : poursuite residuelle multi-calques : on peint, on regarde ou c'est faux, on ajoute UN calque de la banque, on garde s'il aide.
+from __future__ import annotations
+
+import json
+import math
+import time
+from pathlib import Path
+
+import numpy as np
+from PIL import Image, ImageDraw
+from scipy import ndimage as ndi
+from skimage.color import deltaE_ciede2000, rgb2lab
+
+SS = 4                                   # supersampling of a candidate coverage
+BANK_PATH = Path(__file__).resolve().parents[2] / "datasets" / "vector" / "bank.json"
+
+
+def _lab(rgb: np.ndarray) -> np.ndarray:
+    return rgb2lab(np.clip(rgb, 0, 255) / 255.0)
+
+
+def _poly(kind: str, g: dict, n: int = 48) -> np.ndarray:
+    """Outline of a bank shape as a polygon (x, y), the same geometry semantics as zrmd/vector/asset.cook_element."""
+    if kind in ("circle", "ellipse"):
+        rx, ry = (g["r"], g["r"]) if kind == "circle" else (g["rx"], g["ry"])
+        t = np.linspace(0, 2 * math.pi, n, endpoint=False)
+        pts = np.stack([rx * np.cos(t), ry * np.sin(t)], 1)
+        a = math.radians(g.get("angle", 0.0))
+    elif kind in ("rect", "rounded_rect"):
+        w2, h2 = g["w"] / 2, g["h"] / 2
+        r = min(g.get("radius", 0.0), w2, h2) if kind == "rounded_rect" else 0.0
+        if r <= 0.01:
+            pts = np.array([[-w2, -h2], [w2, -h2], [w2, h2], [-w2, h2]])
+        else:
+            k = 8
+            parts = []
+            for cx, cy, a0 in ((w2 - r, -h2 + r, -90), (w2 - r, h2 - r, 0), (-w2 + r, h2 - r, 90), (-w2 + r, -h2 + r, 180)):
+                t = np.radians(np.linspace(a0, a0 + 90, k))
+                parts.append(np.stack([cx + r * np.cos(t), cy + r * np.sin(t)], 1))
+            pts = np.concatenate(parts)
+        a = math.radians(g.get("angle", 0.0))
+    else:
+        raise ValueError(kind)
+    c, s = math.cos(a), math.sin(a)
+    pts = pts @ np.array([[c, s], [-s, c]])
+    return pts + np.array([g["cx"], g["cy"]])
+
+
+def _raster(poly: np.ndarray, box: tuple[int, int, int, int]) -> np.ndarray:
+    """Area coverage of a polygon inside box (x0, y0, x1, y1), supersampled."""
+    x0, y0, x1, y1 = box
+    w, h = x1 - x0, y1 - y0
+    im = Image.new("L", (w * SS, h * SS), 0)
+    ImageDraw.Draw(im).polygon([((x - x0) * SS, (y - y0) * SS) for x, y in poly], fill=255)
+    a = np.asarray(im, dtype=np.float32) / 255.0
+    return a.reshape(h, SS, w, SS).mean((1, 3))
+
+
+def _cov(kind: str, g: dict, box: tuple[int, int, int, int], sigma: float = 0.0) -> np.ndarray:
+    """Exact antialiased coverage of a layer shape in box, by the SAME renderer that cooks the final SVG (skia), so the model of the stack and
+    the file agree to the pixel. FR : couverture exacte par le rendu de sortie."""
+    from . import asset as A, render as R
+    x0, y0, x1, y1 = box
+    bw, bh = x1 - x0, y1 - y0
+    el = A.cook_element({"kind": kind, "geometry": g}, "#ffffff")
+    if sigma > 0.05:
+        el = (f'<defs><filter id="b" filterUnits="userSpaceOnUse" x="{x0}" y="{y0}" width="{bw}" height="{bh}"><feGaussianBlur stdDeviation="{sigma:g}"/>'
+              f'</filter></defs><g filter="url(#b)">{el}</g>')
+    svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="{bw}" height="{bh}" viewBox="{x0} {y0} {bw} {bh}">{el}</svg>'
+    return R.svg_mask(svg, bw, bh, "skia", 1)
+
+
+def _render_patch(S, box, layer: dict) -> np.ndarray:
+    """The composite patch after drawing `layer` over the current one, by skia and through the SAME cook as the final file (asset.cook_svg):
+    8-bit buffers, premultiplied blends and filter included, so the model of the stack is the output, not an approximation of it."""
+    import re
+
+    import skia
+
+    from . import asset as A
+    x0, y0, x1, y1 = box
+    bw, bh = x1 - x0, y1 - y0
+    svg = A.cook_svg({"canvas": {"width": S.w, "height": S.h}, "palette": {}, "layers": [layer]})
+    svg = re.sub(r"<svg [^>]*>", f'<svg xmlns="http://www.w3.org/2000/svg" width="{bw}" height="{bh}" viewBox="{x0} {y0} {bw} {bh}">', svg, count=1)
+    patch = np.ascontiguousarray(np.concatenate([S.C[y0:y1, x0:x1].astype(np.uint8), np.full((bh, bw, 1), 255, np.uint8)], axis=-1))
+    surf = skia.Surface(patch)
+    dom = skia.SVGDOM.MakeFromStream(skia.MemoryStream(svg.encode("utf-8"), True))
+    dom.setContainerSize(skia.Size(bw, bh))
+    dom.render(surf.getCanvas())
+    return patch[..., :3].astype(np.float32)
+
+
+def _blur(a: np.ndarray, sigma: float) -> np.ndarray:
+    return a if sigma <= 0.05 else ndi.gaussian_filter(a, sigma, mode="constant")
+
+
+class Stack:
+    """The composite under construction: float RGB, its Lab, and the layers added so far."""
+
+    def __init__(self, target: np.ndarray, bg: np.ndarray | None = None, init: np.ndarray | None = None):
+        self.T = np.asarray(target, dtype=np.float32)[..., :3]
+        self.h, self.w = self.T.shape[:2]
+        self.LT = _lab(self.T).astype(np.float32)
+        col = np.round(np.median(self.T.reshape(-1, 3), axis=0)) if bg is None else np.asarray(bg, float)
+        self.bg = col
+        self.C = np.empty_like(self.T)
+        self.C[:] = col if init is None else np.asarray(init, np.float32)[..., :3]
+        self.LC = _lab(self.C).astype(np.float32)
+        self.DE = deltaE_ciede2000(self.LT, self.LC).astype(np.float32)      # CIEDE2000 per pixel: the metric the fidelity is measured in
+        self.layers: list[dict] = []
+
+    def err_map(self) -> np.ndarray:
+        return self.DE
+
+    def paint(self, box, cov, col, alpha=1.0) -> None:
+        x0, y0, x1, y1 = box
+        a = (cov * alpha)[..., None]
+        self.C[y0:y1, x0:x1] = np.round((1 - a) * self.C[y0:y1, x0:x1] + a * np.round(np.asarray(col, np.float32)))   # an 8-bit renderer rounds each layer
+        self.LC[y0:y1, x0:x1] = _lab(self.C[y0:y1, x0:x1])
+
+    def commit(self, box, patch) -> None:
+        x0, y0, x1, y1 = box
+        self.C[y0:y1, x0:x1] = patch
+        self.LC[y0:y1, x0:x1] = _lab(patch)
+        self.DE[y0:y1, x0:x1] = deltaE_ciede2000(self.LT[y0:y1, x0:x1], self.LC[y0:y1, x0:x1])
+
+    def patch_gain(self, box, patch) -> float:
+        """Fall of the sum of CIEDE2000^2 inside the box if `patch` replaced the composite there (the fidelity is 1 - 0.01 mean dE00^2)."""
+        x0, y0, x1, y1 = box
+        before = (self.DE[y0:y1, x0:x1].astype(np.float64) ** 2).sum()
+        after = (deltaE_ciede2000(self.LT[y0:y1, x0:x1], _lab(patch)).astype(np.float64) ** 2).sum()
+        return float(before - after)
+
+    def trial_gain(self, box, cov, col, alpha=1.0) -> float:
+        x0, y0, x1, y1 = box
+        a = (cov * alpha)[..., None]
+        new = np.round((1 - a) * self.C[y0:y1, x0:x1] + a * np.round(np.asarray(col, np.float32)))
+        before = ((self.LT[y0:y1, x0:x1] - self.LC[y0:y1, x0:x1]) ** 2).sum()
+        after = ((self.LT[y0:y1, x0:x1] - _lab(new)) ** 2).sum()
+        return float(before - after)
+
+
+def _solve_colour(S: Stack, box, cov) -> np.ndarray:
+    """Closed form: the colour that minimises |T - (1-a) C - a col|^2 under coverage a, per channel, clipped to the gamut."""
+    x0, y0, x1, y1 = box
+    a = cov[..., None]
+    T, C = S.T[y0:y1, x0:x1], S.C[y0:y1, x0:x1]
+    den = float((a * a).sum()) + 1e-6
+    col = (a * (T - (1 - a) * C)).sum((0, 1)) / den
+    return np.clip(col, 0, 255)
+
+
+def _moment_shapes(soft: np.ndarray, ox: int, oy: int, sigma: float) -> list[tuple[str, dict]]:
+    """Bank primitives from the SOFT alpha by moments (subpixel, no threshold): the area is kept by a symmetric blur and the variance grows by
+    sigma^2, so the sharp shape has variance var_obs - sigma^2. Ellipse: r = 2 sqrt(var). Rectangle: side = sqrt(12 var); the corner radius of a
+    rounded rectangle comes from the area the corners take away, (w h - A) / (4 - pi) = r^2. FR : primitives par les moments de l'alpha doux."""
+    ys, xs = np.nonzero(soft > 1e-3)
+    if len(xs) < 4:
+        return []
+    wgt = soft[ys, xs].astype(np.float64)
+    A = float(wgt.sum())
+    if A < 2.0:
+        return []
+    px, py = xs + ox + 0.5, ys + oy + 0.5
+    cx, cy = float((wgt * px).sum() / A), float((wgt * py).sum() / A)
+    q = np.stack([px - cx, py - cy], 1)
+    cov = (q * wgt[:, None]).T @ q / A - np.eye(2) * sigma * sigma
+    ev, evec = np.linalg.eigh(cov)
+    if ev[0] <= 0.02:
+        return []
+    ang = math.degrees(math.atan2(evec[1, 1], evec[0, 1]))
+    out = [("ellipse", {"cx": cx, "cy": cy, "rx": 2 * math.sqrt(ev[1]), "ry": 2 * math.sqrt(ev[0]), "angle": ang})]
+    w, h = math.sqrt(12 * ev[1]), math.sqrt(12 * ev[0])
+    deficit = w * h - A
+    r = math.sqrt(deficit / (4 - math.pi)) if deficit > 0 else 0.0
+    if r > 0.5 and r < min(w, h) / 2:
+        out.append(("rounded_rect", {"cx": cx, "cy": cy, "w": w, "h": h, "radius": r, "angle": ang}))
+    out.append(("rect", {"cx": cx, "cy": cy, "w": w, "h": h, "angle": ang}))
+    return out
+
+
+def _fit_shape(mask: np.ndarray, ox: int, oy: int, cfg: dict):
+    """Best bank shape of a binary mask (local coordinates + offset): (kind, geometry, iou). Free-form path when no primitive reaches the
+    overlap threshold."""
+    ys, xs = np.nonzero(mask)
+    if len(xs) < 3:
+        return None
+    pts = np.stack([xs + ox + 0.5, ys + oy + 0.5], 1)
+    c = pts.mean(0)
+    q = pts - c
+    cov = np.cov(q.T) + np.eye(2) * 1e-3
+    ev, evec = np.linalg.eigh(cov)
+    area = float(len(xs))
+    best = None
+    ang = math.degrees(math.atan2(evec[1, 1], evec[0, 1]))
+    pr = q @ evec
+    ext = (pr.max(0) - pr.min(0)) + 1.0
+    centre = c + evec @ ((pr.max(0) + pr.min(0)) / 2)
+    cands = []
+    ra, rb = 2 * math.sqrt(ev[1]), 2 * math.sqrt(ev[0])
+    cands.append(("ellipse", {"cx": float(c[0]), "cy": float(c[1]), "rx": ra, "ry": rb, "angle": ang}))
+    cands.append(("rect", {"cx": float(centre[0]), "cy": float(centre[1]), "w": float(ext[1]) if False else float(ext[1]), "h": float(ext[0]), "angle": ang}))
+    # rect axes: x along the major axis (evec[:,1]) -> width = extent along it
+    cands[-1][1]["w"], cands[-1][1]["h"] = float(ext[1]), float(ext[0])
+    for rr in (0.2, 0.35):
+        r = rr * min(ext)
+        cands.append(("rounded_rect", {"cx": float(centre[0]), "cy": float(centre[1]), "w": float(ext[1]), "h": float(ext[0]), "radius": float(r), "angle": ang}))
+    x0, y0 = ox, oy
+    h, w = mask.shape
+    for kind, g in cands:
+        cv = _raster(_poly(kind, g), (x0, y0, x0 + w, y0 + h))
+        inter = float(np.minimum(cv, mask).sum())
+        union = float(np.maximum(cv, mask).sum()) + 1e-9
+        iou = inter / union
+        if best is None or iou > best[2]:
+            best = (kind, g, iou)
+    return best
+
+
+def _contour_path(mask: np.ndarray, ox: int, oy: int, tol: float, level: float = 0.5) -> tuple[str, np.ndarray] | None:
+    """Free-form shape: the outer contour of the mask as a simplified polygon path (subpixel, marching squares)."""
+    from skimage.measure import approximate_polygon, find_contours
+    padded = np.pad(mask.astype(np.float32), 1)
+    cs = find_contours(padded, level)
+    if not cs:
+        return None
+    parts, polys = [], []
+    for c in cs:
+        if len(c) < 4:
+            continue
+        c = approximate_polygon(c, tol)
+        if len(c) < 3:
+            continue
+        pts = np.stack([c[:, 1] - 1 + ox + 0.5, c[:, 0] - 1 + oy + 0.5], 1)
+        polys.append(pts)
+        parts.append("M" + "L".join(f"{x:.2f} {y:.2f}" for x, y in pts) + "Z")
+    if not parts:
+        return None
+    return "".join(parts), polys
+
+
+def _propose(S: Stack, E: np.ndarray, py: int, px: int, thr: float, cfg: dict):
+    """One hypothesis for the place (py, px): the connected region of the smoothed error above thr, the box that holds it with the blur
+    tails, and the colour hypotheses. Returns None when the region is empty."""
+    H, W = S.h, S.w
+    win = cfg["window"]
+    wy0, wy1 = max(0, py - win), min(H, py + win)
+    wx0, wx1 = max(0, px - win), min(W, px + win)
+    lab, _ = ndi.label(E[wy0:wy1, wx0:wx1] > thr)
+    k0 = lab[py - wy0, px - wx0]
+    if k0 == 0:
+        return None
+    ys, xs = np.nonzero(lab == k0)
+    pad = cfg["pad"]
+    tail = int(math.ceil(3 * max(cfg["sigmas"]))) + 1      # the blur tails of the widest candidate must fit in the box, or the model lies
+    bx0, by0 = max(0, wx0 + xs.min() - pad - tail), max(0, wy0 + ys.min() - pad - tail)
+    bx1, by1 = min(W, wx0 + xs.max() + 1 + pad + tail), min(H, wy0 + ys.max() + 1 + pad + tail)
+    T, C = S.T[by0:by1, bx0:bx1], S.C[by0:by1, bx0:bx1]
+    regm = np.zeros((by1 - by0, bx1 - bx0), bool)
+    regm[wy0 - by0 + ys, wx0 - bx0 + xs] = True
+    wgt = E[by0:by1, bx0:bx1] * regm
+    cols = [(T * wgt[..., None]).sum((0, 1)) / (wgt.sum() + 1e-9)]          # the error-weighted mean of the target over the region
+    inner = ndi.binary_erosion(regm, iterations=1)
+    cols.append(T[inner if inner.any() else regm].mean(0))                   # and the plain mean of its core
+    out = []
+    near = ndi.binary_dilation(regm, iterations=max(1, pad // 2))
+    for col0 in cols:
+        d = col0 - C
+        astar = np.clip(((T - C) * d).sum(-1) / ((d * d).sum(-1) + 1e-6), 0, 1)
+        mask = (astar * near) > 0.5
+        lab2, n2 = ndi.label(mask)
+        if n2 == 0:
+            continue
+        kk = lab2[py - by0, px - bx0] or int(np.argmax(ndi.sum(mask, lab2, range(1, n2 + 1)))) + 1
+        comp = lab2 == kk
+        soft = (astar * near) * ndi.binary_dilation(comp, iterations=2)       # the soft alpha of THIS component: subpixel edges live here
+        out.append((comp, soft))
+    if not out:
+        return None
+    return (bx0, by0, bx1, by1), regm, out
+
+
+def _best_layer(S: Stack, box, mask: np.ndarray, soft: np.ndarray, cfg: dict):
+    """The best bank layer for a mask: shapes from the bank (primitive when it overlaps well enough, free-form path otherwise) times the blur
+    grid, each scored by the EXACT rendered patch."""
+    bx0, by0 = box[0], box[1]
+    best = None
+    x0, y0, x1, y1 = box
+    T, C = S.T[y0:y1, x0:x1], S.C[y0:y1, x0:x1]
+    LT = S.LT[y0:y1, x0:x1]
+    before = ((LT - S.LC[y0:y1, x0:x1]) ** 2).sum()
+    grid = list(cfg["sigmas"])
+    coarse_idx = sorted(set(range(0, len(grid), 3)) | {len(grid) - 1})
+    shapes = []                                   # unblurred free-form shapes (any blur) from the level sets of the soft alpha
+    done = set()
+    for lv in (cfg["levels_iso"] if cfg.get("paths", True) else []):
+        pth = _contour_path(soft, bx0, by0, cfg["simplifyPx"], lv)
+        if pth is None or pth[0] in done:
+            continue
+        done.add(pth[0])
+        shapes.append(("path", {"d": pth[0]}, _cov("path", {"d": pth[0]}, box)))
+
+    def approx(kind, g, cov0, sg):
+        cov = np.clip(_blur(cov0, sg), 0, 1)
+        col = np.round(_solve_colour(S, box, cov))
+        a_ = cov[..., None]
+        new = np.round((1 - a_) * C + a_ * col)
+        return float(before - ((LT - _lab(new)) ** 2).sum()), kind, g, sg, col
+
+    def eval_sigma(si):
+        sg = grid[si]
+        out = [approx(k, g, c0, sg) for k, g, c0 in shapes]
+        for kind, g in _moment_shapes(soft, bx0, by0, sg):          # primitives: one geometry per blur, from the moments of the soft alpha
+            if kind in cfg.get("primitives", ("ellipse", "rounded_rect", "rect")):
+                out.append(approx(kind, g, _cov(kind, g, box), sg))
+        return out
+    # stage 1 (cheap float model): coarse blur grid; stage 1b: the fine grid only around the best coarse blur; stage 2: exact skia render of the best few
+    ranked = []
+    seen = {}
+    for si in coarse_idx:
+        seen[si] = eval_sigma(si)
+        ranked += seen[si]
+    if ranked:
+        top = max(ranked, key=lambda r: r[0])
+        ci = grid.index(top[3])
+        for si in range(max(0, ci - 2), min(len(grid), ci + 3)):
+            if si not in seen:
+                seen[si] = eval_sigma(si)
+                ranked += seen[si]
+    ranked.sort(key=lambda r: -r[0])
+    exact = []
+    for _, kind, g, sg, col in ranked[: cfg["exactTop"]]:
+        layer = {"id": "T", "name": "T", "z": 1, "kind": kind, "geometry": _round_geom(g), "paint": {"type": "flat", "colour": _hex(col)},
+                 "effects": {"blur": float(round(sg, 2)), "opacity": 1.0}}
+        patch = _render_patch(S, box, layer)
+        exact.append((S.patch_gain(box, patch), kind, g, sg, col, patch, box))
+    if exact:
+        best = max(exact, key=lambda e: e[0])
+        if best[1] == "path":              # an editable primitive beats a polygon of nearly equal worth
+            prim = [e for e in exact if e[1] != "path" and e[0] >= cfg.get("preferPrimitive", 0.97) * best[0]]
+            if prim:
+                best = max(prim, key=lambda e: e[0])
+    return best
+
+
+def _pursue(S: Stack, layers: list[dict], cfg: dict, log=None) -> dict:
+    """The pursuit loop on one stack (one pyramid level): appends layers (in the coordinates of S) while the smoothed error has a peak above
+    stopDE and the budget lasts."""
+    H, W = S.h, S.w
+    tabu = np.zeros((H, W), bool)
+    t0 = time.time()
+    n_try = n_ok = 0
+    while len(layers) < cfg["maxLayers"] and time.time() - t0 < cfg["maxSeconds"]:
+        E = ndi.gaussian_filter(S.err_map(), cfg["peakSmooth"])
+        E[tabu] = 0
+        peak = float(E.max())
+        if peak < cfg["stopDE"]:
+            break
+        py, px = np.unravel_index(int(E.argmax()), E.shape)
+        n_try += 1
+        best, reg_err = None, 1e-9
+        for rt in cfg["relThrs"]:
+            prop = _propose(S, E, py, px, max(cfg["minDE"], rt * peak), cfg)
+            if prop is None:
+                continue
+            box, regm, masks = prop
+            x0, y0, x1, y1 = box
+            reg_err = max(reg_err, float(((S.DE[y0:y1, x0:x1].astype(np.float64) ** 2) * regm).sum()))
+            for mask, soft in masks:
+                cand = _best_layer(S, box, mask, soft, cfg)
+                if cand is not None and (best is None or cand[0] > best[0]):
+                    best = cand
+        if best is None or best[0] < cfg["minGain"] * reg_err:
+            r = cfg["tabuR"]
+            tabu[max(0, py - r):py + r + 1, max(0, px - r):px + r + 1] = True
+            continue
+        gain, kind, g, sg, col, patch, box = best
+        S.commit(box, patch)
+        n_ok += 1
+        lid = f"L{len(layers):03d}"
+        layers.append({"id": lid, "name": f"{lid}-{kind}", "z": len(layers), "kind": kind, "geometry": _round_geom(g),
+                       "paint": {"type": "flat", "colour": _hex(col)}, "effects": {"blur": float(round(sg, 2)), "opacity": 1.0},
+                       "fit": {"method": "residual-pursuit", "gain": round(gain, 1)}})
+        if log and n_ok % 50 == 0:
+            log(f"[layerfit] {n_ok} layers, peak dE {peak:.1f}, {time.time() - t0:.0f}s")
+    return {"tried": n_try, "kept": n_ok, "seconds": round(time.time() - t0, 1)}
+
+
+_SCALED_KEYS = ("cx", "cy", "rx", "ry", "r", "w", "h", "radius", "x1", "y1", "x2", "y2", "width")
+
+
+def _scale_layer(l: dict, k: float) -> dict:
+    """The layer with every length multiplied by k (geometry and blur): level coordinates <-> full-resolution coordinates."""
+    import re
+    g = {}
+    for key, v in l["geometry"].items():
+        if key == "d":
+            g[key] = re.sub(r"-?\d+(?:\.\d+)?", lambda m: f"{float(m.group(0)) * k:.2f}", v)
+        elif key in _SCALED_KEYS:
+            g[key] = round(float(v) * k, 2)
+        else:
+            g[key] = v
+    return {**l, "geometry": g, "effects": {**l["effects"], "blur": round(l["effects"]["blur"] * k, 2)}}
+
+
+def _down(img: np.ndarray, s: int) -> np.ndarray:
+    """Area-averaged reduction by s (edges replicated), the target at one pyramid level."""
+    if s == 1:
+        return np.asarray(img, np.float32)
+    h, w = img.shape[:2]
+    H, W = -(-h // s) * s, -(-w // s) * s
+    p = np.pad(np.asarray(img, np.float32), ((0, H - h), (0, W - w), (0, 0)), mode="edge")
+    return np.round(p.reshape(H // s, s, W // s, s, -1).mean((1, 3)))
+
+
+def _render_stack(layers: list[dict], w: int, h: int) -> np.ndarray:
+    from . import asset as A, render as R
+    svg = A.cook_svg({"canvas": {"width": w, "height": h}, "palette": {}, "layers": layers, "view": {}})
+    return R.render_svg(svg, w, h, engine="skia", ss=1)[..., :3]
+
+
+def fit(target: np.ndarray, cfg: dict | None = None, log=None) -> dict:
+    """Paint `target` (H x W x 3 uint8) as a stack of layers, coarse to fine: a pyramid of levels (cfg["levels"], scale 8, 4, 2, 1), each level
+    starting from the render of the layers of the levels above. Layers use the params.json layer schema (kind, geometry, paint, effects, z),
+    z increasing, layer 0 the flat background, all in full-resolution coordinates. Returns {layers, composite, report}."""
+    cfg = {**DEFAULTS, **(cfg or {})}
+    t0 = time.time()
+    full = np.asarray(target)[..., :3]
+    H, W = full.shape[:2]
+    layers: list[dict] = []               # full-resolution coordinates
+    report = []
+    for lv in cfg["levels"]:
+        s = int(lv["scale"])
+        tgt = _down(full, s)
+        h, w = tgt.shape[:2]
+        init = None
+        lv_layers = [_scale_layer(l, 1.0 / s) for l in layers]
+        if lv_layers:
+            init = _render_stack(lv_layers, w, h)
+        S = Stack(tgt, init=init)
+        if not lv_layers:
+            lv_layers = [{"id": "L00", "name": "L00-background", "z": 0, "kind": "rect", "geometry": {"cx": w / 2, "cy": h / 2, "w": float(w), "h": float(h), "angle": 0.0},
+                          "paint": {"type": "flat", "colour": _hex(S.bg)}, "effects": {"blur": 0.0, "opacity": 1.0}, "fit": {"background": True}}]
+        lcfg = {**cfg, **{k: v for k, v in lv.items() if k != "scale"}}
+        n0 = len(lv_layers)
+        r = _pursue(S, lv_layers, lcfg, log=(lambda m, s=s: log(f"s{s} {m}")) if log else None)
+        layers = [_scale_layer(l, float(s)) for l in lv_layers]
+        for i, l in enumerate(layers):
+            l["id"], l["z"] = f"L{i:03d}", i
+            l["name"] = f"L{i:03d}-{l['kind']}" if i else "L00-background"
+        report.append({"scale": s, "added": len(lv_layers) - n0, **r, "meanDE76": round(float(S.err_map().mean()), 3)})
+    comp = np.clip(_render_stack(layers, W, H), 0, 255).astype(np.uint8)
+    groups = assign_groups_and_roles(layers)
+    return {"layers": layers, "composite": comp, "report": {"layers": len(layers), "groups": groups, "levels": report, "seconds": round(time.time() - t0, 1)}}
+
+
+def _layer_bbox(l: dict) -> tuple[float, float, float, float]:
+    import re
+    g, pad = l["geometry"], 3.0 * l["effects"].get("blur", 0.0)
+    if l["kind"] == "path":
+        nums = [float(x) for x in re.findall(r"-?\d+(?:\.\d+)?", g["d"])]
+        xs, ys = nums[0::2], nums[1::2]
+        return min(xs) - pad, min(ys) - pad, max(xs) + pad, max(ys) + pad
+    if l["kind"] in ("ellipse", "circle"):
+        rx, ry = (g["r"], g["r"]) if l["kind"] == "circle" else (g["rx"], g["ry"])
+        r = max(rx, ry)
+        return g["cx"] - r - pad, g["cy"] - r - pad, g["cx"] + r + pad, g["cy"] + r + pad
+    r = math.hypot(g["w"], g["h"]) / 2
+    return g["cx"] - r - pad, g["cy"] - r - pad, g["cx"] + r + pad, g["cy"] + r + pad
+
+
+def assign_groups_and_roles(layers: list[dict]) -> int:
+    """Name what each layer is FOR so a panel (or a person) can switch and edit them as units: `fit.group` (layers whose footprints overlap by at
+    least a quarter of the smaller one are the same visual object: a glow core and its halo, a glyph and its soft edge) and `fit.role` (background,
+    body, halo, glow by blur, from datasets/vector/bank.json). Returns the number of groups. FR : groupes et roles des calques."""
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+    rl = bank()["roles"]
+    body = [l for l in layers if not (l.get("fit") or {}).get("background")]
+    for l in layers:
+        b = l["effects"].get("blur", 0.0)
+        if (l.get("fit") or {}).get("background"):
+            role = "background"
+        elif b >= rl["glow"]["blurMin"]:
+            role = "glow"
+        elif b > rl["body"]["blurMax"]:
+            role = "halo"
+        else:
+            role = "body"
+        l.setdefault("fit", {})["role"] = role
+    if not body:
+        return 0
+    bb = np.array([_layer_bbox(l) for l in body], dtype=np.float64)
+    ar = np.maximum((bb[:, 2] - bb[:, 0]) * (bb[:, 3] - bb[:, 1]), 1e-6)
+    rows, cols = [], []
+    order = np.argsort(bb[:, 0])
+    for ii, i in enumerate(order):
+        j = order[ii + 1:]
+        j = j[bb[j, 0] <= bb[i, 2]]
+        if not len(j):
+            continue
+        iw = np.minimum(bb[i, 2], bb[j, 2]) - np.maximum(bb[i, 0], bb[j, 0])
+        ih = np.minimum(bb[i, 3], bb[j, 3]) - np.maximum(bb[i, 1], bb[j, 1])
+        inter = np.clip(iw, 0, None) * np.clip(ih, 0, None)
+        ok = inter >= 0.25 * np.minimum(ar[i], ar[j])
+        rows += [i] * int(ok.sum())
+        cols += list(j[ok])
+    n = len(body)
+    m = coo_matrix((np.ones(len(rows)), (rows, cols)), shape=(n, n))
+    k, lab = connected_components(m, directed=False)
+    for l, g in zip(body, lab):
+        l["fit"]["group"] = f"G{int(g):03d}"
+    return int(k)
+
+
+def _render_subset(layers: list[dict], box, w: int, h: int, only: dict | None = None, white: bool = False) -> np.ndarray:
+    """Exact skia render of `layers` (z order) inside box (x0, y0, x1, y1): the patch of the composite those layers make there. With `white`, each layer
+    is painted opaque white on black: its coverage."""
+    import re
+
+    import skia
+
+    from . import asset as A
+    x0, y0, x1, y1 = box
+    bw, bh = x1 - x0, y1 - y0
+    svg = A.cook_svg({"canvas": {"width": w, "height": h}, "palette": {}, "layers": layers, "view": {}})
+    svg = re.sub(r"<svg [^>]*>", f'<svg xmlns="http://www.w3.org/2000/svg" width="{bw}" height="{bh}" viewBox="{x0} {y0} {bw} {bh}">', svg, count=1)
+    patch = np.zeros((bh, bw, 4), np.uint8)
+    patch[..., 3] = 255
+    surf = skia.Surface(patch)
+    dom = skia.SVGDOM.MakeFromStream(skia.MemoryStream(svg.encode("utf-8"), True))
+    dom.setContainerSize(skia.Size(bw, bh))
+    dom.render(surf.getCanvas())
+    return patch[..., :3].astype(np.float32)
+
+
+def refine(layers: list[dict], target: np.ndarray, sweeps: int = 1, log=None, max_seconds: float = 1e9) -> dict:
+    """Polish a stack in place: for every layer (largest gain first) try, against the EXACT local render of the layers that overlap it, a Gauss-Newton
+    colour step, the neighbouring blur values and removal; keep the best variant if it lowers the sum of CIEDE2000^2. Colour of a layer under a
+    coverage a: col += sum(a (T - C)) / sum(a^2), since C = (1 - a) C_below + a col. Removal is kept when it costs under 'tolerance' of the layer's
+    own gain, so the stack gets shorter, not only better. FR : polissage : couleur, flou, suppression, contre le rendu exact local."""
+    t0 = time.time()
+    tgt = np.asarray(target, np.float32)[..., :3]
+    H, W = tgt.shape[:2]
+    LT = _lab(tgt)
+    grid = sorted(DEFAULTS["sigmas"])
+    stats = {"sweeps": 0, "colour": 0, "blur": 0, "removed": 0, "tried": 0}
+
+    def de2(patch, box):
+        x0, y0, x1, y1 = box
+        return float((deltaE_ciede2000(LT[y0:y1, x0:x1], _lab(patch)).astype(np.float64) ** 2).sum())
+
+    for sw in range(sweeps):
+        bb = np.array([[*A_bbox(l)] for l in layers], dtype=np.float64)
+        order = sorted(range(1, len(layers)), key=lambda i: -(layers[i].get("fit") or {}).get("gain", 0.0))
+        removed = set()
+        for n_done, k in enumerate(order):
+            if time.time() - t0 > max_seconds:
+                break
+            if k in removed:
+                continue
+            lk = layers[k]
+            x0, y0, x1, y1 = [int(v) for v in (max(0, np.floor(bb[k, 0]) - 1), max(0, np.floor(bb[k, 1]) - 1), min(W, np.ceil(bb[k, 2]) + 1), min(H, np.ceil(bb[k, 3]) + 1))]
+            if x1 - x0 < 2 or y1 - y0 < 2:
+                continue
+            box = (x0, y0, x1, y1)
+            hit = (bb[:, 2] > x0) & (bb[:, 0] < x1) & (bb[:, 3] > y0) & (bb[:, 1] < y1)
+            idx = [i for i in np.nonzero(hit)[0] if i not in removed or i == k]
+            subset = [layers[i] for i in idx]
+            pos = idx.index(k)
+            cur = _render_subset(subset, box, W, H)
+            base = de2(cur, box)
+            stats["tried"] += 1
+            best = (0.0, None, None)           # (gain, kind, payload)
+            # colour: Gauss-Newton under the exact coverage of this layer alone
+            cov = _render_subset([{**lk, "paint": {"type": "flat", "colour": "#ffffff"}, "effects": {**lk["effects"]}}], box, W, H)[..., 0] / 255.0
+            dn = float((cov * cov).sum()) + 1e-6
+            step = (cov[..., None] * (tgt[y0:y1, x0:x1] - cur)).sum((0, 1)) / dn
+            col = _unhex(lk["paint"]["colour"])
+            newc = np.clip(np.round(col + step), 0, 255)
+            if np.abs(newc - col).max() >= 1:
+                alt = [dict(l) for l in subset]
+                alt[pos] = {**lk, "paint": {"type": "flat", "colour": _hex(newc)}}
+                g = base - de2(_render_subset(alt, box, W, H), box)
+                if g > best[0]:
+                    best = (g, "colour", alt[pos])
+            # blur: the neighbouring values of the grid
+            sg = lk["effects"].get("blur", 0.0)
+            gi = min(range(len(grid)), key=lambda i: abs(grid[i] - sg))
+            for gj in (gi - 1, gi + 1):
+                if 0 <= gj < len(grid) and grid[gj] != sg:
+                    alt = [dict(l) for l in subset]
+                    alt[pos] = {**lk, "effects": {**lk["effects"], "blur": float(grid[gj])}}
+                    g = base - de2(_render_subset(alt, box, W, H), box)
+                    if g > best[0]:
+                        best = (g, "blur", alt[pos])
+            # removal: kept when it costs less than a small part of what the layer was worth
+            alt = [l for i, l in enumerate(subset) if i != pos]
+            g = base - de2(_render_subset(alt, box, W, H), box)
+            own = (lk.get("fit") or {}).get("gain", 0.0)
+            if g > -1e-9 + (-0.002 * own if own > 0 else 0.0) and g >= best[0]:
+                best = (g, "remove", None)
+            if best[1] == "remove":
+                removed.add(k)
+                stats["removed"] += 1
+            elif best[1]:
+                layers[k] = best[2]
+                stats[best[1]] += 1
+        layers[:] = [l for i, l in enumerate(layers) if i not in removed]
+        for i, l in enumerate(layers):
+            l["id"], l["z"] = f"L{i:03d}", i
+            l["name"] = f"L{i:03d}-{l['kind']}" if i else "L00-background"
+        stats["sweeps"] += 1
+        if log:
+            log(f"[refine] sweep {sw + 1}: {stats}")
+    stats["seconds"] = round(time.time() - t0, 1)
+    return stats
+
+
+def A_bbox(l: dict) -> tuple[float, float, float, float]:
+    from . import asset as A
+    return A.layer_bbox(l, 3.0 * l["effects"].get("blur", 0.0) + 2.0)
+
+
+def _unhex(c: str) -> np.ndarray:
+    return np.array([int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16)], dtype=np.float64)
+
+
+def _round_geom(g: dict) -> dict:
+    return {k: (round(float(v), 2) if not isinstance(v, str) else v) for k, v in g.items()}
+
+
+def _hex(c) -> str:
+    c = np.clip(np.round(np.asarray(c, float)), 0, 255).astype(int)
+    return "#%02x%02x%02x" % tuple(c)
+
+
+def bank() -> dict:
+    return json.loads(BANK_PATH.read_text(encoding="utf-8"))
+
+
+def _defaults() -> dict:
+    b = bank()
+    sig = sorted({v for vals in b["softness"]["presets"].values() for v in vals})
+    return {
+        # one level at full resolution: the pyramid (scale 8, 4, 2) was measured WORSE than the single level on memo (0.9899 against 0.9932 at
+        # equal budget), its coarse layers use the budget on what the fine level does better. Kept as an option, off by default.
+        "levels": [{"scale": 1, "maxLayers": 3000, "stopDE": 0.4, "minDE": 0.4}],
+        "maxSeconds": 900, "stopDE": 0.4, "minDE": 0.4, "relThrs": [0.25, 0.45, 0.7], "peakSmooth": 1.0, "window": 120, "pad": 4,
+        "exactTop": 3, "levels_iso": b["shapes"]["isoLevels"], "simplifyPx": b["shapes"]["simplifyPx"], "sigmas": sig,
+        "primitives": b["shapes"]["primitives"], "paths": b["shapes"]["path"], "preferPrimitive": b["shapes"]["preferPrimitive"],
+        "minGain": 0.05, "tabuR": 2, "maxLayers": 3000,
+    }
+
+
+DEFAULTS = _defaults()

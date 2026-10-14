@@ -1,0 +1,136 @@
+# 14 October 2026: publishing the motions of a project to the site, from the application. The publisher itself (scripts/Motion/PublishMotions.mjs of
+# ZenRayProgress) is the single door: CMAF by stream copy, neutral public paths, one commit in zenray-data, only reproductions, parameters and numbers
+# (never a reference video). Two rules live here: a motion goes only when its motion.json says rights.cleared (a PERSON checked that no text, logo or
+# image of the reference remains in the render, and only a person sets it), and nothing is sent without an explicit confirmation: the plan is a dry run.
+# FR : la publication des motions d'un projet ; le publieur du site est la seule porte, les droits sont valides par une personne, rien ne part sans confirmation.
+from __future__ import annotations
+
+import json
+import subprocess
+import time
+from pathlib import Path
+
+from .. import settings, versions
+from . import ingest
+from .projects import AppError, MOTION_RE, motions_dir, _check_slug
+
+
+def cfg() -> dict:
+    return ingest.config()["publish"]
+
+
+def script() -> Path:
+    for p in cfg()["scripts"]:
+        if Path(p).is_file():
+            return Path(p)
+    raise AppError("the site publisher (scripts/Motion/PublishMotions.mjs) was not found on this Mac", 503)
+
+
+def rights_of(motion: dict) -> dict:
+    r = motion.get("rights") if isinstance(motion, dict) else None
+    return {"cleared": bool(isinstance(r, dict) and r.get("cleared") is True), "by": (r or {}).get("by"), "date": (r or {}).get("date")}
+
+
+def set_rights(motion_id: str, cleared: bool) -> dict:
+    """Write the rights block of motion.json. Called ONLY from a person's explicit action (a confirmed click or an instruction in chat)."""
+    if not MOTION_RE.match(motion_id or ""):
+        raise AppError("bad motion id")
+    f = motions_dir() / motion_id / "motion.json"
+    if not f.is_file():
+        raise AppError(f"unknown motion '{motion_id}'", 404)
+    meta = versions.read_json(f, {}) or {}
+    if cleared and meta.get("recipe") in cfg()["excludedRecipes"]:
+        raise AppError(f"a {meta.get('recipe')} is a clip of the reference video: its rights cannot be validated, it is never published", 403)
+    meta["rights"] = {"cleared": bool(cleared), "by": cfg()["rightsBy"], "date": versions.today()}
+    versions.write_json(f, meta)
+    return rights_of(meta)
+
+
+def motions_of_project(slug: str) -> list[dict]:
+    _check_slug(slug)
+    out = []
+    root = motions_dir()
+    for folder in sorted(root.iterdir()) if root.is_dir() else []:
+        mj = folder / "motion.json"
+        if not mj.is_file():
+            continue
+        m = versions.read_json(mj, {}) or {}
+        if (m.get("source") or {}).get("slug") != slug:
+            continue
+        latest = m.get("latest") or versions.latest_version(folder)
+        out.append({"id": folder.name, "title": m.get("title") or folder.name, "recipe": m.get("recipe"), "version": latest,
+                    "hasRender": bool(latest and (folder / latest / "render.mp4").is_file()), "rights": rights_of(m),
+                    "excluded": m.get("recipe") in cfg()["excludedRecipes"]})
+    return out
+
+
+def _publisher(motion_id: str, push: bool) -> dict:
+    c = cfg()
+    args = [c["node"], str(script()), "--motion", motion_id] + (["--push"] if push else [])
+    r = subprocess.run(args, cwd=str(script().parent), capture_output=True, text=True, timeout=c["timeoutS"])
+    text = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else ""
+    try:
+        out = json.loads(text)
+    except ValueError:
+        out = {"ok": False, "error": (r.stderr.strip().splitlines() or [text or f"publisher exited {r.returncode}"])[-1]}
+    out["exit"] = r.returncode
+    return out
+
+
+def plan(slug: str):
+    """A job function: for each motion of the project, ready (the publisher accepts it in a DRY RUN, nothing leaves the Mac), rights to validate, or a problem."""
+    items = motions_of_project(slug)
+    script()  # refuse early when the publisher is absent
+
+    def run(step):
+        rows = []
+        for i, m in enumerate(items):
+            step("motion", detail=f"{i + 1}/{len(items)} {m['id']}")
+            if m["excluded"]:
+                rows.append({**m, "status": "excluded", "detail": "extrait de la vidéo de référence : jamais publié"})
+            elif not m["hasRender"]:
+                rows.append({**m, "status": "problem", "detail": "no render"})
+            elif not m["rights"]["cleared"]:
+                rows.append({**m, "status": "rights", "detail": "rights to validate"})
+            else:
+                got = _publisher(m["id"], push=False)
+                if got.get("ok") and not got.get("blockers"):
+                    v = (got.get("versions") or [{}])[0]
+                    rows.append({**m, "status": "ready", "detail": f"{v.get('segments', '?')} segments, {round((v.get('bytes') or 0) / 1024)} KB"})
+                else:
+                    why = (got.get("blockers") or [{}])[0].get("reason") or got.get("error") or "refused"
+                    rows.append({**m, "status": "problem", "detail": why})
+        count = {k: sum(1 for r in rows if r["status"] == k) for k in ("ready", "rights", "problem", "excluded")}
+        return {"slug": slug, "motions": rows, "count": count}
+    return run
+
+
+def publish(slug: str, motion_ids: list[str]):
+    """A job function: publish the named motions of the project, ONE at a time (they share a git clone and a catalogue). Only cleared motions go."""
+    by_id = {m["id"]: m for m in motions_of_project(slug)}
+    chosen = []
+    for mid in motion_ids:
+        m = by_id.get(mid)
+        if m is None:
+            raise AppError(f"motion '{mid}' does not belong to project '{slug}'")
+        if m["excluded"]:
+            raise AppError(f"motion '{mid}' is a clip of the reference video ({m['recipe']}): it is never published")
+        if not m["rights"]["cleared"]:
+            raise AppError(f"motion '{mid}' has no validated rights: validate it first")
+        if not m["hasRender"]:
+            raise AppError(f"motion '{mid}' has no render")
+        chosen.append(m)
+    if not chosen:
+        raise AppError("no motion to publish")
+    script()
+
+    def run(step):
+        done = []
+        for i, m in enumerate(chosen):
+            step("publish", detail=f"{i + 1}/{len(chosen)} {m['id']}")
+            got = _publisher(m["id"], push=True)
+            done.append({"id": m["id"], "version": m["version"], "ok": bool(got.get("ok")), "error": None if got.get("ok") else (got.get("error") or (got.get("blockers") or [{}])[0].get("reason")),
+                         "public": [v.get("public") for v in got.get("versions", [])]})
+            time.sleep(0.2)
+        return {"slug": slug, "published": [d for d in done if d["ok"]], "failed": [d for d in done if not d["ok"]]}
+    return run

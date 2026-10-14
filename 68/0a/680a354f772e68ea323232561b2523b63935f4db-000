@@ -1,0 +1,125 @@
+{
+ "schema": "zrmd/timeline-family@1",
+ "date": "14 October 2026",
+ "doc": "The single parameter interface of the V1 montage (timeline) of ZenRay Motion Design (HDA law). Formats and fits, the text defaults, the limits and the places files live. A spec (zrmd/timeline@1) is validated against this file and cooked into ONE HyperFrames composition per format. FR : l'interface unique du montage V1 : formats, cadrages, valeurs par defaut du texte, limites et dossiers.",
+ "fps": 30,
+ "formats": {
+  "16x9": {
+   "width": 1920,
+   "height": 1080,
+   "label": "16:9"
+  },
+  "9x16": {
+   "width": 1080,
+   "height": 1920,
+   "label": "9:16"
+  },
+  "4x5": {
+   "width": 1080,
+   "height": 1350,
+   "label": "4:5"
+  },
+  "1x1": {
+   "width": 1080,
+   "height": 1080,
+   "label": "1:1"
+  }
+ },
+ "defaultFormat": "16x9",
+ "fits": [
+  "contain",
+  "cover",
+  "blur"
+ ],
+ "defaultFit": "contain",
+ "blur": {
+  "px": 48,
+  "brightness": 0.7,
+  "scale": 1.15
+ },
+ "background": "#000000",
+ "text": {
+  "font": "InterVariable",
+  "fonts": [
+   "InterVariable",
+   "AnthropicSerif",
+   "AnthropicMono"
+  ],
+  "weight": 600,
+  "size": 0.06,
+  "color": "#ffffff",
+  "x": 0.5,
+  "y": 0.82,
+  "align": "center",
+  "maxWidth": 0.86,
+  "anims": [
+   "pop",
+   "fade",
+   "none"
+  ],
+  "defaultAnim": "pop",
+  "popSeconds": 0.2,
+  "popFromScale": 0.9,
+  "maxChars": 200,
+  "sizeRange": [
+   0.02,
+   0.2
+  ],
+  "weightRange": [
+   300,
+   800
+  ]
+ },
+ "limits": {
+  "tracks": 8,
+  "clipsPerTrack": 64,
+  "seconds": 600,
+  "textClips": 200
+ },
+ "idPattern": "^[a-z0-9][a-z0-9-]{0,47}$",
+ "clipIdPattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+ "clipExtensions": [
+  ".mp4",
+  ".mov",
+  ".m4v",
+  ".webm",
+  ".mkv"
+ ],
+ "audioExtensions": [
+  ".mp3",
+  ".wav",
+  ".flac",
+  ".m4a",
+  ".aac",
+  ".ogg"
+ ],
+ "imageExtensions": [
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp"
+ ],
+ "imageSeconds": 3.0,
+ "fileRoots": [
+  "{home}"
+ ],
+ "root": "/Users/zenray/.claude/tmp/tmp-zenray-motion-design-timelines",
+ "fontFiles": {
+  "InterVariable": "/Users/zenray/.claude/skills/zenray-edit/assets/ui/InterVariable.woff2",
+  "AnthropicSerif": "/Users/zenray/.claude/skills/zenray-edit/assets/ui/AnthropicSerif-Romans.woff2",
+  "AnthropicMono": "/Users/zenray/.claude/skills/zenray-edit/assets/ui/AnthropicMono.woff2"
+ },
+ "render": {
+  "quality": "looks",
+  "workers": 2,
+  "overlayQuality": "draft",
+  "overlayFormat": "webm"
+ },
+ "overlay": {
+  "hideLayers": [
+   "bg"
+  ],
+  "doc": "A text-only overlay is the motion rendered with its background layers hidden and a transparent page, as an alpha WebM."
+ },
+ "fontFilesDoc": "woff2 files embedded by the zenray-edit skill (same faces as every ZenRay UI), copied into each cooked project."
+}

@@ -1,0 +1,186 @@
+{
+ "schema": "zrmd/v1-tiers@1",
+ "date": "14 October 2026",
+ "doc": "The V1 parameter tiers of ZenRay Motion Design (HDA law, one place): per chantier the 4 PRIMARY values (those that change the result most), the 8 SECONDARY and the 16 TERTIARY (listed, built later). The V1 shows primary and secondary. A key here only ORDERS and groups parameters that are defined once elsewhere: scene keys in params/exposed.json (recipe families), music ids in params/music-studio.json, montage keys in params/timeline.json. `preview` binds a scene key to a live DOM effect in the cooked composition (an accelerator: the truth is the version the engine cooks). Chantier files from the research agents are merged from `includes`. FR : les paliers de parametres de la V1, une seule place.",
+ "limits": {
+  "primary": 4,
+  "secondary": 8,
+  "tertiary": 16
+ },
+ "scene": {
+  "textcard": {
+   "primary": [
+    "layers.@caption.text",
+    "layers.@caption.color",
+    "layers.@bg.color",
+    "layers.@caption.font.size"
+   ],
+   "secondary": [
+    "layers.@caption.x",
+    "layers.@caption.y",
+    "layers.@caption.font.tracking",
+    "layers.@caption.shine.base",
+    "layers.@caption.shine.highlight"
+   ],
+   "tertiary": []
+  },
+  "shader-field": {
+   "primary": [
+    "look.colourMain",
+    "look.colourEnd",
+    "look.gradientAngle",
+    "look.backdrop"
+   ],
+   "secondary": [
+    "look.glow",
+    "look.glowColour",
+    "look.glowRadius",
+    "look.glowX",
+    "look.glowY",
+    "look.exposure",
+    "look.vignette",
+    "look.grain"
+   ],
+   "tertiary": []
+  },
+  "graphic": {
+   "primary": [
+    "layers.@bg.color",
+    "layers.@orb.controls.hue",
+    "layers.@orb.controls.scale",
+    "layers.@orb.controls.speed"
+   ],
+   "secondary": [
+    "layers.@orb.controls.saturate",
+    "layers.@orb.controls.brightness",
+    "layers.@orb.controls.shape.aspect",
+    "layers.@orb.controls.shape.n",
+    "layers.@orb.controls.shape.blend",
+    "layers.@orb.controls.offset_frames"
+   ],
+   "tertiary": []
+  }
+ },
+ "preview": {
+  "layers.@caption.text": {
+   "selector": "#caption .ink",
+   "set": "text"
+  },
+  "layers.@bg.color": {
+   "selector": "#bg",
+   "set": "background"
+  },
+  "layers.@caption.color": {
+   "selector": "#caption",
+   "set": "tint"
+  },
+  "layers.@caption.font.size": {
+   "selector": "#caption",
+   "set": "fontSizePx",
+   "scaleKey": "measured.size"
+  },
+  "layers.@caption.font.tracking": {
+   "selector": "#caption",
+   "set": "letterSpacingEm"
+  },
+  "layers.@caption.x": {
+   "selector": "#caption",
+   "set": "leftPx"
+  },
+  "layers.@caption.y": {
+   "selector": "#caption",
+   "set": "topPx"
+  }
+ },
+ "music": {
+  "primary": [
+   "drums",
+   "bass",
+   "other",
+   "vocals"
+  ],
+  "secondary": [
+   "bpm",
+   "transpose",
+   "release",
+   "tilt",
+   "kick",
+   "snareClap",
+   "hats",
+   "drumLength"
+  ],
+  "tertiary": [
+   "kick.gainDb",
+   "snare.gainDb",
+   "clap.gainDb",
+   "hatClosed.gainDb",
+   "hatOpen.gainDb",
+   "bass.releaseS",
+   "otherLow.gainDb",
+   "otherMid.gainDb",
+   "otherHigh.gainDb",
+   "vocals.gainDb",
+   "kick.tonePitch",
+   "kick.toneDb",
+   "drums.timeScale",
+   "bass.tiltDbOct",
+   "other.releaseS",
+   "vocals.releaseS"
+  ],
+  "built": [
+   "drums",
+   "bass",
+   "other",
+   "vocals",
+   "bpm",
+   "transpose",
+   "release",
+   "tilt",
+   "kick",
+   "snareClap",
+   "hats",
+   "drumLength"
+  ]
+ },
+ "montage": {
+  "primary": [
+   "format",
+   "fit",
+   "text",
+   "color"
+  ],
+  "secondary": [
+   "font",
+   "size",
+   "x",
+   "y",
+   "weight",
+   "anim",
+   "start",
+   "duration"
+  ],
+  "tertiary": [
+   "align",
+   "wrap",
+   "opacity",
+   "volume",
+   "in",
+   "out",
+   "textOnly",
+   "background",
+   "fps",
+   "mute",
+   "maxWidth",
+   "popSeconds",
+   "blurPx",
+   "blurBrightness",
+   "imageSeconds",
+   "sizeRange"
+  ]
+ },
+ "includes": [
+  "params/rhythm-v1-parameters.json",
+  "params/vector-v1-parameters.json",
+  "params/image-v1-parameters.json"
+ ]
+}

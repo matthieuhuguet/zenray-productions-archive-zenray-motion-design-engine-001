@@ -1,0 +1,79 @@
+# 14 October 2026: the learned fusion of the rhythm evidence, as DATA. A gradient-boosted ensemble of small trees reads the evidence
+# matrix of one picture boundary (zrmd.analyze.rhythm_features: fine-pass measures, coarse signals, their context, the return
+# ratios) and answers "is this boundary a replaced picture?" with a probability. The trained trees are exported to
+# datasets/rhythm-fusion.json (feature order, thresholds, leaf values), so a run needs numpy only, the model is readable and
+# diffable, and it is replaced by training on more adjudicated references (Scripts/RhythmSheet.py train).
+# FR : la fusion apprise des preuves, rangee comme une DONNEE : arbres en JSON, prediction en numpy seul.
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import numpy as np
+
+MODEL = Path(__file__).resolve().parents[2] / "datasets" / "rhythm-fusion.json"
+EXCLUDE = {"need", "GX", "GY"}   # `need` selects boundaries; the global translation that was removed is not evidence
+
+
+def feature_names(mat: dict) -> list[str]:
+    return [k for k in mat if k not in EXCLUDE]
+
+
+def design(mat: dict, keys: list[str]) -> np.ndarray:
+    """(n, len(keys)) float64, NaN kept (a missing VALUE is a branch of the trees, not a zero). A missing COLUMN is an error that
+    names it: a model asked for evidence the matrix does not carry must be retrained, never fed a silent NaN."""
+    absent = [k for k in keys if k not in mat]
+    if absent:
+        raise KeyError(f"the fusion model reads evidence columns the matrix does not have: {absent[:6]} (retrain: Scripts/RhythmSheet.py train)")
+    return np.stack([np.asarray(mat[k], dtype=np.float64) for k in keys], axis=1)
+
+
+def export(clf, keys: list[str], meta: dict | None = None) -> dict:
+    """Trees of a fitted sklearn HistGradientBoostingClassifier as plain lists."""
+    trees = []
+    for it in clf._predictors:
+        nodes = it[0].nodes
+        trees.append({"feature": nodes["feature_idx"].astype(int).tolist(), "threshold": [float(v) for v in nodes["num_threshold"]],
+                      "left": nodes["left"].astype(int).tolist(), "right": nodes["right"].astype(int).tolist(),
+                      "leaf": nodes["is_leaf"].astype(bool).tolist(), "nan_left": nodes["missing_go_to_left"].astype(bool).tolist(),
+                      "value": [float(v) for v in nodes["value"]]})
+    return {"schema": "zrmd/rhythm-fusion@1", "features": keys, "baseline": float(np.asarray(clf._baseline_prediction).ravel()[0]),
+            "trees": trees, "meta": meta or {}}
+
+
+def raw_margin(model: dict, X: np.ndarray) -> np.ndarray:
+    out = np.full(len(X), float(model["baseline"]))
+    for t in model["trees"]:
+        feat, thr = np.asarray(t["feature"]), np.asarray(t["threshold"])
+        left, right = np.asarray(t["left"]), np.asarray(t["right"])
+        leaf, nan_left, value = np.asarray(t["leaf"], bool), np.asarray(t["nan_left"], bool), np.asarray(t["value"])
+        node = np.zeros(len(X), dtype=np.int64)
+        for _ in range(64):
+            active = ~leaf[node]
+            if not active.any():
+                break
+            idx = np.nonzero(active)[0]
+            nd = node[idx]
+            v = X[idx, feat[nd]]
+            go_left = np.where(np.isnan(v), nan_left[nd], v <= thr[nd])
+            node[idx] = np.where(go_left, left[nd], right[nd])
+        out += value[node]
+    return out
+
+
+def predict(model: dict, X: np.ndarray) -> np.ndarray:
+    return 1.0 / (1.0 + np.exp(-raw_margin(model, X)))
+
+
+def load(path: Path | str | None = None) -> dict | None:
+    p = Path(path or MODEL)
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
+
+
+def probabilities(model: dict, mat: dict) -> np.ndarray:
+    """p per file frame (0 where `need` is false: a boundary that carries no change is never a cut)."""
+    need = np.asarray(mat["need"]).astype(bool)
+    X = design(mat, model["features"])
+    p = np.zeros(len(need))
+    p[need] = predict(model, X[need])
+    return p

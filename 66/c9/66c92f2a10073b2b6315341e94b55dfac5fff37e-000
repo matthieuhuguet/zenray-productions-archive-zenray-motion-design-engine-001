@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="fr">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Studio de variations</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mut:#6b6b6b;--line:#e4e4e1;--card:#f7f7f5;--acc:#cc7c5e;--ok:#1b7f3b;--warn:#b3261e;--r:12px}
+@media(prefers-color-scheme:dark){:root{--bg:#161616;--fg:#eee;--mut:#9a9a9a;--line:#2c2c2c;--card:#1f1f1f;--acc:#e0916f;--ok:#5fd07e;--warn:#ff8a80}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:400 15px/1.5 InterVariable,Inter,system-ui,sans-serif}
+main{max-width:760px;margin:0 auto;padding:28px 20px 56px}
+h1{font:350 26px AnthropicSerif,Georgia,serif;margin:0 0 14px}
+.top{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+select,button{font:inherit;color:inherit}
+select{padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card);max-width:100%}
+.tag{color:var(--mut);font-size:13px}
+.switch{display:grid;grid-template-columns:1fr 1fr;margin:20px 0 10px;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.switch button{padding:18px 8px;border:0;background:var(--card);font-size:17px;cursor:pointer}
+.switch button.on{background:var(--acc);color:#fff}
+.sub{display:flex;gap:10px;align-items:center;margin:6px 0 4px}
+.play{width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--card);cursor:pointer;font-size:16px}
+input[type=range]{width:100%;accent-color:var(--acc)}
+.time{font:400 13px AnthropicSerif,Georgia,serif;color:var(--mut);min-width:84px;text-align:right}
+.group{margin-top:22px}
+.group h2{font:400 13px InterVariable,Inter,sans-serif;color:var(--mut);text-transform:none;margin:0 0 6px}
+.s{display:grid;grid-template-columns:150px 1fr 96px;gap:10px;align-items:center;padding:7px 0;border-top:1px solid var(--line)}
+.s label{font-size:14px}
+.s .v{font:400 14px AnthropicSerif,Georgia,serif;text-align:right;white-space:nowrap}
+.s.changed label::after{content:" •";color:var(--acc)}
+.actions{display:flex;gap:10px;margin-top:20px;flex-wrap:wrap}
+.btn{padding:11px 16px;border-radius:10px;border:1px solid var(--line);background:var(--card);cursor:pointer}
+.btn.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+.btn[disabled]{opacity:.45;cursor:default}
+#msg{margin-top:14px;color:var(--mut);font-size:13.5px;min-height:20px}
+#msg.err{color:var(--warn)}
+.note{margin-top:18px;padding:10px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--card);font-size:13.5px;color:var(--mut)}
+</style>
+<main>
+  <h1>Studio de variations</h1>
+  <div class="top"><select id="member" aria-label="Piste"></select><span class="tag" id="gate"></span></div>
+
+  <div class="switch" role="group" aria-label="Écoute">
+    <button id="bRef" type="button">Référence</button>
+    <button id="bOurs" type="button" class="on">Ours</button>
+  </div>
+  <div class="sub"><button class="play" id="play" aria-label="Lecture">▶</button><input type="range" id="seek" min="0" max="1000" value="0" aria-label="Position"><span class="time" id="time">0:00 / 0:30</span></div>
+  <div class="tag" id="oursLabel"></div>
+
+  <div class="group"><h2>Tempo et notes : le moteur recalcule dès que tu lâches (sans la référence)</h2><div id="render"></div></div>
+  <div class="group"><h2>Niveaux et timbre : aperçu instantané, puis le moteur confirme</h2><div id="live"></div></div>
+
+  <div class="actions">
+    <button class="btn" id="reset">Revenir à l'original</button>
+    <span class="tag" id="cookState"></span>
+  </div>
+  <div id="msg"></div>
+  <div class="note">« Ours » est un rendu du moteur à partir des seuls paramètres, sans accès à la référence. Au départ c'est la version calée à 99,9 ; dès que tu bouges une valeur, c'est le rendu brut du moteur pour cette variation, car le calage n'est pas encore rejouable depuis les paramètres.</div>
+</main>
+<script>
+const H = {"x-zr-studio-client": "1", "Content-Type": "application/json"};
+const $ = (id) => document.getElementById(id);
+const fmt = (n) => { n = Math.max(0, n || 0); return Math.floor(n / 60) + ":" + String(Math.floor(n % 60)).padStart(2, "0"); };
+const ctx = new (window.AudioContext || window.webkitAudioContext)();
+const STEMS = ["drums", "bass", "other", "vocals"];
+let cfg = null, slug = null, defaults = {}, rendered = {}, current = {}, buf = {}, srcs = [], playing = false, startedAt = 0, offset = 0, which = "ours", baked = false, key = null;
+let nodes = null;
+
+async function api(path, opt) { const r = await fetch(path, opt); const j = await r.json(); if (!j.ok) throw new Error(j.error || "erreur"); return j; }
+async function load(url) { const r = await fetch(url); if (!r.ok) throw new Error("audio introuvable"); return ctx.decodeAudioData(await r.arrayBuffer()); }
+function msg(t, err) { $("msg").textContent = t || ""; $("msg").className = err ? "err" : ""; }
+
+function rms(arrs) { let s = 0, n = 0; const L = arrs[0].length; for (let i = 0; i < L; i += 7) { let v = 0; for (const a of arrs) v += a[i]; s += v * v; n++; } return Math.sqrt(s / n) || 1e-9; }
+function levels() {
+  const mono = (b) => b.getChannelData(0);
+  const ours = rms([mono(buf.mix)]);
+  const sum = rms(STEMS.map((s) => mono(buf[s])));
+  const ref = rms([mono(buf.reference)]);
+  return {refGain: ours / ref, stemsGain: ours / sum};
+}
+
+function buildGraph() {
+  const g = {};
+  g.master = ctx.createGain();
+  g.master.connect(ctx.destination);
+  g.ref = ctx.createGain(); g.ref.connect(g.master);
+  g.ours = ctx.createGain(); g.ours.connect(g.master);
+  g.mix = ctx.createGain(); g.mix.connect(g.ours);
+  g.stems = ctx.createGain(); g.stems.connect(g.ours);
+  g.lo = ctx.createBiquadFilter(); g.lo.type = "lowshelf"; g.lo.frequency.value = 250;
+  g.hi = ctx.createBiquadFilter(); g.hi.type = "highshelf"; g.hi.frequency.value = 2000;
+  g.lo.connect(g.hi); g.hi.connect(g.stems);
+  g.stem = {};
+  for (const s of STEMS) { g.stem[s] = ctx.createGain(); g.stem[s].connect(g.lo); }
+  return g;
+}
+
+function liveDeltas() {
+  const d = {};
+  for (const s of cfg.sliders) if (s.mode === "live") d[s.id] = (current[s.id] ?? defaults[s.id]) - (rendered[s.id] ?? defaults[s.id]);
+  return d;
+}
+function applyLive() {
+  if (!nodes) return;
+  const d = liveDeltas(), L = levels();
+  const t = ctx.currentTime;
+  for (const s of STEMS) nodes.stem[s].gain.setTargetAtTime(Math.pow(10, (d[s] || 0) / 20), t, 0.015);
+  nodes.hi.gain.setTargetAtTime((d.tilt || 0) * 2, t, 0.015);
+  nodes.lo.gain.setTargetAtTime(-(d.tilt || 0) * 2, t, 0.015);
+  const moved = Object.values(d).some((v) => Math.abs(v) > 1e-6);
+  nodes.mix.gain.setTargetAtTime(moved ? 0 : 1, t, 0.02);
+  nodes.stems.gain.setTargetAtTime(moved ? L.stemsGain : 0, t, 0.02);
+  nodes.ref.gain.setTargetAtTime(which === "ref" ? L.refGain : 0, t, 0.02);
+  nodes.ours.gain.setTargetAtTime(which === "ours" ? 1 : 0, t, 0.02);
+}
+
+function stopSources() { for (const s of srcs) { try { s.stop(); } catch (e) {} } srcs = []; }
+function start(at) {
+  stopSources();
+  if (!nodes) nodes = buildGraph();
+  const mk = (b, dest) => { const s = ctx.createBufferSource(); s.buffer = b; s.loop = true; s.connect(dest); s.start(0, at % b.duration); srcs.push(s); };
+  mk(buf.reference, nodes.ref);
+  mk(buf.mix, nodes.mix);
+  for (const s of STEMS) mk(buf[s], nodes.stem[s]);
+  startedAt = ctx.currentTime - at;
+  applyLive();
+}
+function position() { return playing ? (ctx.currentTime - startedAt) % buf.mix.duration : offset; }
+
+async function playPause() {
+  if (!buf.mix) return;
+  await ctx.resume();
+  if (playing) { offset = position(); stopSources(); playing = false; $("play").textContent = "▶"; }
+  else { start(offset); playing = true; $("play").textContent = "❚❚"; }
+}
+function setWhich(w) {
+  which = w;
+  $("bRef").classList.toggle("on", w === "ref");
+  $("bOurs").classList.toggle("on", w === "ours");
+  applyLive();
+}
+
+function sliderRow(s) {
+  const row = document.createElement("div"); row.className = "s"; row.id = "row-" + s.id;
+  const lab = document.createElement("label"); lab.textContent = s.label; lab.htmlFor = "in-" + s.id;
+  const inp = document.createElement("input"); inp.type = "range"; inp.id = "in-" + s.id; inp.min = s.min; inp.max = s.max; inp.step = s.step; inp.value = current[s.id];
+  const val = document.createElement("span"); val.className = "v"; val.id = "v-" + s.id;
+  inp.addEventListener("input", () => { current[s.id] = parseFloat(inp.value); refreshRow(s); applyLive(); scheduleCook(); });
+  inp.addEventListener("dblclick", () => { current[s.id] = defaults[s.id]; inp.value = defaults[s.id]; refreshRow(s); applyLive(); scheduleCook(); });
+  row.append(lab, inp, val);
+  return row;
+}
+function refreshRow(s) {
+  const v = current[s.id];
+  const txt = s.unit === "x" ? "×" + v.toFixed(2) : (s.unit === "bpm" ? v.toFixed(1) + " bpm" : (v > 0 && s.min < 0 ? "+" : "") + v.toFixed(s.step < 1 ? 1 : 0) + " " + s.unit);
+  $("v-" + s.id).textContent = txt;
+  $("row-" + s.id).classList.toggle("changed", Math.abs(v - (rendered[s.id] ?? defaults[s.id])) > 1e-9);
+}
+function drawSliders() {
+  $("render").innerHTML = ""; $("live").innerHTML = "";
+  for (const s of cfg.sliders) { (s.mode === "render" ? $("render") : $("live")).append(sliderRow(s)); refreshRow(s); }
+}
+
+async function selectMember(sl) {
+  if (playing) await playPause();
+  slug = sl; msg("Chargement des fichiers audio…");
+  const st = await api("/api/state?slug=" + encodeURIComponent(sl));
+  defaults = st.defaults; rendered = {...defaults}; current = {...defaults}; offset = 0; key = null;
+  const q = (kind, stem) => `/audio?slug=${encodeURIComponent(sl)}&kind=${kind}&stem=${stem}`;
+  const [ref, mix, ...stems] = await Promise.all([load(q("reference", "mix")), load(q("ours", "mix")), ...STEMS.map((s) => load(q("ours", s)))]);
+  buf = {reference: ref, mix}; STEMS.forEach((s, i) => (buf[s] = stems[i]));
+  $("gate").textContent = "calée : mix " + (st.member.mix ?? "-") + " · " + STEMS.map((s) => s + " " + (st.member.stems[s] ?? "-")).join(" · ");
+  $("oursLabel").textContent = "ours : version calée à 99,9 (" + st.member.trimVersion + ")";
+  drawSliders(); applyLive(); msg("");
+}
+
+let cookTimer = null, cooking = false, dirty = false;
+function scheduleCook() { dirty = true; clearTimeout(cookTimer); cookTimer = setTimeout(cook, 220); }
+async function cook() {
+  if (cooking) return; // the running cook finishes, then the latest values are cooked
+  if (!dirty) return;
+  cooking = true; dirty = false;
+  const values = {...current};
+  $("cookState").textContent = "le moteur recalcule…";
+  const t0 = performance.now();
+  try {
+    const j = await api("/api/cook", {method: "POST", headers: H, body: JSON.stringify({slug, values})});
+    const q = (stem) => `/audio?slug=${encodeURIComponent(slug)}&kind=cook&key=${j.key}&stem=${stem}`;
+    const [mix, ...stems] = await Promise.all([load(q("mix")), ...STEMS.map((s) => load(q(s)))]);
+    buf.mix = mix; STEMS.forEach((s, i) => (buf[s] = stems[i]));
+    rendered = {...values}; key = j.key;
+    cfg.sliders.forEach(refreshRow);
+    const st = j.stats || {};
+    $("oursLabel").textContent = "ours : rendu du moteur, version brute (le calage 99,9 n'est pas encore rejouable depuis les paramètres)";
+    $("cookState").textContent = "calculé en " + j.seconds + " s (" + (st.voicesRecomputed ?? "?") + " voix sur " + (st.voicesTotal ?? "?") + " recalculées) · reçu en " + ((performance.now() - t0) / 1000).toFixed(1) + " s";
+    if (playing) start(position() % buf.mix.duration); else applyLive();
+    msg("");
+  } catch (e) { msg(e.message, true); $("cookState").textContent = ""; }
+  cooking = false;
+  if (dirty) scheduleCook();
+}
+
+$("bRef").onclick = () => setWhich("ref");
+$("bOurs").onclick = () => setWhich("ours");
+$("play").onclick = playPause;
+$("reset").onclick = () => { current = {...defaults}; cfg.sliders.forEach((s) => { $("in-" + s.id).value = defaults[s.id]; }); selectMember(slug); };
+$("seek").addEventListener("input", () => { if (!buf.mix) return; offset = (parseInt($("seek").value, 10) / 1000) * buf.mix.duration; if (playing) start(offset); });
+document.addEventListener("keydown", (e) => { if (e.code === "Space" && e.target.tagName !== "SELECT") { e.preventDefault(); playPause(); } if (e.key === "r") setWhich("ref"); if (e.key === "o") setWhich("ours"); });
+setInterval(() => { if (!buf.mix) return; const p = position(); $("time").textContent = fmt(p) + " / " + fmt(buf.mix.duration); if (playing) $("seek").value = Math.round((p / buf.mix.duration) * 1000); }, 120);
+
+(async () => {
+  try {
+    const c = await api("/api/config"); cfg = c;
+    for (const m of c.members) { const o = document.createElement("option"); o.value = m.slug; o.textContent = m.slug + (m.mix ? "  ·  mix " + m.mix : ""); $("member").append(o); }
+    $("member").onchange = () => selectMember($("member").value);
+    const first = c.members.find((m) => m.slug === "flora-agents-on-canvas-m1") || c.members[0];
+    $("member").value = first.slug; await selectMember(first.slug);
+  } catch (e) { msg(e.message, true); }
+})();
+</script>
+</html>

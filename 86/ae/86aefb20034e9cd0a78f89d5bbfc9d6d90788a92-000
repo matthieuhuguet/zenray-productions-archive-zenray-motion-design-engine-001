@@ -1,0 +1,237 @@
+# 14 October 2026: the exhaustive fine-resolution pass used to establish the truth list of a reference. The whole file is
+# decoded a second time at 240x135 (independent of the 160x90 cache the detectors read), and EVERY boundary whose coarse
+# difference is above the duplicate floor is measured with global translation removed first (phase correlation), so a fast pan
+# is not mistaken for a replacement. Measures per boundary i (frame i-1 against frame i):
+#   U  content-weighted share of the picture that no small shift explains after global compensation (12x8 blocks, +-5 px)
+#   S  one minus SSIM after global compensation
+#   UZ U after a photometric rescue (blocks equal up to gain and offset, zero-mean normalised cross-correlation >= 0.8, count as
+#      explained: a fade, a flash or a light sweep over a persistent picture is not a replacement), weighted by structure
+#   UA the same share counted by AREA (every block weighs the same: a flat persistent background persists)
+#   UP share of the frame that persists AND carries structure (blocks explained by a shift whose std is not flat): a flat
+#      background that stays does not make the shot persist, a photograph under an overlay does
+#   AP, AC textured area share of the previous and of the current picture; DL share of the previous picture's textured area
+#      that the current picture does not explain (destroyed); NW the same for the current picture (new). A pop-in over a
+#      still-visible picture has NW small and DL small; a replacement has both near 1.
+#   F  corner features lost by Lucas-Kanade (forward-backward, appearance checked) after compensation
+#   FL the same, counted only inside the blocks that block matching could not explain (NaN when none is there to judge)
+#   R  phase-correlation response (1 = a pure translation links the pictures)
+#   E  edge change ratio after compensation: 1 - min(share of previous edges kept, share of current edges kept)
+#   ED share of the previous picture's edges the current picture does not keep (destroyed), EN share of the current picture's
+#      edges the previous one does not have (new), both CHANCE-CORRECTED (14 October 2026: raw shares sit at 0.4 to 0.65 for two
+#      unrelated dense pictures); EDr/ENr the raw shares; NaN when that picture has no structure. D0/D1 their edge densities.
+#      Replacement = both high; a window popping in or closing = one of them low.
+#   CH colour histogram chi-square (8 bins per channel), CL mean absolute 8x8 colour-layout difference
+#   GX, GY  the global translation that was removed
+# FR : passe exhaustive en resolution fine pour fixer la verite : chaque frontiere mesuree apres retrait du mouvement global.
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+import cv2
+import numpy as np
+
+FW, FH = 240, 135
+
+
+def _unexplained(prev: np.ndarray, cur: np.ndarray, radius: int = 5, grid=(16, 9), dark: float = 10 / 255.0,
+                 change: float = 12 / 255.0, tex: float = 8 / 255.0):
+    """Block matching after global compensation. Returns (U content-weighted unexplained share, bad mask of live unexplained
+    blocks, UA area share unexplained, UP area share persistent and textured, and the content destruction measures:
+    AP/AC = textured area share of the previous/current picture, DL = share of the previous picture's textured blocks that the
+    current picture does not explain (content destroyed), NW = share of the current picture's textured blocks that the previous
+    one does not explain (content new))."""
+    gx, gy = grid
+    h, w = cur.shape
+    bh, bw = h // gy, w // gx
+    hh, ww = bh * gy, bw * gx
+    pad = np.pad(prev, radius, mode="edge")
+    best = np.full((gy, gx), np.inf, dtype=np.float32)
+    cc = cur[:hh, :ww]
+    for dy in range(-radius, radius + 1):
+        for dx in range(-radius, radius + 1):
+            d = np.abs(pad[radius + dy:radius + dy + hh, radius + dx:radius + dx + ww] - cc).reshape(gy, bh, gx, bw).mean(axis=(1, 3))
+            np.minimum(best, d, out=best)
+    cb = cc.reshape(gy, bh, gx, bw)
+    pb = prev[:hh, :ww].reshape(gy, bh, gx, bw)
+    sc, sp = cb.std(axis=(1, 3)), pb.std(axis=(1, 3))
+    weight = np.maximum(cb.mean(axis=(1, 3)), pb.mean(axis=(1, 3))) + 0.5 * np.maximum(sc, sp)
+    live = weight >= dark
+    total = float(weight[live].sum())
+    unexp = best >= change
+    bad = live & unexp
+    share = float(weight[bad].sum() / total) if total > 0 else 0.0
+    area = float(unexp.mean())
+    t_cur, t_prev = sc >= tex, sp >= tex
+    persist = float((t_cur & t_prev & ~unexp).mean())
+    ap, ac = float(t_prev.mean()), float(t_cur.mean())
+    dl = float((t_prev & unexp).sum() / t_prev.sum()) if t_prev.sum() else float("nan")
+    nw = float((t_cur & unexp).sum() / t_cur.sum()) if t_cur.sum() else float("nan")
+    # UZ: the same share after a PHOTOMETRIC rescue. A block that the absolute difference calls unexplained is explained if its
+    # structure is the same up to gain and offset (zero-mean normalised cross-correlation >= zncc_min over a +-2 px shift): a
+    # fade, a flash or a light sweep over a persistent picture is not a replacement. Weight = structure (std), so flat blocks
+    # that only changed level never count; NaN when no block carries structure on either side.
+    informative = (t_cur | t_prev)
+    if informative.any():
+        mc = cb.mean(axis=(1, 3))
+        vc = np.maximum((cb * cb).mean(axis=(1, 3)) - mc * mc, 0.0)
+        zbest = np.full((gy, gx), -1.0, dtype=np.float32)
+        r2 = 2
+        pad2 = np.pad(prev, r2, mode="edge")
+        for dy in range(-r2, r2 + 1):
+            for dx in range(-r2, r2 + 1):
+                pp = pad2[r2 + dy:r2 + dy + hh, r2 + dx:r2 + dx + ww].reshape(gy, bh, gx, bw)
+                mp = pp.mean(axis=(1, 3))
+                vp = np.maximum((pp * pp).mean(axis=(1, 3)) - mp * mp, 0.0)
+                cov = (pp * cb).mean(axis=(1, 3)) - mp * mc
+                z = cov / np.sqrt(np.maximum(vp * vc, 1e-10))
+                np.maximum(zbest, z.astype(np.float32), out=zbest)
+        both = t_cur & t_prev
+        explained_z = both & (zbest >= 0.8)
+        wz = np.maximum(sc, sp)
+        bad_z = informative & ~explained_z
+        uz = float(wz[bad_z].sum() / wz[informative].sum())
+    else:
+        uz = float("nan")
+    return share, bad, area, persist, ap, ac, dl, nw, uz
+
+
+def _ssim(a: np.ndarray, b: np.ndarray) -> float:
+    c1, c2 = 0.01 ** 2, 0.03 ** 2
+    k = (7, 7)
+    ma, mb = cv2.blur(a, k), cv2.blur(b, k)
+    saa, sbb, sab = cv2.blur(a * a, k) - ma * ma, cv2.blur(b * b, k) - mb * mb, cv2.blur(a * b, k) - ma * mb
+    return float((((2 * ma * mb + c1) * (2 * sab + c2)) / ((ma * ma + mb * mb + c1) * (saa + sbb + c2))).mean())
+
+
+def _features(p8: np.ndarray, c8: np.ndarray, bad: np.ndarray | None = None) -> tuple[float, float]:
+    """(global loss, local loss): the share of corner features LK cannot follow, over the whole picture and inside the blocks that
+    block matching could not explain. NaN when there is nothing to judge (no corners, or none inside the unexplained blocks)."""
+    pts = cv2.goodFeaturesToTrack(p8, 200, 0.01, 5)
+    if pts is None or len(pts) < 8:
+        return float("nan"), float("nan")
+    fwd, st, _ = cv2.calcOpticalFlowPyrLK(p8, c8, pts, None, winSize=(15, 15), maxLevel=3)
+    back, st2, _ = cv2.calcOpticalFlowPyrLK(c8, p8, fwd, None, winSize=(15, 15), maxLevel=3)
+    err = np.linalg.norm((back - pts).reshape(-1, 2), axis=1)
+    ok = (st.ravel() == 1) & (st2.ravel() == 1) & (err < 0.7)
+    h, w = p8.shape
+    r, a, b = 4, pts.reshape(-1, 2), fwd.reshape(-1, 2)
+    for k in range(len(a)):
+        if not ok[k]:
+            continue
+        x0, y0, x1, y1 = (int(round(v)) for v in (a[k][0], a[k][1], b[k][0], b[k][1]))
+        if min(x0, y0, x1, y1) < r or x0 >= w - r or x1 >= w - r or y0 >= h - r or y1 >= h - r:
+            continue
+        pa = p8[y0 - r:y0 + r + 1, x0 - r:x0 + r + 1].astype(np.int16)
+        pb = c8[y1 - r:y1 + r + 1, x1 - r:x1 + r + 1].astype(np.int16)
+        ok[k] = float(np.abs(pa - pb).mean()) < 14.0  # appearance must agree, not only the forward-backward track
+    glob = float(1.0 - ok.mean())
+    local = float("nan")
+    if bad is not None and bad.any():
+        gy, gx = bad.shape
+        bh, bw = h // gy, w // gx
+        inside = np.array([bad[min(gy - 1, int(y) // bh), min(gx - 1, int(x) // bw)] for x, y in a])
+        if inside.sum() >= 3:
+            local = float(1.0 - ok[inside].mean())
+    return glob, local
+
+
+def _edge_map(gray: np.ndarray) -> np.ndarray:
+    gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+    return np.sqrt(gx * gx + gy * gy) > 0.35   # about 22/255 of gradient per pixel on a Sobel 3x3 response
+
+
+def _edge_keep(e0: np.ndarray, e1: np.ndarray) -> tuple[float, float, float, float, float, float]:
+    """(CHANCE-CORRECTED share of previous edges that the current picture keeps, the same for the current edges against the
+    previous picture, previous edge density, current edge density, raw keep0, raw keep1). A raw share counts an edge pixel as
+    kept when the other picture has an edge within one pixel; two unrelated dense pictures keep about the area share of the
+    dilated edge map by pure chance (measured 0.4 to 0.65 on texture), so the share is corrected as (keep - chance) / (1 -
+    chance) with chance = the dilated edge area of the other picture. NaN when a picture has no structure to judge (fewer than
+    0.4 percent of pixels are edges: a smooth gradient, a blank page, black)."""
+    n0, n1 = int(e0.sum()), int(e1.sum())
+    floor = 0.004 * e0.size
+    k = np.ones((3, 3), np.uint8)
+    d0 = cv2.dilate(e0.astype(np.uint8), k) > 0
+    d1 = cv2.dilate(e1.astype(np.uint8), k) > 0
+    r0 = float(np.logical_and(e0, d1).sum() / n0) if n0 >= floor else float("nan")
+    r1 = float(np.logical_and(e1, d0).sum() / n1) if n1 >= floor else float("nan")
+    c0, c1 = float(d1.mean()), float(d0.mean())
+    keep0 = float(np.clip((r0 - c0) / max(1.0 - c0, 1e-6), 0.0, 1.0)) if not np.isnan(r0) else float("nan")
+    keep1 = float(np.clip((r1 - c1) / max(1.0 - c1, 1e-6), 0.0, 1.0)) if not np.isnan(r1) else float("nan")
+    return keep0, keep1, n0 / e0.size, n1 / e0.size, r0, r1
+
+
+def _hist_chi(a: np.ndarray, b: np.ndarray, bins: int = 8) -> float:
+    def h(x):
+        q = (x.astype(np.int32) * bins) // 256
+        idx = q[..., 0] * bins * bins + q[..., 1] * bins + q[..., 2]
+        v = np.bincount(idx.ravel(), minlength=bins ** 3).astype(np.float64)
+        return v / max(v.sum(), 1.0)
+    h0, h1 = h(a), h(b)
+    den = h0 + h1
+    ok = den > 0
+    return float(0.5 * np.sum((h0[ok] - h1[ok]) ** 2 / den[ok]))
+
+
+def measure_pair(prev_rgb: np.ndarray, cur_rgb: np.ndarray, window: np.ndarray) -> dict:
+    """prev_rgb, cur_rgb: uint8 (135, 240, 3)."""
+    luma = np.array([0.2126, 0.7152, 0.0722], np.float32)
+    prev = (prev_rgb.astype(np.float32) @ luma) / 255.0
+    cur = (cur_rgb.astype(np.float32) @ luma) / 255.0
+    (dx, dy), resp = cv2.phaseCorrelate(prev.astype(np.float64), cur.astype(np.float64), window)
+    use = resp >= 0.12 and (abs(dx) >= 0.5 or abs(dy) >= 0.5) and abs(dx) < FW * 0.45 and abs(dy) < FH * 0.45
+    comp = prev
+    if use:
+        comp = cv2.warpAffine(prev, np.float32([[1, 0, dx], [0, 1, dy]]), (FW, FH), borderMode=cv2.BORDER_REPLICATE)
+    p8, c8 = (comp * 255).astype(np.uint8), (cur * 255).astype(np.uint8)
+    u, bad, ua, up, ap, ac, dl, nw, uz = _unexplained(comp, cur)
+    f, fl = _features(p8, c8, bad)
+    k0, k1, d0, d1, r0, r1 = _edge_keep(_edge_map(comp), _edge_map(cur))
+    e_change = float(1.0 - np.nanmin([k0, k1])) if not (np.isnan(k0) and np.isnan(k1)) else 0.0
+    cl0 = cv2.resize(prev_rgb, (8, 8), interpolation=cv2.INTER_AREA).astype(np.float32) / 255.0
+    cl1 = cv2.resize(cur_rgb, (8, 8), interpolation=cv2.INTER_AREA).astype(np.float32) / 255.0
+    return {"U": u, "UZ": uz, "UA": ua, "UP": up, "AP": ap, "AC": ac, "DL": dl, "NW": nw, "S": 1.0 - _ssim(comp, cur), "F": f, "FL": fl,   # NaN: nothing to judge
+            "R": float(resp), "GX": float(dx) if use else 0.0, "GY": float(dy) if use else 0.0,
+            "MAD": float(np.abs(comp - cur).mean()), "E": e_change, "ED": 1.0 - k0, "EN": 1.0 - k1, "D0": d0, "D1": d1, "EDr": 1.0 - r0, "ENr": 1.0 - r1,
+            "CH": _hist_chi(prev_rgb, cur_rgb), "CL": float(np.abs(cl0 - cl1).mean())}
+
+
+def exhaustive(video: str, need: np.ndarray, threads: int = 2) -> dict:
+    """Stream-decode `video` at 240x135 and measure every boundary i with need[i] True (frame i-1 vs frame i)."""
+    n = len(need)
+    keys = ("U", "UZ", "UA", "UP", "AP", "AC", "DL", "NW", "S", "F", "FL", "R", "GX", "GY", "MAD", "E", "ED", "EN", "D0", "D1", "EDr", "ENr", "CH", "CL")
+    out = {k: np.zeros(n, dtype=np.float32) for k in keys}
+    out["F"][:] = np.nan
+    out["FL"][:] = np.nan
+    out["DL"][:] = np.nan
+    out["ED"][:] = np.nan
+    out["EN"][:] = np.nan
+    out["UZ"][:] = np.nan
+    out["EDr"][:] = np.nan
+    out["ENr"][:] = np.nan
+    out["NW"][:] = np.nan
+    cmd = ["ffmpeg", "-v", "error", "-threads", str(threads), "-i", str(video), "-map", "0:v:0",
+           "-vf", f"scale={FW}:{FH}:flags=area,format=rgb24", "-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    size = FW * FH * 3
+    window = cv2.createHanningWindow((FW, FH), cv2.CV_64F)
+    prev = None
+    i = 0
+    try:
+        while True:
+            raw = proc.stdout.read(size)
+            if len(raw) < size:
+                break
+            cur = np.frombuffer(raw, dtype=np.uint8).reshape(FH, FW, 3)
+            if prev is not None and i < n and need[i]:
+                r = measure_pair(prev, cur, window)
+                for k in keys:
+                    out[k][i] = r[k]
+            prev = cur
+            i += 1
+    finally:
+        proc.stdout.close()
+        proc.wait()
+    out["decoded"] = np.array([i])
+    return out

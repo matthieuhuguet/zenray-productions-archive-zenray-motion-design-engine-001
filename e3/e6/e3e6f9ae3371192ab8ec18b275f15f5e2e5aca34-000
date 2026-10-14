@@ -1,0 +1,116 @@
+# 14 October 2026: the cut-detection panel of the application proven in both directions on a VIDEO WITH KNOWN CUTS in an isolated workshop.
+# GREEN: the interface lists 4 primary and 8 secondary values; a preview changes nothing and counts the shots; a minimum shot length merges the
+# close cuts; adopting writes the new list, keeps the previous one beside it and rebuilds the bible. RED: an unknown name, a value out of range
+# and a bad choice are refused before any job. FR : le panneau de decoupage, prouve dans les deux sens sur une video aux coupes connues.
+import json
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+WORK = Path.home() / ".claude" / "tmp" / ("tmp-zenray-app-rhythm-test-" + os.urandom(3).hex())
+WORK.mkdir(parents=True, exist_ok=True)
+os.environ["ZRMD_PATH_TIMELINES"] = str(WORK / "timelines")
+os.environ["ZRMD_PATH_WORKSHOP"] = str(WORK / "workshop")
+os.environ["ZRMD_PATH_REFCACHE"] = str(WORK / "refcache")
+
+from zrmd.app import api, ingest  # noqa: E402
+
+FAIL = []
+
+
+def check(name, cond, detail=""):
+    print(("ok   " if cond else "FAIL ") + name + (f"  {str(detail)[:240]}" if detail and not cond else ""))
+    if not cond:
+        FAIL.append(name)
+
+
+def get(path, **q):
+    return api.route("GET", path, {k: str(v) for k, v in q.items()})
+
+
+def post(path, body=None):
+    return api.route("POST", path, {}, body or {})
+
+
+def job(r, timeout=600):
+    jid = r["json"]["job"]["id"]
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        j = api.JOBS.get(jid)
+        if j["state"] in ("done", "failed"):
+            return j
+        time.sleep(0.5)
+    raise TimeoutError(jid)
+
+
+def run() -> int:
+    video = WORK / "cuts.mp4"
+    parts = []
+    for i, src in enumerate(("testsrc=s=640x360:r=25:d=4", "smptehdbars=s=640x360:r=25:d=4", "rgbtestsrc=s=640x360:r=25:d=4")):
+        f = WORK / f"p{i}.mp4"
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", src, "-pix_fmt", "yuv420p", str(f)], check=True)
+        parts.append(f)
+    lst = WORK / "list.txt"
+    lst.write_text("".join(f"file '{p}'\n" for p in parts))
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(lst), "-c", "copy", str(video)], check=True)
+    data = video.read_bytes()
+    pos = {"i": 0}
+
+    def raw(n):
+        chunk = data[pos["i"]: pos["i"] + n]
+        pos["i"] += len(chunk)
+        return chunk
+    up = api.route("POST", "/api/v1/media/upload", {"name": "cuts.mp4", "length": str(len(data))}, None, raw)["json"]
+    made = post("/api/v1/project/create", {"upload": up["id"], "title": "Cuts test"})["json"]
+    check("the video becomes a project", made.get("ok") and made["slug"] == "cuts-test", made)
+    slug = made["slug"]
+    ifc = get("/api/v1/rhythm", slug=slug)["json"]
+    check("the interface lists 4 primary and 8 secondary values", len(ifc["interface"]["primary"]) == 4 and len(ifc["interface"]["secondary"]) == 8, ifc.get("error"))
+    check("every value has its default, its kind and a range or choices", all(("min" in r and "max" in r) or r.get("choices") or r["kind"] == "bool"
+                                                                        for t in ("primary", "secondary") for r in ifc["interface"][t]))
+    check("a project that was never cut has no current cut list", ifc["current"] is None)
+    # RED before any job
+    r = post("/api/v1/rhythm/preview", {"slug": slug, "values": {"glitter": 1}})["json"]
+    check("RED: an unknown value is refused and named", r["ok"] is False and "glitter" in r["error"], r)
+    r = post("/api/v1/rhythm/preview", {"slug": slug, "values": {"sensitivity": 7}})["json"]
+    check("RED: a value out of range is refused and named", r["ok"] is False and "sensitivity" in r["error"], r)
+    r = post("/api/v1/rhythm/preview", {"slug": slug, "values": {"flashes": "maybe"}})["json"]
+    check("RED: a bad choice is refused", r["ok"] is False, r)
+    r = post("/api/v1/rhythm/adopt", {"slug": slug, "values": {}})["json"]
+    check("RED: adopting nothing is refused", r["ok"] is False, r)
+    # GREEN: preview with the defaults, then a minimum shot length
+    t0 = time.time()
+    j = job(api.route("POST", "/api/v1/rhythm/preview", {}, {"slug": slug, "values": {"sensitivity": 0.5}}))
+    check("a preview with the defaults finds the two hard cuts (3 shots)", j["state"] == "done" and j["result"]["shots"] == 3, j)
+    print(f"      preview took {time.time() - t0:.1f} s")
+    j2 = job(api.route("POST", "/api/v1/rhythm/preview", {}, {"slug": slug, "values": {"min_shot_s": 5.0}}))
+    check("a minimum shot of 5 s merges the cuts that are 4 s apart (2 shots)", j2["state"] == "done" and j2["result"]["shots"] == 2, j2)
+    check("a preview writes nothing into the project", get("/api/v1/rhythm", slug=slug)["json"]["current"] is None)
+    # adopt: the list is written, the previous one is kept, the bible is rebuilt
+    ja = job(api.route("POST", "/api/v1/rhythm/adopt", {}, {"slug": slug, "values": {"sensitivity": 0.5}}))
+    check("adopting writes the cut list and rebuilds the bible", ja["state"] == "done" and ja["result"]["shots"] == 3, ja)
+    cur = get("/api/v1/rhythm", slug=slug)["json"]["current"]
+    check("the project now has its cut list", cur and cur["shots"] == 3 and cur["values"]["sensitivity"] == 0.5, cur)
+    sc = get("/api/v1/scenes", slug=slug)["json"]
+    check("the scenes follow the adopted cuts", sc["ok"] and sc["total"] == 3, sc.get("total"))
+    jb = job(api.route("POST", "/api/v1/rhythm/adopt", {}, {"slug": slug, "values": {"min_shot_s": 5.0}}))
+    check("a second adoption with a longer minimum shot gives 2 shots", jb["state"] == "done" and jb["result"]["shots"] == 2, jb)
+    analysis = Path(os.environ["ZRMD_PATH_WORKSHOP"]) / "references" / slug / "analysis"
+    kept = sorted(analysis.glob("shots.2*.json"))
+    check("the previous cut list is kept beside the new one", len(kept) >= 1, [p.name for p in kept])
+    print(f"\n{'FAILED: ' + ', '.join(FAIL) if FAIL else 'all checks passed'}")
+    return 1 if FAIL else 0
+
+
+if __name__ == "__main__":
+    code = 1
+    try:
+        code = run()
+    finally:
+        import shutil
+        shutil.rmtree(WORK, ignore_errors=True)
+    sys.exit(code)

@@ -1,0 +1,94 @@
+# 14 October 2026: the evidence matrix of the rhythm module. One row per FILE frame i (the boundary between frame i-1 and frame
+# i), every column an INDEPENDENT physical evidence of a replaced picture, so a decision rule (rhythm_detect) or a learned
+# fusion (rhythm_fusion) reads the same numbers and the method sheet compares them on the same footing.
+#   fine pass (240x135, global translation removed): U UA UP AP AC DL NW S F FL R GX GY MAD E ED EN D0 D1 EDr ENr CH CL
+#   coarse signals (160x90, distinct pictures, spread back to file frames): mad chi ecr ssim phash cld bm flow feat phase
+#                                                                          win2 win4 win8 luma lstd size key
+#   context     each coarse signal over the median of its own +-12 neighbourhood (a cut stands out of its own shot)
+#   return      what happens one and two pictures later: r1 = d(i-1, i+1) / d(i-1, i), r2 = d(i-1, i+2) / d(i-1, i),
+#               q1 = d(i, i+1) / d(i-1, i) (the new picture settles), p1 = d(i-2, i-1) / d(i-1, i) (the old one was calm)
+# A frame that repeats the previous one (duplicate cadence) has all-NaN evidence and need = False.
+# FR : matrice de preuves par frontiere : chaque colonne est une preuve physique independante d'une image remplacee.
+from __future__ import annotations
+
+import numpy as np
+from scipy.ndimage import median_filter
+
+FINE_KEYS = ("U", "UZ", "UA", "UP", "AP", "AC", "DL", "NW", "S", "F", "FL", "R", "GX", "GY", "MAD", "E", "ED", "EN", "D0", "D1", "EDr",
+             "ENr", "CH", "CL")
+COARSE_KEYS = ("mad", "chi", "ecr", "ssim", "phash", "cld", "bm", "flow", "feat", "phase", "win2", "win4", "win8", "size", "key")
+CONTEXT_KEYS = ("mad", "chi", "ecr", "ssim", "phash", "cld", "bm", "flow", "win2", "win4")
+
+
+def _spread(values: np.ndarray, src: np.ndarray, n: int) -> np.ndarray:
+    out = np.full(n, np.nan)
+    out[src] = values
+    return out
+
+
+def _pair(frames, a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Mean absolute RGB difference of frames a and b (index arrays, -1 where the index is out of range), in 0..1."""
+    n = len(frames)
+    out = np.full(len(a), np.nan)
+    ok = (a >= 0) & (b >= 0) & (a < n) & (b < n)
+    idx = np.nonzero(ok)[0]
+    for s in range(0, len(idx), 512):
+        ii = idx[s:s + 512]
+        x = np.asarray(frames[a[ii]], dtype=np.int16)
+        y = np.asarray(frames[b[ii]], dtype=np.int16)
+        out[ii] = np.abs(x - y).mean(axis=(1, 2, 3)) / 255.0
+    return out
+
+
+def matrix(sig: dict, fine: dict, frames) -> dict:
+    """Evidence arrays, all of length n (file frames). `need` marks the boundaries that carry a change at all."""
+    n = len(sig["diff_full"])
+    src = np.asarray(sig["src"])
+    need = np.asarray(fine["need"]).astype(bool)
+    out: dict[str, np.ndarray] = {}
+    for k in FINE_KEYS:
+        out[k] = np.asarray(fine[k], dtype=np.float64) if k in fine else np.full(n, np.nan)
+    for k in COARSE_KEYS:
+        if k in sig:
+            out[f"c_{k}"] = _spread(np.asarray(sig[k], dtype=np.float64), src, n)
+    for k in CONTEXT_KEYS:
+        if k in sig:
+            s = np.asarray(sig[k], dtype=np.float64)
+            base = median_filter(s, size=25, mode="nearest")
+            out[f"x_{k}"] = _spread(s / np.maximum(base, 1e-4), src, n)
+    out["c_luma"] = _spread(np.asarray(sig["luma"], dtype=np.float64), src, n)
+    out["c_lstd"] = _spread(np.asarray(sig["lstd"], dtype=np.float64), src, n)
+    i = np.arange(n)
+    d01 = _pair(frames, i - 1, i)
+    out["d"] = d01
+    den = np.maximum(d01, 1e-4)
+    out["r1"] = _pair(frames, i - 1, i + 1) / den
+    out["r2"] = _pair(frames, i - 1, i + 2) / den
+    out["q1"] = _pair(frames, i, i + 1) / den
+    out["p1"] = _pair(frames, i - 2, i - 1) / den
+    out["s3"] = _pair(frames, i - 1, i + 3) / den
+    out["need"] = need
+    for k in list(out):
+        if k != "need":
+            out[k] = np.where(need, out[k], np.nan)
+    return out
+
+
+def cached(folder, sig: dict, fine: dict, frames, force: bool = False) -> dict:
+    """The evidence matrix of a decoded cache folder, computed once and kept as <folder>/matrix.npz (float32). The file is derived
+    from reference pixels: it stays in the private reference cache beside the decode cache (14 October 2026).
+    FR : la matrice de preuves, calculee une fois et rangee a cote du cache de decodage."""
+    from pathlib import Path
+    path = Path(folder) / "matrix.npz"
+    if path.exists() and not force:
+        z = np.load(path)
+        out = {k: z[k] for k in z.files}
+        out["need"] = out["need"].astype(bool)
+        return {k: (v.astype(np.float64) if v.dtype == np.float32 else v) for k, v in out.items()}
+    mat = matrix(sig, fine, frames)
+    np.savez_compressed(path, **{k: (v if v.dtype == bool else v.astype(np.float32)) for k, v in mat.items()})
+    return mat
+
+
+def stack(mat: dict, keys: list[str]) -> np.ndarray:
+    return np.stack([np.nan_to_num(np.asarray(mat[k], dtype=np.float64), nan=0.0) for k in keys], axis=1)

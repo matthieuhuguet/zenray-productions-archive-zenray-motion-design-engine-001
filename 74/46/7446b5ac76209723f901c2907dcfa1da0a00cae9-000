@@ -1,0 +1,482 @@
+# 14 October 2026: the vector module on a SCENE of any reference. One shot is chosen from the bible (a graphic or a text card
+# first), one frame is grabbed, the part of it that looks most like UI (sharp edges, few colours) is traced by the F2 vectoriser,
+# and every traced layer is sorted so the two modules are never confused:
+#   VECTOR   editable shapes, text outlines, icons, UI components (rect, rounded_rect, circle, line, path ...) -> asset.svg and
+#            component.html (the palette as CSS variables)
+#   SHADER   blur, glow, gradient fields (backgrounds with a linear or radial paint, any layer with an optical blur) -> the shader
+#            bank (shader_hint of each layer says which blocks)
+#   RESIDUAL photograph, texture, anything no primitive or path explains -> a plate, not a vector
+# Reference pixels (the frame, the crop, the side-by-side picture) stay in the reference cache; the workshop keeps only the
+# private 1:1 assets (params.json, svg, html, numbers). FR : le module vecteur sur une scene de n'importe quelle video.
+from __future__ import annotations
+
+import copy
+import json
+import re
+import subprocess
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+from scipy import ndimage as ndi
+
+from zrmd import settings, versions
+from zrmd.vector import asset as A
+
+PARAMS = Path(__file__).resolve().parents[2] / "params" / "vector-scene.json"
+
+
+def cfg() -> dict:
+    return json.loads(PARAMS.read_text(encoding="utf-8"))
+
+
+def _path(template: str, slug: str = "") -> Path:
+    return Path(template.replace("{workshop}", str(settings.path("workshop"))).replace("{refcache}", str(settings.path("refcache"))).replace("{slug}", slug))
+
+
+# ----------------------------------------------------------------------------------------------------------- the scene
+
+def _shot_score(s: dict, w: dict) -> float:
+    return w["textLines"] * len(s.get("text_lines") or []) + w["elementsTracked"] * float(s.get("elements_tracked") or 0) + w["duration"] * float(s.get("duration") or 0)
+
+
+def pick_shot(bible: dict, c: dict | None = None) -> dict | None:
+    """The shot most worth tracing: a graphic or text card with the most text lines and tracked elements, else the longest
+    shot of the fallback families. FR : la scene qui vaut le plus la peine d'etre tracee."""
+    c = c or cfg()["pick"]
+    w = c["scoreWeights"]
+    for families in (c["families"], c["fallbackFamilies"]):
+        pool = [s for s in bible.get("shots", []) if s.get("family") in families]
+        if pool:
+            return max(pool, key=lambda s: _shot_score(s, w))
+    return None
+
+
+def candidate_shots(bible: dict, c: dict | None = None) -> list[dict]:
+    """Shots whose frame is worth looking at, best prior first: the graphic and text-card shots, then a few of the others (a screen
+    recording is labelled a plate and is the best UI there is). The frame itself decides which one is traced.
+    FR : les plans candidats ; l'image elle-meme tranche."""
+    c = c or cfg()["pick"]
+    w = c["scoreWeights"]
+    shots = bible.get("shots", [])
+    pref = sorted([s for s in shots if s.get("family") in c["families"]], key=lambda s: -_shot_score(s, w))[: c["maxShotsPreferred"]]
+    ids = {s["id"] for s in pref}
+    other = sorted([s for s in shots if s["id"] not in ids], key=lambda s: -_shot_score(s, w))[: c["maxShotsOther"]]
+    return pref + other
+
+
+def frame_time(shot: dict) -> float:
+    t = shot.get("text_frame_t")
+    return float(t) if t is not None else round((float(shot["start"]) + float(shot["end"])) / 2, 3)
+
+
+def grab_frame(video: Path, t: float, out: Path) -> np.ndarray:
+    """The frame at time t. 14 October 2026: the time is floored to the millisecond, never rounded. A frame stamped 29.8667 asked at
+    the rounded 29.867 is AFTER the last frame, ffmpeg then exits 0 and writes nothing (motion-opus-5-5, shot S09, the last frame of the
+    video); a missing frame is an error that names the time and the video. FR : temps tronque a la milliseconde, jamais arrondi."""
+    import math
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if out.exists():
+        out.unlink()
+    ts = math.floor(max(0.0, float(t)) * 1000.0 + 1e-6) / 1000.0
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{ts:.3f}", "-i", str(video), "-frames:v", "1", str(out)], check=True, timeout=120)
+    if not out.exists():
+        raise FileNotFoundError(f"no frame at {ts:.3f} s in {Path(video).name} (ffmpeg wrote nothing: the time is past the last frame)")
+    return np.asarray(Image.open(out).convert("RGB"))
+
+
+def colour_bins(rgb: np.ndarray, bits: int, coverage: float) -> int:
+    """How many quantised colours cover `coverage` of the pixels: a UI window needs few, a photograph needs hundreds."""
+    q = (rgb >> (8 - bits)).astype(np.int32)
+    key = (q[..., 0] << (2 * bits)) | (q[..., 1] << bits) | q[..., 2]
+    counts = np.sort(np.bincount(key.ravel()))[::-1]
+    return int(np.searchsorted(np.cumsum(counts) / counts.sum(), coverage) + 1)
+
+
+def sharp_edges(rgb: np.ndarray, contrast_min: float) -> np.ndarray:
+    """Pixels on a SHARP edge: the local range (3 x 3 maximum minus minimum) of the strongest channel is above an ABSOLUTE number of
+    levels. A step, a one pixel line and a glyph stem all pass; a blurred field, a glow, a smooth gradient and compression speckle do
+    not, whatever their relative contrast (the earlier percentile rule always kept the top 10 percent and so picked the steepest part
+    of a blur, and a Sobel response misses a thin line, whose two sides cancel). FR : bords nets, seuil absolu en niveaux."""
+    img = rgb.astype(np.int16)
+    rng = np.zeros(rgb.shape[:2], np.int16)
+    for ch in range(3):
+        rng = np.maximum(rng, ndi.maximum_filter(img[..., ch], size=3) - ndi.minimum_filter(img[..., ch], size=3))
+    return rng >= contrast_min
+
+
+def _box_sum(integral: np.ndarray, x: int, y: int, w: int, h: int) -> int:
+    return int(integral[y + h, x + w] - integral[y, x + w] - integral[y + h, x] + integral[y, x])
+
+
+def edge_objects(edge: np.ndarray, min_px: int) -> dict:
+    """The sharp-edge map as OBJECTS: connected components of the edge map (dilated by one pixel so the two sides of a stroke join),
+    each with its box and its area in edge pixels. Tiny components (grain, compression speckle) are dropped. FR : les objets du
+    plan, un par composante connexe."""
+    lab, n = ndi.label(ndi.binary_dilation(edge, iterations=1), structure=np.ones((3, 3), int))
+    if n == 0:
+        return {"box": np.zeros((0, 4), np.int64), "area": np.zeros(0, np.int64)}
+    count = np.bincount(lab.ravel(), weights=edge.ravel().astype(np.float64), minlength=n + 1)[1:]
+    slices = ndi.find_objects(lab)
+    box = np.array([[sl[1].start, sl[0].start, sl[1].stop, sl[0].stop] for sl in slices], np.int64)
+    keep = count >= min_px
+    return {"box": box[keep], "area": count[keep].astype(np.int64)}
+
+
+def pick_crop(rgb: np.ndarray, c: dict | None = None, text_boxes: list | None = None) -> dict:
+    """The window of WHOLE objects. The frame's sharp edges (absolute Sobel level) are grouped into objects (connected components:
+    a glyph, a card outline, a line); each sliding window, at several scales, scores the edge pixels of the objects it holds
+    entirely, discounted by the objects it cuts (a word sliced through is worse than a word held), by its number of colours (a
+    photograph needs hundreds) and by its object count (grain and paper texture shatter into thousands of tiny objects). Windows
+    over the text boxes of the bible get a bonus and their union is tried as a window of its own. Returns x, y, w, h and the
+    measures of the winner. FR : la fenetre d'objets entiers."""
+    c = c or cfg()["crop"]
+    H, W = rgb.shape[:2]
+    edge = sharp_edges(rgb, c["contrastMin"])
+    obj = edge_objects(edge, c["fragmentMinPx"])
+    bx0, by0, bx1, by1, oa = obj["box"][:, 0], obj["box"][:, 1], obj["box"][:, 2], obj["box"][:, 3], obj["area"]
+    sizes = []
+    for fw, fh in c["windows"]:
+        cw, ch = int(round(W * fw)), int(round(H * fh))
+        if cw * ch > c["maxPixels"]:
+            k = (c["maxPixels"] / float(cw * ch)) ** 0.5
+            cw, ch = int(cw * k), int(ch * k)
+        cw, ch = max(32, min(cw, W)), max(32, min(ch, H))
+        if (cw, ch) not in sizes:
+            sizes.append((cw, ch))
+    boxes = []                                   # text boxes of the bible, in pixels
+    for b in text_boxes or []:
+        bx, by, bw, bh = b
+        boxes.append((int(bx / 100.0 * W), int(by / 100.0 * H), max(1, int(bw / 100.0 * W)), max(1, int(bh / 100.0 * H))))
+    wins = []
+    for cw, ch in sizes:
+        sx, sy = max(8, int(cw * c["strideFrac"])), max(8, int(ch * c["strideFrac"]))
+        for y in (list(range(0, H - ch + 1, sy)) or [0]):
+            for x in (list(range(0, W - cw + 1, sx)) or [0]):
+                wins.append((x, y, cw, ch))
+    if boxes:                                    # the union of the text boxes, padded, as a window of its own
+        x0, y0 = min(b[0] for b in boxes), min(b[1] for b in boxes)
+        x1, y1 = max(b[0] + b[2] for b in boxes), max(b[1] + b[3] for b in boxes)
+        pad = int(c["textPadFrac"] * max(x1 - x0, y1 - y0))
+        ux, uy = max(0, x0 - pad), max(0, y0 - pad)
+        uw, uh = min(W - ux, x1 - x0 + 2 * pad), min(H - uy, y1 - y0 + 2 * pad)
+        if 32 <= uw and 32 <= uh and uw * uh <= c["maxPixels"]:
+            wins.append((ux, uy, uw, uh))
+    ref_area = float(max(cw * ch for cw, ch in sizes))
+    scored = []
+    for x, y, cw, ch in wins:
+        inside = (bx0 >= x) & (by0 >= y) & (bx1 <= x + cw) & (by1 <= y + ch)
+        touch = (bx1 > x) & (bx0 < x + cw) & (by1 > y) & (by0 < y + ch)
+        whole_px = int(oa[inside].sum())
+        if whole_px / float(cw * ch) < c["minEdgeShare"]:
+            continue
+        n_whole = int(inside.sum())
+        n_cut = int((touch & ~inside).sum())
+        scored.append((whole_px, n_whole, n_cut, x, y, cw, ch))
+    scored.sort(key=lambda r: -r[0])
+    best = None
+    for whole_px, n_whole, n_cut, x, y, cw, ch in scored[: c["shortlist"]]:
+        bins = colour_bins(rgb[y:y + ch, x:x + cw], c["colourBinBits"], c["colourCoverage"])
+        cover = 0.0
+        if boxes:
+            area = sum(b[2] * b[3] for b in boxes) or 1
+            cover = sum(max(0, min(x + cw, b[0] + b[2]) - max(x, b[0])) * max(0, min(y + ch, b[1] + b[3]) - max(y, b[1])) for b in boxes) / float(area)
+        score = (whole_px / ref_area) * (1.0 - min(1.0, bins / c["maxColourBins"])) / (1.0 + n_cut / float(c["cutHalf"])) \
+            / (1.0 + n_whole / float(c["fragmentHalf"])) * (1.0 + c["textBonus"] * cover)
+        r = {"x": x, "y": y, "w": cw, "h": ch, "score": float(score), "edgeShare": round(whole_px / float(cw * ch), 5), "colourBins": bins,
+             "objects": n_whole, "cutObjects": n_cut, "textCover": round(cover, 3)}
+        if best is None or r["score"] > best["score"]:
+            best = r
+    if best is None:   # a frame with no sharp-edged object at all: the centre window, reported as such
+        cw, ch = sizes[-1]
+        x, y = (W - cw) // 2, (H - ch) // 2
+        return {"x": x, "y": y, "w": cw, "h": ch, "score": 0.0, "edgeShare": 0.0, "colourBins": colour_bins(rgb[y:y + ch, x:x + cw], c["colourBinBits"], c["colourCoverage"]),
+                "objects": 0, "cutObjects": 0, "textCover": 0.0}
+    return best
+
+
+# ------------------------------------------------------------------------------------------------- vector or shader
+
+def classify(P: dict, an: dict | None, fid: dict | None, cl: dict | None = None) -> dict:
+    """Sort every layer of a traced asset: vector, shader or residual (see the module header), with its area and its score."""
+    cl = cl or cfg()["classes"]
+    per_fid = {l["id"]: l for l in (fid or {}).get("layers", [])}
+    areas, est_blur = {}, {}
+    for z, L in enumerate((an or {}).get("layers", [])):
+        areas[f"L{z:02d}"] = 0.0 if L.get("background") else float(np.asarray(L["alpha"]).sum())
+        est_blur[f"L{z:02d}"] = float(L.get("blur") or 0.0)      # the blur MEASURED on the reference edge, whatever the fit kept
+    frag = cl.get("fragment") or {}
+    layers = []
+    for l in P["layers"]:
+        paint = l.get("paint", {})
+        blur = float((l.get("effects") or {}).get("blur", 0.0))
+        if (l.get("fit") or {}).get("background"):
+            kind = "shader" if paint.get("type") in cl["shaderBackgroundTypes"] else "background"
+            why = f"background with a {paint.get('type')} paint" if kind == "shader" else "flat background colour"
+        elif blur > cl["shaderBlurPx"]:
+            kind, why = "shader", f"optical blur {blur:.2f} px (glow or soft edge)"
+        elif l["kind"] in cl["vectorKinds"]:
+            kind = "vector"
+            why = f"{l['kind']}" + (f" with a {paint.get('type')} gradient paint" if paint.get("type") in cl["shaderBackgroundTypes"] else "")
+        else:
+            kind, why = "residual", f"kind {l['kind']}"
+        # 14 October 2026: a SOFT FRAGMENT is not vector content. A layer whose edge is optically soft on the reference (measured blur
+        # above shaderBlurPx), that is tiny (areaMaxPx) and that the fit does not explain (soft IoU under iouMax, whether the fit kept
+        # a blur or not) is compression residue or shading, not a shape: it is reported RESIDUAL and counted apart. A tiny SHARP layer
+        # that is badly traced stays vector (it is a tracing failure and it lowers the mean). FR : un fragment mou n'est pas du vecteur.
+        iou_l = (per_fid.get(l["id"]) or {}).get("iou")
+        is_fragment = bool(kind == "vector" and frag and iou_l is not None and est_blur.get(l["id"], 0.0) > cl["shaderBlurPx"]
+                           and areas.get(l["id"], 0.0) < frag["areaMaxPx"] and iou_l < frag["iouMax"])
+        # 14 October 2026: a layer that is optically SOFT on the reference and that the sharp fit does NOT explain (soft IoU under
+        # softIouMax) depends on a blur or a glow: it is a shader value, whatever blur the fit ended with (the refinement drops a residual
+        # sigma under blur_min_sigma, so the same soft blob was shader unrefined and vector once refined: x-anabology S44 and kardashev S09,
+        # 80 layers). A soft layer the sharp fit explains is codec softness on a real shape and stays vector. FR : mou et inexplique = shader.
+        soft_unexplained = bool(kind == "vector" and not is_fragment and iou_l is not None and est_blur.get(l["id"], 0.0) > cl["shaderBlurPx"]
+                                and iou_l < cl.get("softIouMax", 0.0))
+        if is_fragment:
+            kind = "residual"
+            why = (f"soft fragment: optical blur {est_blur[l['id']]:.2f} px on the reference, {areas[l['id']]:.0f} px of area, "
+                   f"soft IoU {iou_l:.2f}: no sharp path or blur explains it")
+        elif soft_unexplained:
+            kind = "shader"
+            why = (f"soft on the reference (blur {est_blur[l['id']]:.2f} px measured), the sharp fit explains it at soft IoU {iou_l:.2f}: "
+                   f"a blur or glow value, not a shape")
+        row = {"id": l["id"], "class": kind, "kind": l["kind"], "why": why, "area": areas.get(l["id"], 0.0),
+               "shader_hint": l.get("shader_hint") if kind == "shader" else None, "unrefined": bool((l.get("fit") or {}).get("unrefined"))}
+        if is_fragment:
+            row["fragment"] = True
+        if l["id"] in per_fid:
+            row.update(iou=per_fid[l["id"]].get("iou"), edge_mean=per_fid[l["id"]].get("edge_mean"), ok=per_fid[l["id"]].get("ok"))
+        layers.append(row)
+    for r in (P.get("trace") or {}).get("rejected", []):  # layers no primitive or path explained: a plate, not a vector
+        speck = r.get("kind") == "speck"
+        layers.append({"id": f"L{r['z']:02d}", "class": "residual", "kind": r.get("kind") or "rejected",
+                       "why": "speck under the tracing floor (grain, compression noise)" if speck else "no primitive or path explains it",
+                       "area": areas.get(f"L{r['z']:02d}", 0.0), "speck": speck})
+    total = sum(r["area"] for r in layers if r["class"] != "background") or 1.0
+    share = {k: round(sum(r["area"] for r in layers if r["class"] == k) / total, 4) for k in ("vector", "shader", "residual")}
+    vec = [r for r in layers if r["class"] == "vector" and r.get("iou") is not None]
+    wsum = sum(r["area"] for r in vec)
+    ref = [r for r in vec if not r.get("unrefined")]
+    return {"layers": layers, "share": share, "counts": {k: sum(1 for r in layers if r["class"] == k) for k in ("vector", "shader", "residual", "background")},
+            "specks": sum(1 for r in layers if r.get("speck")), "fragments": sum(1 for r in layers if r.get("fragment")),
+            "unrefined": sum(1 for r in vec if r.get("unrefined")),
+            # three readings of the same layers: the plain mean (what the orchestrator reads), the area-weighted mean (a speck does not
+            # weigh as much as a card), and the mean over the fully fitted layers only. FR : trois lectures des memes couches.
+            "vectorLayerIouMean": round(float(np.mean([r["iou"] for r in vec])), 4) if vec else None,
+            "vectorLayerIouArea": round(float(sum(r["iou"] * r["area"] for r in vec) / wsum), 4) if vec and wsum > 0 else None,
+            "vectorLayerIouRefined": round(float(np.mean([r["iou"] for r in ref])), 4) if ref else None,
+            "vectorLayersOk": f"{sum(1 for r in vec if r.get('ok'))}/{len(vec)}"}
+
+
+def verdict(cls: dict, fid: dict, v: dict | None = None) -> dict:
+    v = v or cfg()["verdict"]
+    explained = round(1.0 - float((fid.get("colour") or {}).get("share_over_16", 1.0)), 4)
+    vector_ok = (cls["share"]["vector"] >= v["vectorShareMin"]) and explained >= v["explainedMin"]
+    kinds = [k for k in ("vector", "shader", "residual") if cls["share"][k] >= 0.15]
+    return {"explained": explained, "vectorShare": cls["share"]["vector"], "isVectorScene": bool(vector_ok),
+            "dominant": kinds or ["background only"],
+            "reading": ("UI, text and shapes as editable vectors" if vector_ok else
+                        "mostly shader or photographic content: the vector part is only the shapes listed as vector")}
+
+
+# ---------------------------------------------------------------------------------------------------------- HTML export
+
+def export_html(P: dict, title: str = "", fonts: dict | None = None) -> str:
+    """The traced asset as an HTML component: the SVG inline, its palette as CSS variables (--c0, --c1 ...) so a colour changes in one
+    place, the layer names kept as ids. Opens anywhere, without the engine. With `fonts` ({text layer id: font url}) the text layers
+    are live <text> elements: ZRMD.setText("T00", "Other") refits the string to the traced width, ?T00=Other in the address does the
+    same, ZRMD.setColour("c0", "#ff6a2b") changes a colour. Without it they are glyph outlines (no font needed).
+    14 October 2026: every colour is named at cook time as var(--key) (two keys that hold the same hex are two parameters, the old hex
+    search-and-replace merged them), each text layer owns its colour entry, the live text sits inside the view group (scale, offset,
+    rotation, opacity follow), the V1 parameter interface (zrmd/vector/v1.py) is embedded with the values of THIS component, and
+    ZRMD.set(name, value) applies the parameters that need no re-cook (?panel=1 shows them as a panel).
+    FR : l'actif comme composant HTML, texte et couleurs parametrables."""
+    from zrmd.vector import texts as TX
+    from zrmd.vector import v1 as V1
+    P = V1.decouple_text_colours(P)
+    texts = P.get("texts") or []
+    if texts and fonts:
+        live = [t for t in texts if t["id"] in fonts and t.get("visible", True) is not False]     # a hidden layer is not drawn
+        P_static = {**P, "texts": [t for t in texts if t["id"] not in fonts]}
+        pal = P.get("palette", {})
+        live_markup = "".join(TX.cook_live(t, pal, fonts[t["id"]], css=True) for t in live)
+        svg = A.cook_svg(P_static, css_vars=True, live=live_markup, view_group=True)
+    else:
+        live = []
+        svg = A.cook_svg(P, css_vars=True, view_group=True)
+    pal = P.get("palette", {})
+    root = ";".join(f"--{k}:{v}" for k, v in pal.items())
+    w, h = P["canvas"]["width"], P["canvas"]["height"]
+    ow, oh = A.output_size(P)
+    faces = TX.font_faces(live, fonts or {}) if live else ""
+    iface_v1 = V1.interface(P)
+    rows = {r["name"]: r for t in V1.TIERS for r in iface_v1[t]}
+    script = (f"<script>window.ZRMD_IFACE={json.dumps(iface_v1, ensure_ascii=False)};{TX.live_script(live, rows, A.view_of(P), (w, h))}</script>"
+              if live else "")      # a static component (glyph outlines) stays script free: the embedded interface is data for the host page
+    iface = json.dumps({**(TX.interface(P) if texts else {}), "v1": iface_v1}, ensure_ascii=False)
+    return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{title or P.get("asset", "component")}</title>'
+            f'<style>{faces}:root{{{root}}} body{{margin:0;background:#101010;display:grid;place-items:center;min-height:100vh}} '
+            f'svg{{width:min(100vw,{ow}px);height:auto;aspect-ratio:{w}/{h}}}</style></head><body>{svg}'
+            f'<script type="application/json" id="zrmd-interface">{iface}</script>{script}</body></html>')
+
+
+# ------------------------------------------------------------------------------------------------------------ the run
+
+def text_variant(P: dict, an: dict, piece: np.ndarray, ranking: list | None, tc: dict) -> dict | None:
+    """The text-editable variant of a traced scene: the lines of text found in the crop become text layers (font, size, tracking and
+    baseline fitted on the matte of the line), and the traced glyph layers that sit inside a kept line are hidden (not deleted: the
+    exact trace stays in the version before). Returns {params, report} or None when no line is kept. FR : la variante au texte editable."""
+    from zrmd.vector import texts as TX
+    found = TX.detect_layers(piece, ranking, 0, P.get("palette", {}), tc)
+    if not found["layers"]:
+        return {"params": None, "report": found["report"]}
+    P2 = copy.deepcopy(P)
+    P2["palette"].update(found["palette"])
+    P2["texts"] = found["layers"]
+    hidden = []
+    boxes = [(r["box"], r["id"]) for r in found["report"] if r.get("kept")]
+    for z, L in enumerate(an.get("layers", [])):
+        if L.get("background"):
+            continue
+        ys, xs = np.nonzero(np.asarray(L["alpha"]) > 0.5)
+        if len(xs) == 0:
+            continue
+        for (bx, by, bw, bh), tid in boxes:
+            pad = max(4, int(0.15 * bh))
+            if xs.min() >= bx - pad and xs.max() <= bx + bw + pad and ys.min() >= by - pad and ys.max() <= by + bh + pad:
+                for l in P2["layers"]:
+                    if l["id"] == f"L{z:02d}":
+                        l["visible"] = False
+                        hidden.append(l["id"])
+                break
+    P2["variant"] = {"kind": "text-editable", "hidden_layers": hidden, "text_layers": [t["id"] for t in found["layers"]]}
+    return {"params": P2, "report": found["report"]}
+
+
+def analyse_frame(rgb: np.ndarray, name: str, out_dir: Path, source: dict, compare_dir: Path | None = None, crop: dict | None = None,
+                  budget: dict | None = None, text_boxes: list | None = None, ranking: list | None = None, texts_cfg: dict | None = None) -> dict:
+    """Pick the UI window of a frame, trace it (under the cost budget when one is given), sort the layers, write the private asset
+    and the numbers. FR : trace la fenetre d'objets et classe les couches."""
+    import time
+    t_start = time.time()
+    crop = crop or pick_crop(rgb, text_boxes=text_boxes)
+    x, y, w, h = crop["x"], crop["y"], crop["w"], crop["h"]
+    piece = rgb[y:y + h, x:x + w]
+    vcfg = {**A._cfg(), "budget": budget} if budget else None
+    t_trace = time.time()
+    res = A.vectorise(piece, name, source={**source, "kind": "reference-crop", "region": [x, y, w, h], "placement_px": [x, y], "canvas": [rgb.shape[1], rgb.shape[0]]},
+                      cfg=vcfg)
+    P, an = res["params"], res["analysis"]
+    t_eval = time.time()
+    fid = A.evaluate(P, piece, an, cfg=vcfg)
+    t_eval_end = time.time()
+    cls = classify(P, an, fid)
+    ver = verdict(cls, fid)
+    folder = A.write_version(out_dir / "asset", P, piece, fid, parent=None, note=f"vector scene {name}")
+    (folder / "component.html").write_text(export_html(P, name), encoding="utf-8")
+    summary = {"asset": name, "version": folder.name, "crop": crop, "layers": len(P["layers"]), "classes": cls, "colour": fid["colour"], "verdict": ver,
+               "budget": budget, "rights": P.get("rights"), "dir": str(folder), "date": versions.stamp()}
+    t_texts = time.time()
+    if texts_cfg and texts_cfg.get("enabled"):
+        from zrmd.vector import texts as TX
+        tv = text_variant(P, an, piece, ranking, texts_cfg)
+        summary["texts"] = tv["report"]
+        if tv["params"] is not None:
+            vf = A.write_version(out_dir / "asset", tv["params"], None, None, parent=folder.name, note=f"text-editable variant of {folder.name}")
+            urls = TX.ship_fonts(tv["params"], vf)
+            (vf / "component.html").write_text(export_html(tv["params"], name, fonts=urls), encoding="utf-8")
+            summary["textVariant"] = {"version": vf.name, "dir": str(vf), "layers": [t["id"] for t in tv["params"]["texts"]],
+                                      "hidden": tv["params"]["variant"]["hidden_layers"]}
+    # the cost of the scene, read from the numbers: wall seconds of each stage and the CPU seconds the layers spent (zrmd.vector.asset)
+    summary["timing"] = {"cropS": round(t_trace - t_start, 1), "traceS": round(t_eval - t_trace, 1), "evaluateS": round(t_eval_end - t_eval, 1),
+                         "textsS": round(time.time() - t_texts, 1), "totalS": round(time.time() - t_start, 1), "cost": (P.get("trace") or {}).get("cost")}
+    (folder / "scene.json").write_text(json.dumps(summary, indent=1, default=float), encoding="utf-8")
+    if compare_dir is not None:  # reference pixels: reference cache only, never the workshop
+        compare_dir.mkdir(parents=True, exist_ok=True)
+        render = np.asarray(Image.open(folder / "render.png").convert("RGB"))
+        err = np.clip(np.abs(render.astype(float) - piece.astype(float)).mean(axis=2) * 4, 0, 255).astype(np.uint8)
+        sheet = np.concatenate([piece, render, np.repeat(err[..., None], 3, axis=2)], axis=1)
+        Image.fromarray(sheet).save(compare_dir / f"compare-{name}.png")
+    return summary
+
+
+def run_scene(slug: str, shot: str | None = None, budget: dict | None = None) -> dict:
+    """One reference, one scene: bible -> candidate shots -> frames -> the frame with the most whole sharp objects -> window ->
+    trace under the budget -> classes -> private asset. A reference whose sampled frames have no sharp-edged object at all (black,
+    blur, photograph) is reported NOT APPLICABLE, which is neither a pass nor a failure. FR : une scene par reference."""
+    ws = settings.path("workshop")
+    bible_path = ws / "references" / slug / "bible.json"
+    meta_path = ws / "references" / slug / "reference.json"
+    if not bible_path.exists() or not meta_path.exists():
+        return {"slug": slug, "applicable": False, "skipped": "no bible (no picture analysis for this reference: music only)"}
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    video = settings.path("refcache") / slug / meta["file_name"]
+    bible = json.loads(bible_path.read_text(encoding="utf-8"))
+    c = cfg()
+    if budget:      # a run-time override of params/vector-scene.json "budget", e.g. {"sceneCpuS": 3000}; the numbers it used are kept in scene.json
+        c["budget"] = {**c["budget"], **budget}
+    if shot:
+        shots = [s for s in bible["shots"] if s["id"] == shot]
+    else:
+        shots = candidate_shots(bible, c["pick"])
+    if not shots:
+        return {"slug": slug, "applicable": False, "skipped": "the bible has no shot"}
+    frames = _path(c["paths"]["frames"], slug)
+    tried = []
+    for sh in shots:
+        t = frame_time(sh)
+        rgb = grab_frame(video, t, frames / f"frame-{sh['id']}.png")
+        boxes = [tl["box_pct"] for tl in (sh.get("text_lines") or []) if tl.get("box_pct")]
+        crop = pick_crop(rgb, c["crop"], boxes)
+        tried.append({"shot": sh["id"], "family": sh.get("family"), "time_s": t, "score": crop["score"], "crop": crop, "_rgb": rgb, "_shot": sh, "_boxes": boxes})
+    best = max(tried, key=lambda r: r["score"])
+    listing = [{k: v for k, v in r.items() if not k.startswith("_")} for r in tried]
+    if best["score"] < c["pick"]["minCropScore"]:
+        res = {"slug": slug, "applicable": False, "candidates": listing,
+               "skipped": f"no sharp-edged object in {len(tried)} sampled frames (black, blurred or photographic): not applicable to the vector module"}
+        _path(c["paths"]["out"], slug).mkdir(parents=True, exist_ok=True)
+        (_path(c["paths"]["out"], slug) / "scene.json").write_text(json.dumps(res, indent=1, default=float), encoding="utf-8")
+        return res
+    chosen = best["_shot"]
+    out_dir = _path(c["paths"]["out"], slug) / chosen["id"]
+    summary = analyse_frame(best["_rgb"], f"{slug}-{chosen['id']}", out_dir, {"slug": slug, "shot": chosen["id"], "time_s": best["time_s"]},
+                            compare_dir=frames, crop=best["crop"], budget=c["budget"], text_boxes=best["_boxes"],
+                            ranking=((bible.get("font_match") or {}).get("ranking")), texts_cfg=c.get("texts"))
+    summary.update(slug=slug, applicable=True, shot=chosen["id"], family=chosen.get("family"), time_s=best["time_s"], description=chosen.get("description"),
+                   candidates=listing)
+    (_path(c["paths"]["out"], slug) / "scene.json").write_text(json.dumps(summary, indent=1, default=float), encoding="utf-8")
+    return summary
+
+
+def reevaluate(slug: str) -> dict:
+    """Measure an already traced scene again with the CURRENT measurement and classification code, without tracing it again: the
+    traced params.json and the frame stay, the analysis of the crop is recomputed (deterministic), every layer is rendered and
+    measured, the layers are sorted, the verdict is written back to scene.json with the numbers it replaces kept under `before`.
+    A change of the measure (the occluder margin of the edge distance, the soft fragment class) is applied to every scene in minutes
+    instead of rerunning the trace. FR : remesure une scene deja tracee, sans la retracer."""
+    import time
+    f = _path(cfg()["paths"]["out"], slug) / "scene.json"
+    d = json.loads(f.read_text(encoding="utf-8"))
+    if d.get("applicable") is False or "classes" not in d:
+        return {"slug": slug, "applicable": False, "skipped": d.get("skipped")}
+    t0 = time.time()
+    P = json.loads((Path(d["dir"]) / "params.json").read_text(encoding="utf-8"))
+    frame_file = _path(cfg()["paths"]["frames"], slug) / f"frame-{d['shot']}.png"
+    if frame_file.exists():
+        rgb = np.asarray(Image.open(frame_file).convert("RGB"))
+    else:
+        meta = json.loads((settings.path("workshop") / "references" / slug / "reference.json").read_text(encoding="utf-8"))
+        rgb = grab_frame(settings.path("refcache") / slug / meta["file_name"], float(d["time_s"]), frame_file)
+    c = d["crop"]
+    piece = rgb[c["y"]:c["y"] + c["h"], c["x"]:c["x"] + c["w"]]
+    an = A.analyse(piece)
+    fid = A.evaluate(P, piece, an)
+    cls = classify(P, an, fid)
+    ver = verdict(cls, fid)
+    d.setdefault("before", {"date": d.get("date"), "vectorLayerIouMean": d["classes"].get("vectorLayerIouMean"), "vectorLayersOk": d["classes"].get("vectorLayersOk"),
+                            "share": d["classes"].get("share"), "explained": d["verdict"].get("explained")})
+    d.update(classes=cls, verdict=ver, colour=fid["colour"], reevaluated=versions.stamp(), reevaluateS=round(time.time() - t0, 1))
+    f.write_text(json.dumps(d, indent=1, default=float), encoding="utf-8")
+    return {"slug": slug, "applicable": True, "shot": d["shot"], "share": cls["share"], "fragments": cls.get("fragments"),
+            "vectorLayersOk": cls["vectorLayersOk"], "vectorLayerIouMean": cls["vectorLayerIouMean"], "before": d["before"], "seconds": round(time.time() - t0, 1)}

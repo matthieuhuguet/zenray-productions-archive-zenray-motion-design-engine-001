@@ -1,0 +1,206 @@
+{
+ "schema": "zrmd/music-studio@1",
+ "date": "14 October 2026",
+ "doc": "Interface of Scripts/MusicStudio.py (HDA law): the twelve procedural values (4 primary and 8 secondary, see params/v1-tiers.json) a person changes to make a variation of a music track, and how each one reaches the engine. mode 'render' = the engine re-renders the track from params.json (about half a minute, the reference stays unreachable); mode 'live' = also previewed instantly in the browser on the rendered stems, exact at the next render. apply.kind: tempo, transpose, stemGain, voiceMacro (every voice that has the macro), voiceMacroScale (multiplies the macro of tonal voices). FR : les huit valeurs procedurales d'une variation musicale et la facon dont chacune atteint le moteur. voiceMacroFor: adds (op add) or multiplies (op scale) a macro of NAMED voices from the voice's own calibrated value, so a calibrated voice keeps its character.",
+ "server": {
+  "host": "127.0.0.1",
+  "port": 3105,
+  "clientHeader": "x-zr-studio-client",
+  "clientValue": "1",
+  "renderTimeoutS": 900
+ },
+ "paths": {
+  "scratch": "{workshop}/studio"
+ },
+ "referenceUnreachable": "/nonexistent",
+ "sliders": [
+  {
+   "id": "bpm",
+   "label": "Tempo",
+   "unit": "bpm",
+   "min": 60,
+   "max": 180,
+   "step": 0.5,
+   "mode": "render",
+   "apply": {
+    "kind": "tempo"
+   }
+  },
+  {
+   "id": "transpose",
+   "label": "Transposition",
+   "unit": "demi-tons",
+   "min": -12,
+   "max": 12,
+   "step": 1,
+   "default": 0,
+   "mode": "render",
+   "apply": {
+    "kind": "transpose"
+   }
+  },
+  {
+   "id": "release",
+   "label": "Longueur des notes",
+   "unit": "x",
+   "min": 0.3,
+   "max": 3.0,
+   "step": 0.05,
+   "default": 1.0,
+   "mode": "render",
+   "apply": {
+    "kind": "voiceMacroScale",
+    "macro": "releaseS"
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie",
+   "unit": "dB",
+   "min": -12,
+   "max": 12,
+   "step": 0.5,
+   "default": 0,
+   "mode": "live",
+   "apply": {
+    "kind": "stemGain",
+    "stem": "drums"
+   }
+  },
+  {
+   "id": "bass",
+   "label": "Basse",
+   "unit": "dB",
+   "min": -12,
+   "max": 12,
+   "step": 0.5,
+   "default": 0,
+   "mode": "live",
+   "apply": {
+    "kind": "stemGain",
+    "stem": "bass"
+   }
+  },
+  {
+   "id": "other",
+   "label": "Nappes et harmonie",
+   "unit": "dB",
+   "min": -12,
+   "max": 12,
+   "step": 0.5,
+   "default": 0,
+   "mode": "live",
+   "apply": {
+    "kind": "stemGain",
+    "stem": "other"
+   }
+  },
+  {
+   "id": "vocals",
+   "label": "Voix",
+   "unit": "dB",
+   "min": -12,
+   "max": 12,
+   "step": 0.5,
+   "default": 0,
+   "mode": "live",
+   "apply": {
+    "kind": "stemGain",
+    "stem": "vocals"
+   }
+  },
+  {
+   "id": "tilt",
+   "label": "Brillance",
+   "unit": "dB/octave",
+   "min": -6,
+   "max": 6,
+   "step": 0.25,
+   "default": 0,
+   "mode": "live",
+   "apply": {
+    "kind": "voiceMacro",
+    "macro": "tiltDbOct"
+   }
+  },
+  {
+   "id": "kick",
+   "label": "Grosse caisse",
+   "unit": "dB",
+   "min": -12,
+   "max": 12,
+   "step": 0.5,
+   "default": 0,
+   "mode": "render",
+   "apply": {
+    "kind": "voiceMacroFor",
+    "voices": [
+     "kick"
+    ],
+    "macro": "gainDb",
+    "op": "add"
+   }
+  },
+  {
+   "id": "snareClap",
+   "label": "Caisse claire et clap",
+   "unit": "dB",
+   "min": -12,
+   "max": 12,
+   "step": 0.5,
+   "default": 0,
+   "mode": "render",
+   "apply": {
+    "kind": "voiceMacroFor",
+    "voices": [
+     "snare",
+     "clap"
+    ],
+    "macro": "gainDb",
+    "op": "add"
+   }
+  },
+  {
+   "id": "hats",
+   "label": "Charleston",
+   "unit": "dB",
+   "min": -12,
+   "max": 12,
+   "step": 0.5,
+   "default": 0,
+   "mode": "render",
+   "apply": {
+    "kind": "voiceMacroFor",
+    "voices": [
+     "hatClosed",
+     "hatOpen"
+    ],
+    "macro": "gainDb",
+    "op": "add"
+   }
+  },
+  {
+   "id": "drumLength",
+   "label": "Durée des percussions",
+   "unit": "x",
+   "min": 0.5,
+   "max": 2.0,
+   "step": 0.05,
+   "default": 1.0,
+   "mode": "render",
+   "apply": {
+    "kind": "voiceMacroFor",
+    "voices": [
+     "kick",
+     "snare",
+     "clap",
+     "hatClosed",
+     "hatOpen"
+    ],
+    "macro": "timeScale",
+    "op": "scale"
+   }
+  }
+ ],
+ "maxSliders": 12
+}

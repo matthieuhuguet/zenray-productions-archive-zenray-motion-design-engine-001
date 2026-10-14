@@ -1,0 +1,187 @@
+# 14 October 2026: the method sheet of the rhythm module, as code. Every method is run through the SAME four phases and is
+# scored after each of them against the same truth, so two methods are compared on their principle and nothing else:
+#   P1 signal      a number per picture boundary from the method's principle (scored: area under the ROC curve of true cuts
+#                  against every other boundary, traps included);
+#   P2 candidates  adaptive or global peak picking on that signal (scored: F1 at +-1 frame);
+#   P3 verify      persistence, flash return and isolation (scored: F1 at +-1 frame);
+#   P4 place       exact frame, transitions by their middle (scored: F1 at 0 frame and +-1 frame).
+# Thresholds of P2 are tuned per method on the TRAIN videos only; the sheet reports TEST videos separately.
+# FR : la feuille de methodes en code : memes quatre phases pour chaque methode, meme verite, seuils regles sur l'entrainement.
+from __future__ import annotations
+
+import numpy as np
+from scipy.ndimage import maximum_filter1d, median_filter
+
+from . import rhythm_core as C
+from . import rhythm_eval as E
+
+# id, label, principle (one line), signal key or special
+SIGNAL_METHODS = [
+    ("M01", "pixel-mad-global", "mean absolute luma difference of adjacent pictures against ONE fixed threshold", "mad", "global"),
+    ("M02", "pixel-mad-adaptive", "the same difference against the median of its own neighbourhood", "mad", "adaptive"),
+    ("M03", "histogram-chi", "global colour histogram chi-square distance (ignores where colours are)", "chi", "adaptive"),
+    ("M04", "edge-change-ratio", "share of edge pixels that appear or disappear (structure, not intensity)", "ecr", "adaptive"),
+    ("M05", "ssim", "one minus structural similarity (luminance, contrast and structure terms)", "ssim", "adaptive"),
+    ("M06", "perceptual-hash", "Hamming distance of 63-bit DCT sign hashes (compact global structure)", "phash", "adaptive"),
+    ("M07", "colour-layout", "L1 distance of the 8x8 mean-colour layout (where the colours sit)", "cld", "adaptive"),
+    ("M08", "block-match-unexplained", "content-weighted share of picture no small shift of the previous picture explains", "bm", "adaptive"),
+    ("M09", "flow-residual", "Farneback dense flow compensation residual (motion explains it or not)", "flow", "adaptive"),
+    ("M10", "feature-survival", "corner features that Lucas-Kanade tracks forward and back (loss = new picture)", "feat", "adaptive"),
+    ("M11", "phase-correlation", "one minus the phase correlation peak (no global translation links the pictures)", "phase", "adaptive"),
+    ("M12", "spike-second-difference", "adjacent difference divided by its larger neighbour (a cut is a one-boundary spike)", "spike", "adaptive"),
+    ("M13", "window-between", "distance between the means of k pictures after and k before, k = 2, 4, 8", "winmax", "adaptive"),
+    ("M14", "codec-packet-size", "compressed size of each picture against its local median (prediction failed)", "size", "adaptive"),
+    ("M15", "codec-keyframe", "the encoder's own key-frame decision (scene-cut detection of x264)", "key", "global"),
+]
+SPAN_METHODS = [
+    ("M16", "dissolve-linear-fit", "cross-fade model: middle pictures are a convex mix of the end pictures (path straightness + residual)", "dissolve"),
+    ("M17", "luma-envelope-fade", "run of flat very dark or very bright pictures between two different pictures", "fade"),
+    ("M18", "whip-sharpness-collapse", "gradient energy collapses for a few pictures between two different pictures", "whip"),
+]
+
+
+def signal_of(ctx: C.Ctx, key: str) -> np.ndarray:
+    sig = ctx.sig
+    if key == "spike":
+        s = np.asarray(sig["mad"], dtype=np.float64)
+        nb = np.maximum(np.roll(s, 1), np.roll(s, -1))
+        out = np.where(s > 0, s / np.maximum(nb, 1e-4), 0.0)
+        out[0] = 0.0
+        # a spike ratio alone fires on noise: weight by magnitude so that tiny differences never rank high
+        return np.minimum(out, 50.0) * np.minimum(s / 0.02, 1.0)
+    if key == "winmax":
+        parts = []
+        for k in ("win2", "win4", "win8"):
+            w = np.asarray(sig[k], dtype=np.float64)
+            parts.append(w / max(float(np.quantile(w, 0.99)), 1e-6))
+        return np.max(parts, axis=0)
+    return np.asarray(sig[key], dtype=np.float64)
+
+
+def snap(ctx: C.Ctx, j: int, rad: int) -> int:
+    """P4 placement: the boundary of largest adjacent difference within +-rad pictures of a windowed peak."""
+    lo, hi = max(1, j - rad), min(ctx.m, j + rad + 1)
+    s = np.asarray(ctx.sig["mad"])[lo:hi]
+    return int(lo + int(np.argmax(s))) if len(s) else j
+
+
+def p1_auc(ctx: C.Ctx, s: np.ndarray, truth: list[dict]) -> float:
+    """AUC of true hard-cut boundaries against every other boundary, leaving transition intervals and region events neutral."""
+    pos = []
+    neutral = np.zeros(ctx.m, bool)
+    for t in truth:
+        if t["kind"] == "hard":
+            pos.append(ctx.frame_to_j(t["frame"]))
+        elif t["kind"] in ("dissolve", "fade", "whip"):
+            a, b = ctx.frame_to_j(t["start"]), ctx.frame_to_j(t["end"]) + 1
+            neutral[max(0, a - 1):min(ctx.m, b + 1)] = True
+        elif t["kind"] == "region":
+            j = ctx.frame_to_j(t["frame"])
+            neutral[max(0, j - 1):j + 2] = True
+    pos = sorted(set(p for p in pos if 1 <= p < ctx.m))
+    if not pos:
+        return float("nan")
+    near = np.zeros(ctx.m, bool)
+    for p in pos:
+        near[max(0, p - 1):p + 2] = True
+    neg_mask = ~(near | neutral)
+    neg_mask[0] = False
+    neg = s[neg_mask]
+    posv = s[pos]
+    if len(neg) == 0:
+        return float("nan")
+    # rank-based AUC (ties count half)
+    allv = np.concatenate([posv, neg])
+    order = allv.argsort(kind="mergesort")
+    ranks = np.empty(len(allv))
+    sv = allv[order]
+    i = 0
+    r = np.empty(len(allv))
+    while i < len(sv):
+        k = i
+        while k + 1 < len(sv) and sv[k + 1] == sv[i]:
+            k += 1
+        r[i:k + 1] = (i + k) / 2.0 + 1
+        i = k + 1
+    ranks[order] = r
+    return float((ranks[:len(posv)].sum() - len(posv) * (len(posv) + 1) / 2) / (len(posv) * len(neg)))
+
+
+def run_signal_method(ctx: C.Ctx, key: str, picker: str, params: dict, snap_rad: int = 0) -> dict:
+    s = signal_of(ctx, key)
+    if picker == "global":
+        cands = C.global_candidates(s, params["abs_min"])
+        if key == "key":
+            kf = np.nonzero(np.asarray(ctx.sig["key"]) > 0)[0]
+            cands = kf[kf > 0]
+    else:
+        cands = C.peak_candidates(s, half=params.get("half", 12), ratio_min=params["ratio_min"], abs_min=params["abs_min"])
+    p2 = [{"frame": int(ctx.src[j]), "kind": "hard"} for j in cands]
+    if picker == "global" and key != "key":
+        kept = [{"j": int(j), "kind": "hard", "score": float(s[j])} for j in cands]   # M01 is the unverified classic
+    else:
+        kept = C.verify_hard(ctx, cands, persist_min=params.get("persist_min", 0.02))
+    p3 = [{"frame": int(ctx.src[k["j"]]), "kind": k["kind"]} for k in kept]
+    final = []
+    for k in kept:
+        if k["kind"] != "hard":
+            continue
+        j = snap(ctx, k["j"], snap_rad) if snap_rad else k["j"]
+        final.append({"frame": int(ctx.src[j]), "kind": "hard"})
+    # one cut per picture boundary
+    seen, p4 = set(), []
+    for c in final:
+        if c["frame"] not in seen:
+            seen.add(c["frame"])
+            p4.append(c)
+    return {"s": s, "p2": p2, "p3": [c for c in p3 if c["kind"] == "hard"], "p4": p4}
+
+
+def run_span_method(ctx: C.Ctx, which: str) -> dict:
+    if which == "dissolve":
+        loose = C.dissolve_spans(ctx, resid_max=0.2)            # P2: straight, unbroken change over the span
+        fit = C.dissolve_spans(ctx)                              # P3: and the linear mix reproduces the middle pictures
+        mk = lambda d: {"frame": int(ctx.src[(d["s"] + d["e"]) // 2]), "kind": "dissolve", "start": int(ctx.src[d["s"]]), "end": int(ctx.src[d["e"]])}
+        p2 = [mk(d) for d in loose]
+        p3 = [mk(d) for d in fit]
+        return {"s": None, "p2": p2, "p3": p3, "p4": p3}
+    if which == "fade":
+        runs = C.fade_spans(ctx, around_min=0.0)
+        good = C.fade_spans(ctx)
+        mk = lambda d: {"frame": int(ctx.src[(d["s"] + d["e"]) // 2]), "kind": "fade", "start": int(ctx.src[d["s"]]), "end": int(ctx.src[d["e"]])}
+        return {"s": None, "p2": [mk(d) for d in runs], "p3": [mk(d) for d in good], "p4": [mk(d) for d in good]}
+    if which == "whip":
+        raw = C.whip_spans(ctx, around_min=0.0)
+        good = C.whip_spans(ctx)
+        mk = lambda d: {"frame": int(ctx.src[d["mid"]]), "kind": "whip", "start": int(ctx.src[d["s"]]), "end": int(ctx.src[d["e"]])}
+        return {"s": None, "p2": [mk(d) for d in raw], "p3": [mk(d) for d in good], "p4": [mk(d) for d in good]}
+    raise ValueError(which)
+
+
+def tune(ctxs: list[C.Ctx], truths: list[list[dict]], key: str, picker: str) -> dict:
+    """Grid search of the two P2 thresholds on the train videos (mean F1 at +-1 frame of the verified list, hard cuts)."""
+    if picker == "global":
+        qs = [0.5, 0.8, 0.9, 0.95, 0.98]
+    else:
+        qs = [0.0, 0.8, 0.9, 0.95]
+    ratios = [1.5, 2.5, 4.0, 6.0, 10.0] if picker == "adaptive" else [1.0]
+    best, best_f1 = None, -1.0
+    for q in qs:
+        for r in ratios:
+            f1s = []
+            for ctx, truth in zip(ctxs, truths):
+                s = signal_of(ctx, key)
+                nz = s[s > 0]
+                thr = float(np.quantile(nz, q)) if len(nz) else 0.0
+                out = run_signal_method(ctx, key, picker, {"abs_min": thr, "ratio_min": r})
+                f1s.append(E.score(truth, out["p4"], 1, kinds=("hard",))["f1"])
+            f1 = float(np.mean(f1s))
+            if f1 > best_f1:
+                best_f1, best = f1, {"q": q, "ratio_min": r}
+    return {**best, "train_f1": round(best_f1, 4)}
+
+
+def resolve_abs(ctx: C.Ctx, key: str, q: float) -> float:
+    s = signal_of(ctx, key)
+    nz = s[s > 0]
+    return float(np.quantile(nz, q)) if len(nz) else 0.0

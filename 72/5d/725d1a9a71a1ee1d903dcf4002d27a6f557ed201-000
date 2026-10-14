@@ -1,0 +1,32 @@
+#!/bin/zsh
+# 14 October 2026: builds "ZenRay Motion Design.app" (the native shell, shell/ZenRayMotionDesign.swift) next to the engine. No Xcode project: one
+# swiftc call, an Info.plist, the engine and python paths written beside the binary. Usage: Scripts/BuildApp.sh [--check]  (--check runs the page's
+# self-test inside the shell, in WebKit, and prints the result). FR : construit la coque native.
+set -euo pipefail
+ENGINE="${0:A:h:h}"
+APP="$ENGINE/ZenRay Motion Design.app"
+PYTHON="$(python3 -c "import json;print(json.load(open('$ENGINE/settings.json'))['paths']['python'])")"
+rm -rf "$APP"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+swiftc -O -framework Cocoa -framework WebKit "$ENGINE/shell/ZenRayMotionDesign.swift" -o "$APP/Contents/MacOS/ZenRayMotionDesign"
+print -rn -- "$ENGINE" > "$APP/Contents/Resources/engine-path.txt"
+print -rn -- "$PYTHON" > "$APP/Contents/Resources/python-path.txt"
+cat > "$APP/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleName</key><string>ZenRay Motion Design</string>
+  <key>CFBundleDisplayName</key><string>ZenRay Motion Design</string>
+  <key>CFBundleIdentifier</key><string>studio.zenray.motiondesign</string>
+  <key>CFBundleExecutable</key><string>ZenRayMotionDesign</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>1.0</string>
+  <key>LSMinimumSystemVersion</key><string>12.0</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
+</dict></plist>
+PLIST
+codesign --force --sign - "$APP" >/dev/null 2>&1 || true
+echo "{\"ok\":true,\"app\":\"$APP\"}"
+if [[ "${1:-}" == "--check" ]]; then "$APP/Contents/MacOS/ZenRayMotionDesign" --check; fi

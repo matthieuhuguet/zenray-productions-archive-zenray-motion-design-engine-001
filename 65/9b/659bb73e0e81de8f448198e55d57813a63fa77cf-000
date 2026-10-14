@@ -1,0 +1,30 @@
+<!doctype html>
+<!-- 14 October 2026: ZenRay Motion Design V1, the local application page. One page, hash routes: projects, a project and its scenes, a scene
+     with its parameters, the music, the montage. Served by zrmd/orchestrator_server.py at /; the API is /api/v1/*. No value is written here:
+     tiers come from params/v1-tiers.json, formats from params/timeline.json, music values from params/music-studio.json.
+     FR : la page de l'application locale V1 ; une page, des routes par ancre ; aucune valeur n'est ecrite ici. -->
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZenRay Motion Design</title>
+<link rel="stylesheet" href="/app/orchestrator.css">
+<link rel="stylesheet" href="/app/studio.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand-name" href="#/" data-testid="nav-home">ZenRay Motion Design</a>
+  <nav class="tabs" aria-label="Sections">
+    <a href="#/" data-nav="home" data-testid="nav-projects">Projets</a>
+    <a href="#/music" data-nav="music" data-testid="nav-music">Musique</a>
+    <a href="#/montage" data-nav="montage" data-testid="nav-montage">Montage</a>
+  </nav>
+  <span class="grow"></span>
+  <span class="tag" id="busy" hidden>travail en cours</span>
+  <button class="icon-btn" id="theme" title="Clair ou sombre" aria-label="Basculer clair et sombre"></button>
+</header>
+<main id="app" class="page" aria-live="polite"></main>
+<div class="toast" id="toast" role="status" hidden></div>
+<script type="module" src="/app/studio.js"></script>
+</body>
+</html>

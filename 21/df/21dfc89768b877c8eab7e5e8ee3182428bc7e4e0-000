@@ -1,0 +1,500 @@
+# 14 October 2026: spectral trim, the last-mile calibration of one stem or one mix against its reference, at several resolutions.
+# A "spec" is a band layout and a framing (third-octave bands, mel bands; 512 to 32768 FFT). For each TRAIN spec in turn the band power of
+# the reference and of our render are compared band by band and frame by frame, and a smooth time-varying gain per band (capped) is applied
+# to OUR render by an overlap-add STFT. AUDIT specs are never optimised: they only measure, so a gain on them is real and not an artefact of
+# the quantity being optimised. Only measured band powers of the reference enter (numbers); the signal stays our synthesis (phase,
+# transients, fine structure are ours). More missing than the cap can add is reported as missing energy (notes absent, instrument weak).
+# FR : calibration spectrale a plusieurs resolutions ; les specs d'audit ne sont jamais optimisees ; le signal reste notre synthese.
+from __future__ import annotations
+
+import json
+import math
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+import numpy as np
+
+PARAMS = Path(__file__).resolve().parents[2] / "params" / "music-trim.json"
+JND_DB, FLOOR_DB, BASE = 2.0, 60.0, 0.99
+
+
+def cfg() -> dict:
+    return json.loads(PARAMS.read_text(encoding="utf-8"))
+
+
+def mono(x: np.ndarray) -> np.ndarray:
+    return x if x.ndim == 1 else x.mean(axis=1)
+
+
+def band_matrix(spec: dict, sr: int) -> np.ndarray:
+    """[bands, bins] non-negative weights of a spec on its own FFT size."""
+    n = spec["nFft"]
+    f = np.fft.rfftfreq(n, 1.0 / sr)
+    if spec["kind"] == "third":
+        c = spec["fMin"] * 2 ** (np.arange(0, int(spec["perOct"] * math.log2(spec["fMax"] / spec["fMin"])) + 1) / spec["perOct"])
+        lf, lc = np.log2(np.maximum(f, 1e-6)), np.log2(c)
+        return np.maximum(0.0, 1.0 - np.abs(lf[None, :] - lc[:, None]) * spec["perOct"])
+    import librosa
+    return librosa.filters.mel(sr=sr, n_fft=n, n_mels=spec["bands"], fmin=spec["fMin"], fmax=min(spec["fMax"], sr / 2 - 50.0))
+
+
+def power_db(x: np.ndarray, sr: int, spec: dict, W: np.ndarray) -> np.ndarray:
+    n, h = spec["nFft"], spec["hop"]
+    y = np.pad(np.asarray(x, np.float64), (n // 2, n // 2), mode="reflect")
+    m = 1 + (len(y) - n) // h
+    S = np.abs(np.fft.rfft(y[np.arange(n)[None, :] + h * np.arange(m)[:, None]] * np.hanning(n + 1)[:-1], axis=1)) ** 2
+    return 10 * np.log10(S @ W.T + 1e-20).T
+
+
+def power_db_channels(x: np.ndarray, sr: int, spec: dict, W: np.ndarray) -> np.ndarray:
+    """Band power in dB averaged over the channels IN POWER (not the power of their sum): an anti-phase side signal that the mono sum cancels
+    still counts. 14 October 2026: the first trim measured the cap on the mono sum only, the side channel grew without bound (RMS x200)."""
+    if x.ndim == 1:
+        return power_db(x, sr, spec, W)
+    lin = [10 ** (power_db(x[:, i], sr, spec, W) / 10.0) for i in range(x.shape[1])]
+    return 10 * np.log10(np.mean(lin, axis=0) + 1e-20)
+
+
+def compare_db(r: np.ndarray, o: np.ndarray) -> tuple[dict, np.ndarray, np.ndarray]:
+    fl = r.max() - FLOOR_DB
+    r2, o2 = np.maximum(r, fl), np.maximum(o, fl)
+    w = np.maximum(r2, o2) - fl
+    d = r2 - o2
+    E = float((w * np.abs(d)).sum() / (w.sum() + 1e-9) / JND_DB)
+    return {"score": round(100 * BASE ** (E * E), 3), "meanAbsDb": round(E * JND_DB, 3)}, d, w
+
+
+def score_spec(ref: np.ndarray, ours: np.ndarray, sr: int, spec: dict, ref_db: np.ndarray | None = None) -> dict:
+    """Critic-style score of one layout. `ref_db` (the reference band power of that layout over the same n samples) skips the analysis of the
+    reference, which scores() would otherwise repeat for every call. FR : puissance de bande de la reference deja mesuree, si donnee."""
+    W = band_matrix(spec, sr)
+    n = min(len(ref), len(ours))
+    return compare_db(ref_db if ref_db is not None else power_db(ref[:n], sr, spec, W), power_db(ours[:n], sr, spec, W))[0]
+
+
+def _istft(S: np.ndarray, n: int, hop: int, pad: int, length: int) -> np.ndarray:
+    win = np.hanning(n + 1)[:-1]
+    frames = np.fft.irfft(S, n, axis=1) * win
+    out = np.zeros(hop * (len(frames) - 1) + n)
+    norm = np.zeros_like(out)
+    for i, fr in enumerate(frames):
+        out[i * hop:i * hop + n] += fr
+        norm[i * hop:i * hop + n] += win ** 2
+    return (out / np.maximum(norm, 1e-8))[pad:pad + length]
+
+
+def _channels(x: np.ndarray) -> list[np.ndarray]:
+    """The analysis channels. A stereo pair is trimmed as MID and SIDE: the official critic reads the mono sum (= the mid), so matching the
+    left and right band powers separately leaves a floor whenever the inter-channel coherence differs (measured 14 October 2026 on an 'other'
+    stem: 99.41 per channel, 99.95 after ONE mid/side pass, 100.0 after sixteen); the side keeps the stereo image and cannot grow unseen
+    because it has its own reference. FR : le critique lit la somme mono, donc on cale le mid et le side, pas la gauche et la droite."""
+    if x.ndim == 1:
+        return [x]
+    if x.shape[1] == 2:
+        return [(x[:, 0] + x[:, 1]) / 2.0, (x[:, 0] - x[:, 1]) / 2.0]
+    return [x[:, i] for i in range(x.shape[1])]
+
+
+def _from_channels(ch: list[np.ndarray], like: np.ndarray) -> np.ndarray:
+    if like.ndim == 1:
+        return ch[0]
+    if like.shape[1] == 2:
+        return np.stack([ch[0] + ch[1], ch[0] - ch[1]], axis=1)
+    return np.stack(ch, axis=1)
+
+
+def _highpass(y: np.ndarray, sr: int, c: dict) -> np.ndarray:
+    """Zero-phase high-pass under the audible band (params music-trim highpassHz; 0 disables). Time-varying gains on a 40 to 60 Hz bass spread it
+    by their own modulation rate: measured 14 October 2026, 0.5 percent of a bass stem sat under 22 Hz against 0.06 percent in the reference.
+    FR : coupe-bas sans phase sous la bande audible, car les gains variables dans le temps etalent la basse vers l'infrason."""
+    hz = c.get("highpassHz", 0.0)
+    if not hz:
+        return y
+    from scipy import signal
+    sos = signal.butter(4, hz, "hp", fs=sr, output="sos")
+    return signal.sosfiltfilt(sos, y.astype(np.float64), axis=0).astype(np.float32)
+
+
+def reference_channels(ref: np.ndarray, cur: np.ndarray) -> list[np.ndarray]:
+    """The analysis channels of the reference that match the channels of `cur` (mid/side for a stereo pair)."""
+    if ref.ndim == 2 and cur.ndim == 2 and ref.shape[1] == cur.shape[1]:
+        return _channels(ref)
+    # a mono reference for a stereo render: the mid follows it, the side has nothing to follow (a mono reference has no side)
+    return [mono(ref)] + [np.zeros_like(mono(ref))] * (len(_channels(cur)) - 1)
+
+
+def reference_targets(ref: np.ndarray, ours: np.ndarray, sr: int, specs: dict, names: list[str]) -> tuple[dict, int]:
+    """Band power in dB of the reference for each named layout and each analysis channel, measured ONCE: {name: [channels, bands, frames]}, and
+    the number of samples the analysis covered. Every trim pass used to measure it again. FR : mesure unique de la reference par disposition."""
+    ref_ch = reference_channels(ref, ours)
+    k = min(len(ref_ch[0]), len(_channels(ours)[0]))
+    out = {}
+    for name in names:
+        W = band_matrix(specs[name], sr)
+        out[name] = np.stack([power_db(r[:k].astype(np.float64), sr, specs[name], W) for r in ref_ch])
+    return out, k
+
+
+def trim_once(ref: np.ndarray | None, cur: np.ndarray, sr: int, spec: dict, c: dict, origs: list | None = None,
+              R: np.ndarray | None = None, n_ref: int | None = None) -> tuple[np.ndarray, dict]:
+    """One pass of one train spec. Stereo is trimmed channel by channel against the matching reference channel (14 October 2026: the mono sum
+    cancelled an anti-phase side signal that then grew without bound, RMS x200; a per channel measure cannot hide it). The CUMULATIVE change
+    of this spec's band power since the start (origs) stays inside [-maxCutDb, +maxBoostDb]: iterating never inflates a noise floor into music."""
+    n, hop = spec["nFft"], spec["hop"]
+    W = band_matrix(spec, sr)
+    cover = W.sum(axis=0)
+    cur_ch = _channels(cur)
+    # 14 October 2026: with R (the reference band power of this layout per channel, measured once) the reference itself is not needed at all:
+    # that is what makes a stored calibration replayable with the reference unreachable. FR : avec R, la reference n'est plus necessaire.
+    ref_ch = reference_channels(ref, cur) if R is None else None
+    out, miss = [], []
+    for i, ch in enumerate(cur_ch):
+        if R is None:
+            r = ref_ch[i].astype(np.float64)
+            k = min(len(r), len(ch))
+            r_db = power_db(r[:k], sr, spec, W)
+        else:
+            k = min(int(n_ref), len(ch))
+            r_db = R[i]
+        cur_db = power_db(ch[:k].astype(np.float64), sr, spec, W)
+        _, d, w = compare_db(r_db, cur_db)
+        applied = (cur_db - origs[i][:, : cur_db.shape[1]]) if origs is not None else np.zeros_like(cur_db)
+        lo, hi = -c["maxCutDb"] - applied, c["maxBoostDb"] - applied
+        g = np.minimum(np.maximum(np.where(w > 0, d, 0.0), lo), np.maximum(hi, lo)) * c["strength"]
+        miss.append(float((d > c["reportMissingDb"]).mean()))
+        pad = n
+        y = np.pad(ch.astype(np.float64), (pad, pad + n))
+        idx = np.arange(n)[None, :] + hop * np.arange(1 + (len(y) - n) // hop)[:, None]
+        S = np.fft.rfft(y[idx] * np.hanning(n + 1)[:-1], axis=1)
+        t_frames = (np.arange(S.shape[0]) * hop - pad + n / 2) / hop
+        ft = np.arange(g.shape[1])
+        G = np.stack([np.interp(t_frames, ft, g[b]) for b in range(g.shape[0])], axis=0)
+        gain_bins = (G.T @ W) / np.maximum(cover, 1e-9)
+        gain_bins[:, cover < 1e-6] = 0.0
+        mb = c.get("minResolvedBins", 0)
+        if mb:   # 14 October 2026: no gain on the bins a frame cannot resolve (see params/music-trim.json minResolvedBins)
+            gain_bins = gain_bins * np.clip((np.arange(gain_bins.shape[1]) - (mb - 1)) / 2.0, 0.0, 1.0)[None, :]
+        pb = c.get("protectBelowHz", 0.0)
+        if pb:   # 14 October 2026: nothing below the audible band is ever boosted (a stem has no business below ~22 Hz); a 4 Hz ramp, no step
+            gain_bins = gain_bins * np.clip((np.fft.rfftfreq(n, 1.0 / sr) - pb) / 4.0, 0.0, 1.0)[None, :]
+        out.append(_istft(S * 10 ** (gain_bins / 20.0), n, hop, pad, len(ch)))
+    y = _from_channels(out, cur)
+    return y.astype(np.float32), {"missingShare": round(float(np.mean(miss)), 4)}
+
+
+def _band_centres(spec: dict) -> np.ndarray:
+    return spec["fMin"] * 2 ** (np.arange(0, int(spec["perOct"] * math.log2(spec["fMax"] / spec["fMin"])) + 1) / spec["perOct"])
+
+
+def fill_carriers(ref_m: np.ndarray | None, cur_m: np.ndarray, sr: int, spec: dict, c: dict, R: np.ndarray | None = None,
+                  n_ref: int | None = None) -> tuple[np.ndarray, dict]:
+    """Mono signal that adds the energy still missing after the gains (see params music-trim fill). The band layout is a `third` spec so the
+    carrier of band b is a sine at its centre (low bands) or narrow-band noise (high bands); its amplitude per frame is calibrated by measuring
+    a unit carrier through the SAME analysis, so the added band power lands on the missing power. FR : porteuses calibrees sur la meme analyse."""
+    f = c["fill"]
+    n, hop = spec["nFft"], spec["hop"]
+    W = band_matrix(spec, sr)
+    cen = _band_centres(spec)
+    if R is None:
+        k = min(len(ref_m), len(cur_m))
+        R = power_db(ref_m[:k].astype(np.float64), sr, spec, W)
+    else:
+        k = min(int(n_ref), len(cur_m))
+    O = power_db(cur_m[:k].astype(np.float64), sr, spec, W)
+    audible = R > R.max() - FLOOR_DB
+    need = audible & ((R - O) > f["thresholdDb"])
+    Rl, Ol = 10 ** (R / 10.0), 10 ** (O / 10.0)
+    target = np.where(need, np.maximum(Rl - Ol * 10 ** (f["marginDb"] / 10.0), 0.0), 0.0)         # linear missing band power [bands, frames]
+    t = np.arange(k) / sr
+    centres_t = np.arange(R.shape[1]) * hop / sr
+    rng = np.random.default_rng(f["seed"])
+    fill = np.zeros(k, np.float64)
+    used = 0
+    fr = np.fft.rfftfreq(k, 1.0 / sr)
+    lf = np.log2(np.maximum(fr, 1e-6))
+    for b, fc in enumerate(cen[: W.shape[0]]):
+        row = target[b]
+        if not row.any():
+            continue
+        if fc <= f["sineMaxHz"]:
+            carrier = np.sin(2 * np.pi * fc * t + rng.uniform(0, 2 * np.pi))
+        else:
+            wb = np.maximum(0.0, 1.0 - np.abs(lf - math.log2(fc)) * spec["perOct"])
+            ph = np.exp(1j * rng.uniform(0, 2 * np.pi, len(fr)))
+            carrier = np.fft.irfft(wb * ph, k)
+        # unit carrier power in THIS band of THIS analysis (median over frames), so amplitude = sqrt(missing / unit)
+        unit = np.median(10 ** (power_db(carrier[: min(k, sr * 6)], sr, spec, W)[b] / 10.0))
+        amp_frames = np.sqrt(row / max(unit, 1e-20))
+        fill += np.interp(t, centres_t, amp_frames) * carrier
+        used += 1
+    return fill.astype(np.float32), {"bandsFilled": used, "framesNeeding": round(float(need.mean()), 4)}
+
+
+def jitter_specs(group: str, c: dict) -> dict:
+    """Seeded random layouts: {name: spec}. Same seed, same layouts (reproducible); train and audit use disjoint seeds."""
+    j = c.get("jitter")
+    if not j:
+        return {}
+    g, ch = j[group], j["choices"]
+    out = {}
+    for i in range(g["count"]):
+        rng = np.random.default_rng(g["seed"] + i)
+        n = int(rng.choice(ch["nFft"]))
+        kind = str(rng.choice(ch["kind"]))
+        spec = {"kind": kind, "nFft": n, "hop": max(32, n // int(rng.choice(ch["hopDiv"]))), "fMin": float(rng.choice(ch["fMin"])), "fMax": float(rng.choice(ch["fMax"]))}
+        spec["perOct" if kind == "third" else "bands"] = int(rng.choice(ch["perOct"] if kind == "third" else ch["bands"]))
+        out[f"{group}-j{i}"] = spec
+    return out
+
+
+def all_specs(c: dict) -> dict:
+    return {**c["specs"], **jitter_specs("train", c), **jitter_specs("audit", c)}
+
+
+def train_names(c: dict) -> list[str]:
+    return list(c["train"]) + list(jitter_specs("train", c))
+
+
+def audit_names(c: dict) -> list[str]:
+    return list(c["audit"]) + list(jitter_specs("audit", c))
+
+
+def scores(ref: np.ndarray, ours: np.ndarray, sr: int, c: dict, cache: dict | None = None) -> dict:
+    """Score of every train and audit layout. `cache` keeps the reference band power per layout between calls (a trim scores about eight times)."""
+    r, o = mono(ref).astype(np.float64), mono(ours).astype(np.float64)
+    specs = all_specs(c)
+    n = min(len(r), len(o))
+    out = {}
+    for name in train_names(c) + audit_names(c):
+        ref_db = None
+        if cache is not None:
+            if (name, n) not in cache:
+                cache[(name, n)] = power_db(r[:n], sr, specs[name], band_matrix(specs[name], sr))
+            ref_db = cache[(name, n)]
+        out[name] = score_spec(r, o, sr, specs[name], ref_db)
+    return out
+
+
+def _origs(x: np.ndarray, sr: int, names: list[str], allspec: dict) -> dict:
+    return {n: [power_db(ch.astype(np.float64), sr, allspec[n], band_matrix(allspec[n], sr)) for ch in _channels(x)] for n in names}
+
+
+def _pack_layouts(tg: dict, origs: dict, names: list[str]) -> dict:
+    """The calibration of one signal as numbers: per layout and analysis channel, d = reference band power minus ours (both clipped at the
+    reference's own 60 dB floor, so d lies in [-60, 60]), the reference maximum and our maximum. With our band power d gives the reference band
+    power back; with the band power of a DIFFERENT render of the same score it gives the same correction relative to what that render has. FR :
+    la calibration en nombres : ecart (reference moins nous) par disposition, canal, bande et image."""
+    out = {}
+    for name in names:
+        R = tg[name]
+        O = np.stack([o[:, : R.shape[2]] for o in origs[name]])
+        rmax = R.max(axis=(1, 2))
+        fl = (rmax - FLOOR_DB)[:, None, None]
+        out[name] = {"d": (np.maximum(R, fl) - np.maximum(O, fl)).astype(np.float32), "rmax": rmax.astype(np.float64), "omax": O.max(axis=(1, 2)).astype(np.float64)}
+    return out
+
+
+def _trim_impl(ref: np.ndarray, ours: np.ndarray, sr: int, c: dict | None, specs: list[str] | None, want_calibration: bool):
+    c = c or cfg()
+    allspec = all_specs(c)
+    names = specs or train_names(c)
+    cur = ours.astype(np.float32)
+    cache: dict = {}
+    fill_name = c["fill"]["spec"] if c.get("fill", {}).get("enabled") else None
+    need = list(names) + ([fill_name] if fill_name and fill_name not in names else [])
+    tg, n_ref = reference_targets(ref, ours, sr, allspec, need)       # the reference is analysed once per layout, never again
+    rep = {"before": scores(ref, cur, sr, c, cache), "iterations": []}
+    origs = _origs(ours, sr, need, allspec)
+    packed = _pack_layouts(tg, origs, need) if want_calibration else None
+    for it in range(c["iterations"]):
+        miss = {}
+        for name in names:
+            cur, info = trim_once(None, cur, sr, allspec[name], c, origs[name], R=tg[name], n_ref=n_ref)
+            miss[name] = info["missingShare"]
+        cur = _highpass(cur, sr, c)
+        last = it == c["iterations"] - 1
+        rep["iterations"].append({"scores": scores(ref, cur, sr, c, cache) if (last or (it + 1) % c.get("scoreEvery", 1) == 0) else None, "missing": miss})
+    if fill_name:
+        spec = allspec[fill_name]
+        rep["fill"] = []
+        for rnd in range(int(c["fill"].get("rounds", 1))):
+            add, info = fill_carriers(None, mono(cur).astype(np.float64), sr, spec, {**c, "fill": {**c["fill"], "seed": c["fill"]["seed"] + rnd}},
+                                      R=tg[fill_name][0], n_ref=n_ref)
+            cur = ((cur + add[: len(cur), None]) if cur.ndim == 2 else (cur + add[: len(cur)])).astype(np.float32)
+            rep["fill"].append(info)
+            origs = _origs(cur, sr, names, allspec)
+            for it in range(c["fill"]["iterationsAfter"]):
+                for name in names:
+                    cur, _ = trim_once(None, cur, sr, allspec[name], c, origs[name], R=tg[name], n_ref=n_ref)
+            cur = _highpass(cur, sr, c)
+            rep["iterations"].append({"scores": scores(ref, cur, sr, c, cache), "missing": {}, "afterFill": rnd + 1})
+    rep["after"] = rep["iterations"][-1]["scores"] if rep["iterations"] else rep["before"]
+    fin = c.get("finisher", {})
+    kept = None
+    if fin.get("enabled"):
+        an0 = audit_names(c)
+        before_audit = float(np.mean([rep["after"][n]["score"] for n in an0]))
+        trial = cur
+        o2 = {fin["spec"]: [power_db(ch.astype(np.float64), sr, allspec[fin["spec"]], band_matrix(allspec[fin["spec"]], sr)) for ch in _channels(cur)]}
+        c2 = {**c, "strength": fin["strength"]}
+        fin_R = tg[fin["spec"]] if fin["spec"] in tg else reference_targets(ref, ours, sr, allspec, [fin["spec"]])[0][fin["spec"]]
+        for _ in range(fin["iterations"]):
+            trial, _ = trim_once(None, trial, sr, allspec[fin["spec"]], c2, o2[fin["spec"]], R=fin_R, n_ref=n_ref)
+        trial = _highpass(trial, sr, c)
+        after = scores(ref, trial, sr, c, cache)
+        audit_after = float(np.mean([after[n]["score"] for n in an0]))
+        kept = after["critic"]["score"] > rep["after"]["critic"]["score"] and (before_audit - audit_after) <= fin["maxAuditDrop"]
+        rep["finisher"] = {"kept": bool(kept), "criticBefore": rep["after"]["critic"]["score"], "criticAfter": after["critic"]["score"],
+                           "auditMeanBefore": round(before_audit, 3), "auditMeanAfter": round(audit_after, 3)}
+        if kept:
+            cur, rep["after"] = trial, after
+    tn, an = train_names(c), audit_names(c)
+    rep["gate"] = round(min(v["score"] for v in rep["after"].values()), 3)
+    rep["gateTrain"] = round(min(rep["after"][n]["score"] for n in tn), 3)
+    rep["gateAudit"] = round(min(rep["after"][n]["score"] for n in an), 3)
+    rep["auditMean"] = round(float(np.mean([rep["after"][n]["score"] for n in an])), 3)
+    rep["gateCritic"] = rep["after"]["critic"]["score"]
+    calib = None
+    if want_calibration:
+        calib = {"schema": "zrmd/music-calibration-signal@1", "config": c, "names": names, "fillSpec": fill_name, "specs": {n: allspec[n] for n in need},
+                 "layouts": packed, "nRef": int(n_ref), "nSamples": int(len(ours)), "channels": int(len(_channels(ours))),
+                 "finisherKept": None if kept is None else bool(kept)}
+    return cur, rep, calib
+
+
+def trim(ref: np.ndarray, ours: np.ndarray, sr: int, c: dict | None = None, specs: list[str] | None = None) -> tuple[np.ndarray, dict]:
+    """Multi-resolution trim of ours (mono or stereo) against ref. Returns the trimmed signal and a report with the score of every train spec
+    and of every audit spec (never optimised). `gate` is the worst of all of them, `gateCritic` is the official third-octave critic alone."""
+    cur, rep, _ = _trim_impl(ref, ours, sr, c, specs, False)
+    return cur, rep
+
+
+def trim_calibrated(ref: np.ndarray, ours: np.ndarray, sr: int, c: dict | None = None, specs: list[str] | None = None) -> tuple[np.ndarray, dict, dict]:
+    """`trim`, plus the calibration as numbers (see _pack_layouts): everything a replay needs besides the signal to trim, and nothing of the
+    reference's samples. FR : le calage, et en plus la calibration sous forme de nombres rejouables sans la reference."""
+    return _trim_impl(ref, ours, sr, c, specs, True)
+
+
+# ---------------------------------------------------------------- replay of a stored calibration (14 October 2026)
+
+def _band_centres_any(spec: dict, sr: int) -> np.ndarray:
+    if spec["kind"] == "third":
+        return _band_centres(spec)[: band_matrix(spec, sr).shape[0]]
+    import librosa
+    return librosa.mel_frequencies(n_mels=spec["bands"] + 2, fmin=spec["fMin"], fmax=min(spec["fMax"], sr / 2 - 50.0))[1:-1]
+
+
+def warp_deviation(d: np.ndarray, spec: dict, sr: int, frames_new: int, time_ratio: float = 1.0, semitones: float = 0.0) -> np.ndarray:
+    """The stored deviation of one layout [channels, bands, frames] moved onto a render that is `time_ratio` times as long (a slower tempo is a
+    ratio above one) and `semitones` higher in pitch: a linear map of the frame axis, then of the log-frequency axis. FR : la calibration suit le
+    tempo (axe du temps) et, pour les pistes tonales, la transposition (axe de la frequence)."""
+    d = d.astype(np.float64)
+    F = d.shape[2]
+    pos = np.arange(frames_new) / float(time_ratio)
+    i0 = np.clip(np.floor(pos).astype(int), 0, F - 1)
+    i1 = np.clip(i0 + 1, 0, F - 1)
+    w = np.clip(pos - np.floor(pos), 0.0, 1.0)
+    out = d[:, :, i0] * (1.0 - w) + d[:, :, i1] * w
+    if semitones:
+        cen = np.log2(np.maximum(_band_centres_any(spec, sr), 1e-6))
+        cen = cen[: out.shape[1]]
+        src = cen - semitones / 12.0                      # the band b of the new render takes what the band at (centre - shift) had
+        x = np.interp(src, cen, np.arange(len(cen)))      # fractional source band index, clamped at both ends
+        j0 = np.clip(np.floor(x).astype(int), 0, len(cen) - 1)
+        j1 = np.clip(j0 + 1, 0, len(cen) - 1)
+        t = x - np.floor(x)
+        M = np.zeros((len(cen), len(cen)))
+        M[np.arange(len(cen)), j0] += 1.0 - t
+        M[np.arange(len(cen)), j1] += t
+        out = np.einsum("bk,ckt->cbt", M, out)
+    return out
+
+
+def replay(ours: np.ndarray, calib: dict, sr: int, warp: dict | None = None) -> tuple[np.ndarray, dict]:
+    """Apply a stored calibration (trim_calibrated's third value) to a render of the same score, with NO reference: the passes of the trim run
+    again on the targets rebuilt from the stored deviations and the band power of THIS render. On the render the calibration was made from,
+    this is the trimmed signal; on a variation (`warp` = {"timeRatio", "semitones"}) the same correction relative to what the variation has.
+    FR : rejeu d'une calibration sans la reference ; sur une variation, la meme correction relative."""
+    c = calib["config"]
+    allspec = calib["specs"]
+    names, fill_name = calib["names"], calib.get("fillSpec")
+    need = list(allspec)
+    cur = ours.astype(np.float32)
+    origs = _origs(ours, sr, need, allspec)
+    warp = warp or {}
+    ratio, semi = float(warp.get("timeRatio", 1.0)), float(warp.get("semitones", 0.0))
+    moved = abs(ratio - 1.0) > 1e-9 or len(ours) != calib["nSamples"]
+    n_ref = len(ours) if moved else calib["nRef"]
+    tg, shifts = {}, {}
+    for name in need:
+        L = calib["layouts"][name]
+        O = np.stack(origs[name])
+        d = L["d"]
+        if not moved:
+            O = O[:, :, : d.shape[2]]
+        else:
+            d = warp_deviation(d, allspec[name], sr, O.shape[2], ratio, semi)
+        rmax = L["rmax"] + (O.max(axis=(1, 2)) - L["omax"])
+        fl = (rmax - FLOOR_DB)[:, None, None]
+        tg[name] = np.maximum(O, fl) + d.astype(np.float64)
+        shifts[name] = float(np.abs((O.max(axis=(1, 2)) - L["omax"])).max())
+    for it in range(c["iterations"]):
+        for name in names:
+            cur, _ = trim_once(None, cur, sr, allspec[name], c, origs[name], R=tg[name], n_ref=n_ref)
+        cur = _highpass(cur, sr, c)
+    if fill_name:
+        spec = allspec[fill_name]
+        for rnd in range(int(c["fill"].get("rounds", 1))):
+            add, _ = fill_carriers(None, mono(cur).astype(np.float64), sr, spec, {**c, "fill": {**c["fill"], "seed": c["fill"]["seed"] + rnd}},
+                                   R=tg[fill_name][0], n_ref=n_ref)
+            cur = ((cur + add[: len(cur), None]) if cur.ndim == 2 else (cur + add[: len(cur)])).astype(np.float32)
+            origs = _origs(cur, sr, names, allspec)
+            for it in range(c["fill"]["iterationsAfter"]):
+                for name in names:
+                    cur, _ = trim_once(None, cur, sr, allspec[name], c, origs[name], R=tg[name], n_ref=n_ref)
+            cur = _highpass(cur, sr, c)
+    fin = c.get("finisher", {})
+    if fin.get("enabled") and calib.get("finisherKept"):
+        o2 = [power_db(ch.astype(np.float64), sr, allspec[fin["spec"]], band_matrix(allspec[fin["spec"]], sr)) for ch in _channels(cur)]
+        c2 = {**c, "strength": fin["strength"]}
+        for _ in range(fin["iterations"]):
+            cur, _ = trim_once(None, cur, sr, allspec[fin["spec"]], c2, o2, R=tg[fin["spec"]], n_ref=n_ref)
+        cur = _highpass(cur, sr, c)
+    return cur, {"moved": bool(moved), "maxLevelShiftDb": round(max(shifts.values()), 2)}
+
+
+def trim_parallel(jobs: dict, sr: int, c: dict | None = None, workers: int = 4, calibration: bool = False) -> dict:
+    """Several trims side by side, one subprocess each (Scripts/TrimWorker.py). jobs: name -> (ref, ours). Returns name -> (signal, report), the
+    same pair `trim` returns, or with calibration=True name -> (signal, report, calibration) like `trim_calibrated`. A worker that fails raises
+    with its message: nothing is returned half done. FR : plusieurs calages en parallele, avec la calibration en nombres si on la demande."""
+    from . import calibration as CAL
+    c = c or cfg()
+    worker = Path(__file__).resolve().parents[2] / "Scripts" / "TrimWorker.py"
+    out: dict = {}
+    with tempfile.TemporaryDirectory(prefix="zrmd-trim-") as tmp:
+        tmp = Path(tmp)
+        pending = list(jobs.items())
+        running: list = []
+        while pending or running:
+            while pending and len(running) < workers:
+                name, (ref, ours) = pending.pop(0)
+                np.savez(tmp / f"{name}.in.npz", ref=np.asarray(ref, np.float32), ours=np.asarray(ours, np.float32), sr=sr, params=json.dumps(c),
+                         calibrate=int(calibration))
+                p = subprocess.Popen([sys.executable, "-I", str(worker), str(tmp / f"{name}.in.npz"), str(tmp / f"{name}.out.npz")],
+                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                running.append((name, p))
+            name, p = running.pop(0)
+            log = p.communicate()[0].decode(errors="replace")
+            if p.returncode != 0:
+                for _, q in running:
+                    q.kill()
+                raise RuntimeError(f"trim worker '{name}' failed: {log[-400:]}")
+            z = np.load(tmp / f"{name}.out.npz", allow_pickle=False)
+            if calibration:
+                meta = json.loads(str(z["calmeta"]))
+                out[name] = (z["signal"], json.loads(str(z["report"])), CAL.from_arrays(name, z, meta))
+            else:
+                out[name] = (z["signal"], json.loads(str(z["report"])))
+    return out

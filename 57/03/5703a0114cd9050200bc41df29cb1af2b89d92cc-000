@@ -1,0 +1,42 @@
+{
+ "schema": "zrmd/music-corpus@1",
+ "date": "14 October 2026",
+ "doc": "The music corpus (HDA law): every audio track of the indexed reference videos, cut into excerpts so the engine is trained and judged on many different musics at once, not on one. A 99.9 percent claim only counts if it holds on the whole corpus. Excerpts are lossless FLAC decodes of the reference audio, kept in the reference cache (never archived or published). FR : le corpus musical, plusieurs musiques differentes pour juger le moteur. Tracks of 150 s or more give three excerpts (14 October 2026: the music-only tracks Matthieu added are 2:39 to 5:25). `priority` lists the parents whose excerpts run first (Matthieu's music-for-motion tracks, 14 October 2026).",
+ "excerptS": 30.0,
+ "secondExcerptMinDurationS": 70.0,
+ "analysisRateHz": 16000,
+ "silenceRatio": 0.1,
+ "members": {
+  "whole": [
+   "claude-opus-5-5",
+   "onekey-pro-2"
+  ],
+  "skip": [
+   "fin-4"
+  ]
+ },
+ "targets": {
+  "stem": 99.9,
+  "mix": 99.9,
+  "gateStems": [
+   "drums",
+   "bass",
+   "other",
+   "vocals"
+  ]
+ },
+ "chain": {
+  "stages": "sms,bus,dev,gap,retag,bus",
+  "set": [
+   "residual.stems=[\"drums\",\"bass\",\"other\",\"vocals\"]"
+  ],
+  "doc": "14 October 2026: the own stage is gone, sms replaces every voice anyway (measured: the parent's fits were discarded)."
+ },
+ "thirdExcerptMinDurationS": 150.0,
+ "priority": [
+  "grandbrothers-bloodflow-edit",
+  "kiasmos-blurred",
+  "grandbrothers-sonic-riots",
+  "20syl-ode-to-odd"
+ ]
+}

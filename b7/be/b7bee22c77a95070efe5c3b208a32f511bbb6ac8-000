@@ -156,9 +156,86 @@ def run() -> int:
     # scores: nothing produced yet -> None, never a made-up number
     rows = orch.module_scores(slug)
     check("scores are None before any work", rows[0]["value"] is None and rows[0]["reached"] is False)
+    sd = TMP / "workshop" / "vector" / slug
+    sd.mkdir(parents=True)
+    (sd / "scene.json").write_text(json.dumps({"shot": "S03", "version": "V_001", "classes": {"share": {"vector": 0.7, "shader": 0.2, "residual": 0.1}, "vectorLayersOk": "3/4",
+                                                                                         "vectorLayerIouMean": 0.9912}, "verdict": {"explained": 0.97, "reading": "UI"}}))
+    sv = orch.score_vector(slug)
+    check("vector score reads the scene and keeps shader and residual apart", sv["value"] == 0.9912 and sv["detail"]["shaderShare"] == 0.2, sv)
+    check("vector score is None before any scene", orch.score_vector("ghost") is None)
+    check("vector detail has no ceiling until one is measured", "ceiling" not in sv["detail"] and sv["detail"]["iouArea"] is None, sv)
+    (sd / "ceiling.json").write_text(json.dumps({"shot": "S03", "ceiling": {"vectorLayerIouMean": 0.945, "vectorLayerIouArea": 0.936}}))
+    svc = orch.score_vector(slug)
+    check("vector detail carries the measured codec ceiling", svc["detail"]["ceiling"]["value"] == 0.945 and svc["detail"]["ceiling"]["iouArea"] == 0.936, svc["detail"])
+    # multi-layer fit (15 October 2026): the module reads the COMPOSITE fidelity of the stacked layers when it belongs to the scene's shot, and the
+    # per-layer IoU of the single trace stays in the detail; a layered file of another shot is ignored (a scene re-picked after a re-cut)
+    (sd / "layered.json").write_text(json.dumps({"applicable": True, "shot": "S03", "layers": 812, "fidelity": {"fidelity": 0.9981, "meanDE": 0.09},
+                                                 "codecFloor": {"fidelity": 0.9975}, "seconds": 301.0, "dir": "/x/V_004"}))
+    sl = orch.score_vector(slug)
+    check("vector reads the composite of the multi-layer fit", sl["value"] == 0.9981 and sl["detail"]["iouMean"] == 0.9912 and sl["detail"]["layers"] == 812
+          and sl["version"] == "S03 V_004", sl)
+    (sd / "layered.json").write_text(json.dumps({"applicable": True, "shot": "S09", "fidelity": {"fidelity": 0.5}}))
+    check("a multi-layer fit of another shot is ignored", orch.score_vector(slug)["value"] == 0.9912)
+    (sd / "layered.json").unlink()
+    # a measured ceiling under the stretch target marks the module as physically limited; without one nothing is claimed
+    real = orch.READERS["music"]
+    try:
+        orch.READERS["music"] = lambda s: {"value": 0.97, "detail": {"ceiling": {"value": 0.995}}}
+        r1 = orch.module_scores(slug)[0]
+        orch.READERS["music"] = lambda s: {"value": 0.97, "detail": {"ceiling": {"value": 0.9995}}}
+        r2 = orch.module_scores(slug)[0]
+        orch.READERS["music"] = lambda s: {"value": 0.97, "detail": {}}
+        r3 = orch.module_scores(slug)[0]
+    finally:
+        orch.READERS["music"] = real
+    check("a ceiling under the stretch target is reported as limited", r1["ceiling"] == 0.995 and r1["limited"] is True, r1)
+    check("a ceiling above the stretch target is not a limit", r2["ceiling"] == 0.9995 and r2["limited"] is False, r2)
+    check("no measured ceiling, no claim", r3["ceiling"] is None and r3["limited"] is False, r3)
     check("run listing finds the runs", len(orch.list_runs(slug)) >= 3)
     check("a failed step note carries the last log line", "b boom" in st["b"]["note"], st["b"]["note"])
     expect_refusal("bad run id refused", lambda: orch.run_folder("../../etc"))
+
+    # corpus members (14 October 2026): a reference made of excerpts is read as its WORST excerpt, and is never "reached" while an excerpt
+    # has no reading; each module reads its own file. FR : une reference en extraits vaut son pire extrait, jamais atteinte s'il en manque un.
+    agg = "aggref"
+    for m, v in (("aggref-m1", 99.95), ("aggref-m2", 99.2)):
+        (TMP / "refcache" / m).mkdir(parents=True)
+        bench = TMP / "workshop" / "sound" / m / "music-bench" / "V_001"
+        bench.mkdir(parents=True)
+        (bench / "mix.wav").write_bytes(b"RIFF")
+        (bench / "scores.json").write_text(json.dumps({"headline": {"mix": {"tfBands": v}}}))
+    sm = orch.score_music(agg)
+    check("music of a reference is its worst member", sm["value"] == 0.992 and sm["detail"]["worst"] == "aggref-m2" and sm["detail"]["complete"], sm)
+    (TMP / "refcache" / "aggref-m3").mkdir()
+    row = orch.module_scores(agg)[0]
+    check("a member without a reading keeps the module from being reached", row["value"] == 0.992 and not row["detail"]["complete"] and not row["reached"], row)
+    b3 = TMP / "workshop" / "sound" / "aggref-m3" / "music-bench" / "V_001"
+    b3.mkdir(parents=True)
+    (b3 / "mix.wav").write_bytes(b"RIFF")
+    (b3 / "scores.json").write_text(json.dumps({"headline": {"mix": {"tfBands": 99.99}}}))
+    row = orch.module_scores(agg)[0]
+    check("every member read -> complete and reached", row["detail"]["complete"] and row["reached"] and row["value"] == 0.992, row)
+    check("a single-member reference reads itself", orch.score_music("aggref-m1")["value"] == 0.9995)
+
+    def sound_report(member, scores=None, trim=None):
+        d = TMP / "workshop" / "sound" / member / "V_001"
+        d.mkdir(parents=True, exist_ok=True)
+        body = {"reports": {"full": {"scores": scores or {}}}}
+        if trim is not None:
+            body["trim"] = trim
+        (d / "sound-fidelity.json").write_text(json.dumps(body))
+    sound_report("aggref-m1", {"mix": 99.97, "sfx": 91.0}, {"events": [{"plossStochastic": [70.0, 99.9]}, {"plossStochastic": [60.0, 99.7]}], "gate": {"pass": True, "passMusic": True},
+                                                          "critic": {"after": 99.9}, "auditMean": {"after": 99.8}})
+    sound_report("aggref-m2", {"mix": 99.95, "sfx": 99.6})                              # no trim block: the exact loss of the assembled soundtrack
+    sound_report("aggref-m3", {"mix": 99.91, "sfx": 100.0}, {"events": [], "gate": {}})  # trimmed, no event: 100 by definition
+    sx = orch.score_sfx(agg)
+    check("sfx reads the seed-invariant gate of a trimmed member, not the exact loss", sx["detail"]["members"]["aggref-m1"] == 0.998, sx)
+    check("sfx of an untrimmed member falls back to the exact loss", sx["detail"]["members"]["aggref-m2"] == 0.996, sx)
+    check("sfx of a member with no event is 100 by definition", sx["detail"]["members"]["aggref-m3"] == 1.0, sx)
+    check("sfx of the reference is its worst member", sx["value"] == 0.996 and sx["detail"]["complete"], sx)
+    mx = orch.score_mix(agg)
+    check("mix of the reference is its worst member", mx["value"] == 0.9991 and mx["detail"]["worst"] == "aggref-m3", mx)
+    check("mix is None for a member with no soundtrack", orch.score_mix("ghost-m1") is None)
     print(f"{len(FAIL)} failure(s)")
     return 1 if FAIL else 0
 

@@ -1,0 +1,281 @@
+# 14 October 2026: the V1 parameter interface of a vector component (zrmd/vector/v1.py, params/vector-v1-parameters.json), proven in both
+# directions on a synthetic component (no reference pixel). For EVERY key the file marks `built`:
+#   green  applying the value that the component already has changes nothing (the byte-identical SVG: the default IS the trace), and
+#          applying another value changes the RENDERED pixels in the way the key says (colour at a probe point, ink box, size ...);
+#   red    a value out of its range, a bad colour, an empty string, an unknown name or layer raises an error that NAMES the parameter.
+# The test fails when a built key has no proof, and when a proof names a key the file does not list. FR : chaque cle construite est
+# prouvee dans les deux sens ; le test echoue si une cle construite n'a pas de preuve.
+import copy
+import json
+import sys
+import tempfile
+from pathlib import Path
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from zrmd.vector import asset as A  # noqa: E402
+from zrmd.vector import render as R  # noqa: E402
+from zrmd.vector import scene as S  # noqa: E402
+from zrmd.vector import texts as TX  # noqa: E402
+from zrmd.vector import v1 as V1  # noqa: E402
+
+FONT = str(ROOT / "datasets/fonts/files/Inter/Inter[opsz,wght].ttf")
+FAIL = []
+PROVED = set()
+
+
+def check(name, cond, detail=""):
+    print(("ok   " if cond else "FAIL ") + name + (f"  {detail}" if detail and not cond else ""))
+    if not cond:
+        FAIL.append(name)
+
+
+def raises(fn, *needles, kinds=(KeyError, ValueError, NotImplementedError)) -> bool:
+    try:
+        fn()
+    except kinds as e:
+        return all(n in str(e) for n in needles)
+    return False
+
+
+def layer(lid, z, kind, geometry, colour, fit=None):
+    return {"id": lid, "name": f"{lid}-{kind}", "z": z, "kind": kind, "geometry": geometry, "paint": {"type": "flat", "colour": colour},
+            "effects": {"blur": 0.0, "opacity": 1.0}, "fit": fit or {}}
+
+
+def component() -> dict:
+    """A card on a background, an accent bar, a dot that SHARES the text colour, a stroked line, two text layers."""
+    t0 = TX.make_layer("T00", "Hello", FONT, 64.0, (60.0, 140.0), colour="@c0", axes={"wght": 600})
+    t1 = TX.make_layer("T01", "Sub line", FONT, 26.0, (60.0, 190.0), colour="@t1", axes={"wght": 500})
+    return {"schema": "zrmd/asset2d@1", "asset": "synthetic-v1", "canvas": {"width": 640, "height": 240},
+            "palette": {"c0": "#ff6a2b", "c1": "#101820", "c2": "#2b6aff", "c3": "#22cc88", "t1": "#cccccc"},
+            "layers": [layer("L00", 0, "rect", {"cx": 320, "cy": 120, "w": 640, "h": 240, "angle": 0}, "@c1", {"background": True}),
+                       layer("L01", 1, "rounded_rect", {"cx": 320, "cy": 100, "w": 560, "h": 160, "angle": 0, "radius": 40}, "@c2"),
+                       layer("L02", 2, "circle", {"cx": 600, "cy": 30, "r": 14}, "@c0"),
+                       layer("L03", 3, "rect", {"cx": 520, "cy": 205, "w": 120, "h": 30, "angle": 0}, "@c3"),
+                       layer("L04", 4, "line", {"x1": 40, "y1": 228, "x2": 420, "y2": 228, "width": 6, "cap": "butt"}, "@c0")],
+            "texts": [t0, t1]}
+
+
+def render(P) -> np.ndarray:
+    w, h = A.output_size(P)
+    return R.render_svg(A.cook_svg(P), w, h, engine="skia", ss=1)
+
+
+def hexpx(img, x, y) -> str:
+    r, g, b = (int(v) for v in img[y, x, :3])
+    return "#%02x%02x%02x" % (r, g, b)
+
+
+def ink_box(P, tid):
+    m = R.svg_mask(A.cook_svg(P, only=tid, white=True), P["canvas"]["width"], P["canvas"]["height"], engine="skia", ss=1)
+    ys, xs = np.nonzero(m > 0.5)
+    return (int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())) if len(xs) else None
+
+
+def ink_colour(img, P, tid):
+    """Mean colour of the pixels fully covered by one text layer (measured on its own white mask)."""
+    m = R.svg_mask(A.cook_svg(P, only=tid, white=True), P["canvas"]["width"], P["canvas"]["height"], engine="skia", ss=1) > 0.99
+    if A.output_size(P) != (P["canvas"]["width"], P["canvas"]["height"]) or not m.any():
+        return None
+    return tuple(int(round(v)) for v in img[m][:, :3].mean(axis=0))
+
+
+def differs(a, b) -> bool:
+    return a.shape != b.shape or float(np.abs(a.astype(np.int16) - b.astype(np.int16)).sum()) > 0
+
+
+def run() -> int:
+    P = component()
+    spec = V1.spec()
+    built = {e["name"] for e in V1.entries(spec) if e["built"]}
+    check("the file lists 4 primary, 8 secondary and 16 tertiary parameters", [len(spec[t]) for t in V1.TIERS] == [4, 8, 16], [len(spec[t]) for t in V1.TIERS])
+    check("the four primary parameters are the text string, its colour, the main shape colour and the scale",
+          [e["name"] for e in spec["primary"]] == ["text", "textColour", "shapeColour", "scale"])
+    check("asset.py reads the view defaults from the same file (one place)", A.VIEW_DEFAULTS == spec["view"]["defaults"])
+
+    base_svg, base = A.cook_svg(P), render(P)
+    sel = V1.resolve(P)
+    check("selectors: main text is the largest, second the next, shape is the card, background c1, accent the bar",
+          (sel["main"], sel["second"], sel["shape"], sel["background"], sel["accent"]) == ("T00", "T01", "c2", "c1", "c3"), sel)
+    check("painted areas are measured, the card outweighs the bar", sel["areas"]["c2"] > sel["areas"]["c3"] > 0, sel["areas"])
+
+    # green 1: the current value of every built parameter is a no-op (the default IS the traced component)
+    cur = V1.values(P, sel)
+    same = {n: (A.cook_svg(V1.apply(P, {n: v})) == base_svg) for n, v in cur.items()}
+    check("values() lists every built parameter of a full component", set(cur) == built, (sorted(built - set(cur)), sorted(set(cur) - built)))
+    check("every parameter set to its current value leaves the SVG byte-identical", all(same.values()), [n for n, ok in same.items() if not ok])
+
+    # green 2: one proof per built key (name, setup values, tested values, predicate on (before, after) renders)
+    def prove(name, values_, pred, setup=None, why=""):
+        Q0 = V1.apply(P, setup) if setup else P
+        Q1 = V1.apply(Q0, values_)
+        a, b = render(Q0), render(Q1)
+        ok = differs(a, b) and bool(pred(a, b, Q0, Q1))
+        PROVED.add(name)
+        check(f"parameter {name}: the rendered pixels change as the key says {why}", ok)
+
+    # primary
+    prove("text", {"text": "Yo"}, lambda a, b, Q0, Q1: abs(ink_box(Q1, "T00")[0] - ink_box(Q0, "T00")[0]) <= 4 and ink_box(Q1, "T00")[2] < ink_box(Q0, "T00")[2] - 40
+          and ink_box(Q1, "T00")[3] <= ink_box(Q0, "T00")[3] + 1, why="(a shorter string: ink right edge moves in, left anchor and baseline stay)")
+    long_text = "A longer title"
+    Q = V1.apply(P, {"text": long_text})
+    lay, t0 = TX.layout(Q["texts"][0]), P["texts"][0]
+    check("the new string fits the traced box (advance within the traced width, anchor and baseline unchanged)",
+          lay["advance_px"] <= t0["fit_width_px"] + 0.5 and lay["x"] == 60.0 and lay["baseline"] == 140.0 and ink_box(Q, "T00")[2] <= 60 + t0["fit_width_px"] + 1.5,
+          (lay["advance_px"], t0["fit_width_px"], ink_box(Q, "T00")))
+    kept = V1.apply(P, {"text": long_text, "textFit": "keep"})
+    check("red proof: with fit keep the same string overflows the traced box (the fit proof can fail)", TX.layout(kept["texts"][0])["advance_px"] > t0["fit_width_px"] * 2)
+    prove("textColour", {"textColour": "#00ff00"},
+          lambda a, b, Q0, Q1: hexpx(a, 600, 30) == hexpx(b, 600, 30) == "#ff6a2b" and Q1["palette"]["c0"] == "#ff6a2b" and Q1["texts"][0]["colour"] != "@c0"
+          and ink_colour(a, Q0, "T00") == (255, 106, 43) and ink_colour(b, Q1, "T00") == (0, 255, 0),
+          why="(the dot and the line that shared the colour keep it)")
+    prove("shapeColour", {"shapeColour": "#aa00ff"}, lambda a, b, Q0, Q1: hexpx(a, 320, 100) == "#2b6aff" and hexpx(b, 320, 100) == "#aa00ff")
+    k = 2.0
+    prove("scale", {"scale": k}, lambda a, b, Q0, Q1: b.shape[:2] == (480, 1280) and abs(float((b[..., 3] > 0).mean()) - float((a[..., 3] > 0).mean())) < 0.02
+          and abs(float(b[..., :3].astype(float).mean()) - float(a[..., :3].astype(float).mean())) < 3.0, why="(declared size doubles, the drawing is the same)")
+    svg2 = A.cook_svg(V1.apply(P, {"scale": 2.0}))
+    check("scale keeps the viewBox (every coordinate unchanged) and doubles width and height", 'viewBox="0 0 640 240"' in svg2 and 'width="1280"' in svg2 and 'height="480"' in svg2)
+
+    # secondary
+    prove("backgroundColour", {"backgroundColour": "#ff00ff"}, lambda a, b, Q0, Q1: hexpx(a, 3, 3) == "#101820" and hexpx(b, 3, 3) == "#ff00ff")
+    prove("accentColour", {"accentColour": "#ffffff"}, lambda a, b, Q0, Q1: hexpx(a, 520, 205) == "#22cc88" and hexpx(b, 520, 205) == "#ffffff")
+    prove("textSize", {"textSize": 40}, lambda a, b, Q0, Q1: (ink_box(Q1, "T00")[3] - ink_box(Q1, "T00")[1]) < (ink_box(Q0, "T00")[3] - ink_box(Q0, "T00")[1]))
+    prove("textTracking", {"textTracking": 0.3}, lambda a, b, Q0, Q1: Q1["texts"][0]["tracking_em"] == 0.3 and differs(a, b))
+    prove("textAlign", {"textAlign": "centre"}, lambda a, b, Q0, Q1: ink_box(Q1, "T00")[0] > ink_box(Q0, "T00")[0] + 8, setup={"text": "Hi"}, why="(a short string moves to the centre of the traced box)")
+    prove("opacity", {"opacity": 0.5}, lambda a, b, Q0, Q1: abs(int(b[100, 320, 3]) - 128) <= 2 and int(a[100, 320, 3]) == 255)
+    prove("offsetX", {"offsetX": 30}, lambda a, b, Q0, Q1: hexpx(a, 55, 100) == "#2b6aff" and hexpx(b, 55, 100) == "#101820" and hexpx(b, 75, 100) == "#2b6aff",
+          why="(the card edge moves 30 px right)")
+    prove("offsetY", {"offsetY": 20}, lambda a, b, Q0, Q1: hexpx(a, 320, 30) == "#2b6aff" and hexpx(b, 320, 30) == "#101820" and hexpx(b, 320, 195) == "#2b6aff",
+          why="(the card edge moves 20 px down)")
+
+    # tertiary
+    prove("rotate", {"rotate": 15}, lambda a, b, Q0, Q1: int(a[3, 3, 3]) == 255 and int(b[3, 3, 3]) == 0 and "rotate(15 320 120)" in A.cook_svg(Q1),
+          why="(the background corner leaves the canvas corner)")
+    prove("flipX", {"flipX": True}, lambda a, b, Q0, Q1: hexpx(a, 600, 30) == "#ff6a2b" and hexpx(b, 600, 30) != "#ff6a2b" and hexpx(b, 40, 30) == "#ff6a2b"
+          and hexpx(a, 40, 30) != "#ff6a2b", why="(mirrored: the dot at x=600 lands at x=40)")
+    prove("transparentBackground", {"transparentBackground": True}, lambda a, b, Q0, Q1: int(a[3, 3, 3]) == 255 and int(b[3, 3, 3]) == 0)
+    prove("strokeScale", {"strokeScale": 3.0}, lambda a, b, Q0, Q1: sum(hexpx(a, 400, y) == "#ff6a2b" for y in range(240)) == 6
+          and sum(hexpx(b, 400, y) == "#ff6a2b" for y in range(240)) == 18, why="(the line is three times as thick: 6 rows then 18)")
+    prove("radiusScale", {"radiusScale": 0.0}, lambda a, b, Q0, Q1: hexpx(a, 44, 24) != "#2b6aff" and hexpx(b, 44, 24) == "#2b6aff", why="(the card corner becomes square)")
+    prove("text2", {"text2": "Other words here"}, lambda a, b, Q0, Q1: ink_box(Q1, "T01")[2] != ink_box(Q0, "T01")[2] and ink_box(Q1, "T00") == ink_box(Q0, "T00"))
+    prove("text2Colour", {"text2Colour": "#ff0000"}, lambda a, b, Q0, Q1: Q1["palette"]["t1"] == "#ff0000" and Q1["texts"][0]["colour"] == Q0["texts"][0]["colour"])
+    prove("textFit", {"textFit": "keep"}, lambda a, b, Q0, Q1: ink_box(Q1, "T00")[2] > ink_box(Q0, "T00")[2] + 20, setup={"text": "A much longer string than the traced one, and more"},
+          why="(a long string overflows when it is not shrunk)")
+    prove("textMinScale", {"textMinScale": 0.9}, lambda a, b, Q0, Q1: ink_box(Q1, "T00")[2] > ink_box(Q0, "T00")[2] + 20, setup={"text": "A much longer string than the traced one, and more"},
+          why="(a higher legibility floor stops the shrink earlier)")
+    prove("textBaseline", {"textBaseline": 12}, lambda a, b, Q0, Q1: ink_box(Q1, "T00")[3] == ink_box(Q0, "T00")[3] + 12 and ink_box(Q1, "T00")[0] == ink_box(Q0, "T00")[0])
+    prove("fontWeight", {"fontWeight": 200}, lambda a, b, Q0, Q1: float(R.svg_mask(A.cook_svg(Q1, only="T00", white=True), 640, 240, engine="skia", ss=1).sum())
+          < 0.8 * float(R.svg_mask(A.cook_svg(Q0, only="T00", white=True), 640, 240, engine="skia", ss=1).sum()), why="(the ink mass drops with the weight)")
+    prove("layerVisible", {"layerVisible": {"L03": False, "T01": False}}, lambda a, b, Q0, Q1: hexpx(a, 520, 205) == "#22cc88" and hexpx(b, 520, 205) == "#101820"
+          and ink_box(Q0, "T01") is not None and ink_box(Q1, "T01") is None, why="(a shape and a text layer are hidden)")
+    prove("layerOpacity", {"layerOpacity": {"L03": 0.5}}, lambda a, b, Q0, Q1: hexpx(a, 520, 205) == "#22cc88" and hexpx(b, 520, 205) not in ("#22cc88", "#101820"))
+    prove("layerBlur", {"layerBlur": {"L03": 6.0}}, lambda a, b, Q0, Q1: hexpx(a, 471, 205) == "#22cc88" and hexpx(b, 471, 205) not in ("#22cc88", "#101820"),
+          why="(the bar edge turns soft)")
+    prove("paletteColour", {"paletteColour": {"c3": "#ff0000", "c2": "#00ff00"}}, lambda a, b, Q0, Q1: hexpx(b, 520, 205) == "#ff0000" and hexpx(b, 320, 100) == "#00ff00")
+    # adjustment layers of the whole stack (15 October 2026): saturation -1 turns the green bar grey; all zero is the traced component to the byte
+    prove("adjust", {"adjust": {"saturation": -1.0}}, lambda a, b, Q0, Q1: hexpx(a, 520, 205) == "#22cc88" and len(set(hexpx(b, 520, 205)[1:3] + hexpx(b, 520, 205)[3:5] + hexpx(b, 520, 205)[5:7])) <= 3
+          and hexpx(b, 520, 205)[1:3] == hexpx(b, 520, 205)[3:5], why="(a saturated bar turns grey)")
+    check("adjustments all at zero are the traced file to the byte", A.cook_svg(V1.apply(P, {"adjust": {"hue": 0.0, "softness": 0.0}})) == A.cook_svg(P))
+    import copy as _copy
+    G = _copy.deepcopy(P)
+    G["layers"][1]["fit"] = {**(G["layers"][1].get("fit") or {}), "group": "G001", "role": "glow"}
+    G["layers"][2]["fit"] = {**(G["layers"][2].get("fit") or {}), "group": "G001", "role": "body"}
+    hid = V1.apply(G, {"layerVisible": {"G001": False}})
+    check("a group hides every layer of the unit", hid["layers"][1].get("visible") is False and hid["layers"][2].get("visible") is False and hid["layers"][3].get("visible", True) is not False)
+    dim = V1.apply(G, {"layerOpacity": {"role:glow": 0.4}})
+    check("a role dims only the layers of that role", dim["layers"][1]["effects"]["opacity"] == 0.4 and dim["layers"][2]["effects"].get("opacity", 1.0) == 1.0)
+    check("an unknown group is refused like an unknown layer", raises(lambda: V1.apply(G, {"layerVisible": {"G999": False}}), "layerVisible", "G999"))
+    check("an unknown adjustment is refused by name", raises(lambda: V1.apply(P, {"adjust": {"glitter": 0.5}}), "adjust", "glitter", "hue"))
+    check("an adjustment out of range is refused by name", raises(lambda: V1.apply(P, {"adjust": {"hue": 2.0}}), "adjust", "range"))
+
+    check("every built key of the file has its proof, and every proof names a key of the file", PROVED == built, (sorted(built - PROVED), sorted(PROVED - built)))
+    check("every built key names its proof in the file (tests/test_vector_v1.py::name) and every unbuilt key has none",
+          all((e.get("test") == f"tests/test_vector_v1.py::{e['name']}") == bool(e["built"]) for e in V1.entries(spec)), [e["name"] for e in V1.entries(spec)
+                                                                                                                         if (e.get("test") is not None) != bool(e["built"])])
+    unbuilt = [e["name"] for e in V1.entries(spec) if not e["built"]]
+    check("a listed-but-unbuilt key says so by name instead of silently doing nothing",
+          all(raises(lambda n=n: V1.apply(P, {n: {"L01": "#ff0000"}}), n, "not built") for n in unbuilt), unbuilt)    # may be empty: every key is built
+
+    # red: errors name the parameter
+    check("unknown parameter name lists the parameters", raises(lambda: V1.apply(P, {"bold": True}), "bold", "textColour", "scale"))
+    check("scale out of range names the parameter and the range", raises(lambda: V1.apply(P, {"scale": 9}), "scale", "0.1", "8"))
+    check("scale below range names the parameter", raises(lambda: V1.apply(P, {"scale": 0.01}), "scale"))
+    check("a number must be a number", raises(lambda: V1.apply(P, {"scale": "big"}), "scale", "number"))
+    check("a colour must be #rrggbb", raises(lambda: V1.apply(P, {"shapeColour": "orange"}), "shapeColour", "#rrggbb"))
+    check("empty text raises with the parameter", raises(lambda: V1.apply(P, {"text": "   "}), "text", "non empty"))
+    check("over-long text raises with the parameter", raises(lambda: V1.apply(P, {"text": "x" * 90}), "text", "80"))
+    check("a choice must be one of its choices", raises(lambda: V1.apply(P, {"textAlign": "middle"}), "textAlign", "left, centre, right"))
+    check("a boolean must be a boolean", raises(lambda: V1.apply(P, {"flipX": "yes"}), "flipX", "true or false"))
+    check("an unknown layer id names the parameter and lists the layers", raises(lambda: V1.apply(P, {"layerVisible": {"L99": False}}), "layerVisible", "L99", "L03"))
+    check("an unknown palette key names the parameter and lists the palette", raises(lambda: V1.apply(P, {"paletteColour": {"c9": "#ffffff"}}), "paletteColour", "c9", "c0"))
+    check("a layer opacity out of range names the layer", raises(lambda: V1.apply(P, {"layerOpacity": {"L03": 2}}), "layerOpacity", "L03"))
+    no_text = {**P, "texts": []}
+    check("a component without a text layer says which parameter needs one", raises(lambda: V1.apply(no_text, {"text": "Hi"}), "text", "no text layer") or
+          raises(lambda: V1.apply(no_text, {"text": "Hi"}), "text", "none"))
+    only_text = {**P, "layers": [l for l in P["layers"] if l["id"] == "L00"]}
+    check("a component without a shape says which colour parameter needs one", raises(lambda: V1.apply(only_text, {"shapeColour": "#ffffff"}), "shapeColour"))
+    iface = V1.interface(no_text)
+    row = {r["name"]: r for t in V1.TIERS for r in iface[t]}
+    check("the interface marks text parameters unavailable with the reason, and keeps the others", row["text"]["available"] is False and "no main text layer" in row["text"]["why"]
+          and row["scale"]["available"] is True and row["adjust"]["available"] is True)
+    full = V1.interface(P)
+    check("the interface carries the value of THIS component and the ranges", {r["name"]: r for r in full["primary"]}["text"]["value"] == "Hello"
+          and {r["name"]: r for r in full["primary"]}["scale"]["max"] == 8.0 and {r["name"]: r for r in full["secondary"]}["backgroundColour"]["value"] == "#101820")
+
+    # the spec checker is not vacuous: a duplicate name, a wrong count and an unknown kind are refused
+    tmp = Path(tempfile.mkdtemp(prefix="zrmd-v1-"))
+    bad = json.loads(json.dumps(spec))
+    bad["secondary"][0]["name"] = bad["primary"][0]["name"]
+    (tmp / "dup.json").write_text(json.dumps(bad))
+    check("red proof: a duplicate parameter name is refused", raises(lambda: V1.spec(tmp / "dup.json"), "duplicate", "text"))
+    bad = json.loads(json.dumps(spec))
+    bad["primary"] = bad["primary"][:3]
+    (tmp / "count.json").write_text(json.dumps(bad))
+    check("red proof: a tier with the wrong count is refused", raises(lambda: V1.spec(tmp / "count.json"), "primary", "3"))
+    bad = json.loads(json.dumps(spec))
+    bad["tertiary"][0]["kind"] = "slider"
+    (tmp / "kind.json").write_text(json.dumps(bad))
+    check("red proof: an unknown kind is refused", raises(lambda: V1.spec(tmp / "kind.json"), "slider"))
+
+    # HTML component: two palette keys with the same hex stay two parameters; the live text follows the view; the interface is embedded
+    same_hex = copy.deepcopy(P)
+    same_hex["palette"]["c9"] = same_hex["palette"]["c0"]
+    same_hex["layers"][3]["paint"]["colour"] = "@c9"
+    html = S.export_html(V1.apply(same_hex, {"rotate": 5, "scale": 1.5}), "synthetic", fonts={"T00": "fonts/Inter.ttf", "T01": "fonts/Inter.ttf"})
+    check("a key that shares a hex keeps its own CSS variable (var(--c9) and var(--c0) are both used)", "var(--c9)" in html and "var(--c0)" in html)
+    check("the live text is inside the view group", html.index('<g id="view"') < html.index('id="T00-text"') < html.index("</g>\n</svg>"))
+    check("the HTML width follows the scale and the V1 interface is embedded with this component's values", "min(100vw,960px)" in html and '"v1"' in html and '"selectors"' in html)
+    hidden = V1.apply(P, {"layerVisible": {"T01": False}})
+    html_h = S.export_html(hidden, "synthetic", fonts={"T00": "fonts/Inter.ttf", "T01": "fonts/Inter.ttf"})
+    check("a hidden text layer is not in the live component (and the visible one still is)", 'id="T01-text"' not in html_h and 'id="T00-text"' in html_h)
+    static = S.export_html(P, "synthetic")
+    check("the static component keeps the palette as CSS variables", "--c0:#ff6a2b" in static and 'fill="var(--c0)"' in static and 'fill="var(--c2)"' in static)
+
+    # the command line reads the interface of a real component, and names a reference that has none
+    check("--params names a reference that has no component", raises(lambda: TX.params_cli("no-such-reference-xyz"), "no-such-reference-xyz", kinds=(FileNotFoundError,)))
+    try:
+        real = TX.params_cli("onekey-pro-2-marks")
+    except FileNotFoundError:
+        real = None            # the private workshop is not on this machine: the proof above stands alone
+    if real is not None:
+        rows = {r["name"]: r for t in V1.TIERS for r in real[t]}
+        check("--params reads a real component: its main text is a value, its missing shape colour says why",
+              rows["text"]["available"] and isinstance(rows["text"]["value"], str) and rows["shapeColour"]["available"] is False and "why" in rows["shapeColour"])
+
+    # the measure of a single layer ignores the view (a scaled or turned component is still measured at the traced geometry)
+    turned = V1.apply(P, {"rotate": 30, "scale": 3.0, "opacity": 0.2})
+    check("single-layer measures ignore the view", A.cook_svg(turned, only="L01", white=True) == A.cook_svg(P, only="L01", white=True))
+
+    print(f"{len(FAIL)} failure(s)")
+    return 1 if FAIL else 0
+
+
+def test_vector_v1():
+    assert run() == 0
+
+
+if __name__ == "__main__":
+    sys.exit(run())

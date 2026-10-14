@@ -1,0 +1,56 @@
+# 14 October 2026: run the rhythm detector (zrmd.analyze.rhythm_detect) on cached references or synthetic videos and score it.
+# Run: nice -n 5 /Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/RhythmDetect.py --synth S1 [--slug X] [--json out]
+# FR : lance le detecteur de rythme sur des references en cache ou des videos synthetiques et le note.
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+sys.path.insert(0, str(ENGINE / "Scripts"))
+from zrmd.analyze import rhythm_cache, rhythm_detect as D, rhythm_eval as E  # noqa: E402
+import RhythmBench as B  # noqa: E402
+import RhythmSignals as RS  # noqa: E402
+import RhythmSynth  # noqa: E402
+
+
+def run_folder(folder: Path, prm: dict | None = None) -> dict:
+    sig = RS.load_signals(folder)
+    z = np.load(Path(folder) / "fine.npz")
+    fine = {k: z[k] for k in z.files}
+    frames = rhythm_cache.load(folder)["frames"]
+    if prm is None:     # the rule path as it shipped before the classifier: fades typed, dissolves and whips off (the V1 switches are on)
+        base = D.params()
+        prm = dict(base, types=dict(base["types"], dissolve=False, whip=False))
+    return D.detect_cached(sig, fine, frames, prm)
+
+
+def show(name: str, out: dict, truth: list[dict]) -> dict:
+    r = E.summary(truth, out["cuts"])
+    row = {k: (v["precision"], v["recall"], v["f1"], v["tp"], v["fp"], v["fn"]) for k, v in r.items()}
+    print(name, json.dumps(row))
+    print("   missed (cuts, tol1):", r["cuts_tol1"]["missed"], " extra:", r["cuts_tol1"]["extra"])
+    return r
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--synth", action="append")
+    ap.add_argument("--json")
+    a = ap.parse_args()
+    results = {}
+    for vid in a.synth or []:
+        out = run_folder(RhythmSynth.root() / vid / "cache")
+        truth = B.synth_truth(json.loads((RhythmSynth.root() / vid / "truth.json").read_text(encoding="utf-8")))
+        results[vid] = show(vid, out, truth)
+    if a.json:
+        Path(a.json).write_text(json.dumps(results, indent=1) + "\n", encoding="utf-8")
+
+
+if __name__ == "__main__":
+    main()

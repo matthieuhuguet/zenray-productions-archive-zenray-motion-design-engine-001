@@ -1,0 +1,293 @@
+# 14 October 2026: the BACKDROP FIELD of a frame as a shader-bank composition, fitted in closed form and measured in
+# CIEDE2000 (the image chantier, "shader"). Model, all of it bank blocks so the render is the GLSL of the same layers:
+#   L0 bilinear_gradient4 (normal)   four corner colours: flat colour, linear gradient and bilinear sheet
+#   L1 glow_gaussian (add)           optional soft light: centre, sigma, intensity, colour (searched on a small grid)
+# Both terms are LINEAR in their colours, so for a fixed glow geometry the fit is one weighted least squares; the
+# geometry is searched on a grid of params/image-survey.json. A robust re-weighting keeps content (text, UI, photographs)
+# out of the fit. The metric never uses our own residual to decide what counts: a cell is "field" when its error is at
+# most fieldCutoffDE in absolute terms, so a poor model lowers the field share instead of hiding its errors.
+# No reference pixel is ever used as a texture: the output is a layer list with numbers.
+# FR : le champ de fond d'une image comme composition de la banque de shaders, ajuste en forme fermee, mesure en CIEDE2000.
+from __future__ import annotations
+
+import json
+from functools import lru_cache
+
+import numpy as np
+from skimage.color import deltaE_ciede2000, rgb2lab
+
+from .. import settings
+from . import compose
+
+CONFIG = settings.REPO / "params" / "image-survey.json"
+
+
+@lru_cache(maxsize=1)
+def _config() -> dict:
+    return json.loads(CONFIG.read_text(encoding="utf-8"))
+
+
+def config() -> dict:
+    """A copy of params/image-survey.json (the single parameter interface of the image measurement)."""
+    return json.loads(json.dumps(_config()))
+
+
+def basis(w: int, h: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Pixel-centre u, v grids (v downwards, the GLSL convention) and the bilinear basis (N, 4): tl, tr, bl, br."""
+    u = (np.arange(w) + 0.5) / w
+    v = (np.arange(h) + 0.5) / h
+    U, V = np.meshgrid(u, v)
+    B = np.stack([(1 - U) * (1 - V), U * (1 - V), (1 - U) * V, U * V], axis=-1).reshape(-1, 4)
+    return U, V, B
+
+
+def de00(ref_u8: np.ndarray, out: np.ndarray) -> np.ndarray:
+    """CIEDE2000 per cell between a reference frame (0..255) and a rendered frame (0..255), HxW."""
+    a = rgb2lab(np.asarray(ref_u8, float) / 255.0)
+    b = rgb2lab(np.clip(np.asarray(out, float), 0.0, 255.0) / 255.0)
+    return deltaE_ciede2000(a, b)
+
+
+def _solve(Bm: np.ndarray, Y: np.ndarray, w: np.ndarray) -> np.ndarray:
+    sw = np.sqrt(w)[:, None]
+    coef, *_ = np.linalg.lstsq(Bm * sw, Y * sw, rcond=None)
+    return coef
+
+
+def _wrms(r: np.ndarray, w: np.ndarray) -> float:
+    return float(np.sqrt((w[:, None] * r * r).sum() / max(w.sum() * 3, 1e-9)))
+
+
+STOPS_ANGLE = {"stops6_v": 90.0, "stops6_h": 0.0}
+
+
+def stops_basis(U: np.ndarray, V: np.ndarray, angle: float) -> np.ndarray:
+    """Hat-function basis (N, 6) of gradient_stops6 with equal segment widths along its axis (the block's own axis)."""
+    a = np.radians(angle)
+    dx, dy = np.cos(a), np.sin(a)
+    t = np.clip(0.5 + ((U - 0.5) * dx + (V - 0.5) * dy) / (abs(dx) + abs(dy)), 0.0, 1.0).ravel() * 5.0
+    i = np.minimum(np.floor(t).astype(int), 4)
+    f = t - i
+    out = np.zeros((t.size, 6))
+    out[np.arange(t.size), i] = 1.0 - f
+    out[np.arange(t.size), i + 1] = f
+    return out
+
+
+def _stops_params(c: np.ndarray, angle: float) -> dict:
+    p = {f"c{i}": np.clip(c[i], 0.0, 1.0).tolist() for i in range(6)}
+    p.update({"angle": angle, "wa": [0.2, 0.2, 0.2], "wb": [0.2, 0.2]})
+    return p
+
+
+def base_layers(kind: str, coef) -> list[dict]:
+    """The bank layers of a base model. bilinear: coef (4,3); stops6_v / stops6_h: coef (6,3); sep_vh: coef (a (6,3), b (6,3)),
+    a vertical ramp times a horizontal ramp (the second layer in multiply), a rank-one separable field."""
+    if kind == "bilinear":
+        c = np.clip(np.asarray(coef, float), 0.0, 1.0)
+        return [{"block": "bilinear_gradient4", "params": {"c_tl": c[0].tolist(), "c_tr": c[1].tolist(), "c_bl": c[2].tolist(), "c_br": c[3].tolist()}}]
+    if kind == "arch":
+        g, colours = coef
+        return [arch_layer(g, colours, _config()["glow"]["aspect"])]
+    if kind == "sep_vh":
+        a, b = coef
+        return [{"block": "gradient_stops6", "params": _stops_params(np.asarray(a, float), 90.0)},
+                {"block": "gradient_stops6", "blend": "multiply", "params": _stops_params(np.asarray(b, float), 0.0)}]
+    return [{"block": "gradient_stops6", "params": _stops_params(np.asarray(coef, float), STOPS_ANGLE[kind])}]
+
+
+def solve_sep(Bv: np.ndarray, Bh: np.ndarray, Y: np.ndarray, w: np.ndarray, iters: int = 4):
+    """y_c = (Bv a_c) * (Bh b_c) by alternating weighted least squares per channel, then b normalised to max 1 (the
+    horizontal ramp is a factor at most 1, so both ramps are valid bank colours). Returns a (6,3), b (6,3)."""
+    a = np.zeros((6, 3))
+    b = np.ones((6, 3))
+    for c in range(3):
+        bb = np.ones(6)
+        aa = np.zeros(6)
+        for _ in range(iters):
+            aa = np.linalg.lstsq(Bv * np.sqrt(w)[:, None] * (Bh @ bb)[:, None], Y[:, c] * np.sqrt(w), rcond=None)[0]
+            bb = np.linalg.lstsq(Bh * np.sqrt(w)[:, None] * (Bv @ aa)[:, None], Y[:, c] * np.sqrt(w), rcond=None)[0]
+            m = float(np.max(np.abs(bb))) or 1.0
+            bb, aa = bb / m, aa * m
+        if float(np.max(bb)) < 0:
+            bb, aa = -bb, -aa
+        a[:, c], b[:, c] = aa, bb
+    return a, b
+
+
+def _ss(e0, e1, x):
+    t = np.clip((x - e0) / (e1 - e0), 0.0, 1.0)
+    return t * t * (3.0 - 2.0 * t)
+
+
+def arch_weights(U: np.ndarray, V: np.ndarray, g: dict, aspect: float) -> np.ndarray:
+    """Weights (N, 5) of the five colours (rim, core, out, top, in) of arch_glow_field for a geometry g, with no side tint.
+    The block is piecewise linear in its colours, so for a fixed geometry the colours are one least squares."""
+    x = np.abs(2.0 * (U - g["cx"]))
+    slope = 2.0 * g["k"] * g["p"] * np.maximum(x, 1e-4) ** (g["p"] - 1.0) / aspect
+    d = (V - (g["apex"] + g["k"] * x ** g["p"])) / np.sqrt(1.0 + slope * slope)
+    o = -d
+    a1 = _ss(0.0, g["w_rim"], o)
+    a2 = _ss(g["w_rim"], g["w_rim"] + g["w_core"], o)
+    a3 = _ss(g["w_rim"] + g["w_core"], g["w_rim"] + g["w_core"] + g["w_out"], o)
+    ins = _ss(-g["soft"], g["soft"], d)
+    out = (1 - ins) * (1 - a3)
+    wts = np.stack([out * (1 - a2) * (1 - a1), out * (1 - a2) * a1, out * a2, (1 - ins) * a3, ins], axis=-1)
+    return wts.reshape(-1, 5)
+
+
+def arch_layer(g: dict, colours: np.ndarray, aspect: float) -> dict:
+    c = np.clip(np.asarray(colours, float), 0.0, 1.0)
+    p = {"cx": g["cx"], "apex": g["apex"], "k": g["k"], "p": g["p"], "soft": g["soft"], "w_rim": g["w_rim"], "w_core": g["w_core"],
+         "w_out": g["w_out"], "c_rim": c[0].tolist(), "c_rim_side": c[0].tolist(), "c_core": c[1].tolist(), "c_core_side": c[1].tolist(),
+         "c_out": c[2].tolist(), "c_top": c[3].tolist(), "c_in": c[4].tolist(), "side": [0.2, 0.9], "side_axis": 0.7, "aspect": aspect}
+    return {"block": "arch_glow_field", "params": p}
+
+
+def layers_from_fit(corners, glow, aspect: float, kind: str = "bilinear") -> list[dict]:
+    """Bank layer list of a fit. corners (4, 3) bilinear or (6, 3) stops, in 0..1; glow None or (cx, cy, sigma, k[3])."""
+    layers = base_layers(kind, corners)
+    if glow is not None:
+        cx, cy, sg, k = glow
+        k = np.clip(np.asarray(k, float), 0.0, None)
+        bounds = _config()["glow"]["blockBounds"]["intensity"]
+        intensity = float(np.clip(max(float(k.max()), bounds[0]), bounds[0], bounds[1]))
+        layers.append({"block": "glow_gaussian", "blend": "add",
+                       "params": {"color": np.clip(k / intensity, 0.0, 1.0).tolist(), "center": [float(cx), float(cy)],
+                                  "sigma": float(sg), "intensity": intensity, "aspect": float(aspect)}})
+    return layers
+
+
+def evaluate(layers: list[dict], w: int, h: int) -> np.ndarray:
+    """The 8-bit canvas of a layer list (numpy twins, rounded like the GLSL canvas), HxWx3 float 0..255."""
+    return np.round(compose.evaluate(layers, w, h))
+
+
+def frame_metrics(ref_u8: np.ndarray, out: np.ndarray, cfg: dict | None = None) -> dict:
+    cfg = cfg or _config()
+    de = de00(ref_u8, out)
+    mask = de <= cfg["fieldCutoffDE"]
+    jnd = float(cfg["jndDE"])
+    res = {"share": round(float(mask.mean()), 4), "within1": round(float((de <= jnd).mean()), 4)}
+    curve = {}
+    for c in cfg.get("curveCutoffs", []):
+        mc = de <= c
+        curve[str(c)] = [round(float(mc.mean()), 4),
+                         round(float(np.clip(1.0 - 0.01 * np.mean((de[mc] / jnd) ** 2), 0.0, 1.0)), 5) if mc.any() else None]
+    if curve:
+        res["curve"] = curve
+    if mask.any():
+        m2 = float(np.mean((de[mask] / jnd) ** 2))
+        res.update({"score": round(float(np.clip(1.0 - 0.01 * m2, 0.0, 1.0)), 5), "deMedian": round(float(np.median(de[mask])), 3),
+                    "deP90": round(float(np.percentile(de[mask], 90)), 3), "meanDe2": round(m2, 4)})
+    else:
+        res.update({"score": None, "deMedian": None, "deP90": None, "meanDe2": None})
+    return res
+
+
+def fit_frame(frame_u8: np.ndarray, cfg: dict | None = None, use_glow: bool | None = None, models: list[str] | None = None) -> dict:
+    """Fit the field of one reference frame (HxWx3 uint8). Returns {layers, out, metrics, glow, passes}."""
+    cfg = cfg or _config()
+    h, w = frame_u8.shape[:2]
+    U, V, B = basis(w, h)
+    Y = frame_u8.reshape(-1, 3).astype(float) / 255.0
+    gl = cfg["glow"]
+    use_glow = gl["enabled"] if use_glow is None else use_glow
+    weights = np.ones(len(Y))
+    layers, out, glow = None, None, None
+    kinds = list(models or cfg.get("models") or ["bilinear"])
+    bases = {"bilinear": B}
+    for kd in kinds:
+        if kd in STOPS_ANGLE:
+            bases[kd] = stops_basis(U, V, STOPS_ANGLE[kd])
+    if "sep_vh" in kinds:
+        bases["_v"], bases["_h"] = stops_basis(U, V, 90.0), stops_basis(U, V, 0.0)
+    kind = kinds[0]
+    gains = float(cfg.get("modelGain", 0.0))
+    arch_state: dict = {}
+    arch_grid = []
+    if "arch" in kinds:
+        ag = cfg["arch"]
+        for apex in ag["apex"]:
+            for k in ag["k"]:
+                for p_ in ag["p"]:
+                    for wr, wc, wo in ag["widths"]:
+                        arch_grid.append({"cx": 0.5, "apex": apex, "k": k, "p": p_, "soft": ag["soft"], "w_rim": wr, "w_core": wc, "w_out": wo})
+
+    def candidate(kd: str, wts: np.ndarray) -> dict:
+        """One base model with its best glow (closed form in the colours for a fixed geometry), the glow kept only when it
+        lowers the weighted RMS by glow.minGain."""
+        if kd == "arch":
+            geo = arch_state.get("geo")
+            if geo is None:  # the geometry grid is searched on the first pass only; later passes refit the colours
+                found = None
+                for geom in arch_grid:
+                    Wm = arch_weights(U, V, geom, gl["aspect"])
+                    col = np.clip(_solve(Wm, Y, wts), 0.0, 1.0)
+                    r = _wrms(Wm @ col - Y, wts)
+                    if found is None or r < found[0]:
+                        found = (r, geom)
+                geo = arch_state["geo"] = found[1]
+            Wm = arch_weights(U, V, geo, gl["aspect"])
+            col = np.clip(_solve(Wm, Y, wts), 0.0, 1.0)
+            return {"kind": "arch", "coef": (geo, col), "rms": _wrms(Wm @ col - Y, wts), "glow": None}
+        if kd == "sep_vh":
+            coef = solve_sep(bases["_v"], bases["_h"], Y, wts)
+            pred = np.clip(bases["_v"] @ np.clip(coef[0], 0, 1), 0, 1) * np.clip(bases["_h"] @ np.clip(coef[1], 0, 1), 0, 1)
+            linear = False
+        else:
+            coef = np.clip(_solve(bases[kd], Y, wts), 0.0, 1.0)
+            pred = bases[kd] @ coef
+            linear = True
+        best_c = {"kind": kd, "coef": coef, "rms": _wrms(pred - Y, wts), "glow": None}
+        if not use_glow:
+            return best_c
+        rms0, found = best_c["rms"], None
+        for cx in gl["centresX"]:
+            for cy in gl["centresY"]:
+                for sg in gl["sigmas"]:
+                    g = np.exp(-(((U - cx) * gl["aspect"]) ** 2 + (V - cy) ** 2) / (2.0 * sg * sg)).reshape(-1, 1)
+                    if linear:  # joint closed form: the base colours are refitted with the glow taken out
+                        Bk = bases[kd]
+                        k = np.clip(_solve(np.hstack([Bk, g]), Y, wts)[Bk.shape[1]], 0.0, None)
+                        c2 = np.clip(_solve(Bk, Y - g * k, wts), 0.0, 1.0)
+                        r = _wrms(Bk @ c2 + g * k - Y, wts)
+                    else:
+                        k = np.clip(_solve(g, Y - pred, wts)[0], 0.0, None)
+                        c2 = coef
+                        r = _wrms(pred + g * k - Y, wts)
+                    if found is None or r < found["rms"]:
+                        found = {"glow": (cx, cy, sg, k), "rms": r, "coef": c2}
+        if found is not None and found["rms"] <= rms0 * (1.0 - gl["minGain"]):
+            best_c.update(found)
+        return best_c
+
+    for _ in range(int(cfg["irlsPasses"])):
+        # candidates in the order of the list (simplest first); a richer model is kept only when it gains modelGain.
+        # select "rms": the weighted RMS on the robust cells; "within1": the share of ALL cells within one JND, the
+        # unmasked number (a model that explains the field cells exactly beats one that spreads a small error)
+        best = None
+        for kd in kinds:
+            cnd = candidate(kd, weights)
+            if cfg.get("select") == "within1":
+                lay = layers_from_fit(cnd["coef"], cnd["glow"], gl["aspect"], cnd["kind"])
+                dmap = de00(frame_u8, evaluate(lay, w, h))
+                cnd["score_sel"] = float((dmap <= float(cfg["jndDE"])).mean()) - 0.002 * float(np.mean(dmap))
+                better = best is None or cnd["score_sel"] > best["score_sel"] + gains * 0.2
+            else:
+                better = best is None or cnd["rms"] < best["rms"] * (1.0 - gains)
+            if better:
+                best = cnd
+        kind = best["kind"]
+        layers = layers_from_fit(best["coef"], best["glow"], gl["aspect"], kind)
+        glow = best["glow"]
+        out = evaluate(layers, w, h)
+        de = de00(frame_u8, out).ravel()
+        # Robust weights: content cells leave the fit. The fit keeps at least minFieldShare of the cells so it cannot
+        # collapse; the REPORTED mask below is the absolute cutoff, never this one.
+        cut = max(float(cfg["fieldCutoffDE"]), float(np.percentile(de, 100.0 * float(cfg["minFieldShare"]))))
+        weights = (de <= cut).astype(float)
+    metrics = frame_metrics(frame_u8, out, cfg)
+    metrics["glow"] = glow is not None
+    metrics["base"] = kind
+    return {"layers": layers, "out": out, "metrics": metrics, "glow": glow, "base": kind}

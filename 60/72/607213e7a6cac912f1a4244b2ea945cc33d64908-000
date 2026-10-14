@@ -1,0 +1,610 @@
+# 14 October 2026: TEXT LAYERS of a vector component. A traced scene keeps a glyph as a free path, so its string cannot change; a text
+# layer keeps the string, the font file with its axes, the size, the tracking and the baseline as PARAMETERS, so the same animation can
+# carry any string (HDA law: the definition is the traced box and the fitted font, the string is the instance).
+#
+#   layer      {id, text, default, font{file, family, axes}, size_px, tracking_em, origin [x, baseline], fit_width_px, align, fit,
+#               min_scale, max_scale, colour "@cN" or "#rrggbb", z, max_length}
+#   layout()   resolves a string against the layer: the size is shrunk (fit "shrink") or scaled (fit "box") so the advance of the new
+#              string fits the width the traced string had, the anchor (left, centre, right) is kept, the baseline never moves
+#   cook_*()   outlines (asset.svg: no font needed) or live <text> (component.html: the font is shipped next to it and
+#              ZRMD.setText(id, string) refits in the browser)
+#   apply()    a dict of new strings -> new params; an unknown id, an empty string or a string over max_length is an error that NAMES it
+#   interface() the parameters offered to the person, at most 8 per category (text, colour, layout)
+#
+# Rights (Rules.md, 12 October 2026): a layer built from a reference keeps the reference string as `default` in the PRIVATE 1:1
+# benchmark only; a variation carries any other string. FR : calques de texte d'un composant vectoriel.
+from __future__ import annotations
+
+import copy
+import json
+import re
+import shutil
+from pathlib import Path
+
+from zrmd.vector import render as R
+
+SCHEMA = "zrmd/text-layer@1"
+MAX_PER_CATEGORY = 8
+COLOUR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def make_layer(layer_id: str, text: str, font_file: str, size_px: float, origin: tuple, colour: str = "@c0", axes: dict | None = None,
+               tracking_em: float = 0.0, align: str = "left", fit: str = "shrink", z: int | None = None, max_length: int = 80,
+               min_scale: float = 0.25, max_scale: float = 1.6, deltas_px: list | None = None, blur_px: float = 0.0) -> dict:
+    """A text layer from the fitted parameters of one traced string. `origin` is (x of the pen start, y of the baseline) in canvas
+    pixels. The width of the traced string is measured here and kept as fit_width_px."""
+    o = R.shape_text(text, str(font_file), float(size_px), axes or None, float(tracking_em), True, deltas_px)
+    return {"schema": SCHEMA, "id": layer_id, "text": text, "default": text, "deltas_px": deltas_px, "blur_px": float(blur_px),
+            "font": {"file": str(font_file), "family": Path(font_file).parent.name, "axes": dict(axes or {})},
+            "size_px": float(size_px), "tracking_em": float(tracking_em), "origin": [float(origin[0]), float(origin[1])],
+            "fit_width_px": round(float(o.advance_px), 4), "align": align, "fit": fit, "min_scale": min_scale, "max_scale": max_scale,
+            "colour": colour, "z": z, "max_length": max_length, "visible": True}
+
+
+def from_mark(P: dict, crop_xy: tuple, layer_id: str, colour: str = "@c0", z: int | None = None, align: str = "left") -> dict:
+    """A text layer from an F3 text mark version (zrmd/mark@1: font, size, tracking, origin in frame pixels), moved into the
+    coordinates of a crop whose top-left corner sits at crop_xy. Raises with the name of a missing parameter."""
+    need = ("text", "font", "size_px", "tracking_em", "origin_px")
+    miss = [k for k in need if k not in P]
+    if miss:
+        raise KeyError(f"text mark params missing {miss}")
+    ox, oy = P["origin_px"]
+    return make_layer(layer_id, P["text"], P["font"]["file"], P["size_px"], (ox - crop_xy[0], oy - crop_xy[1]), colour,
+                      P["font"].get("axes") or {}, P["tracking_em"], align, z=z, deltas_px=P.get("deltas_px"), blur_px=P.get("blur_px", 0.0))
+
+
+# ----------------------------------------------------------------------------------------------------------- layout
+
+def layout(layer: dict, text: str | None = None) -> dict:
+    """Where a string sits in a layer: size, pen start and the shaped outline. The advance of the string is compared with the width
+    the traced string had (fit_width_px); fit "shrink" only shrinks, "box" also grows, "keep" never rescales. The baseline never moves."""
+    s = layer["text"] if text is None else text
+    f = layer["font"]
+    axes = f.get("axes") or None
+    size = float(layer["size_px"])
+    # the per-glyph spacing that was fitted belongs to the glyphs of the traced string: another string drops it
+    deltas = layer.get("deltas_px") if s == layer.get("default") else None
+    o = R.shape_text(s, f["file"], size, axes, float(layer["tracking_em"]), True, deltas)
+    mode = layer.get("fit", "shrink")
+    if mode in ("shrink", "box") and o.advance_px > 0 and layer.get("fit_width_px"):
+        k = float(layer["fit_width_px"]) / o.advance_px
+        if mode == "shrink":
+            k = min(1.0, k)
+        k = min(float(layer.get("max_scale", 1.6)), max(float(layer.get("min_scale", 0.25)), k))
+        if abs(k - 1.0) > 1e-9:
+            size *= k
+            o = R.shape_text(s, f["file"], size, axes, float(layer["tracking_em"]), True, [d * k for d in deltas] if deltas else None)
+    x0, base = layer["origin"]
+    base = base + float(layer.get("baseline_shift_px") or 0.0)      # 14 October 2026: the baselineShift parameter of zrmd/vector/v1.py
+    w = float(layer.get("fit_width_px") or o.advance_px)
+    align = layer.get("align", "left")
+    x = x0 if align == "left" else (x0 + w / 2.0 - o.advance_px / 2.0 if align == "centre" else x0 + w - o.advance_px)
+    return {"size_px": size, "x": x, "baseline": base, "advance_px": o.advance_px, "outline": o, "scale": size / float(layer["size_px"])}
+
+
+def _paint(layer: dict, palette: dict, css: bool = False) -> str:
+    c = layer.get("colour", "#ffffff")
+    if c.startswith("@"):
+        if c[1:] not in palette:
+            raise KeyError(f"palette has no colour '{c[1:]}' for text layer {layer['id']} (palette: {sorted(palette)})")
+        return f"var(--{c[1:]})" if css else palette[c[1:]]
+    return c
+
+
+def cook_outline(layer: dict, palette: dict, white: bool = False, css: bool = False) -> str:
+    """The text layer as a named group of glyph outlines: no font is needed to display it. css: the paint is var(--key), so the colour
+    of this layer stays its own parameter in the HTML component (14 October 2026)."""
+    lay = layout(layer)
+    o = lay["outline"]
+    paint = "#ffffff" if white else _paint(layer, palette, css)
+    ty = lay["baseline"] - o.ascender_px
+    paths = "".join(f'<path d="{g["path"]}"/>' for g in o.glyphs if g["path"])
+    blur = float(layer.get("blur_px") or 0.0)
+    fx, flt = "", ""
+    if blur > 0.05 and not white:     # the optical blur that was fitted on the traced string
+        fx = f' filter="url(#blur-{layer["id"]}-text)"'
+        flt = (f'<filter id="blur-{layer["id"]}-text" x="-10%" y="-50%" width="120%" height="200%">'
+               f'<feGaussianBlur stdDeviation="{blur:g}"/></filter>')
+    return (f'<g id="{layer["id"]}-text" data-kind="text" data-text-id="{layer["id"]}" data-text="{_esc(layer["text"])}" fill="{paint}"{fx} '
+            f'transform="translate({lay["x"]:.4f} {ty:.4f})">{flt}{paths}</g>')
+
+
+def cook_live(layer: dict, palette: dict, font_url: str, css: bool = False) -> str:
+    """The text layer as a live <text> element: the font is loaded from font_url, ZRMD.setText(id, string) changes the string and
+    refits it to the traced width in the browser."""
+    lay = layout(layer)
+    paint = _paint(layer, palette, css)
+    ax = (layer["font"].get("axes") or {})
+    # 14 October 2026: font-optical-sizing none. A variable font with an opsz axis (Inter) is re-drawn by the browser at every font size
+    # ("auto" follows the size), so the string is not proportional to the size and the fit lands 2 to 4 percent over the traced width
+    # (measured in a real browser on Inter at 27.5 and 21.5 px against the 64 px trace); the traced layer fixes its own axes, the
+    # explicit variation settings below still apply. FR : pas de taille optique automatique, la largeur suit la taille.
+    var = "font-optical-sizing:none;" + (("font-variation-settings:" + ", ".join(f"'{k}' {v:g}" for k, v in ax.items())) if ax else "")
+    anchor = {"left": "start", "centre": "middle", "right": "end"}[layer.get("align", "left")]
+    x0, base = layer["origin"]
+    base = base + float(layer.get("baseline_shift_px") or 0.0)
+    w = float(layer.get("fit_width_px") or lay["advance_px"])
+    ax_x = x0 if anchor == "start" else (x0 + w / 2.0 if anchor == "middle" else x0 + w)
+    return (f'<text id="{layer["id"]}-text" data-kind="text" data-text-id="{layer["id"]}" x="{ax_x:.4f}" y="{base:.4f}" fill="{paint}" '
+            f'font-family="ZRMD-{layer["id"]}" font-size="{layer["size_px"]:g}" text-anchor="{anchor}" '
+            f'letter-spacing="{layer["tracking_em"] * layer["size_px"]:.4f}" style="{var}">{_esc(layer["text"])}</text>')
+
+
+def _esc(s: str) -> str:
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+
+def font_faces(texts: list, urls: dict) -> str:
+    """@font-face rules, one per text layer, from {layer id: url}."""
+    out = []
+    for t in texts:
+        if t["id"] in urls:
+            out.append(f'@font-face{{font-family:"ZRMD-{t["id"]}";src:url("{urls[t["id"]]}");font-weight:100 900}}')
+    return "".join(out)
+
+
+def ship_fonts(params: dict, folder: Path) -> dict:
+    """Copy the font file of every text layer next to the component (fonts/<name>) and return {layer id: relative url}. A font
+    that cannot be found is an error that names the layer."""
+    urls = {}
+    fdir = Path(folder) / "fonts"
+    for t in params.get("texts", []):
+        src = Path(t["font"]["file"])
+        if not src.exists():
+            raise FileNotFoundError(f"font of text layer {t['id']} not found: {src}")
+        fdir.mkdir(parents=True, exist_ok=True)
+        dst = fdir / src.name
+        if not dst.exists():
+            shutil.copy2(src, dst)
+        urls[t["id"]] = f"fonts/{src.name}"
+    return urls
+
+
+# live component script: the browser refits on setText and on load, applies the V1 parameters that need no re-cook (ZRMD.set) and,
+# with ?panel=1 in the address, shows the primary and secondary parameters as a small panel (14 October 2026).
+LIVE_JS = """
+(function(){
+  var T = %(texts)s, V1 = %(v1)s, VIEW = %(view)s, CANVAS = %(canvas)s;
+  var HEX = /^#[0-9a-fA-F]{6}$/;
+  var ZRMD = window.ZRMD = {
+    texts: T, v1: V1, view: VIEW,
+    ids: function(){ return Object.keys(T); },
+    _el: function(id){
+      if (!(id in T)) throw new Error("no text parameter '" + id + "' (texts: " + Object.keys(T).join(", ") + ")");
+      return document.getElementById(id + "-text");
+    },
+    setText: function(id, s){
+      var el = ZRMD._el(id), t = T[id];
+      if (typeof s !== "string" || !s.length) throw new Error("text parameter '" + id + "' expects a non empty string");
+      if (s.length > t.max_length) throw new Error("text parameter '" + id + "' is over " + t.max_length + " characters");
+      el.textContent = s; t.value = s; el.setAttribute("font-size", t.size_px); el.setAttribute("letter-spacing", t.tracking_px);
+      var len = el.getComputedTextLength(), k = len > 0 ? t.fit_width_px / len : 1;
+      if (t.fit === "shrink") k = Math.min(1, k);
+      if (t.fit === "keep") k = 1;
+      k = Math.min(t.max_scale, Math.max(t.min_scale, k));
+      el.setAttribute("font-size", t.size_px * k);
+      el.setAttribute("letter-spacing", t.tracking_px * k);    // 14 October 2026: the tracking is in em, it scales with the size
+      return k;
+    },
+    setColour: function(key, value){
+      if (!HEX.test(value)) throw new Error("colour parameter '" + key + "' expects #rrggbb");
+      document.documentElement.style.setProperty("--" + key, value);
+    },
+    _view: function(){
+      var g = document.getElementById("view"), svg = document.querySelector("svg");
+      if (g) {
+        var tf = [];
+        if (VIEW.offset_x || VIEW.offset_y) tf.push("translate(" + VIEW.offset_x + " " + VIEW.offset_y + ")");
+        if (VIEW.rotate_deg) tf.push("rotate(" + VIEW.rotate_deg + " " + CANVAS[0] / 2 + " " + CANVAS[1] / 2 + ")");
+        if (VIEW.flip_x) tf.push("translate(" + CANVAS[0] + " 0) scale(-1 1)");
+        if (tf.length) g.setAttribute("transform", tf.join(" ")); else g.removeAttribute("transform");
+        g.setAttribute("opacity", VIEW.opacity);
+      }
+      svg.style.width = "min(100vw," + (CANVAS[0] * VIEW.scale) + "px)";
+    },
+    // one V1 parameter by its name (zrmd/vector/v1.py): checked like the engine checks it, an error names the parameter
+    set: function(name, value){
+      var p = V1[name];
+      if (!p) throw new Error("no parameter '" + name + "' (parameters: " + Object.keys(V1).join(", ") + ")");
+      if (!p.available) throw new Error("parameter '" + name + "' is not available for this component: " + (p.why || "not built"));
+      if (!p.dom) throw new Error("parameter '" + name + "' is applied by re-cooking: VectorScene.py --text SLUG --set " + name + "=...");
+      var k = p.kind, d = p.dom;
+      if (k === "number" || k === "map:number") {
+        var vals = k === "number" ? [value] : Object.keys(value).map(function(i){ return value[i]; });
+        vals.forEach(function(v){
+          if (typeof v !== "number" || !isFinite(v) || v < p.min || v > p.max) throw new Error("parameter '" + name + "' is " + v + ", outside its range " + p.min + " to " + p.max);
+        });
+      } else if (k === "colour") {
+        if (!HEX.test(value)) throw new Error("parameter '" + name + "' expects a colour #rrggbb");
+      } else if (k === "choice") {
+        if (p.choices.indexOf(value) < 0) throw new Error("parameter '" + name + "' expects one of " + p.choices.join(", "));
+      } else if (k === "bool") {
+        if (typeof value !== "boolean") throw new Error("parameter '" + name + "' expects true or false");
+      } else if (k === "text") {
+        if (typeof value !== "string" || !value.trim()) throw new Error("parameter '" + name + "' expects a non empty string");
+      }
+      p.value = value;
+      if (d.op === "text") return ZRMD.setText(d.id, value);
+      if (d.op === "fill") return document.getElementById(d.id).setAttribute("fill", value);
+      if (d.op === "var") return ZRMD.setColour(d.key, value);
+      if (d.op === "view") { VIEW[d.field] = value; return ZRMD._view(); }
+      if (d.op === "hide") { d.ids.forEach(function(i){ document.getElementById(i).style.display = value ? "none" : ""; }); return; }
+      if (d.op === "layers") {
+        Object.keys(value).forEach(function(id){
+          var el = document.getElementById(d.names[id] || (d.texts.indexOf(id) >= 0 ? id + "-text" : ""));
+          if (!el) throw new Error("parameter '" + name + "': no layer '" + id + "' (layers: " + Object.keys(d.names).concat(d.texts).join(", ") + ")");
+          if (d.field === "visible") el.style.display = value[id] ? "" : "none"; else el.setAttribute("opacity", value[id]);
+        });
+      }
+    }
+  };
+  var q = new URLSearchParams(location.search);
+  document.fonts.ready.then(function(){
+    Object.keys(T).forEach(function(id){ ZRMD.setText(id, q.has(id) ? q.get(id) : T[id].value); });
+    ZRMD._view();
+  });
+  if (q.get("panel") === "1") {            // the workshop panel: primary and secondary parameters, a button to copy the changed values
+    var box = document.createElement("div"), changed = {};
+    box.style.cssText = "position:fixed;right:12px;top:12px;width:280px;max-height:92vh;overflow:auto;background:#1b1b1d;color:#e8e8ea;font:12px/1.4 system-ui;padding:10px;border-radius:10px;box-shadow:0 6px 24px #0008";
+    var title = document.createElement("div"); title.textContent = "V1 parameters"; title.style.cssText = "font-weight:600;margin-bottom:6px"; box.appendChild(title);
+    var msg = document.createElement("div"); msg.style.cssText = "color:#ff8a7a;min-height:16px"; 
+    ["primary", "secondary"].forEach(function(tier){
+      var rows = (window.ZRMD_IFACE || {})[tier] || [];
+      rows.forEach(function(r){
+        if (!r.available || !r.dom || r.kind.indexOf("map:") === 0) return;
+        var row = document.createElement("label"); row.style.cssText = "display:block;margin:6px 0";
+        var cap = document.createElement("div"); cap.textContent = r.label + (r.unit ? " (" + r.unit + ")" : ""); row.appendChild(cap);
+        var inp;
+        if (r.kind === "choice") { inp = document.createElement("select"); r.choices.forEach(function(c){ var o = document.createElement("option"); o.value = c; o.textContent = c; inp.appendChild(o); }); }
+        else { inp = document.createElement("input");
+          inp.type = r.kind === "colour" ? "color" : (r.kind === "number" ? "range" : (r.kind === "bool" ? "checkbox" : "text"));
+          if (r.kind === "number") { inp.min = r.min; inp.max = r.max; inp.step = r.step || "any"; } }
+        if (r.kind === "bool") inp.checked = !!r.value; else if (r.value !== null && r.value !== undefined) inp.value = r.value;
+        inp.style.cssText = "width:100%%";
+        inp.addEventListener("input", function(){
+          var v = r.kind === "number" ? parseFloat(inp.value) : (r.kind === "bool" ? inp.checked : inp.value);
+          try { ZRMD.set(r.name, v); changed[r.name] = v; msg.textContent = ""; } catch (e) { msg.textContent = String(e.message || e); }
+        });
+        row.appendChild(inp); box.appendChild(row);
+      });
+    });
+    box.appendChild(msg);
+    var btn = document.createElement("button"); btn.textContent = "Copy the changed values";
+    btn.style.cssText = "margin-top:6px;width:100%%;padding:6px;border-radius:6px;border:0;background:#3a3a3f;color:#fff";
+    btn.addEventListener("click", function(){ var s = JSON.stringify(changed); if (navigator.clipboard) navigator.clipboard.writeText(s); msg.style.color = "#8ad"; msg.textContent = s; });
+    box.appendChild(btn); document.body.appendChild(box);
+  }
+})();
+"""
+
+
+def live_script(texts: list, v1_rows: dict | None = None, view: dict | None = None, canvas: tuple | None = None) -> str:
+    """The browser script of a component. texts: the live text layers; v1_rows: {parameter name: interface row} (zrmd/vector/v1.py, the
+    DOM descriptor tells ZRMD.set how to apply it); view: the current view values; canvas: (width, height) of the viewBox."""
+    table = {t["id"]: {"value": t["text"], "size_px": t["size_px"], "tracking_px": round(t["tracking_em"] * t["size_px"], 4),
+                       "fit_width_px": t.get("fit_width_px") or 0.0, "fit": t.get("fit", "shrink"),
+                       "min_scale": t.get("min_scale", 0.25), "max_scale": t.get("max_scale", 1.6), "max_length": t.get("max_length", 80)} for t in texts}
+    return LIVE_JS % {"texts": json.dumps(table), "v1": json.dumps(v1_rows or {}), "view": json.dumps(view or {"scale": 1.0, "opacity": 1.0, "offset_x": 0.0, "offset_y": 0.0, "rotate_deg": 0.0, "flip_x": False}),
+                      "canvas": json.dumps(list(canvas or (100, 100)))}
+
+
+# ------------------------------------------------------------------------------------------------- parameters and swap
+
+def interface(params: dict) -> dict:
+    """The parameters offered for editing, at most 8 per category, strongest first: the strings (text), the palette colours ranked by
+    the area they paint (colour) and the size and width of every text layer (layout)."""
+    texts = params.get("texts", [])
+    area = {}
+    for l in params.get("layers", []):
+        c = (l.get("paint") or {}).get("colour")
+        if isinstance(c, str) and c.startswith("@"):
+            area[c[1:]] = area.get(c[1:], 0) + float((l.get("fit") or {}).get("area", 1.0))
+    for t in texts:
+        c = t.get("colour", "")
+        if c.startswith("@"):
+            area[c[1:]] = area.get(c[1:], 0) + 1e6
+    pal = params.get("palette", {})
+    ranked = sorted(pal, key=lambda k: -area.get(k, 0.0))
+    out = {"text": [{"key": f"texts.@{t['id']}.text", "label": f"Text {t['id']}", "kind": "text", "maxLength": t.get("max_length", 80), "value": t["text"]}
+                    for t in texts][:MAX_PER_CATEGORY],
+           "colour": [{"key": f"palette.{k}", "label": f"Colour {k}", "kind": "color", "value": pal[k]} for k in ranked][:MAX_PER_CATEGORY],
+           "layout": []}
+    for t in texts:
+        out["layout"].append({"key": f"texts.@{t['id']}.size_px", "label": f"Size {t['id']}", "kind": "number", "min": 4, "max": 600, "unit": "px", "value": t["size_px"]})
+        out["layout"].append({"key": f"texts.@{t['id']}.tracking_em", "label": f"Tracking {t['id']}", "kind": "number", "min": -0.2, "max": 0.6, "unit": "em", "value": t["tracking_em"]})
+    out["layout"] = out["layout"][:MAX_PER_CATEGORY]
+    return {k: v for k, v in out.items() if v}
+
+
+def apply(params: dict, strings: dict | None = None, sets: dict | None = None) -> dict:
+    """New params with other strings (strings: {text id: new string}) and other values (sets: {"texts.@T00.size_px": 80,
+    "palette.c0": "#ff6a2b"}). An unknown id, an empty string, a string over max_length, a bad colour or an unknown key raises with the
+    name of the parameter and the list of what exists. FR : applique des chaines et des valeurs, erreur nominative sinon."""
+    out = copy.deepcopy(params)
+    by_id = {t["id"]: t for t in out.get("texts", [])}
+    for tid, s in (strings or {}).items():
+        if tid not in by_id:
+            raise KeyError(f"no text parameter '{tid}' (texts: {sorted(by_id) or 'none: this component has no text layer'})")
+        if not isinstance(s, str) or not s.strip():
+            raise ValueError(f"text parameter '{tid}' expects a non empty string")
+        if len(s) > by_id[tid].get("max_length", 80):
+            raise ValueError(f"text parameter '{tid}' is over {by_id[tid].get('max_length', 80)} characters")
+        by_id[tid]["text"] = s
+    for key, value in (sets or {}).items():
+        m = re.fullmatch(r"texts\.@([A-Za-z0-9_-]+)\.(size_px|tracking_em|fit|align|text|colour|min_scale|max_scale|baseline_shift_px|axes\.[A-Za-z]{4})", key)
+        if m:
+            tid, field = m.groups()
+            if tid not in by_id:
+                raise KeyError(f"no text parameter '{tid}' (texts: {sorted(by_id)})")
+            if field == "text":
+                return apply(out, {tid: value}, {k: v for k, v in (sets or {}).items() if k != key})
+            if field == "fit" and value not in ("shrink", "box", "keep"):
+                raise ValueError(f"texts.@{tid}.fit expects shrink, box or keep")
+            if field == "align" and value not in ("left", "centre", "right"):
+                raise ValueError(f"texts.@{tid}.align expects left, centre or right")
+            if field in ("size_px", "tracking_em", "min_scale", "max_scale", "baseline_shift_px") or field.startswith("axes."):
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    raise ValueError(f"{key} expects a number")
+            if field == "colour":
+                _set_text_colour(out, by_id[tid], value, key)
+                continue
+            if field.startswith("axes."):
+                by_id[tid].setdefault("font", {}).setdefault("axes", {})[field[5:]] = float(value)
+                continue
+            by_id[tid][field] = value
+            continue
+        m = re.fullmatch(r"palette\.([A-Za-z0-9_]+)", key)
+        if m:
+            if m.group(1) not in out.get("palette", {}):
+                raise KeyError(f"no palette colour '{m.group(1)}' (palette: {sorted(out.get('palette', {}))})")
+            if not isinstance(value, str) or not COLOUR_RE.match(value):
+                raise ValueError(f"{key} expects a colour #rrggbb")
+            out["palette"][m.group(1)] = value.lower()
+            continue
+        raise KeyError(f"parameter '{key}' is not exposed (see interface(): texts.@ID.size_px, texts.@ID.tracking_em, palette.cN)")
+    return out
+
+
+def _set_text_colour(params: dict, layer: dict, value, key: str) -> None:
+    """Give a text layer another colour WITHOUT touching anything else: "#rrggbb" is written to the layer's own palette entry (created
+    as `<id>c` when the entry it used is shared with a shape or another text), "@key" points the layer at an existing entry. The
+    palette decouples colour parameters by key, never by hex. 14 October 2026. FR : la couleur d'un texte reste a lui."""
+    pal = params.setdefault("palette", {})
+    if isinstance(value, str) and value.startswith("@"):
+        if value[1:] not in pal:
+            raise KeyError(f"{key}: no palette colour '{value[1:]}' (palette: {sorted(pal)})")
+        layer["colour"] = value
+        return
+    if not isinstance(value, str) or not COLOUR_RE.match(value):
+        raise ValueError(f"{key} expects a colour #rrggbb or @palette_key")
+    cur = layer.get("colour", "")
+    name = cur[1:] if cur.startswith("@") else None
+    shared = False
+    if name is not None:
+        for l in params.get("layers", []):
+            p = l.get("paint") or {}
+            used = ([p.get("colour")] if p.get("type") == "flat" else [s.get("colour") for s in p.get("stops", [])])
+            if f"@{name}" in used:
+                shared = True
+        shared = shared or any(t is not layer and t.get("colour") == f"@{name}" for t in params.get("texts", []))
+    if name is None or shared:
+        name = f"{layer['id']}c"
+    pal[name] = value.lower()
+    layer["colour"] = "@" + name
+
+
+# ------------------------------------------------------------------------------------------------------- command line
+
+def component_folder(slug: str):
+    """The folder of the component of a reference that a person edits: the text-editable variant of its scene when it has one, the
+    traced version otherwise, the latest version of a component composed from marks (F3Marks.py component)."""
+    from zrmd.vector import scene as S
+    from zrmd import versions as V
+    base = S._path(S.cfg()["paths"]["out"], slug)
+    sj = base / "scene.json"
+    if sj.exists():
+        d = json.loads(sj.read_text(encoding="utf-8"))
+        if d.get("applicable") is False or "dir" not in d:
+            raise FileNotFoundError(f"'{slug}' has no traced scene: {d.get('skipped')}")
+        return Path((d.get("textVariant") or {}).get("dir") or d["dir"])
+    last = V.latest_version(base / "asset") if (base / "asset").exists() else None
+    if last is None:
+        raise FileNotFoundError(f"no traced scene or component for '{slug}' (run VectorScene.py --slug {slug} first)")
+    return base / "asset" / last
+
+
+def params_cli(slug: str) -> dict:
+    """VectorScene.py --params SLUG: the V1 interface of the component of a reference with its values and what is not available and
+    why (zrmd/vector/v1.py). FR : l'interface V1 d'un composant, ses valeurs et ce qui manque."""
+    from zrmd.vector import v1 as V1
+    folder = component_folder(slug)
+    P = json.loads((folder / "params.json").read_text(encoding="utf-8"))
+    iface = V1.interface(P)
+    brief = {t: [{k: r[k] for k in ("name", "kind", "value", "available", "why", "min", "max", "unit", "choices") if k in r and r[k] is not None}
+                 for r in iface[t]] for t in V1.TIERS}
+    return {"slug": slug, "folder": str(folder), "selectors": iface["selectors"], **brief,
+            "howTo": f"VectorScene.py --text {slug} --set text=\"New text\" shapeColour='\"#ff6a2b\"' scale=1.5"}
+
+
+def swap_cli(slug: str, items: list) -> dict:
+    """VectorScene.py --text SLUG --set T00="New text" [palette.c0=#ff6a2b texts.@T00.size_px=80] or with the V1 names of
+    params/vector-v1-parameters.json: --set text="New text" shapeColour='"#ff6a2b"' scale=1.5. The next version of the scene's
+    component with other values, written beside the traced one (never overwriting). Prints the paths."""
+    from zrmd.vector import asset as A, scene as S
+    from zrmd import versions as V
+    base = S._path(S.cfg()["paths"]["out"], slug)
+    sj = base / "scene.json"
+    if sj.exists():
+        d = json.loads(sj.read_text(encoding="utf-8"))
+        folder = Path((d.get("textVariant") or {}).get("dir") or d["dir"])     # the text-editable variant when the scene has one
+    else:     # a component composed from marks (F3Marks.py component) has versions and no scene.json
+        last = V.latest_version(base / "asset") if (base / "asset").exists() else None
+        if last is None:
+            raise FileNotFoundError(f"no traced scene or component for '{slug}' (run VectorScene.py --slug {slug} first)")
+        folder = base / "asset" / last
+    P = json.loads((folder / "params.json").read_text(encoding="utf-8"))
+    from zrmd.vector import v1 as V1
+    v1_names = {e["name"] for e in V1.entries()}
+    strings, sets, named = {}, {}, {}
+    for it in items:
+        k, v = it.split("=", 1)
+        if re.fullmatch(r"T[0-9A-Za-z_-]*", k):
+            strings[k] = v
+        elif k in v1_names:                     # a V1 parameter by its name: text, textColour, shapeColour, scale ... (v1.py)
+            try:
+                named[k] = json.loads(v) if k not in ("text", "text2") else v
+            except json.JSONDecodeError:
+                named[k] = v
+        else:
+            try:
+                v = json.loads(v)
+            except json.JSONDecodeError:
+                pass
+            sets[k] = v
+    P2 = V1.apply(apply(P, strings, sets), named) if named else apply(P, strings, sets)
+    P2["variation_of"] = folder.name
+    nv = A.write_version(folder.parent, P2, None, None, parent=folder.name, note=f"text variation: {strings} {sets}")
+    urls = ship_fonts(P2, nv) if P2.get("texts") else None
+    (nv / "component.html").write_text(S.export_html(P2, P2.get("asset", slug), fonts=urls), encoding="utf-8")
+    return {"slug": slug, "from": folder.name, "version": nv.name, "dir": str(nv), "svg": str(nv / "asset.svg"), "html": str(nv / "component.html"),
+            "texts": {t["id"]: t["text"] for t in P2.get("texts", [])}}
+
+
+# ------------------------------------------------------------------------------------------- finding the text of a crop
+
+def ocr_lines(rgb, min_conf: float = 60.0, psm: int = 11, upscale: float = 1.0) -> list:
+    """Text lines of a crop by tesseract (TSV): [{text, box [x, y, w, h], conf}] in crop pixels. The string is used to FIT a font and
+    stays in the private 1:1 benchmark; a variation carries any other string. FR : lignes de texte lues par tesseract."""
+    import subprocess
+    import tempfile
+    from PIL import Image
+    img = Image.fromarray(rgb)
+    if upscale != 1.0:
+        img = img.resize((int(img.width * upscale), int(img.height * upscale)), Image.LANCZOS)
+    with tempfile.TemporaryDirectory() as tmp:
+        f = Path(tmp) / "f.png"
+        img.save(f)
+        out = subprocess.run(["tesseract", str(f), "-", "--psm", str(psm), "tsv"], capture_output=True, text=True, timeout=120).stdout
+    words = []
+    for row in out.splitlines()[1:]:
+        c = row.split("\t")
+        if len(c) < 12 or not c[11].strip():
+            continue
+        try:
+            conf = float(c[10])
+            x, y, w, h = (int(v) / upscale for v in c[6:10])
+        except ValueError:
+            continue
+        if conf >= min_conf:
+            words.append({"t": c[11].strip(), "x": x, "y": y, "w": w, "h": h, "conf": conf})
+    words.sort(key=lambda w: (w["y"] + w["h"] / 2, w["x"]))
+    lines = []
+    for w in words:
+        cy = w["y"] + w["h"] / 2
+        for L in lines:
+            lcy = L["y"] + L["h"] / 2
+            gap = max(w["x"] - (L["x"] + L["w"]), L["x"] - (w["x"] + w["w"]))      # horizontal gap, whichever side the word is on
+            if abs(cy - lcy) < 0.5 * max(L["h"], w["h"]) and gap < 1.2 * max(L["h"], w["h"]):
+                x1, y1 = max(L["x"] + L["w"], w["x"] + w["w"]), max(L["y"] + L["h"], w["y"] + w["h"])
+                L["x"], L["y"] = min(L["x"], w["x"]), min(L["y"], w["y"])
+                L["w"], L["h"] = x1 - L["x"], y1 - L["y"]
+                L["words"].append(w)
+                break
+        else:
+            lines.append({"x": w["x"], "y": w["y"], "w": w["w"], "h": w["h"], "words": [w]})
+    res = []
+    for L in lines:
+        text = " ".join(w["t"] for w in sorted(L["words"], key=lambda w: w["x"]))
+        res.append({"text": text, "box": [int(L["x"]), int(L["y"]), int(L["w"]), int(L["h"])], "conf": sum(w["conf"] for w in L["words"]) / len(L["words"])})
+    return res
+
+
+def line_matte(rgb, box: list, pad: int = 6):
+    """The coverage of one text line over a local background: the colour of the ring around the box is the background, the colour of
+    the farthest pixels is the ink, and every pixel is projected between the two. Returns (matte, weight, bg, ink, (x0, y0))."""
+    import numpy as np
+    H, W = rgb.shape[:2]
+    x, y, w, h = box
+    x0, y0, x1, y1 = max(0, x - pad), max(0, y - pad), min(W, x + w + pad), min(H, y + h + pad)
+    patch = rgb[y0:y1, x0:x1].astype(np.float32)
+    ring = np.concatenate([patch[:2].reshape(-1, 3), patch[-2:].reshape(-1, 3), patch[:, :2].reshape(-1, 3), patch[:, -2:].reshape(-1, 3)])
+    bg = np.median(ring, axis=0)
+    dist = np.linalg.norm(patch - bg, axis=2)
+    far = dist >= np.percentile(dist, 94)
+    ink = patch[far].mean(axis=0) if far.any() else bg
+    d = ink - bg
+    n = float((d ** 2).sum())
+    if n < 100.0:
+        return None
+    matte = np.clip(((patch - bg) @ d) / n, 0.0, 1.0).astype(np.float32)
+    return matte, np.ones_like(matte), bg, ink, (x0, y0)
+
+
+def font_files(ranking: list, k: int = 2, fallback: str = "Inter") -> list:
+    """The dataset font files of the first k families of the bible's font match (family names are matched, the variable file wins)."""
+    from zrmd.vector import fontfit
+    recs = fontfit.feature_records()
+    out = []
+    for r in ranking or []:
+        fam = r.get("family")
+        files = sorted(f for f, rec in recs.items() if rec.get("family") == fam and rec.get("usable", True))
+        if files and files[0] not in out:
+            out.append(files[0])
+        if len(out) >= k:
+            break
+    if not out:
+        files = sorted(f for f, rec in recs.items() if rec.get("family") == fallback)
+        out = files[:1]
+    return out
+
+
+def detect_layers(rgb, ranking: list | None, first_id: int = 0, palette: dict | None = None, c: dict | None = None) -> dict:
+    """Text layers of a crop: OCR lines, a font fitted on the matte of each line (the bible's font-match families first), kept when the
+    soft IoU of the fitted line against its matte reaches minIou. Returns {layers, palette (new colours), report}; every line, kept or
+    not, is in the report with its measure. FR : calques de texte detectes, mesures dans le rapport."""
+    import numpy as np
+    from zrmd.vector import marks as K
+    c = c or {"minConf": 60.0, "minChars": 2, "minIou": 0.80, "maxLines": 6, "fontsPerLine": 2, "upscale": 1.0}
+    pal = dict(palette or {})
+    layers, report = [], []
+    for ln in sorted(ocr_lines(rgb, c["minConf"], upscale=c.get("upscale", 1.0)), key=lambda r: -r["box"][2] * r["box"][3])[: c["maxLines"]]:
+        text = ln["text"]
+        item = {"text": text, "box": ln["box"], "conf": round(ln["conf"], 1), "kept": False}
+        report.append(item)
+        if len(text.replace(" ", "")) < c["minChars"]:
+            item["why"] = "too short"
+            continue
+        lm = line_matte(rgb, ln["box"])
+        if lm is None:
+            item["why"] = "no ink contrast against the ring"
+            continue
+        matte, weight, bg, ink, (x0, y0) = lm
+        best = None
+        for f in font_files(ranking, c["fontsPerLine"]):
+            try:
+                p = K.fit_text(text, f, matte, weight)
+            except Exception as exc:   # noqa: BLE001 - a failed font is recorded, never hidden
+                item.setdefault("errors", []).append(f"{Path(f).parent.name}: {exc!r}")
+                continue
+            out = K.render_line(p, (matte.shape[1], matte.shape[0]))
+            iou = float(np.minimum(matte, out).sum() / max(np.maximum(matte, out).sum(), 1e-6))
+            if best is None or iou > best[0]:
+                best = (iou, f, p)
+        if best is None:
+            item["why"] = "no font could be fitted"
+            continue
+        iou, f, p = best
+        item.update(font=Path(f).parent.name, iou_soft=round(iou, 4), size_px=round(p["size"], 3))
+        if iou < c["minIou"]:
+            item["why"] = f"soft IoU {iou:.3f} under {c['minIou']}"
+            continue
+        key = f"t{len(pal)}"
+        pal[key] = "#%02x%02x%02x" % tuple(int(round(v)) for v in ink)
+        tid = f"T{first_id + len(layers):02d}"
+        layer = make_layer(tid, text, f, p["size"], (p["origin"][0] + x0, p["origin"][1] + y0), "@" + key, p.get("axes") or {}, p["tracking_em"],
+                           "left", deltas_px=p.get("deltas"), blur_px=p.get("blur_px", 0.0))
+        layer["fit_measure"] = {"iou_soft": round(iou, 4), "ocr_conf": round(ln["conf"], 1), "box": ln["box"]}
+        layers.append(layer)
+        item["kept"] = True
+        item["id"] = tid
+    return {"layers": layers, "palette": {k: v for k, v in pal.items() if k not in (palette or {})}, "report": report}

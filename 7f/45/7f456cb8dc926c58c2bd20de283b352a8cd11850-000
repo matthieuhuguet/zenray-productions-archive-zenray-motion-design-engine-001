@@ -1,0 +1,133 @@
+{
+  "schema": "zrmd/image-survey@1",
+  "date": "14 October 2026",
+  "_doc": "14 October 2026: the single parameter interface of the image (shader) measurement, HDA law. Every threshold of zrmd/shaders/field.py, zrmd/verify/imagescore.py and Scripts/ReproduceFieldSurvey.py lives here once. FR : interface unique de la mesure de l'image (shader), chaque seuil une seule fois.",
+  "definition": [
+    "The Image module (the shader chantier) judges the BACKDROP FIELD of every shot: the colour field, gradient and glow that a shader-bank composition of a few parameters reproduces, compared cell by cell with the reference.",
+    "A frame pair is compared on a grid of grid.width x grid.height cells (area-averaged, a low pass at about 8 px of 1080p, R04 section 11.3), in CIEDE2000, one JND = jndDE.",
+    "A cell is FIELD when its error is at most fieldCutoffDE (a fixed absolute cut, never a percentile of our own residual, so a bad fit cannot hide its errors); the other cells are CONTENT (text, UI, photograph: the vector chantier and the plate slots).",
+    "Field fidelity of a frame = 1 - 0.01 x mean(dE00^2) over its field cells (R04 section 11.2: 0.99 means one JND of mean square error). Image value of a reference = mean of that over its field cells, weighted by shot duration and field share.",
+    "Coverage of a reference = time-weighted share of cells that are field. within1Jnd = share of ALL cells at most one JND away (no mask at all, the pixel-honest number).",
+    "Photographed plates stay animatics by design; they are reported (slot share) and never counted as failures. The 99.9 gate applies to the field fidelity; coverage and within1Jnd are shown beside it, never merged into it."
+  ],
+  "grid": {
+    "width": 96,
+    "height": 54,
+    "decodeFps": 6,
+    "threads": 2
+  },
+  "keyframesPerShot": 3,
+  "fieldCutoffDE": 5.0,
+  "jndDE": 1.0,
+  "irlsPasses": 3,
+  "minFieldShare": 0.3,
+  "glow": {
+    "enabled": true,
+    "centresX": [
+      0.2,
+      0.5,
+      0.8
+    ],
+    "centresY": [
+      0.2,
+      0.5,
+      0.8,
+      0.95
+    ],
+    "sigmas": [
+      0.08,
+      0.16,
+      0.3
+    ],
+    "aspect": 1.7778,
+    "minGain": 0.05,
+    "blockBounds": {
+      "centre": [
+        0.0,
+        1.0
+      ],
+      "sigma": [
+        0.02,
+        0.3
+      ],
+      "intensity": [
+        0.2,
+        2.0
+      ]
+    },
+    "_doc": "14 October 2026: glow search grid. The centre range is the whole frame since the bank verified glow_gaussian and vignette_radial over [0, 1] (it was [0.25, 0.75]); a horizon glow sits at the bottom edge."
+  },
+  "families": [
+    "textcard",
+    "graphic",
+    "plate",
+    "montage"
+  ],
+  "reproducibleFamilies": [
+    "textcard",
+    "graphic"
+  ],
+  "targets": {
+    "default": 0.99,
+    "stretch": 0.999
+  },
+  "models": [
+    "bilinear",
+    "stops6_v",
+    "stops6_h",
+    "sep_vh"
+  ],
+  "modelGain": 0.05,
+  "_models_doc": "14 October 2026: the base blocks the fit may choose from per frame, simplest first: bilinear (bilinear_gradient4, 4 corners), stops6_v and stops6_h (gradient_stops6 with equal widths along the vertical or horizontal axis, 6 colours), sep_vh (a vertical ramp times a horizontal ramp, gradient_stops6 twice, the second in multiply). A richer base is kept only when it lowers the weighted RMS by modelGain (relative). Round 0 = bilinear alone, round 1 = + stops, round 2 = + sep_vh (the default).",
+  "curveCutoffs": [
+    1.0,
+    2.0,
+    3.0,
+    5.0
+  ],
+  "_curve_doc": "14 October 2026: curveCutoffs are extra field cutoffs (dE00) at which each survey also reports coverage and field fidelity, so the value-versus-coverage trade of the mask is explicit instead of hidden in one cut.",
+  "arch": {
+    "apex": [
+      0.55,
+      0.65,
+      0.75,
+      0.85,
+      0.93
+    ],
+    "k": [
+      0.15,
+      0.35,
+      0.7,
+      1.1
+    ],
+    "p": [
+      1.5,
+      2.0,
+      3.0
+    ],
+    "soft": 0.01,
+    "widths": [
+      [
+        0.01,
+        0.04,
+        0.15
+      ],
+      [
+        0.02,
+        0.08,
+        0.25
+      ],
+      [
+        0.03,
+        0.12,
+        0.4
+      ],
+      [
+        0.015,
+        0.06,
+        0.3
+      ]
+    ],
+    "_doc": "14 October 2026: geometry grid of the arch base (arch_glow_field: a horizon or limb arc, dark below, a rim, a halo, a sky). The five colours are closed form for a given geometry. Kept only when it lowers the weighted RMS by modelGain over the simpler bases."
+  }
+}

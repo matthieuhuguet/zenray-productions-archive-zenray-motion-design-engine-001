@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+# 15 October 2026: the MULTI-LAYER vector fit of a reference scene (zrmd/vector/layerfit.py). Takes the saved frame and crop of the scene of
+# a reference (never re-picks the scene), paints the crop as a stack of editable layers, measures the composite in CIEDE2000 against the crop
+# AND against the codec floor of the same crop, and writes a NEW version of the scene asset next to the old ones (never an overwrite).
+#   VectorLayers.py --slug S [--max-layers N] [--max-seconds N] [--no-write]
+# One JSON object on stdout. FR : trace multi-calques d'une scene, mesure composite contre le plancher du codec, nouvelle version.
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+import numpy as np  # noqa: E402
+from PIL import Image  # noqa: E402
+from skimage.color import deltaE_ciede2000, rgb2lab  # noqa: E402
+
+from zrmd import settings  # noqa: E402
+from zrmd.vector import asset as A  # noqa: E402
+from zrmd.vector import layerfit as LF  # noqa: E402
+from zrmd.vector import render as R  # noqa: E402
+from zrmd.vector import scene as S  # noqa: E402
+
+
+def fidelity(a: np.ndarray, b: np.ndarray) -> dict:
+    """1 - 0.01 x mean(dE00^2) (the image module's definition), mean dE00 and the share of pixels within 1 JND."""
+    de = deltaE_ciede2000(rgb2lab(np.asarray(a, np.float64) / 255.0), rgb2lab(np.asarray(b, np.float64) / 255.0))
+    return {"fidelity": round(1 - 0.01 * float((de ** 2).mean()), 5), "meanDE": round(float(de.mean()), 4), "within1Jnd": round(float((de <= 1).mean()), 4)}
+
+
+def codec_floor(slug: str, d: dict, composite: np.ndarray, frame: np.ndarray) -> dict:
+    """What a PERFECT vector render scores against this crop: the render itself, put back into the frame, encoded like the reference and
+    decoded, against the render (the codec noise of the reference, measured on this content)."""
+    sys.path.insert(0, str(ENGINE / "Scripts"))
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("vector_ceiling", ENGINE / "Scripts" / "VectorCeiling.py")
+    vc = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(vc)
+    meta = json.loads((settings.path("workshop") / "references" / slug / "reference.json").read_text(encoding="utf-8"))
+    info = vc.probe(settings.path("refcache") / slug / meta["file_name"])
+    cr = d["crop"]
+    h, w = composite.shape[:2]
+    m = 32
+    x0, y0 = max(0, (cr["x"] - m) // 16 * 16), max(0, (cr["y"] - m) // 16 * 16)
+    x1, y1 = min(frame.shape[1], -(-(cr["x"] + w + m) // 16) * 16), min(frame.shape[0], -(-(cr["y"] + h + m) // 16) * 16)
+    region = frame.copy()
+    region[cr["y"]:cr["y"] + h, cr["x"]:cr["x"] + w] = composite
+    region = np.ascontiguousarray(region[y0:y1, x0:x1])
+    rate = max(100_000, int(info["bit_rate"] * region.shape[0] * region.shape[1] / float(info["width"] * info["height"])))
+    with tempfile.TemporaryDirectory() as t:
+        dec = vc.encode_decode(region, info, rate, Path(t))
+    return fidelity(composite, dec[cr["y"] - y0:cr["y"] - y0 + h, cr["x"] - x0:cr["x"] - x0 + w])
+
+
+def run(slug: str, max_layers: int | None = None, max_seconds: float | None = None, write: bool = True, log=None, stop_de: float = 0.4) -> dict:
+    c = S.cfg()
+    ws = settings.path("workshop")
+    d = json.loads((S._path(c["paths"]["out"], slug) / "scene.json").read_text(encoding="utf-8"))
+    if "classes" not in d:
+        return {"slug": slug, "applicable": False, "skipped": d.get("skipped")}
+    P0 = json.loads((Path(d["dir"]) / "params.json").read_text(encoding="utf-8"))
+    frame = np.asarray(Image.open(S._path(c["paths"]["frames"], slug) / f"frame-{d['shot']}.png").convert("RGB"))
+    cr = d["crop"]
+    w, h = P0["canvas"]["width"], P0["canvas"]["height"]
+    piece = frame[cr["y"]:cr["y"] + h, cr["x"]:cr["x"] + w]
+    cfg = {}
+    if max_layers:
+        cfg["levels"] = [{"scale": 1, "maxLayers": int(max_layers), "stopDE": stop_de, "minDE": stop_de}]
+        cfg["maxLayers"] = int(max_layers)
+        cfg["stopDE"] = cfg["minDE"] = stop_de
+    if max_seconds:
+        cfg["maxSeconds"] = float(max_seconds)
+    t0 = time.time()
+    res = LF.fit(piece, cfg, log=log)
+    params = {**{k: v for k, v in P0.items() if k not in ("layers", "texts", "palette")}, "layers": res["layers"], "palette": {}}
+    params["trace"] = {**(P0.get("trace") or {}), "method": "multi-layer residual pursuit", "layers": len(res["layers"]), "raster_ss": 1}
+    comp = R.render_svg(A.cook_svg({**params, "view": {}}), w, h, engine="skia", ss=1)[..., :3]
+    got = fidelity(comp, piece)
+    floor = codec_floor(slug, d, comp, frame)
+    out = {"slug": slug, "shot": d["shot"], "applicable": True, "layers": len(res["layers"]), "fidelity": got, "codecFloor": floor,
+           "normalised": round(got["fidelity"] / floor["fidelity"], 5) if floor["fidelity"] > 0 else None,
+           "before": (d.get("layered") or {}).get("fidelity"), "seconds": round(time.time() - t0, 1), "report": res["report"], "date": "15 October 2026"}
+    if write:
+        folder = A.write_version(Path(d["dir"]).parent, params, piece, None, parent=Path(d["dir"]).name, note="multi-layer residual pursuit (zrmd/vector/layerfit.py)")
+        (folder / "layered.json").write_text(json.dumps(out, indent=1, default=float), encoding="utf-8")
+        out["dir"] = str(folder)
+        sc = S._path(c["paths"]["out"], slug) / "layered.json"
+        sc.write_text(json.dumps(out, indent=1, default=float), encoding="utf-8")
+    return out
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--slug", required=True)
+    ap.add_argument("--max-layers", type=int, default=None)
+    ap.add_argument("--max-seconds", type=float, default=None)
+    ap.add_argument("--stop-de", type=float, default=0.4, help="stop when the smoothed CIEDE2000 error peak falls under this (also the smallest region repaired)")
+    ap.add_argument("--no-write", action="store_true")
+    a = ap.parse_args()
+    out = run(a.slug, a.max_layers, a.max_seconds, write=not a.no_write, log=lambda m: print(m, file=sys.stderr, flush=True), stop_de=a.stop_de)
+    print(json.dumps(out, default=float))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

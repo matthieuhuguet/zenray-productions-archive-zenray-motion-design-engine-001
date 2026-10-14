@@ -1,0 +1,244 @@
+# 14 October 2026: pooled adjudication of the rhythm truth (zrmd.analyze.rhythm_truth).
+#   pool   build the pool of boundaries to judge for a reference (permissive universe, spans, extra frames) and its sheets;
+#   label  write the eye labels of one sheet, one code per row (C cut, N not a cut, T transition, A ambiguous, - skip);
+#   show   print the state of the labels of a reference (counts, still unjudged pool entries).
+# Run: /Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/RhythmTruth.py pool --slug memo --kind single
+# FR : adjudication groupee de la verite du rythme : planches, codes par ligne, etat des etiquettes.
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+sys.path.insert(0, str(ENGINE / "Scripts"))
+from zrmd import settings  # noqa: E402
+from zrmd.analyze import rhythm_cache, rhythm_core as C, rhythm_truth as T  # noqa: E402
+import RhythmSignals as RS  # noqa: E402
+
+WORKSHOP = settings.path("workshop")
+
+
+def _fine(folder: Path) -> dict:
+    z = np.load(folder / "fine.npz")
+    return {k: z[k] for k in z.files}
+
+
+def pool_dir(folder: Path) -> Path:
+    return folder / "pool"
+
+
+def _f(x, nd=2):
+    return "-" if x is None or (isinstance(x, float) and np.isnan(x)) else f"{x:.{nd}f}"
+
+
+def evidence_label(fine: dict, i: int, fps: float, why: list[str]) -> str:
+    g = lambda k: float(fine[k][i])
+    return (f"f={i} t={i / fps:.2f}s\nU={_f(g('U'))} F={_f(g('F'))} S={_f(g('S'))}\n"
+            f"ED={_f(g('ED'))} EN={_f(g('EN'))} CH={_f(g('CH'))}\nMAD={_f(g('MAD'), 3)} R={_f(g('R'))} {','.join(why)}")
+
+
+def known_frames(slug: str, fps: float, n: int) -> dict[int, str]:
+    """Frames other sources already believe in: the cut list of the first detector (analysis/shots.json) and the eye additions
+    of the first review (review.json, seconds, snapped to the largest coarse difference within +-3 frames)."""
+    out: dict[int, str] = {}
+    ref = WORKSHOP / "references" / slug
+    p = ref / "analysis" / "shots.json"
+    if p.exists():
+        for c in json.loads(p.read_text(encoding="utf-8")).get("cuts", []):
+            out[int(c["frame"])] = "old"
+    r = ref / "review.json"
+    if r.exists():
+        sig = RS.load_signals(RS.folder_of(slug))
+        d = np.asarray(sig["diff_full"])
+        for a in json.loads(r.read_text(encoding="utf-8")).get("add_cuts", []):
+            t = a["t"] if isinstance(a, dict) else a
+            c = int(round(float(t) * fps))
+            lo, hi = max(1, c - 3), min(n, c + 4)
+            out[int(lo + int(np.argmax(d[lo:hi])))] = "eye0"
+    return out
+
+
+def build_pool(slug: str, kind: str, floor: dict, extra: list[int], skip_inside: bool, rows: int, only: dict[int, str] | None = None) -> dict:
+    folder = RS.folder_of(slug)
+    fine = _fine(folder)
+    sig = RS.load_signals(folder)
+    fps = float(sig["fps"][0])
+    frames = rhythm_cache.load(folder)["frames"]
+    data = T.load_labels(WORKSHOP, slug)
+    n = len(sig["diff_full"])
+    data["frames"], data["fps"] = int(n), fps
+    entries = []
+    if kind == "span":
+        ctx = C.Ctx(sig, frames)
+        spans = []
+        for d in C.fade_spans(ctx, around_min=0.02):
+            spans.append(("fade", int(ctx.src[d["s"]]), int(ctx.src[d["e"]]), int(ctx.src[d["mid"]])))
+        for d in C.dissolve_spans(ctx, total_min=0.03, resid_full_max=0.04, resid_max=0.06):
+            spans.append(("dissolve", int(ctx.src[d["s"]]), int(ctx.src[d["e"]]), int(ctx.src[(d["s"] + d["e"]) // 2])))
+        for d in C.whip_spans(ctx, around_min=0.04):
+            spans.append(("whip", int(ctx.src[d["s"]]), int(ctx.src[d["e"]]), int(ctx.src[d["mid"]])))
+        spans.sort(key=lambda s: s[1])
+        for k, (kd, a, b, mid) in enumerate(spans):
+            entries.append({"frame": mid, "span": [a, b], "kind": kd, "label": f"span {kd} {a}-{b}\nt={a / fps:.2f}s L={b - a}"})
+    else:
+        if only is not None:
+            why = {int(f): [tag] for f, tag in only.items()}
+        else:
+            why = T.universe(fine, sig, floor)
+            for f, tag in known_frames(slug, fps, n).items():
+                why.setdefault(int(f), []).append(tag)
+        for f in extra:
+            why.setdefault(int(f), []).append("extra")
+        judged = T.judged_frames(data)
+        inside = set()
+        for sp in data.get("spans", []):
+            inside |= set(range(int(sp["start"]), int(sp["end"]) + 1))
+        for f in sorted(why):
+            if f in judged or (skip_inside and f in inside):
+                continue
+            entries.append({"frame": f, "label": evidence_label(fine, f, fps, why[f])})
+    pd = pool_dir(folder)
+    pd.mkdir(parents=True, exist_ok=True)
+    name = f"{kind}-{len(list(pd.glob(kind + '-*.json'))) + 1:02d}"
+    files = T.pool_sheets(frames, entries, pd, name, rows)
+    (pd / f"{name}.json").write_text(json.dumps({"kind": kind, "name": name, "rows": rows, "entries": entries}, indent=1) + "\n", encoding="utf-8")
+    return {"pool": name, "entries": len(entries), "sheets": [str(p) for p in files]}
+
+
+def expand(codes: list[str]) -> list[str]:
+    """`N*16` is sixteen N; a single token of letters such as `CCNN` is four codes."""
+    out: list[str] = []
+    for c in codes:
+        if "*" in c or ":" in c:
+            k, n = c.replace(":", "*").split("*")
+            out += [k] * int(n)
+        elif len(c) > 1 and c != "--":
+            out += list(c)
+        else:
+            out.append(c)
+    return out
+
+
+def add_span(slug: str, kind: str, start: int, end: int) -> dict:
+    data = T.load_labels(WORKSHOP, slug)
+    data["spans"] = [s for s in data.get("spans", []) if not (s["start"] == start and s["end"] == end)]
+    data["spans"].append({"kind": kind, "start": start, "end": end, "frame": (start + end) // 2})
+    data["spans"].sort(key=lambda s: s["start"])
+    T.save_labels(WORKSHOP, slug, data)
+    return {"slug": slug, "span": [kind, start, end]}
+
+
+def set_frames(slug: str, frames: list[int], code: str) -> dict:
+    data = T.load_labels(WORKSHOP, slug)
+    for f in frames:
+        data["labels"][str(f)] = code
+    T.save_labels(WORKSHOP, slug, data)
+    return {"slug": slug, "set": frames, "code": code}
+
+
+def drop_span(slug: str, start: int, end: int) -> dict:
+    data = T.load_labels(WORKSHOP, slug)
+    n0 = len(data.get("spans", []))
+    data["spans"] = [s for s in data.get("spans", []) if not (s["start"] == start and s["end"] == end)]
+    T.save_labels(WORKSHOP, slug, data)
+    return {"slug": slug, "dropped": n0 - len(data["spans"])}
+
+
+def label(slug: str, pool: str, sheet: int, codes: list[str]) -> dict:
+    codes = expand(codes)
+    folder = RS.folder_of(slug)
+    meta = json.loads((pool_dir(folder) / f"{pool}.json").read_text(encoding="utf-8"))
+    rows = meta["rows"]
+    chunk = meta["entries"][(sheet - 1) * rows:sheet * rows]
+    if len(codes) != len(chunk):
+        raise SystemExit(f"sheet {sheet} has {len(chunk)} rows, got {len(codes)} codes")
+    data = T.load_labels(WORKSHOP, slug)
+    sig = RS.load_signals(folder)
+    data["frames"], data["fps"] = int(len(sig["diff_full"])), float(sig["fps"][0])
+    for e, c in zip(chunk, codes):
+        c = c.upper()
+        if c == "-":
+            continue
+        if c not in T.CLASSES:
+            raise SystemExit(f"unknown code {c!r}")
+        if meta["kind"] == "span":
+            if c == "T":
+                data["spans"] = [s for s in data.get("spans", []) if not (s["start"] == e["span"][0] and s["end"] == e["span"][1])]
+                data["spans"].append({"kind": e["kind"], "start": e["span"][0], "end": e["span"][1], "frame": e["frame"]})
+            else:
+                data.setdefault("rejected_spans", []).append({"start": e["span"][0], "end": e["span"][1], "as": c})
+        else:
+            data["labels"][str(e["frame"])] = c
+    T.save_labels(WORKSHOP, slug, data)
+    return {"slug": slug, "pool": pool, "sheet": sheet, "labelled": len(chunk)}
+
+
+def show(slug: str) -> dict:
+    data = T.load_labels(WORKSHOP, slug)
+    cnt = {}
+    for c in data["labels"].values():
+        cnt[c] = cnt.get(c, 0) + 1
+    return {"slug": slug, "labels": cnt, "spans": len(data.get("spans", [])), "auto": len(data.get("auto", [])), "frames": data.get("frames")}
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("pool")
+    p.add_argument("--slug", required=True)
+    p.add_argument("--kind", choices=["single", "span"], default="single")
+    p.add_argument("--rows", type=int, default=16)
+    p.add_argument("--extra", default="", help="comma separated extra frames")
+    p.add_argument("--no-skip-inside", action="store_true")
+    p.add_argument("--only", help="JSON file {frame: tag}: judge exactly these boundaries (active learning pool)")
+    for k, v in (("U", 0.15), ("S", 0.2), ("F", 0.7), ("F_mad", 0.04), ("CH", 0.08), ("CL", 0.08)):
+        p.add_argument(f"--floor-{k}", type=float, default=v)
+    lb = sub.add_parser("label")
+    lb.add_argument("--slug", required=True)
+    lb.add_argument("--pool", required=True)
+    lb.add_argument("--sheet", type=int, required=True)
+    lb.add_argument("codes", nargs="+")
+    sh = sub.add_parser("show")
+    sh.add_argument("--slug", required=True)
+    sp = sub.add_parser("span")
+    sp.add_argument("--slug", required=True)
+    sp.add_argument("--kind", choices=["dissolve", "fade", "whip"], required=True)
+    sp.add_argument("--start", type=int, required=True)
+    sp.add_argument("--end", type=int, required=True)
+    st = sub.add_parser("set")
+    st.add_argument("--slug", required=True)
+    st.add_argument("--code", required=True)
+    st.add_argument("frames", nargs="+", type=int)
+    dr = sub.add_parser("unspan")
+    dr.add_argument("--slug", required=True)
+    dr.add_argument("--start", type=int, required=True)
+    dr.add_argument("--end", type=int, required=True)
+    a = ap.parse_args()
+    if a.cmd == "set":
+        print(json.dumps(set_frames(a.slug, a.frames, a.code.upper())))
+        return
+    if a.cmd == "unspan":
+        print(json.dumps(drop_span(a.slug, a.start, a.end)))
+        return
+    if a.cmd == "pool":
+        floor = {k: getattr(a, f"floor_{k}") for k in ("U", "S", "F", "F_mad", "CH", "CL")}
+        extra = [int(x) for x in a.extra.split(",") if x.strip()]
+        only = None
+        if a.only:
+            only = {int(k): v for k, v in json.loads(Path(a.only).read_text(encoding="utf-8")).items()}
+        print(json.dumps(build_pool(a.slug, a.kind, floor, extra, not a.no_skip_inside, a.rows, only), indent=1))
+    elif a.cmd == "label":
+        print(json.dumps(label(a.slug, a.pool, a.sheet, a.codes)))
+    elif a.cmd == "span":
+        print(json.dumps(add_span(a.slug, a.kind, a.start, a.end)))
+    else:
+        print(json.dumps(show(a.slug)))
+
+
+if __name__ == "__main__":
+    main()

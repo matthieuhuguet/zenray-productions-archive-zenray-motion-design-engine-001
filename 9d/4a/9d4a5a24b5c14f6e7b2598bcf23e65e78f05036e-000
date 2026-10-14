@@ -1,0 +1,126 @@
+# 14 October 2026: text layers of a vector component (zrmd/vector/texts.py), proven in both directions without a reference pixel.
+# Green: another string keeps the baseline and the anchor and fits the traced width; the parameters are read from params.json.
+# Red: an unknown id, an empty string, an over-long string, a bad colour or an unknown key raises with the NAME of the parameter; a
+# sabotaged fit (keep) does not fit, so the fit test is not vacuous. FR : calques de texte, prouves dans les deux sens.
+import json
+import sys
+import tempfile
+from pathlib import Path
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from zrmd.vector import asset as A  # noqa: E402
+from zrmd.vector import render as R  # noqa: E402
+from zrmd.vector import scene as S  # noqa: E402
+from zrmd.vector import texts as TX  # noqa: E402
+
+FONT = str(ROOT / "datasets/fonts/files/Inter/Inter[opsz,wght].ttf")
+FAIL = []
+
+
+def check(name, cond, detail=""):
+    print(("ok   " if cond else "FAIL ") + name + (f"  {detail}" if detail and not cond else ""))
+    if not cond:
+        FAIL.append(name)
+
+
+def raises(fn, *needles) -> bool:
+    try:
+        fn()
+    except (KeyError, ValueError) as e:
+        return all(n in str(e) for n in needles)
+    return False
+
+
+def component(text="Hello", **kw) -> dict:
+    t = TX.make_layer("T00", text, FONT, 64.0, (20.0, 100.0), colour="@c0", axes={"wght": 600}, **kw)
+    return {"schema": "zrmd/asset2d@1", "asset": "synthetic", "canvas": {"width": 640, "height": 160}, "palette": {"c0": "#ff6a2b", "c1": "#101820"},
+            "layers": [{"id": "L00", "name": "L00-background", "z": 0, "kind": "rect", "geometry": {"cx": 320, "cy": 80, "w": 640, "h": 160, "angle": 0},
+                        "paint": {"type": "flat", "colour": "@c1"}, "effects": {"blur": 0.0, "opacity": 1.0}}],
+            "texts": [t]}
+
+
+def ink(P) -> np.ndarray:
+    return R.svg_mask(A.cook_svg(P, only="T00", white=True), 640, 160, engine="skia", ss=1)
+
+
+def run() -> int:
+    P = component()
+    t0 = P["texts"][0]
+    check("fit width is the measured advance of the traced string", abs(t0["fit_width_px"] - R.shape_text("Hello", FONT, 64.0, {"wght": 600}).advance_px) < 1e-3)
+
+    # layout, both directions
+    short = TX.layout(t0, "Hi")
+    check("shorter string keeps size and left anchor (shrink mode)", short["scale"] == 1.0 and short["x"] == 20.0 and short["baseline"] == 100.0, short["scale"])
+    long = TX.layout(t0, "Hello Hello Hello")
+    check("longer string is shrunk to the traced width", long["scale"] < 0.5 and long["advance_px"] <= t0["fit_width_px"] + 1e-3 and long["baseline"] == 100.0,
+          (long["scale"], long["advance_px"], t0["fit_width_px"]))
+    floor = TX.layout(t0, "Hello Hello Hello Hello Hello")
+    check("the shrink stops at min_scale (a legibility floor), the overflow is then the person's to resolve", floor["scale"] == t0["min_scale"] and floor["advance_px"] > t0["fit_width_px"])
+    keep = TX.layout({**t0, "fit": "keep"}, "Hello Hello Hello Hello")
+    check("red proof: fit keep overflows the traced width (the fit test can fail)", keep["advance_px"] > t0["fit_width_px"] * 2)
+    box = TX.layout({**t0, "fit": "box"}, "Hi")
+    check("box mode grows a short string to the traced width", abs(box["advance_px"] - t0["fit_width_px"]) < 0.5 or box["scale"] == t0["max_scale"], box)
+    cen = TX.layout({**t0, "align": "centre"}, "Hello Hello")
+    check("centre anchor keeps the centre of the traced box", abs((cen["x"] + cen["advance_px"] / 2) - (20.0 + t0["fit_width_px"] / 2)) < 1e-6)
+
+    # cooked ink: another string changes the mask, the same string does not
+    P_same = TX.apply(P, {"T00": "Hello"})
+    P_other = TX.apply(P, {"T00": "Hanover"})
+    m0, m1, m2 = ink(P), ink(P_same), ink(P_other)
+    check("same string, same ink", np.array_equal(m0, m1))
+    check("another string changes the ink", float(np.abs(m0 - m2).sum()) > 50.0)
+    rows0 = np.nonzero(m0.max(axis=1) > 0.5)[0]
+    rows2 = np.nonzero(m2.max(axis=1) > 0.5)[0]
+    check("the baseline stays: the bottom ink row of both strings (no descender) is the same within the overshoot of a round letter",
+          abs(int(rows0.max()) - int(rows2.max())) <= 1, (int(rows0.max()), int(rows2.max())))
+    check("params.json is untouched by apply (a new dict)", P["texts"][0]["text"] == "Hello" and P_other["texts"][0]["text"] == "Hanover")
+
+    # loader errors name the parameter
+    check("unknown text id raises with its name and the list", raises(lambda: TX.apply(P, {"T09": "x"}), "T09", "T00"))
+    check("empty string raises with the parameter name", raises(lambda: TX.apply(P, {"T00": "  "}), "T00", "non empty"))
+    check("over-long string raises with the parameter name", raises(lambda: TX.apply(P, {"T00": "x" * 200}), "T00", "80"))
+    check("unknown key raises with the key", raises(lambda: TX.apply(P, None, {"texts.@T00.font": "Inter"}), "texts.@T00.font"))
+    check("a text colour must be #rrggbb or @key (14 October 2026)", raises(lambda: TX.apply(P, None, {"texts.@T00.colour": "#fff"}), "texts.@T00.colour"))
+    check("bad colour raises", raises(lambda: TX.apply(P, None, {"palette.c0": "orange"}), "palette.c0"))
+    check("unknown palette key raises with the list", raises(lambda: TX.apply(P, None, {"palette.c9": "#ffffff"}), "c9", "c0"))
+    check("a component without text layer says so", raises(lambda: TX.apply({**P, "texts": []}, {"T00": "x"}), "T00", "no text layer"))
+    P_set = TX.apply(P, None, {"texts.@T00.size_px": 48, "palette.c0": "#00ff00", "texts.@T00.align": "centre"})
+    check("sets change size, colour and anchor", P_set["texts"][0]["size_px"] == 48 and P_set["palette"]["c0"] == "#00ff00" and P_set["texts"][0]["align"] == "centre")
+
+    # interface: at most 8 per category
+    big = json.loads(json.dumps(P))
+    big["texts"] = [TX.make_layer(f"T{i:02d}", "a", FONT, 20.0, (0, 20 + i)) for i in range(12)]
+    big["palette"] = {f"c{i}": "#%02x%02x%02x" % (i * 9, i * 5, i * 3) for i in range(14)}
+    iface = TX.interface(big)
+    check("interface exposes at most 8 per category", all(len(v) <= 8 for v in iface.values()) and len(iface["text"]) == 8 and len(iface["colour"]) == 8, {k: len(v) for k, v in iface.items()})
+
+    # exports
+    svg = A.cook_svg(P)
+    check("asset.svg carries the text layer as outlines with its id", 'data-text-id="T00"' in svg and "<path" in svg and "<text" not in svg)
+    static = S.export_html(P, "synthetic")
+    check("static component has no script and the palette as CSS variables", "<script>" not in static and "--c0:#ff6a2b" in static and 'fill="var(--c0)"' in static)
+    live = S.export_html(P, "synthetic", fonts={"T00": "fonts/Inter.ttf"})
+    check("live component ships the font, the text element and ZRMD.setText", "@font-face" in live and 'id="T00-text"' in live and "ZRMD.setText" in live and "setColour" in live)
+    check("live component names a missing text parameter in its loader", "no text parameter '" in live)
+    check("live text turns the automatic optical size off (measured in a real browser: the fit lands within 0.03 px of the traced width, "
+          "it was 2 to 4 percent over with the automatic optical size of Inter)", "font-optical-sizing:none" in live)
+    check("the live component can change a V1 parameter from the browser and names a bad one", "set: function(name, value)" in live and "no parameter '" in live)
+    check("live component scales the tracking with the size (letter-spacing follows k, 14 October 2026)", 'setAttribute("letter-spacing", t.tracking_px * k)' in live and '"tracking_px"' in live)
+
+    # command line on a scene folder (private asset, written beside the traced one)
+    out = Path(tempfile.mkdtemp(prefix="zrmd-texts-"))
+    folder = A.write_version(out / "asset", P, None, None, note="synthetic")
+    check("write_version cooks the text layer", 'data-text-id="T00"' in (folder / "asset.svg").read_text())
+    print(f"{len(FAIL)} failure(s)")
+    return 1 if FAIL else 0
+
+
+def test_vector_texts():
+    assert run() == 0
+
+
+if __name__ == "__main__":
+    sys.exit(run())

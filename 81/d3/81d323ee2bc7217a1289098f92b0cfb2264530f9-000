@@ -1,0 +1,110 @@
+# 14 October 2026: two-way validation of the Image (shader) module reading (zrmd/verify/imagescore.py and
+# zrmd/orchestrator.score_visual), on an isolated workshop built in a temporary folder (ZRMD_PATH_WORKSHOP, ZRMD_PATH_MONTAGES).
+# Green: value, coverage and within1Jnd are the duration and field-share weighted numbers of the survey, the best-scoring
+# version is the reproduction (a lower-scoring variation does not replace it), plates are reported apart, the film reading is
+# kept in the detail. Red: no survey and no motion gives None (a value is never invented); a survey with no field cell gives
+# value None and coverage 0; a motion without a score is counted as reproduced but never as scored.
+# Runs under pytest, or directly: python -I tests/test_image_score.py (prints JSON, exit code 0 when all pass).
+# FR : validation dans les deux sens de la lecture du module Image sur un atelier isole.
+from __future__ import annotations
+
+import json
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+
+def write(path: Path, data) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+
+def run() -> dict:
+    results = []
+
+    def check(name, ok, **info):
+        results.append({"test": name, "pass": bool(ok), **info})
+
+    with tempfile.TemporaryDirectory(prefix="zrmd-image-score-") as tmp:
+        ws, montages = Path(tmp) / "ws", Path(tmp) / "montages"
+        ws.mkdir()
+        montages.mkdir()
+        os.environ["ZRMD_PATH_WORKSHOP"] = str(ws)
+        os.environ["ZRMD_PATH_MONTAGES"] = str(montages)
+        try:
+            from zrmd import orchestrator
+            from zrmd.verify import imagescore
+
+            # an unknown reference: nothing measured, nothing invented
+            check("red_nothing_measured_is_none", orchestrator.score_visual("nothing-here") is None)
+
+            shots = [{"id": "S01", "family": "graphic", "frames": 100, "share": 1.0, "within1": 0.8, "score": 0.99},
+                     {"id": "S02", "family": "plate", "frames": 100, "share": 0.5, "within1": 0.1, "score": 0.90}]
+            write(ws / "image" / "demo" / "survey.json",
+                  {"slug": "demo", "date": "14 October 2026, 12:00", "aggregate": imagescore.aggregate(shots),
+                   "byFamily": imagescore.by_family(shots), "reproducibleFamilies": ["textcard", "graphic"], "glowShare": 0.5})
+            got = orchestrator.score_visual("demo")
+            expected_value = (100 * 1.0 * 0.99 + 100 * 0.5 * 0.90) / 150.0
+            check("value_is_duration_and_share_weighted", abs(got["value"] - round(expected_value, 4)) < 1e-9, value=got["value"])
+            check("coverage_is_time_weighted_field_share", abs(got["coverage"] - 0.75) < 1e-9, coverage=got["coverage"])
+            check("within1_is_unmasked", abs(got["detail"]["within1Jnd"] - 0.45) < 1e-9, within1=got["detail"]["within1Jnd"])
+            check("reproducible_and_slot_shares", got["detail"]["reproducibleTimeShare"] == 0.5 and got["detail"]["slotTimeShare"] == 0.5)
+
+            # motions: the best-scoring version is the reproduction, a variation never replaces it
+            m = ws / "motions" / "demo-orb"
+            write(m / "motion.json", {"id": "demo-orb", "recipe": "graphic", "source": {"slug": "demo", "start": 0.0, "end": 1.0}})
+            write(m / "V_001" / "fidelity.json", {"score": 0.991, "dimensions": {"image": 0.991}})
+            write(m / "V_002" / "fidelity.json", {"score": 0.40, "dimensions": {"animation": 0.40}})
+            write(ws / "motions" / "demo-bg" / "motion.json", {"id": "demo-bg", "recipe": "shader-backdrop", "source": {"slug": "demo", "start": 1.0, "end": 2.0}})
+            write(ws / "motions" / "demo-bg" / "V_001" / "fidelity.json", {"frame_masked_rms_median": 2.5})
+            write(ws / "motions" / "demo-plate" / "motion.json", {"id": "demo-plate", "recipe": "plate", "source": {"slug": "demo", "start": 2.0, "end": 3.0}})
+            write(ws / "motions" / "demo-plate" / "V_001" / "fidelity.json", {"score": 0.999, "dimensions": {"grade": 0.999}})
+            items = {x["motion"]: x for x in imagescore.motion_results("demo")}
+            check("best_version_not_latest", items["demo-orb"]["version"] == "V_001" and items["demo-orb"]["score"] == 0.991)
+            check("plate_is_not_a_reproduced_motion", "demo-plate" not in items and len(imagescore.plate_results("demo")) == 1)
+            got = orchestrator.score_visual("demo")
+            md = got["detail"]["motions"]
+            check("unscored_motion_counted_not_scored", md["reproducedShots"] == 2 and md["scored"] == 1 and md["meanScore"] == 0.991, motions=md)
+
+            # the survey is built on the bible's cuts: a bible rebuilt with other cuts flags the survey stale
+            shots_s = [dict(sh, start_frame=i * 100, end_frame=(i + 1) * 100) for i, sh in enumerate(shots)]
+            write(ws / "image" / "demo" / "survey.json",
+                  {"slug": "demo", "date": "14 October 2026, 12:00", "aggregate": imagescore.aggregate(shots), "shots": shots_s,
+                   "byFamily": imagescore.by_family(shots), "reproducibleFamilies": ["textcard", "graphic"]})
+            write(ws / "references" / "demo" / "bible.json", {"shots": [{"start_frame": 0, "end_frame": 100}, {"start_frame": 100, "end_frame": 200}]})
+            check("same_cuts_not_stale", "stale" not in orchestrator.score_visual("demo")["detail"])
+            write(ws / "references" / "demo" / "bible.json", {"shots": [{"start_frame": 0, "end_frame": 60}, {"start_frame": 60, "end_frame": 200}]})
+            st = orchestrator.score_visual("demo")["detail"].get("stale")
+            check("red_rebuilt_bible_flags_stale", bool(st) and st["onlyInBible"] == 2 and st["onlyInSurvey"] == 2, stale=st)
+
+            # a survey without a single field cell: value None, coverage 0
+            empty = [{"id": "S01", "family": "plate", "frames": 50, "share": 0.0, "within1": 0.0, "score": None}]
+            write(ws / "image" / "bare" / "survey.json", {"slug": "bare", "aggregate": imagescore.aggregate(empty),
+                                                           "byFamily": imagescore.by_family(empty)})
+            bare = orchestrator.score_visual("bare")
+            check("red_no_field_cell_gives_no_value", bare["value"] is None and bare["coverage"] == 0.0, got=bare["value"])
+
+            # the film animatic reading stays in the detail
+            write(montages / "demo-film" / "run1" / "film-report.json",
+                  {"reference_frames": 200, "plan": [{"kind": "motion", "motion": "demo-orb", "a": 0, "b": 60},
+                                                     {"kind": "plate", "motion": "demo-plate", "a": 60, "b": 200}]})
+            film = orchestrator.score_visual("demo")["detail"]["film"]
+            check("film_reading_kept", film["reproducedShots"] == 1 and abs(film["coveredShare"] - 0.3) < 1e-9 and film["meanFidelity"] == 0.991, film=film)
+        finally:
+            os.environ.pop("ZRMD_PATH_WORKSHOP", None)
+            os.environ.pop("ZRMD_PATH_MONTAGES", None)
+    return {"date": "14 October 2026", "all_pass": all(r["pass"] for r in results), "results": results}
+
+
+def test_image_score():
+    report = run()
+    assert report["all_pass"], json.dumps([r for r in report["results"] if not r["pass"]], indent=2)
+
+
+if __name__ == "__main__":
+    report = run()
+    print(json.dumps(report, indent=2))
+    sys.exit(0 if report["all_pass"] else 1)

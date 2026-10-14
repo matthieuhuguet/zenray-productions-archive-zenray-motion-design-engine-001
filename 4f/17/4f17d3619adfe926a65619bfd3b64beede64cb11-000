@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+# 14 October 2026: the listening page of the music corpus, for Matthieu's ear (the final verdict on sound is his). For every member with a trim
+# version: ONE file reference -> beep -> ours (calibrated mix) -> beep -> ours (polished), and the polished mix alone, plus an index.html with the
+# scoreboard numbers and a player per member. The files hold reference audio, so they are written in the reference cache (never archived,
+# never published): <refcache>/_listen/ ; the page and the MP3 of our own render go to <workshop>/listen/. FR : page d'ecoute du corpus ; reference, calibre, poli, dans le cache prive.
+#   MusicListen.py [--only a,b]
+# 14 October 2026 (second version): the members are grouped by TRACK (the indexed video or music-for-motion track they are excerpts of), the best
+# excerpt of each track is marked and listed first, and every row also shows the stricter perceptual loss (plossFull), the onset F, the chroma,
+# the held-out audit mean and the honest-report numbers (waveform correlation with the reference, fine-structure correlation, rumble share).
+# FR : regroupement par piste, meilleur extrait en tete, mesures plus strictes a cote du critique officiel.
+from __future__ import annotations
+
+import argparse
+import html
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+from zrmd import registry, settings  # noqa: E402
+from zrmd.audio import corpus as C  # noqa: E402
+
+sys.path.insert(0, str(ENGINE / "Scripts"))
+import MusicCorpus as MCorp  # noqa: E402
+
+
+def ff(*args):
+    subprocess.run(["ffmpeg", "-v", "error", "-y", *map(str, args)], check=True)
+
+
+def member_audio(slug: str) -> Path | None:
+    f = registry.reference_file(slug)
+    return f
+
+
+def track_of(slug: str) -> str:
+    """The track an excerpt belongs to: its parent video (parent_slug in the reference file) or itself."""
+    try:
+        ref = json.loads((settings.path("workshop") / "references" / slug / "reference.json").read_text(encoding="utf-8"))
+        return ref.get("parent_slug") or slug
+    except OSError:
+        return slug
+
+
+def extras(v: Path) -> dict:
+    """plossFull, onsetF, chroma of the mix and the honest-report numbers of one trimmed version (scores.json, audit.json, polish.json)."""
+    out: dict = {}
+    sj, aj, pj = v / "scores.json", v / "audit.json", v / "polish" / "polish.json"
+    if sj.exists():
+        h = json.loads(sj.read_text(encoding="utf-8")).get("headline", {})
+        out["ploss"] = {k: h.get(k, {}).get("plossFull") for k in ("drums", "bass", "other", "vocals", "mix")}
+        out["onsetF"], out["chroma"] = h.get("mix", {}).get("onsetF"), h.get("mix", {}).get("chroma")
+    if aj.exists():
+        a = json.loads(aj.read_text(encoding="utf-8"))
+        out["wave"], out["fine"] = a["mix"]["trimmed"]["wave"]["bestLag"], a["mix"]["trimmed"]["fine"]
+        out["rumble"] = a["mix"]["cleanliness"]["trimmed"]["rumbleShare"]
+    if pj.exists():
+        p = json.loads(pj.read_text(encoding="utf-8"))
+        out["polishCritic"] = p["mix"]["scoresVsReference"]["polished"]["critic"]["score"]
+        out["polishClean"] = p["mix"]["clean"]
+    return out
+
+
+def build(only: set[str]) -> dict:
+    out = settings.path("refcache") / "_listen"      # A/B/C files that contain reference audio: private cache only
+    wk = settings.path("workshop") / "listen"        # the page and the MP3 of our own render (no reference audio)
+    out.mkdir(parents=True, exist_ok=True)
+    wk.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for r in MCorp.scoreboard():
+        slug = r["slug"]
+        if only and slug not in only:
+            continue
+        bench = settings.path("sound_out") / slug / "music-bench"
+        tv = MCorp.trimmed_versions(slug)
+        src = member_audio(slug)
+        row = {"slug": slug, "scores": r["scores"], "gate": r["gate"], "audit": r.get("auditMean"), "files": {}, "track": track_of(slug), "extra": {}}
+        if not (tv and src):
+            rows.append({**row, "missing": "no trimmed version yet" if not tv else "no reference file"})
+            continue
+        v = bench / tv[-1]
+        row["extra"] = extras(v)
+        tmp = out / f"_{slug}"
+        tmp.mkdir(exist_ok=True)
+        ff("-i", src, "-vn", "-ac", "2", "-ar", 44100, tmp / "ref.wav")
+        ff("-i", v / "mix.wav", "-ac", 2, "-ar", 44100, tmp / "trim.wav")
+        parts = ["ref.wav", "b1.wav", "gap.wav", "trim.wav"]
+        have_polish = (v / "polish" / "mix.wav").exists()
+        if have_polish:
+            ff("-i", v / "polish" / "mix.wav", "-ac", 2, "-ar", 44100, tmp / "polish.wav")
+            parts += ["b2.wav", "gap.wav", "polish.wav"]
+        ff("-f", "lavfi", "-i", "sine=f=900:d=0.15", "-ar", 44100, "-ac", 2, tmp / "b1.wav")
+        ff("-f", "lavfi", "-i", "sine=f=1400:d=0.15", "-ar", 44100, "-ac", 2, tmp / "b2.wav")
+        ff("-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", 0.6, tmp / "gap.wav")
+        (tmp / "list.txt").write_text("".join(f"file {p}\n" for p in parts))
+        abc = out / f"{slug}-ABC.mp3"
+        ff("-f", "concat", "-safe", 0, "-i", tmp / "list.txt", "-c:a", "libmp3lame", "-b:a", "256k", abc)
+        row["files"]["abc"] = str(abc)
+        ours = wk / f"{slug}-calibrated.mp3"
+        ff("-i", tmp / "trim.wav", "-c:a", "libmp3lame", "-b:a", "256k", ours)
+        row["files"]["calibrated"] = str(ours)
+        if have_polish:
+            only_polish = wk / f"{slug}-polished.mp3"
+            ff("-i", tmp / "polish.wav", "-c:a", "libmp3lame", "-b:a", "256k", only_polish)
+            row["files"]["polished"] = str(only_polish)
+        for p in tmp.glob("*"):
+            p.unlink()
+        tmp.rmdir()
+        rows.append(row)
+    def cell(v):
+        return "-" if v is None else f"{v:.2f}"
+
+    def score_key(r):
+        return (r["gate"], (r["scores"].get("mix") or 0.0), (r["extra"].get("ploss", {}) or {}).get("mix") or 0.0)
+
+    by_track: dict[str, list] = {}
+    for r in rows:
+        by_track.setdefault(r["track"], []).append(r)
+    body = ""
+    for track, group in by_track.items():
+        group.sort(key=score_key, reverse=True)
+        for rank, r in enumerate(group):
+            sc, ex = r["scores"], r["extra"]
+            players = ""
+            if r["files"].get("abc"):
+                players += f'<div>A reference, B calibrated, C polished<br><audio controls preload="none" src="file://{html.escape(r["files"]["abc"])}"></audio></div>'
+            if r["files"].get("calibrated"):
+                players += f'<div>B alone (calibrated)<br><audio controls preload="none" src="file://{html.escape(r["files"]["calibrated"])}"></audio></div>'
+            if r["files"].get("polished"):
+                players += f'<div>C alone (polished)<br><audio controls preload="none" src="file://{html.escape(r["files"]["polished"])}"></audio></div>'
+            if r.get("missing"):
+                players = f"<em>{html.escape(r['missing'])}</em>"
+            pl = ex.get("ploss", {}) or {}
+            honest = (f"wave {cell(ex.get('wave'))} fine {cell(ex.get('fine'))} rumble {ex.get('rumble', '-')}" if ex else "-")
+            body += (f"<tr class='{'best' if rank == 0 and len(group) > 1 else ''}'><td><b>{html.escape(track)}</b><br>{html.escape(r['slug'])}"
+                     f"{' <i>(best excerpt)</i>' if rank == 0 and len(group) > 1 else ''}</td>"
+                     + "".join(f"<td>{cell(sc.get(k))}</td>" for k in ("drums", "bass", "other", "vocals", "mix"))
+                     + f"<td>{cell(r['audit'])}</td><td>{cell(pl.get('mix'))}</td><td>{cell(ex.get('onsetF'))} / {cell(ex.get('chroma'))}</td>"
+                     f"<td>{cell(ex.get('polishCritic'))}</td><td>{honest}</td><td>{'PASS' if r['gate'] else 'no'}</td><td>{players}</td></tr>")
+    page = ("<!doctype html><meta charset=utf-8><title>Music corpus, listening</title><style>body{font:14px system-ui;margin:24px;max-width:1500px}"
+            "table{border-collapse:collapse}td,th{padding:8px 10px;border-top:1px solid #ddd;text-align:left;vertical-align:top}audio{width:340px}tr.best{background:#f4f8ff}</style>"
+            "<h1>Music corpus: reference, calibrated, polished</h1><p>Columns: official third-octave critic per stem and for the mix (target 99.9), the mean of the held-out audit "
+            "layouts, the stricter perceptual loss of the mix (plossFull), onset F / chroma, the critic of the polished mix, and the honest-report numbers (waveform correlation "
+            "with the reference within 20 ms, fine-structure correlation, share of energy under 22 Hz). A 99.9 on the critic is not the same as identical to the ear: listen. "
+            "These files contain reference audio: local listening only, never archived or published.</p><table><tr><th>track / excerpt</th><th>drums</th><th>bass</th><th>other</th>"
+            "<th>vocals</th><th>mix</th><th>audit</th><th>plossFull</th><th>onset / chroma</th><th>polished</th><th>honest</th><th>gate</th><th>listen</th></tr>"
+            f"{body}</table>")
+    (wk / "index.html").write_text(page, encoding="utf-8")
+    return {"dir": str(out), "workshopDir": str(wk), "members": len(rows), "page": str(wk / "index.html")}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--only", default="")
+    a = ap.parse_args()
+    print(json.dumps(build({x for x in a.only.split(",") if x})))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

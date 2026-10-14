@@ -1,0 +1,47 @@
+# 14 October 2026: contact sheets of the shots that have NO eye description after a cut list changed (the verifier
+# Scripts/CheckReferenceBooks.py wants a paraphrased sentence per shot). One row per shot: first, middle and last picture of the
+# shot (decode cache, 160x90), the shot id, its frames and the previous description for context. Writes the sheets and rows.json
+# into <workshop>/rhythm/descsheets/; write each sentence into references/<slug>/review.json ("shots": [{"t": seconds inside the
+# shot, "text": "..."}]) and rebuild with Scripts/BuildReferenceBook.py --slug <slug>.
+# Run: nice -n 5 /Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/RhythmDescSheets.py [slug ...]
+# FR : planches des plans sans description a l'oeil apres un changement de coupes.
+import sys, json
+from pathlib import Path
+import numpy as np
+from PIL import Image, ImageDraw
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE)); sys.path.insert(0, str(ENGINE / "Scripts"))
+from zrmd.analyze import rhythm_cache
+import RhythmSignals as RS
+REFS = sys.argv[1:] or sorted(p.parent.name for p in Path("/Users/zenray/.claude/tmp/tmp-zenray-motion-design/references").glob("*/bible.json"))
+out = Path("/Users/zenray/.claude/tmp/tmp-zenray-motion-design/rhythm/descsheets"); out.mkdir(parents=True, exist_ok=True)
+rows = []
+for s in REFS:
+    b = json.load(open(f"/Users/zenray/.claude/tmp/tmp-zenray-motion-design/references/{s}/bible.json"))
+    fr = rhythm_cache.load(RS.folder_of(s))["frames"]
+    shots = b["shots"]
+    for k, sh in enumerate(shots):
+        if sh.get("description"): continue
+        a, e = sh["start_frame"], sh["end_frame"]
+        mid = min((a + e) // 2, len(fr) - 1)
+        prev = shots[k-1].get("description", "")[:60] if k > 0 else ""
+        rows.append({"slug": s, "id": sh["id"], "a": a, "e": e, "t": round(sh["start"] + 0.5*sh["duration"], 3), "mid": mid, "prev": prev, "fr": fr})
+print(len(rows), "shots without description")
+per = 12
+for si in range(0, len(rows), per):
+    chunk = rows[si:si+per]
+    tw, th, lw = 320, 180, 260
+    img = Image.new("RGB", (lw + 3*(tw+4), len(chunk)*(th+4)), (22,22,26)); d = ImageDraw.Draw(img)
+    for r, row in enumerate(chunk):
+        y = r*(th+4)
+        d.text((4, y+4), f"#{si+r+1:02d} {row['slug'][:22]}", fill=(120,220,255))
+        d.text((4, y+20), f"{row['id']} frames {row['a']}-{row['e']} t={row['t']}", fill=(235,235,235))
+        d.text((4, y+36), f"prev: {row['prev']}", fill=(180,180,180))
+        picks = [max(row['a'],0), row['mid'], max(min(row['e']-1, len(row['fr'])-1), 0)]
+        for c, f in enumerate(picks):
+            t = Image.fromarray(np.asarray(row['fr'][f])).resize((tw, th), Image.BILINEAR)
+            img.paste(t, (lw + c*(tw+4), y))
+            d.text((lw + c*(tw+4)+2, y+1), str(f), fill=(255,255,0))
+    p = out / f"desc-{si//per+1:02d}.jpg"; img.save(p, quality=84)
+json.dump([{k: v for k, v in r.items() if k != 'fr'} for r in rows], open(out/"rows.json","w"), indent=1)
+print(out)

@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from . import orchestrator as orch
 from . import registry
+from .app import api as v1api
 
 CFG = orch.definition()
 SERVER = CFG["server"]
@@ -131,6 +132,14 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 left -= len(block)
 
+    # --------------------------------------------------------------------------------------------- V1 application (zrmd/app/api.py)
+    def _v1(self, method, path, q, body, raw=None):
+        r = v1api.route(method, path, q, body, raw)
+        if "file" in r:
+            f = Path(r["file"])
+            return self._file(f, r.get("mime") or mimetypes.guess_type(f.name)[0] or "application/octet-stream")
+        return self._json(r["json"], r.get("status", 200))
+
     # ------------------------------------------------------------------------------------------------- GET
     def do_GET(self):
         try:
@@ -138,7 +147,12 @@ class Handler(BaseHTTPRequestHandler):
             url = urlparse(self.path)
             q = {k: v[0] for k, v in parse_qs(url.query).items()}
             p = unquote(url.path)
-            if p == "/":
+            if p.startswith("/api/v1/"):
+                return self._v1("GET", p, q, None)
+            if p == "/":  # 14 October 2026: the V1 application page; the pipeline console stays at /pipeline
+                page = APP_DIR / "studio.html"
+                return self._file(page if page.is_file() else APP_DIR / "index.html", "text/html; charset=utf-8")
+            if p == "/pipeline":
                 return self._file(APP_DIR / "index.html", "text/html; charset=utf-8")
             if p.startswith("/app/") or p.startswith("/fonts/"):
                 folder, name = (APP_DIR, p[5:]) if p.startswith("/app/") else (FONT_DIR, p[7:])
@@ -195,7 +209,15 @@ class Handler(BaseHTTPRequestHandler):
             q = {k: v[0] for k, v in parse_qs(url.query).items()}
             if url.path == "/api/upload":
                 return self._json(self._upload(q))
+            if url.path == "/api/v1/media/upload":
+                n = int(self.headers.get("Content-Length") or 0)
+                if n > SERVER["maxUploadMB"] * 1048576:
+                    self.close_connection = True
+                    raise Refusal(f"file larger than {SERVER['maxUploadMB']} MB", 413)
+                return self._v1("POST", url.path, {**q, "length": str(n)}, None, raw=self.rfile.read)
             body = self._body_json()
+            if url.path.startswith("/api/v1/"):
+                return self._v1("POST", url.path, q, body)
             if url.path == "/api/run":
                 run = orch.new_run(str(body.get("slug", "")), body.get("steps"), body.get("params"))
                 return self._json({"ok": True, "run": orch.start_detached(run["id"])})
@@ -245,11 +267,26 @@ def make_server(port: int | None = None) -> ThreadingHTTPServer:
 
 def main() -> int:
     srv = make_server()
+    # the vector components are measured once by a separate low-priority process (the page then opens a scene at once); the server's own
+    # threads never share a GIL with that rendering work
+    import os
+    import subprocess
+    try:
+        subprocess.Popen([sys.executable, "-I", "-c", "from zrmd.app import api; api.warm()"], cwd=str(Path(__file__).resolve().parent.parent),
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, start_new_session=True,
+                         preexec_fn=lambda: os.nice(10))
+    except OSError:
+        pass
     print(json.dumps({"ok": True, "url": f"http://{SERVER['host']}:{srv.server_port}/"}), flush=True)
+    import signal
+    # SIGTERM (a restart, launchd) closes the music cook pool too: without it its workers outlive the server as idle orphans (about 90 MB each)
+    signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
         pass
+    finally:
+        v1api.shutdown()
     return 0
 
 

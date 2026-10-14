@@ -1,0 +1,268 @@
+#!/usr/bin/env python3
+# 14 October 2026: the vector module on a scene of ANY reference (zrmd/vector/scene.py). Several candidate shots are read from the
+# bible, the frame with the most whole sharp-edged objects wins, a window of whole objects is traced under a cost budget to editable
+# SVG and an HTML component, and every layer is sorted VECTOR (editable UI, text outlines, shapes), SHADER (blur, glow, gradient
+# field) or RESIDUAL (photograph, grain). A reference with no sharp-edged object in any sampled frame is NOT APPLICABLE (neither a
+# pass nor a failure). One JSON object per reference on stdout.
+#   VectorScene.py --slug onekey-pro-2 [--shot S07]        one reference (the shot is chosen from the bible unless given)
+#   VectorScene.py --all [--only a,b]                       every video reference of the registry, one after the other, then the index
+#   VectorScene.py --index                                  rebuild <workshop>/vector/index.json and index.html from the scenes on disk
+#   VectorScene.py --report                                 one JSON row per reference: layers at 0.99 and 0.999, unrefined, caps, cost
+#   VectorScene.py --reevaluate [--only a,b]                measure the traced scenes again with the current measure and classes (no retrace)
+#   VectorScene.py --why                                    why each vector layer is under the target: size-cap, cpu-cap, glyph-size, codec-noise, misfit
+#   VectorScene.py --text SLUG --set T00="New text" ...     swap the text of a traced component (see zrmd/vector/texts.py)
+#   VectorScene.py --text SLUG --set text="Hi" shapeColour='"#ff6a2b"' scale=1.5     the same with the V1 names of params/vector-v1-parameters.json
+#   VectorScene.py --params SLUG                            the V1 interface of the component of a reference, with its values
+# Run it under `nice -n 5` on a busy machine; the number of workers comes from params/vector-scene.json, budget.workers.
+# Reference pixels (frame, crop, side-by-side) stay in the reference cache; the workshop keeps the private 1:1 assets and numbers.
+# FR : le module vecteur sur une scene ; chaque couche est triee vecteur, shader ou residu.
+from __future__ import annotations
+
+import argparse
+import html
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+from zrmd import registry, settings  # noqa: E402
+from zrmd.vector import scene  # noqa: E402
+
+
+def one(slug: str, shot: str | None, budget: dict | None = None) -> dict:
+    return scene.run_scene(slug, shot, budget)
+
+
+def out_root() -> Path:
+    return scene._path(scene.cfg()["paths"]["index"], "")
+
+
+def scene_json(slug: str) -> Path:
+    return scene._path(scene.cfg()["paths"]["out"], slug) / "scene.json"
+
+
+def has_picture(slug: str) -> bool:
+    """A reference with a bible has a picture analysis; the music-only ones and the corpus excerpts have none."""
+    return (settings.path("workshop") / "references" / slug / "bible.json").exists()
+
+
+def build_index() -> dict:
+    targets = scene.cfg()["verdict"]["targets"]
+    rows = []
+    for slug in registry.slugs():
+        f = scene_json(slug)
+        if not has_picture(slug) and not f.exists():
+            continue                                    # music only: no picture, not a row of this table
+        if f.exists():
+            d = json.loads(f.read_text(encoding="utf-8"))
+            if d.get("applicable") is False:
+                rows.append({"slug": slug, "applicable": False, "reason": d.get("skipped"), "candidates": len(d.get("candidates") or [])})
+                continue
+            cl = d["classes"]
+            rows.append({"slug": slug, "applicable": True, "shot": d.get("shot"), "family": d.get("family"), "layers": d.get("layers"), "share": cl["share"],
+                         "counts": cl["counts"], "specks": cl.get("specks"), "fragments": cl.get("fragments"), "unrefined": cl.get("unrefined"),
+                         "vectorLayersOk": cl["vectorLayersOk"], "vectorLayerIouMean": cl["vectorLayerIouMean"],
+                         "vectorLayerIouArea": cl.get("vectorLayerIouArea"), "vectorLayerIouRefined": cl.get("vectorLayerIouRefined"),
+                         "explained": d["verdict"]["explained"], "isVectorScene": d["verdict"]["isVectorScene"], "reading": d["verdict"]["reading"],
+                         "cost": {"totalS": (d.get("timing") or {}).get("totalS"), "cpuS": ((d.get("timing") or {}).get("cost") or {}).get("cpuS"),
+                                  "layerCapHits": ((d.get("timing") or {}).get("cost") or {}).get("layerCapHits"),
+                                  "sceneCapHits": ((d.get("timing") or {}).get("cost") or {}).get("sceneCapHits")},
+                         "textVariant": bool(d.get("textVariant")),
+                         "reached": {str(t): bool(cl["vectorLayerIouMean"] is not None and cl["vectorLayerIouMean"] >= t) for t in targets},
+                         "html": f"{slug}/{d['shot']}/asset/{d['version']}/component.html", "svg": f"{slug}/{d['shot']}/asset/{d['version']}/asset.svg"})
+        else:
+            rows.append({"slug": slug, "missing": True})
+    out_root().mkdir(parents=True, exist_ok=True)
+    (out_root() / "index.json").write_text(json.dumps({"schema": "zrmd/vector-index@2", "date": scene.versions.stamp(), "targets": targets, "references": rows}, indent=1), encoding="utf-8")
+
+    def pct(v):
+        return "-" if v is None else "%.1f" % (v * 100)
+
+    def row_html(r: dict) -> str:
+        head = f"<td>{html.escape(r['slug'])}</td>"
+        if r.get("missing"):
+            return f"<tr>{head}<td colspan=11>not run</td></tr>"
+        if r.get("applicable") is False:
+            return f"<tr>{head}<td colspan=11>not applicable: {html.escape(str(r.get('reason')))}</td></tr>"
+        links = '<a href="%s">component</a> · <a href="%s">svg</a>' % (html.escape(r["html"]), html.escape(r["svg"]))
+        reach = " / ".join(("yes" if r["reached"][str(t)] else "no") for t in targets)
+        c = r.get("cost") or {}
+        cost = "-" if c.get("totalS") is None else "%.0f s wall, %.0f s cpu, %s layer caps, %s scene caps" % (c["totalS"], c.get("cpuS") or 0, c.get("layerCapHits"), c.get("sceneCapHits"))
+        return (head + f"<td>{html.escape(str(r.get('shot', '')))}</td><td>{r['share']['vector'] * 100:.0f} / {r['share']['shader'] * 100:.0f} / {r['share']['residual'] * 100:.0f}</td>"
+                f"<td>{r['vectorLayersOk']}</td><td>{pct(r['vectorLayerIouMean'])}</td><td>{pct(r['vectorLayerIouArea'])}</td><td>{pct(r['explained'])}</td>"
+                f"<td>{reach}</td><td>{html.escape(r['reading'])}</td><td>{cost}</td><td>{links}</td>").join(["<tr>", "</tr>"])
+
+    body = "".join(row_html(r) for r in rows)
+    page = ("<!doctype html><meta charset=utf-8><title>Vector scenes</title><style>body{font:14px system-ui;margin:24px}table{border-collapse:collapse}"
+            "td,th{padding:6px 10px;border-top:1px solid #ddd;text-align:left;vertical-align:top}</style><h1>Vector module on one scene per reference</h1>"
+            "<p>Shares of the traced area in percent: vector (editable UI, text outlines, shapes) / shader (blur, glow, gradient field) / residual (photograph, grain). "
+            "IoU = soft IoU of each vector layer against its coverage target, plain mean and area-weighted mean. Explained = share of the crop reproduced within 16 levels. "
+            f"Reached = plain mean IoU at {' / '.join('%g' % (t * 100) for t in targets)} percent.</p><table><tr><th>reference</th><th>shot</th><th>vector / shader / residual</th>"
+            f"<th>vector layers ok</th><th>IoU mean</th><th>IoU area</th><th>explained</th><th>reached</th><th>reading</th><th>cost</th><th>assets</th></tr>{body}</table>")
+    (out_root() / "index.html").write_text(page, encoding="utf-8")
+    return {"references": len(rows), "dir": str(out_root())}
+
+
+def report() -> list:
+    """One row per reference read from the scene.json files: how many vector layers reach 0.99 and 0.999, how many are unrefined or
+    capped, and the reading of why the others do not (a photograph plate is not applicable, it is not a failure). Numbers only, read
+    from disk. FR : le tableau des references, lu sur disque."""
+    targets = scene.cfg()["verdict"]["targets"]
+    rows = []
+    for slug in registry.slugs():
+        f = scene_json(slug)
+        if not f.exists():
+            if has_picture(slug):
+                rows.append({"slug": slug, "status": "not run"})
+            continue
+        d = json.loads(f.read_text(encoding="utf-8"))
+        if d.get("applicable") is False:
+            rows.append({"slug": slug, "status": "not applicable", "reason": d.get("skipped")})
+            continue
+        L = d["classes"]["layers"]
+        vec = [r for r in L if r["class"] == "vector" and r.get("iou") is not None]
+        cost = (d.get("timing") or {}).get("cost") or {}
+        hit = {str(t): sum(1 for r in vec if r["iou"] >= t) for t in targets}
+        rows.append({"slug": slug, "status": "traced", "shot": d.get("shot"), "family": d.get("family"), "layers": len(L),
+                     "share": d["classes"]["share"], "vectorLayers": len(vec), "layersAtTarget": hit,
+                     "unrefinedVector": sum(1 for r in vec if r.get("unrefined")), "specks": d["classes"].get("specks"),
+                     "fragments": d["classes"].get("fragments"),
+                     "mean": d["classes"]["vectorLayerIouMean"], "area": d["classes"].get("vectorLayerIouArea"),
+                     "refined": d["classes"].get("vectorLayerIouRefined"), "explained": d["verdict"]["explained"],
+                     "isVectorScene": d["verdict"]["isVectorScene"], "textLayers": len((d.get("textVariant") or {}).get("layers") or []),
+                     "wallS": (d.get("timing") or {}).get("totalS"), "cpuS": cost.get("cpuS"), "layerCaps": cost.get("layerCapHits"), "sceneCaps": cost.get("sceneCapHits")})
+    return rows
+
+
+def why(slug: str) -> dict | None:
+    """For one traced reference: how its layers split between what the module reproduces (vector, at the target or not), what is not
+    vector content (shader, residual, fragment) and, for every vector layer under the first target, the CAUSE read from the numbers:
+      size-cap        the contour is the unrefined Bezier because the layer is over maxAreaPx / maxBoundaryPx or past maxRefined (cost budget)
+      cpu-cap         the layer spent layerCpuS CPU seconds, or the scene spent sceneCpuS: unrefined contour
+      glyph-size      fitted, under 100 px of area: a few pixels carry the whole measure (soft IoU of a 6 by 9 px glyph)
+      codec-noise     fitted, area 100 px or more, IoU between 0.9 and the target: the alpha target itself carries the noise of the codec
+      misfit          fitted, IoU under 0.9 and 100 px or more: the trace is wrong (a shape the primitives and the path do not describe)
+    Numbers only, read from scene.json and params.json. FR : pourquoi chaque couche vecteur est sous la cible, lu sur disque."""
+    f = scene_json(slug)
+    if not f.exists():
+        return None
+    d = json.loads(f.read_text(encoding="utf-8"))
+    if d.get("applicable") is False or "classes" not in d:
+        return {"slug": slug, "status": "not applicable", "reason": d.get("skipped")}
+    t = scene.cfg()["verdict"]["targets"][0]
+    P = json.loads((Path(d["dir"]) / "params.json").read_text(encoding="utf-8"))
+    fit = {l["id"]: (l.get("fit") or {}) for l in P["layers"]}
+    L = d["classes"]["layers"]
+    vec = [r for r in L if r["class"] == "vector" and r.get("iou") is not None]
+    causes: dict = {}
+    for r in vec:
+        if r["iou"] >= t:
+            continue
+        ft = fit.get(r["id"], {})
+        if ft.get("unrefined"):
+            c = "cpu-cap" if ft.get("budget") in ("cpu-limit", "scene-cpu") else "size-cap"
+        elif r["area"] < 100:
+            c = "glyph-size"
+        elif r["iou"] >= 0.9:
+            c = "codec-noise"
+        else:
+            c = "misfit"
+        b = causes.setdefault(c, {"layers": 0, "area": 0.0, "worst": 1.0})
+        b["layers"] += 1
+        b["area"] += r["area"]
+        b["worst"] = min(b["worst"], r["iou"])
+    not_vector = {}
+    for k in ("shader", "residual"):
+        rows = [r for r in L if r["class"] == k]
+        not_vector[k] = {"layers": len(rows), "area": round(sum(r["area"] for r in rows), 1), "fragments": sum(1 for r in rows if r.get("fragment")),
+                         "specks": sum(1 for r in rows if r.get("speck"))}
+    cl = d["classes"]
+    return {"slug": slug, "status": "traced", "shot": d["shot"], "share": cl["share"], "vectorLayers": len(vec), "layersOk": cl["vectorLayersOk"],
+            "atTarget": sum(1 for r in vec if r["iou"] >= t), "mean": cl["vectorLayerIouMean"], "area": cl.get("vectorLayerIouArea"),
+            "explained": d["verdict"]["explained"], "belowTarget": {k: {**v, "area": round(v["area"], 1), "worst": round(v["worst"], 3)} for k, v in causes.items()},
+            "notVector": not_vector, "reevaluated": d.get("reevaluated"), "before": d.get("before")}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--slug")
+    ap.add_argument("--shot")
+    ap.add_argument("--scene-cpu", type=float, default=None, help="override budget.sceneCpuS (CPU seconds shared by the pool) for this run")
+    ap.add_argument("--layer-cpu", type=float, default=None, help="override budget.layerCpuS for this run")
+    ap.add_argument("--all", action="store_true")
+    ap.add_argument("--only", default="")
+    ap.add_argument("--index", action="store_true")
+    ap.add_argument("--report", action="store_true", help="print one JSON row per reference read from the scene.json files")
+    ap.add_argument("--params", metavar="SLUG", help="print the V1 parameter interface of the component of this reference, with its values")
+    ap.add_argument("--why", action="store_true", help="one JSON row per traced reference: the cause of every vector layer under the first target")
+    ap.add_argument("--reevaluate", action="store_true", help="measure the traced scenes again with the current measure and classes, without tracing")
+    ap.add_argument("--text", metavar="SLUG", help="swap the text of the component of this reference (needs --set)")
+    ap.add_argument("--set", nargs="+", default=[], help="TEXT_ID=new string, repeatable")
+    a = ap.parse_args()
+    if a.text:
+        from zrmd.vector import texts
+        print(json.dumps(texts.swap_cli(a.text, a.set), default=float))
+        return 0
+    if a.index:
+        print(json.dumps(build_index()))
+        return 0
+    if a.report:
+        for r in report():
+            print(json.dumps(r, default=float))
+        return 0
+    if a.params:
+        from zrmd.vector import texts
+        print(json.dumps(texts.params_cli(a.params), default=float, indent=1))
+        return 0
+    if a.why:
+        for slug in registry.slugs():
+            w = why(slug)
+            if w:
+                print(json.dumps(w, default=float))
+        return 0
+    if a.reevaluate:
+        for slug in [s for s in registry.slugs() if not a.only or s in a.only.split(",")]:
+            if scene_json(slug).exists():
+                print(json.dumps(scene.reevaluate(slug), default=float), flush=True)
+        print(json.dumps(build_index()))
+        return 0
+    if a.all:
+        timeout = scene.cfg()["timeoutS"]
+        slugs = [s for s in registry.slugs() if not a.only or s in a.only.split(",")]
+        import time
+        for slug in slugs:
+            if not has_picture(slug):
+                continue                                  # music-only reference or corpus excerpt: no picture to trace
+            cmd = [str(settings.path("python")), "-I", str(Path(__file__).resolve()), "--slug", slug]
+            cmd += (["--scene-cpu", str(a.scene_cpu)] if a.scene_cpu is not None else []) + (["--layer-cpu", str(a.layer_cpu)] if a.layer_cpu is not None else [])
+            log = out_root() / "logs" / f"{slug}.log"     # progress of the pool (layers done, seconds) is readable while it runs
+            log.parent.mkdir(parents=True, exist_ok=True)
+            t0 = time.time()
+            try:
+                with open(log, "w", encoding="utf-8") as fh:
+                    done = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=fh, text=True, timeout=timeout)
+                row = json.loads(done.stdout.strip().splitlines()[-1]) if done.stdout.strip() else {"slug": slug, "failed": log.read_text(encoding="utf-8")[-300:]}
+                row["wallS"] = round(time.time() - t0, 1)
+                print(json.dumps(row, default=float), flush=True)
+            except subprocess.TimeoutExpired:
+                print(json.dumps({"slug": slug, "failed": f"timeout after {timeout} s"}), flush=True)
+        print(json.dumps(build_index()))
+        return 0
+    if not a.slug:
+        print(json.dumps({"ok": False, "error": "give --slug, --all, --index or --text"}))
+        return 2
+    over = {k: v for k, v in (("sceneCpuS", a.scene_cpu), ("layerCpuS", a.layer_cpu)) if v is not None}
+    res = one(a.slug, a.shot, over or None)
+    keep = {k: res.get(k) for k in ("slug", "applicable", "shot", "family", "skipped", "layers", "verdict", "dir")}
+    keep["share"] = (res.get("classes") or {}).get("share")
+    keep["vectorLayersOk"] = (res.get("classes") or {}).get("vectorLayersOk")
+    keep["vectorLayerIouMean"] = (res.get("classes") or {}).get("vectorLayerIouMean")
+    print(json.dumps(keep, default=float))
+    build_index()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

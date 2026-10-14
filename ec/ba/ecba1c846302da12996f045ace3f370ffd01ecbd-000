@@ -1,0 +1,61 @@
+{
+  "_doc": "12 October 2026: the parameters the site may change, per recipe family, at most 8 per category (HDA interface law). key: dotted path into params.json ('@id' selects a layer by id); kind: number, color or text. A key that does not resolve in a version is simply not offered. FR : les parametres que le site peut changer, au plus 8 par categorie.",
+  "max_per_category": 8,
+  "recipes": {
+    "textcard": {
+      "layout": [
+        {"key": "layers.@caption.x", "label": "Position X", "kind": "number", "min": 0, "max": 1920, "step": 0.5, "unit": "px"},
+        {"key": "layers.@caption.y", "label": "Position Y", "kind": "number", "min": 0, "max": 1080, "step": 0.5, "unit": "px"},
+        {"key": "layers.@caption.font.size", "label": "Taille du texte", "kind": "number", "min": 24, "max": 240, "step": 0.1, "unit": "px"},
+        {"key": "layers.@caption.font.tracking", "label": "Interlettrage", "kind": "number", "min": -0.1, "max": 0.3, "step": 0.001, "unit": "em"}
+      ],
+      "colour": [
+        {"key": "layers.@bg.color", "label": "Fond", "kind": "color"},
+        {"key": "layers.@caption.color", "label": "Texte", "kind": "color"},
+        {"key": "layers.@caption.shine.base", "label": "Reflet, base", "kind": "color"},
+        {"key": "layers.@caption.shine.highlight", "label": "Reflet, éclat", "kind": "color"}
+      ],
+      "content": [
+        {"key": "layers.@caption.text", "label": "Texte affiché", "kind": "text", "maxLength": 80}
+      ]
+    },
+    "shader-field": {
+      "colour": [
+        {"key": "look.colourMain", "label": "Main colour", "kind": "color"},
+        {"key": "look.colourEnd", "label": "Gradient end colour", "kind": "color"},
+        {"key": "look.backdrop", "label": "Backdrop colour", "kind": "color"},
+        {"key": "look.glowColour", "label": "Glow colour", "kind": "color"}
+      ],
+      "light": [
+        {"key": "look.glow", "label": "Glow intensity", "kind": "number", "min": 0.0, "max": 2.0, "step": 0.01, "unit": "gain"},
+        {"key": "look.glowRadius", "label": "Glow radius", "kind": "number", "min": 0.02, "max": 0.3, "step": 0.005, "unit": "frame height"},
+        {"key": "look.glowX", "label": "Glow position X", "kind": "number", "min": 0.0, "max": 1.0, "step": 0.01, "unit": "frame width"},
+        {"key": "look.glowY", "label": "Glow position Y", "kind": "number", "min": 0.0, "max": 1.0, "step": 0.01, "unit": "frame height"}
+      ],
+      "grade": [
+        {"key": "look.gradientAngle", "label": "Gradient angle", "kind": "number", "min": -180.0, "max": 180.0, "step": 1.0, "unit": "degrees"},
+        {"key": "look.exposure", "label": "Exposure", "kind": "number", "min": -3.0, "max": 3.0, "step": 0.05, "unit": "stops"},
+        {"key": "look.vignette", "label": "Vignette amount", "kind": "number", "min": 0.0, "max": 1.0, "step": 0.01, "unit": "strength"},
+        {"key": "look.grain", "label": "Grain amount", "kind": "number", "min": 0.0, "max": 0.2, "step": 0.001, "unit": "std 0..1"}
+      ]
+    },
+    "graphic": {
+      "colour": [
+        {"key": "layers.@bg.color", "label": "Fond", "kind": "color"},
+        {"key": "layers.@orb.controls.hue", "label": "Teinte", "kind": "number", "min": -180, "max": 180, "step": 1, "unit": "deg"},
+        {"key": "layers.@orb.controls.saturate", "label": "Saturation", "kind": "number", "min": 0, "max": 3, "step": 0.01, "unit": "x"},
+        {"key": "layers.@orb.controls.brightness", "label": "Luminosité", "kind": "number", "min": 0, "max": 3, "step": 0.01, "unit": "x"}
+      ],
+      "layout": [
+        {"key": "layers.@orb.controls.scale", "label": "Échelle", "kind": "number", "min": 0.1, "max": 3, "step": 0.01, "unit": "x"},
+        {"key": "layers.@orb.controls.shape.aspect", "label": "Rapport largeur / hauteur", "kind": "number", "min": 0.3, "max": 3, "step": 0.01, "unit": "x"},
+        {"key": "layers.@orb.controls.shape.n", "label": "Exposant de la forme", "kind": "number", "min": 1, "max": 8, "step": 0.1, "unit": ""},
+        {"key": "layers.@orb.controls.shape.blend", "label": "Mélange vers la forme", "kind": "number", "min": 0, "max": 1, "step": 0.01, "unit": ""}
+      ],
+      "timing": [
+        {"key": "layers.@orb.controls.speed", "label": "Vitesse", "kind": "number", "min": 0.1, "max": 4, "step": 0.01, "unit": "x"},
+        {"key": "layers.@orb.controls.offset_frames", "label": "Décalage", "kind": "number", "min": -120, "max": 120, "step": 1, "unit": "frames"}
+      ]
+    }
+  }
+}

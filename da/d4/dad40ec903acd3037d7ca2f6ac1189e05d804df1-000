@@ -1,0 +1,75 @@
+# 14 October 2026: the gallery catalogue command proven in both directions on a synthetic workshop (isolated by ZRMD_PATH_WORKSHOP):
+# GREEN a motion whose canvas is a LIST (the traced-marks family) and a render shorter than the poster time are catalogued with a duration and a
+# poster; a second run reuses every entry (incremental); RED a broken motion.json is listed in `errors` and never stops the other motions, and
+# an entry whose files changed is recomputed. FR : le catalogue incremental, robuste, prouve dans les deux sens.
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+PY = sys.executable
+FAIL = []
+
+
+def check(name, cond, detail=""):
+    print(("ok   " if cond else "FAIL ") + name + (f"  {detail}" if detail and not cond else ""))
+    if not cond:
+        FAIL.append(name)
+
+
+def make_render(path: Path, seconds: float):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c=blue:s=160x90:r=30:d={seconds}", "-pix_fmt", "yuv420p", str(path)], check=True)
+
+
+def run_catalog(env) -> dict:
+    r = subprocess.run([PY, "-I", "-m", "zrmd.cli", "catalog"], cwd=ROOT, env=env, capture_output=True, text=True)
+    return json.loads(r.stdout), r.returncode
+
+
+def run() -> int:
+    tmp = Path(tempfile.mkdtemp(prefix="zrmd-catalog-test-"))
+    env = {**os.environ, "ZRMD_PATH_WORKSHOP": str(tmp / "workshop"), "ZRMD_PATH_REFCACHE": str(tmp / "refcache")}
+    motions = tmp / "workshop" / "motions"
+
+    def motion(mid, params, seconds, **extra):
+        d = motions / mid
+        (d / "V_001").mkdir(parents=True)
+        (d / "motion.json").write_text(json.dumps({"id": mid, "title": mid, "latest": "V_001", "versions": ["V_001"], "recipe": "graphic", "tags": [], **extra}))
+        (d / "V_001" / "params.json").write_text(json.dumps(params))
+        make_render(d / "V_001" / "render.mp4", seconds)
+
+    motion("dict-canvas", {"canvas": {"frames": 90, "fps": 30}}, 3.0)
+    motion("list-canvas", {"canvas": [{"x": 0}]}, 1.0)
+    motion("short-plate", {"canvas": {"frames": 9, "fps": 30}}, 0.3)
+    (motions / "broken").mkdir(parents=True)
+    (motions / "broken" / "motion.json").write_text("{not json")
+    first, code = run_catalog(env)
+    check("the command succeeds even with a broken motion", code == 0 and first.get("ok"), first)
+    ids = {m["id"] for m in json.loads((tmp / "workshop" / "catalog.json").read_text())["motions"]}
+    check("GREEN: a canvas stored as a list does not stop the catalogue", "list-canvas" in ids and "dict-canvas" in ids)
+    cat = {m["id"]: m for m in json.loads((tmp / "workshop" / "catalog.json").read_text())["motions"]}
+    check("the duration of a list-canvas motion comes from ffprobe", abs(cat["list-canvas"]["duration"] - 1.0) < 0.2, cat["list-canvas"].get("duration"))
+    check("GREEN: a 0.3 s render gets its poster (taken at its middle, not at 0.5 s)", Path(cat["short-plate"]["poster"] or "/nonexistent").exists(), cat["short-plate"].get("poster"))
+    check("RED: the broken motion is reported in errors, the others stay", any(e["id"] == "broken" for e in first.get("errors", [])) and len(ids) == 3, first.get("errors"))
+    second, _ = run_catalog(env)
+    check("GREEN: a second run reuses every entry (incremental)", second.get("reused") == 3, second)
+    time.sleep(0.05)
+    (motions / "dict-canvas" / "V_001" / "params.json").write_text(json.dumps({"canvas": {"frames": 150, "fps": 30}}))
+    third, _ = run_catalog(env)
+    cat3 = {m["id"]: m for m in json.loads((tmp / "workshop" / "catalog.json").read_text())["motions"]}
+    check("RED: a changed file recomputes only that entry", third.get("reused") == 2 and abs(cat3["dict-canvas"]["duration"] - 5.0) < 0.01, (third, cat3["dict-canvas"].get("duration")))
+    print(f"{len(FAIL)} failure(s)")
+    return 1 if FAIL else 0
+
+
+def test_catalog():
+    assert run() == 0
+
+
+if __name__ == "__main__":
+    sys.exit(run())

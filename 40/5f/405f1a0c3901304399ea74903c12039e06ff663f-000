@@ -1,0 +1,102 @@
+{
+ "schema": "zrmd/v1-app@1",
+ "date": "14 October 2026",
+ "doc": "The single parameter interface of the V1 application shell (home, projects, scenes). Page sizes, polling rhythm, accepted files and the named pipelines the buttons start. The page reads it from /api/v1/config; no value of it is written in the page code. FR : l'interface de parametres unique de la coquille V1 : tailles de pages, cadence de sondage, fichiers acceptes et pipelines nommes que les boutons lancent.",
+ "paging": {
+  "projects": 12,
+  "scenes": 24,
+  "library": 24,
+  "motionsPerProject": 40
+ },
+ "poll": {
+  "jobMs": 1200,
+  "runMs": 1500,
+  "busyMs": 5000
+ },
+ "upload": {
+  "maxMB": 2048,
+  "video": [
+   ".mp4",
+   ".mov",
+   ".mkv",
+   ".webm",
+   ".m4v"
+  ],
+  "audio": [
+   ".mp3",
+   ".wav",
+   ".flac",
+   ".m4a",
+   ".aac",
+   ".ogg"
+  ]
+ },
+ "audioWrap": {
+  "size": "1280x720",
+  "fps": 25,
+  "color": "black",
+  "audioKbps": 256,
+  "doc": "A sound dropped without a picture becomes a reference by riding on a still black frame, so every module of the pipeline keeps one input shape."
+ },
+ "pipelines": {
+  "scenes": {
+   "label": "Découper en scènes",
+   "steps": [
+    "shots",
+    "book"
+   ],
+   "needs": "video"
+  },
+  "visual": {
+   "label": "Reproduire les images",
+   "steps": [
+    "image",
+    "vector",
+    "layers",
+    "film"
+   ],
+   "needs": "video"
+  },
+  "music": {
+   "label": "Reproduire la musique",
+   "steps": [
+    "stems",
+    "music",
+    "music-trim",
+    "music-polish"
+   ],
+   "needs": "audio"
+  },
+  "sound": {
+   "label": "Reproduire les effets et le mixage",
+   "steps": [
+    "sfx",
+    "sfx-trim",
+    "soundtrack"
+   ],
+   "needs": "audio"
+  }
+ },
+ "release": "1.1.0",
+ "firstPipeline": "scenes",
+ "preview": {
+  "scrubStepS": 0.04,
+  "stageFallbackW": 1920,
+  "stageFallbackH": 1080
+ },
+ "publish": {
+  "scripts": [
+   "/Users/zenray/.claude/tmp/tmp-zenray-progress-motion-wt/scripts/Motion/PublishMotions.mjs",
+   "/Users/zenray/Create/Build/Productions/GithubProductions/ZenRayProgress/scripts/Motion/PublishMotions.mjs",
+   "/Users/zenray/.claude/tmp/tmp-zenray-motion-design-site/scripts/Motion/PublishMotions.mjs"
+  ],
+  "node": "node",
+  "timeoutS": 900,
+  "rightsBy": "validated in the app",
+  "doc": "The publisher of the site (scripts/Motion/PublishMotions.mjs of ZenRayProgress): CMAF by stream copy, neutral public paths, ONE commit in zenray-data. A motion is published only when its motion.json says rights.cleared (a person checked that no text, logo or image of the reference remains in the render); the plan is a dry run that sends nothing.",
+  "excludedRecipes": [
+   "plate"
+  ],
+  "excludedDoc": "A plate is a clip of the reference video itself: it is never published, whatever its rights say."
+ }
+}

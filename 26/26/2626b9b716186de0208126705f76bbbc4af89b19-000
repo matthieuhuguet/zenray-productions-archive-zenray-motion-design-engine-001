@@ -1,0 +1,87 @@
+# 14 October 2026: the rhythm method bench. Each method of zrmd/analyze/rhythm_methods.py goes through four phases and is scored
+# after each one on the synthetic videos (truth by construction) and, with --real, on the adjudicated truth of the references.
+# Run: nice -n 5 /Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/RhythmBench.py [--real] [--json out.json]
+# FR : banc de methodes du rythme : quatre phases par methode, score apres chacune, verite par construction ou adjudiquee.
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+sys.path.insert(0, str(ENGINE / "Scripts"))
+from zrmd import settings  # noqa: E402
+from zrmd.analyze import rhythm_cache, rhythm_core as C, rhythm_eval as E, rhythm_methods as M  # noqa: E402
+import RhythmSignals as RS  # noqa: E402
+import RhythmSynth  # noqa: E402
+
+TRAIN, TEST = ["S1", "S2"], ["S3", "S4"]
+
+
+def synth_truth(t: dict) -> list[dict]:
+    out = [{"frame": f, "kind": "hard"} for f in t["hard"]]
+    out += [{"frame": x["frame"], "kind": x["kind"], "start": x["start"], "end": x["end"]} for x in t["transitions"]]
+    out += [{"frame": f, "kind": "region"} for f in t["region"]]
+    return out
+
+
+def load_synth(vid: str):
+    folder = RhythmSynth.root() / vid
+    cache = folder / "cache"
+    sig = RS.load_signals(cache)
+    frames = rhythm_cache.load(cache)["frames"]
+    truth = synth_truth(json.loads((folder / "truth.json").read_text(encoding="utf-8")))
+    return C.Ctx(sig, frames), truth
+
+
+def f1_of(truth, pred, tol, kinds):
+    return E.score(truth, pred, tol, kinds=kinds)["f1"]
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--json")
+    a = ap.parse_args()
+    data = {v: load_synth(v) for v in TRAIN + TEST}
+    rows = []
+    for mid, label, principle, key, picker in M.SIGNAL_METHODS:
+        tr_c = [data[v][0] for v in TRAIN]
+        tr_t = [data[v][1] for v in TRAIN]
+        par = M.tune(tr_c, tr_t, key, picker)
+        per = {}
+        for v in TRAIN + TEST:
+            ctx, truth = data[v]
+            thr = M.resolve_abs(ctx, key, par["q"])
+            rad = {"winmax": 4}.get(key, 0)
+            out = M.run_signal_method(ctx, key, picker, {"abs_min": thr, "ratio_min": par["ratio_min"]}, snap_rad=rad)
+            hard = ("hard",)
+            per[v] = {"p1_auc": round(M.p1_auc(ctx, out["s"], truth), 4),
+                      "p2_f1": f1_of(truth, out["p2"], 1, hard), "p3_f1": f1_of(truth, out["p3"], 1, hard),
+                      "p4_f1_tol0": f1_of(truth, out["p4"], 0, hard), "p4_f1_tol1": f1_of(truth, out["p4"], 1, hard),
+                      "n": len(out["p4"])}
+        rows.append({"id": mid, "label": label, "principle": principle, "tuned": par, "per_video": per})
+    for mid, label, principle, which in M.SPAN_METHODS:
+        kinds = (which,)
+        per = {}
+        for v in TRAIN + TEST:
+            ctx, truth = data[v]
+            out = M.run_span_method(ctx, which)
+            per[v] = {"p1_auc": None, "p2_f1": f1_of(truth, out["p2"], 1, kinds), "p3_f1": f1_of(truth, out["p3"], 1, kinds),
+                      "p4_f1_tol0": f1_of(truth, out["p4"], 0, kinds), "p4_f1_tol1": f1_of(truth, out["p4"], 1, kinds), "n": len(out["p4"])}
+        rows.append({"id": mid, "label": label, "principle": principle, "tuned": None, "per_video": per})
+    print(f"{'id':4} {'method':26} " + " ".join(f"{h:>9}" for h in ("P1auc", "P2f1", "P3f1", "P4f1@0", "P4f1@1")) + "   (mean over TEST videos)")
+    for r in rows:
+        def mean(k):
+            vals = [r["per_video"][v][k] for v in TEST if r["per_video"][v][k] is not None]
+            return float(np.mean(vals)) if vals else float("nan")
+        print(f"{r['id']:4} {r['label']:26} " + " ".join(f"{mean(k):9.3f}" for k in ("p1_auc", "p2_f1", "p3_f1", "p4_f1_tol0", "p4_f1_tol1")))
+    if a.json:
+        Path(a.json).write_text(json.dumps(rows, indent=1) + "\n", encoding="utf-8")
+
+
+if __name__ == "__main__":
+    main()

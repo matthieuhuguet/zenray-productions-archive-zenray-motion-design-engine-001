@@ -50,7 +50,8 @@ def reference_file(slug: str) -> Path | None:
         if name and (cache / name).exists():
             return cache / name
     if cache.exists():
-        for p in sorted(cache.glob("*.mp4")) + sorted(cache.glob("*.mkv")) + sorted(cache.glob("*.webm")) + sorted(cache.glob("reference.mp3")):
+        for p in (sorted(cache.glob("*.mp4")) + sorted(cache.glob("*.mkv")) + sorted(cache.glob("*.webm")) + sorted(cache.glob("reference.mp3"))
+                  + sorted(cache.glob("*.flac")) + sorted(cache.glob("*.wav")) + sorted(cache.glob("*.m4a"))):  # 14 October 2026: music-only references
             return p
     return None
 

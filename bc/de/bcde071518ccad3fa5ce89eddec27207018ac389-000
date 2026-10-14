@@ -1,0 +1,141 @@
+# 14 October 2026: the ground truth of the rhythm module, built by POOLED ADJUDICATION (the protocol of the retrieval
+# evaluations): every boundary that ANY evidence of the module flags (the permissive universe below, plus the output of every
+# method of the sheet at its operating point) is put in front of an eye on a contact sheet and given exactly one label; a
+# boundary nobody flags carries no physical evidence of a change and is not a cut by construction. The detector is never the
+# judge of its own list: the labels are written by a person looking at five consecutive pictures.
+#
+# Label classes (applied to the FIRST picture of the new thing):
+#   C  hard cut      the picture is replaced: after the camera or the canvas has moved, no persistent content covers half of
+#                    the frame, the new picture is another composition;
+#   T  transition    dissolve, fade through black or white, whip: one event with an interval [start, end]; its instant is the
+#                    middle of the interval;
+#   N  not a cut     an event inside a picture that persists (element pops in, text changes over a persistent shot, UI state,
+#                    camera or canvas motion, a flash that returns);
+#   A  ambiguous     two readers could disagree (the area rule is not decisive); excluded from the score and counted.
+# FR : verite terrain par adjudication groupee : un oeil juge chaque frontiere signalee par une preuve ou une methode.
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import numpy as np
+from PIL import Image, ImageDraw
+
+CLASSES = ("C", "T", "N", "A")
+SCHEMA = "zrmd/rhythm-truth@1"
+TW, TH = 160, 90        # tile size of the cached pictures (the decode cache of every reference)
+COLS = 5                # f-2, f-1, f, f+1, f+2
+
+
+def labels_path(workshop: Path, slug: str) -> Path:
+    return Path(workshop) / "rhythm" / "truth" / f"{slug}.json"
+
+
+def load_labels(workshop: Path, slug: str) -> dict:
+    p = labels_path(workshop, slug)
+    if p.exists():
+        return json.loads(p.read_text(encoding="utf-8"))
+    return {"schema": SCHEMA, "slug": slug, "frames": None, "fps": None, "labels": {}, "spans": [], "auto": []}
+
+
+def save_labels(workshop: Path, slug: str, data: dict) -> Path:
+    p = labels_path(workshop, slug)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    data["labels"] = {k: data["labels"][k] for k in sorted(data["labels"], key=int)}
+    p.write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
+    return p
+
+
+def truth_list(data: dict) -> list[dict]:
+    """Truth entries in the shape zrmd.analyze.rhythm_eval expects. Ambiguous boundaries become neutral `region` entries."""
+    out = []
+    for k, c in data["labels"].items():
+        f = int(k)
+        if c == "C":
+            out.append({"frame": f, "kind": "hard"})
+        elif c == "A":
+            out.append({"frame": f, "kind": "region"})
+    for s in data.get("spans", []):
+        out.append({"frame": int(s["frame"]), "kind": s["kind"], "start": int(s["start"]), "end": int(s["end"])})
+    for f in data.get("auto", []):
+        out.append({"frame": int(f), "kind": "hard"})
+    out.sort(key=lambda t: t["frame"])
+    return out
+
+
+def judged_frames(data: dict) -> set[int]:
+    s = {int(k) for k in data["labels"]}
+    s |= {int(f) for f in data.get("auto", [])}
+    for sp in data.get("spans", []):
+        s |= set(range(int(sp["start"]), int(sp["end"]) + 1))
+    return s
+
+
+# ---------------------------------------------------------------------------------------------------------- the universe
+def universe(fine: dict, sig: dict, floor: dict) -> dict[int, list[str]]:
+    """Permissive pool: frame -> the evidences that flagged it. `floor` holds the thresholds (params/rhythm.json, "truth")."""
+    need = np.asarray(fine["need"]).astype(bool)
+    why: dict[int, list[str]] = {}
+
+    def add(mask: np.ndarray, name: str) -> None:
+        for i in np.nonzero(mask & need)[0]:
+            if i > 0:
+                why.setdefault(int(i), []).append(name)
+
+    U = np.nan_to_num(np.asarray(fine["U"]), nan=0.0)
+    S = np.nan_to_num(np.asarray(fine["S"]), nan=0.0)
+    F = np.nan_to_num(np.asarray(fine["F"]), nan=0.0)
+    CH = np.nan_to_num(np.asarray(fine["CH"]), nan=0.0)
+    CL = np.nan_to_num(np.asarray(fine["CL"]), nan=0.0)
+    MAD = np.nan_to_num(np.asarray(fine["MAD"]), nan=0.0)
+    add(U >= floor["U"], "U")
+    add(S >= floor["S"], "S")
+    add((F >= floor["F"]) & (MAD >= floor["F_mad"]), "F")
+    add(CH >= floor["CH"], "CH")
+    add(CL >= floor["CL"], "CL")
+    return why
+
+
+# ------------------------------------------------------------------------------------------------------------ sheets
+def _tile(frames, f: int, mark: bool, tag: str) -> Image.Image:
+    n = len(frames)
+    f = min(max(f, 0), n - 1)
+    im = Image.fromarray(np.asarray(frames[f]))
+    d = ImageDraw.Draw(im)
+    if mark:
+        d.rectangle([0, 0, TW - 1, TH - 1], outline=(255, 40, 40), width=3)
+    d.rectangle([0, 0, 38, 11], fill=(0, 0, 0))
+    d.text((2, 0), tag, fill=(255, 255, 0))
+    return im
+
+
+def pool_sheets(frames, entries: list[dict], out_dir: Path, name: str, rows: int = 16) -> list[Path]:
+    """entries: {"frame": f, "label": str, optional "span": (start, end)}. One row per entry: five pictures around the frame
+    (or, for a span, start-1, start, middle, end, end+1) and the evidence text. Returns the sheet files, in order."""
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    lw, pad = 210, 4
+    files = []
+    for s0 in range(0, len(entries), rows):
+        chunk = entries[s0:s0 + rows]
+        W = lw + COLS * (TW + pad)
+        H = len(chunk) * (TH + pad)
+        img = Image.new("RGB", (W, H), (22, 22, 26))
+        d = ImageDraw.Draw(img)
+        for r, e in enumerate(chunk):
+            y = r * (TH + pad)
+            d.text((4, y + 2), f"#{s0 + r + 1:02d}", fill=(120, 220, 255))
+            for li, line in enumerate(e["label"].split("\n")):
+                d.text((34 if li == 0 else 4, y + 2 + 12 * li), line, fill=(235, 235, 235))
+            if e.get("span"):
+                a, b = e["span"]
+                picks = [(a - 1, False), (a, False), ((a + b) // 2, True), (b, False), (b + 1, False)]
+            else:
+                f = e["frame"]
+                picks = [(f - 2, False), (f - 1, False), (f, True), (f + 1, False), (f + 2, False)]
+            for c, (ff, mark) in enumerate(picks):
+                img.paste(_tile(frames, ff, mark, str(ff)), (lw + c * (TW + pad), y))
+        path = out_dir / f"{name}-{s0 // rows + 1:02d}.jpg"
+        img.save(path, quality=85)
+        files.append(path)
+    return files

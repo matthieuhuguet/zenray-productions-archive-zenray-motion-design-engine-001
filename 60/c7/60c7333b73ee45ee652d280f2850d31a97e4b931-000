@@ -424,6 +424,7 @@
     250.0
    ],
    "toneAttackS": 0.001,
+   "toneFadeOutS": 0.04,
    "tiltPivotHz": 1000.0,
    "toneNoiseMaxHz": 300.0,
    "tableFit": "nnls",

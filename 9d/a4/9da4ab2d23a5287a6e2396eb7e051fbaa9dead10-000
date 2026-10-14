@@ -1,0 +1,227 @@
+# 14 October 2026: the rhythm detector. Exhaustive: every picture boundary of the file is measured twice, at 160x90 (the cache
+# read by every method of the sheet) and at 240x135 with the global translation removed (zrmd.analyze.rhythm_fine), and the
+# decision is a conjunction of INDEPENDENT physical evidences, never one threshold on one number:
+#   replaced      the content-weighted share the previous picture cannot explain, after global motion (U), is large;
+#   no features   the corner features of the previous picture do not survive into the new one (F), so no background persists;
+#   not a return  the picture one or two frames later is not the picture before (a flash or a one-frame glitch);
+#   not a ramp    the change is not spread over a straight run of small steps (dissolve), not a flat dark or bright run
+#                 (fade), not a blur sweep (whip): those are typed apart and given as intervals.
+# Two stages so that a search over the thresholds never recomputes the slow part:
+#   ramps()    the ramp spans (dissolve, fade, whip), slow, depends on the `types` thresholds only;
+#   decide()   the per-boundary decision, vectorised, depends on the `hard` thresholds and on the flash return ratio.
+# Everything tunable lives in params/rhythm.json (HDA law, at most 8 exposed per category); the V1 user interface sits on top of
+# it in params/rhythm-v1-parameters.json (zrmd.analyze.rhythm_params).
+# FR : detecteur de rythme exhaustif : conjonction de preuves independantes, jamais un seuil sur un nombre ; deux etages :
+# les rampes (lent) puis la decision par frontiere (vectorisee).
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import numpy as np
+
+from . import rhythm_core as C
+
+PARAMS = Path(__file__).resolve().parents[2] / "params" / "rhythm.json"
+
+
+def params(path: Path | str | None = None) -> dict:
+    return json.loads(Path(path or PARAMS).read_text(encoding="utf-8"))
+
+
+def _ratio(frames, a: int, b: int, ref_a: int, ref_b: int) -> float:
+    """mean|pic[a] - pic[b]| over mean|pic[ref_a] - pic[ref_b]| (RGB, coarse cache)."""
+    n = len(frames)
+    if min(a, b, ref_a, ref_b) < 0 or max(a, b, ref_a, ref_b) >= n:
+        return 1.0
+    step = float(np.abs(np.asarray(frames[ref_a], dtype=np.int16) - np.asarray(frames[ref_b], dtype=np.int16)).mean())
+    return float(np.abs(np.asarray(frames[a], dtype=np.int16) - np.asarray(frames[b], dtype=np.int16)).mean()) / max(step, 1e-6)
+
+
+def _ncc_frames(frames, a: int, b: int) -> float:
+    x = np.asarray(frames[a], dtype=np.float32).mean(axis=2)
+    y = np.asarray(frames[b], dtype=np.float32).mean(axis=2)
+    x, y = x - x.mean(), y - y.mean()
+    den = float(np.sqrt((x * x).sum() * (y * y).sum()))
+    return float((x * y).sum() / den) if den > 1e-6 else 1.0
+
+
+def flash_evidence(frames, i: int) -> tuple[float, float]:
+    """(smallest return ratio, structure correlation) of boundary i. The return ratio is how much of the step at i is undone one or
+    two frames later (A, X, A) or by the step before it; the correlation says whether the two pictures keep the same structure."""
+    r_in, r_out, c, _, _ = flash_parts(frames, i)
+    return min(r_in, r_out), c
+
+
+def flash_parts(frames, i: int) -> tuple[float, float, float, float, float]:
+    """(entry return, exit return, structure correlation, quiet before, quiet after) of boundary i, every ratio against the step at i.
+      entry return  the step at i is undone one or two pictures LATER (A, X, A): boundary i enters a flash;
+      exit return   the step at i undoes the step BEFORE it (pic[i] is pic[i-2] again): boundary i leaves a flash;
+      quiet before  d(i-2, i-1) / step: how agitated the picture was before the impulse;
+      quiet after   d(i, i+1) / step: how agitated the picture is after it (the picture settles, or it keeps strobing)."""
+    r_in = min(_ratio(frames, i - 1, i + 1, i - 1, i), _ratio(frames, i - 1, i + 2, i - 1, i))
+    r_out = _ratio(frames, i, i - 2, i - 1, i)
+    return (r_in, r_out, _ncc_frames(frames, i - 1, i), _ratio(frames, i - 2, i - 1, i - 1, i), _ratio(frames, i, i + 1, i - 1, i))
+
+
+def is_flash(frames, i: int, ratio: float, same_structure: float = 0.7, cache: dict | None = None, calm: float = 0.7) -> bool:
+    """A flash is an impulse on a picture that STAYS: the step at boundary i is undone within two frames (A, X, A) or it undoes the
+    step before it, AND the two pictures keep the same structure (only brightness, colour or polarity moved), AND the quiet side of
+    the impulse is quiet: the picture before an ENTRY was calm (quiet before <= calm), the picture after an EXIT settles (quiet after
+    <= calm). A different picture inserted between two similar ones is two cuts, not a flash: montage cross-cutting must not be typed
+    as flashes, and neither must a strobe that keeps alternating.
+    14 October 2026: the structure test reads the ABSOLUTE correlation, so a negative frame (polarity inverted, correlation near -1)
+    is the same structure and a flash: measured on the leave-one-reference-out probabilities it removes 16 extra jumps for one
+    missed cut (micro F1 0.851 to 0.864).
+    14 October 2026 (second pass): that one missed cut was memo 858, a dim frame inside a black / picture strobe (856 to 863, every
+    boundary an adjudicated cut): its structure correlation is +0.71 (a faint copy of the neighbour picture), its exit return is
+    0.02 (the picture before the dim frame IS the dim frame two pictures earlier) and the picture after it does NOT settle (quiet
+    after 0.95). Over the 16 flash boundaries that the first-pass leave-one-out probabilities typed on x-anabology-2105325733312884869 the
+    quiet side measures at most 0.47 (entries) and 0.09 (exits), and the same eight boundaries are typed with the retrained fusion.
+    The constant sits in the empty gap between 0.47 and 0.95, so the rule costs no flash and gains the strobe cut.
+    `cache` (boundary -> evidence) lets a search over the thresholds read each boundary once."""
+    if cache is not None:
+        if i not in cache:
+            cache[i] = flash_parts(frames, i)
+        r_in, r_out, c, p1, q1 = cache[i]
+    else:
+        r_in, r_out, c, p1, q1 = flash_parts(frames, i)
+    if abs(c) < same_structure:
+        return False
+    return bool((r_in < ratio and p1 <= calm) or (r_out < ratio and q1 <= calm))
+
+
+def ramps(sig: dict, frames, ty: dict | None = None) -> list[dict]:
+    """Ramp spans in FILE frames, by priority (a fade, the rarest and most specific, before a dissolve before a whip); overlapping
+    lower-priority spans are dropped. Slow: dissolve_spans scans every picture boundary at several lengths."""
+    ty = ty or params()["types"]
+    ctx = C.Ctx(sig, frames)
+    ordered = []
+    if ty["fade"]:
+        for d in C.fade_spans(ctx, around_min=ty["fade_around_min"]):
+            ordered.append({"frame": int(ctx.src[d["mid"]]), "kind": "fade", "start": int(ctx.src[d["s"]]), "end": int(ctx.src[d["e"]]),
+                            "tone": d["tone"]})
+    if ty["dissolve"]:
+        for d in C.dissolve_spans(ctx, total_min=ty["dissolve_total_min"], resid_full_max=ty["dissolve_resid_max"]):
+            ordered.append({"frame": int(ctx.src[(d["s"] + d["e"]) // 2]), "kind": "dissolve", "start": int(ctx.src[d["s"]]),
+                            "end": int(ctx.src[d["e"]]), "direct": round(d["direct"], 3), "resid": round(d["resid"], 4)})
+    if ty["whip"]:
+        for d in C.whip_spans(ctx, around_min=ty["whip_around_min"]):
+            ordered.append({"frame": int(ctx.src[d["mid"]]), "kind": "whip", "start": int(ctx.src[d["s"]]), "end": int(ctx.src[d["e"]])})
+    kept: list[dict] = []
+    for sp in ordered:
+        if any(sp["start"] <= k["end"] and k["start"] <= sp["end"] for k in kept):
+            continue
+        kept.append(sp)
+    kept.sort(key=lambda d: d["start"])
+    return kept
+
+
+def candidate_mask(fine: dict, h: dict, inside: np.ndarray | None = None) -> np.ndarray:
+    """Per file frame: does the boundary i satisfy the area rule? Hard cuts: the picture is REPLACED, and it is not a motion that
+    the tracker still follows.
+      A structure: the edges of the previous picture are gone (ED) and the edges of the new one are new (EN): both high, so
+                   neither a window popping in (EN high, ED low) nor a window closing (ED high, EN low) qualifies;
+      B pixels   : content no motion explains (U) while no textured block persists (UP): colour-inverted compositions and
+                   sparse pictures that edges cannot judge;
+      C empty    : the picture appears from, or falls to, an (almost) empty one, full frame;
+      veto       : the corner features of the previous picture are still tracked (F low): a zoom, a fast pan or an
+                   animation, not a replacement. F unknown (no corner) does not veto."""
+    need = np.asarray(fine["need"]).astype(bool)
+    U, F = np.asarray(fine["U"], dtype=np.float64), np.asarray(fine["F"], dtype=np.float64)
+    UP = np.asarray(fine["UP"], dtype=np.float64) if "UP" in fine else np.zeros_like(U)
+    ED, EN = np.asarray(fine["ED"], dtype=np.float64), np.asarray(fine["EN"], dtype=np.float64)
+    D0, D1 = np.asarray(fine["D0"], dtype=np.float64), np.asarray(fine["D1"], dtype=np.float64)
+    AP, AC = np.asarray(fine["AP"], dtype=np.float64), np.asarray(fine["AC"], dtype=np.float64)
+    DL = np.asarray(fine["DL"], dtype=np.float64)
+    with np.errstate(invalid="ignore"):
+        tracked = ~np.isnan(F) & (F < h["features_lost_min"])
+        structure = (ED >= h["structure_min"]) & (EN >= h["structure_min"])
+        pixels = (U >= h["replaced_min"]) & (UP < h["persist_max"]) & (np.isnan(DL) | (DL >= h["destroyed_min"]))
+        empty_d = h["empty_density"]
+        from_empty = (D0 < empty_d) & (EN >= h["structure_min"]) & (AC >= 0.5)
+        to_empty = (D1 < empty_d) & (ED >= h["structure_min"]) & (AP >= 0.4)
+    cand = need & (structure | pixels | from_empty | to_empty) & ~tracked
+    if inside is not None:
+        cand &= ~inside
+    cand[0] = False
+    return cand
+
+
+def decide(sig: dict, fine: dict, frames, spans: list[dict], prm: dict | None = None, flash_cache: dict | None = None,
+           probs: np.ndarray | None = None) -> dict:
+    """The cut list: hard cuts, flashes (typed apart, never cuts) and the typed transitions.
+    decision.method "fusion": the learned fusion's probability (`probs`, per file frame) against fusion.threshold, behind the guard;
+    decision.method "rule": the area-rule conjunction of `candidate_mask` (the explainable fallback, and method M19 of the sheet).
+    A typed transition is ONE event: the boundaries it covers (its start + 1 to its end) are no cuts of their own. transitions.anchor
+    "cut" (14 October 2026, second pass): when the cut model predicted a cut inside the span, the one NEAREST the span's own instant
+    is the instant of the event (the transition is typed on the picture the cut model already placed), and the span instant is used only
+    when the model saw no cut there (a cross-dissolve moves in steps too small to be one). A typed span that is not a transition
+    then costs nothing when it sits on a true cut, which a span instant that ignores the cut model could not promise."""
+    prm = prm or params()
+    h, ty = prm["hard"], prm["types"]
+    method = prm.get("decision", {}).get("method", "rule")
+    anchor = prm.get("transitions", {}).get("anchor", "span") == "cut"
+    need = np.asarray(fine["need"]).astype(bool)
+    n = len(need)
+    inside = np.zeros(n, bool)
+    for sp in spans:
+        inside[sp["start"] + 1:sp["end"] + 1] = True
+    if method == "fusion":
+        if probs is None:
+            raise ValueError("decision.method is 'fusion' but no probabilities were given (rhythm_fusion.probabilities)")
+        free = need & (np.asarray(probs) >= prm["fusion"]["threshold"])
+        F = np.asarray(fine["F"], dtype=np.float64)
+        with np.errstate(invalid="ignore"):
+            free &= ~(F < prm.get("guard", {}).get("features_lost_min", 0.0))
+        free[0] = False
+        score = np.asarray(probs)
+    else:
+        free = candidate_mask(fine, h, None)
+        score = np.nan_to_num(np.asarray(fine["U"], dtype=np.float64))
+    cand = free & ~inside
+    U, F, E = np.asarray(fine["U"]), np.asarray(fine["F"]), np.asarray(fine["E"])
+    calm = prm.get("guard", {}).get("flash_calm", 0.7)
+
+    def row_of(i: int) -> dict:
+        return {"frame": i, "score": round(float(score[i]), 3), "U": round(float(U[i]), 3),
+                "F": None if np.isnan(F[i]) else round(float(F[i]), 3), "E": round(float(E[i]), 3)}
+
+    cuts, flashes = [], []
+    for i in np.nonzero(cand)[0]:
+        i = int(i)
+        if is_flash(frames, i, ty["flash_return"], cache=flash_cache, calm=calm):
+            flashes.append(dict(row_of(i), kind="flash"))
+        else:
+            cuts.append(dict(row_of(i), kind="hard"))
+    typed = []
+    for sp in spans:
+        sp = dict(sp)
+        if anchor:
+            zone = np.nonzero(free[sp["start"] + 1:sp["end"] + 1])[0] + sp["start"] + 1
+            zone = [int(i) for i in zone if not is_flash(frames, int(i), ty["flash_return"], cache=flash_cache, calm=calm)]
+            if zone:
+                best = min(zone, key=lambda i: (abs(i - sp["frame"]), -float(score[i])))
+                sp["span_frame"], sp["frame"] = sp["frame"], best
+                sp["anchored"] = True
+        typed.append(sp)
+    out = cuts + typed
+    out.sort(key=lambda c: c["frame"])
+    return {"cuts": out, "flashes": flashes, "n_boundaries": int(need.sum()), "method": method}
+
+
+def detect_cached(sig: dict, fine: dict, frames, prm: dict | None = None, spans: list[dict] | None = None, mat: dict | None = None,
+                  model: dict | None = None) -> dict:
+    """sig: coarse signals (rhythm_signals + codec), fine: rhythm_fine arrays, frames: the coarse frame cache (mmap).
+    `spans` lets a caller that searches thresholds pass the ramps it already has; `mat` the evidence matrix; `model` the fusion."""
+    prm = prm or params()
+    if spans is None:
+        spans = ramps(sig, frames, prm["types"])
+    probs = None
+    if prm.get("decision", {}).get("method") == "fusion":
+        from . import rhythm_features as RF, rhythm_fusion as FU
+        model = model or FU.load()
+        if model is None:
+            raise FileNotFoundError(f"decision.method is 'fusion' but {FU.MODEL} does not exist (Scripts/RhythmSheet.py train)")
+        probs = FU.probabilities(model, mat if mat is not None else RF.matrix(sig, fine, frames))
+    return decide(sig, fine, frames, spans, prm, probs=probs)

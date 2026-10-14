@@ -1,0 +1,106 @@
+# 14 October 2026: render a version of a shader-field motion (params.json: look + tracks + canvas) through the GLSL of the
+# bank, encode it, and measure it against its reference window in CIEDE2000 through the SAME pipeline (the H.264 render
+# is decoded back before the comparison, R04 section 11.2, "same pipeline"). Library of Scripts/ReproduceField.py.
+# FR : rend une version d'un motion shader-field par le GLSL de la banque, l'encode, et la mesure contre sa fenetre de
+# reference en CIEDE2000, par le meme pipeline (le rendu H.264 est relu avant la comparaison).
+from __future__ import annotations
+
+import json
+import subprocess
+from pathlib import Path
+
+import numpy as np
+
+from .. import settings, versions
+from ..media import iter_frames
+from . import bank, field, look
+
+
+def frame_layers(params: dict, frame: int) -> list[dict]:
+    c = params["canvas"]
+    return look.layers(look.at_frame(params.get("look"), params.get("tracks"), frame), frame, c["width"] / c["height"])
+
+
+def is_static(params: dict) -> bool:
+    lk = look.resolve(params.get("look"))
+    return not params.get("tracks") and lk["grain"] == 0.0
+
+
+def render_frames(params: dict, chunk: int = 90):
+    """Yield HxWx3 uint8 frames of the version, GLSL rendered, in order (one browser run per chunk)."""
+    c = params["canvas"]
+    n, w, h = int(c["frames"]), int(c["width"]), int(c["height"])
+    if is_static(params):
+        one = bank.render_glsl_batch([frame_layers(params, 0)], w, h)[0]
+        for _ in range(n):
+            yield one
+        return
+    for a in range(0, n, chunk):
+        comps = [frame_layers(params, i) for i in range(a, min(n, a + chunk))]
+        yield from bank.render_glsl_batch(comps, w, h)
+
+
+def render_mp4(params: dict, out_mp4: Path, crf: int = 16) -> Path:
+    c = params["canvas"]
+    w, h, fps = int(c["width"]), int(c["height"]), int(c.get("fps", 60))
+    out_mp4 = Path(out_mp4)
+    out_mp4.parent.mkdir(parents=True, exist_ok=True)
+    cmd = ["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{w}x{h}", "-r", str(fps), "-i", "-",
+           "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", str(crf), "-movflags", "+faststart", str(out_mp4)]
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    try:
+        for fr in render_frames(params):
+            proc.stdin.write(np.ascontiguousarray(fr).tobytes())
+    finally:
+        proc.stdin.close()
+        code = proc.wait()
+    if code != 0 or not out_mp4.exists():
+        raise RuntimeError(f"ffmpeg exited with {code} while encoding {out_mp4}")
+    return out_mp4
+
+
+def measure(reference_video: str, start: float, end: float, render_mp4: Path, every: int = 6, fps: int = 60) -> dict:
+    """Field metrics of the render against its reference window, frame by frame (every `every`-th frame), both decoded
+    to the survey grid by the same area filter at the same cadence."""
+    cfg = field.config()
+    g = cfg["grid"]
+    dur = end - start
+    ref = iter_frames(reference_video, g["width"], g["height"], fps=fps, start=start, duration=dur, threads=int(g["threads"]))
+    out = iter_frames(str(render_mp4), g["width"], g["height"], fps=fps, threads=int(g["threads"]))
+    rows = []
+    for i, (a, b) in enumerate(zip(ref, out)):
+        if i % every:
+            continue
+        m = field.frame_metrics(a, b.astype(float), cfg)
+        rows.append({"frame": i, **m})
+    scored = [(r["share"], r["score"]) for r in rows if r["score"] is not None]
+    sw = sum(s for s, _ in scored)
+    return {"frames": len(rows), "every": every,
+            "score": round(sum(s * v for s, v in scored) / sw, 5) if sw > 0 else None,
+            "coverage": round(float(np.mean([r["share"] for r in rows])), 4) if rows else None,
+            "within1Jnd": round(float(np.mean([r["within1"] for r in rows])), 4) if rows else None,
+            "deMedian": round(float(np.median([r["deMedian"] for r in rows if r["deMedian"] is not None])), 3) if scored else None,
+            "worstFrame": min(rows, key=lambda r: r["score"] if r["score"] is not None else 0)["frame"] if rows else None,
+            "perFrame": rows}
+
+
+def codec_floor(reference_video: str, start: float, dur: float, out_mp4: Path, crf: int = 16, every: int = 6, fps: int = 60) -> dict:
+    """The identity ceiling of the delivery chain: the reference window against ITS OWN re-encode (960x540, H.264 yuv420p, the
+    same crf as render_mp4), whole frame, same grid and metric. What no shader field can beat, whatever its model."""
+    out_mp4 = Path(out_mp4)
+    out_mp4.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{start:.6f}", "-t", f"{dur:.6f}", "-i", reference_video, "-vf",
+                    f"scale=960:540:flags=area,fps={fps}", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", str(crf), str(out_mp4)], check=True)
+    meas = measure(reference_video, start, start + dur, out_mp4, every=every, fps=fps)
+    return {k: meas[k] for k in ("score", "coverage", "within1Jnd", "deMedian", "frames")} | {"crf": crf, "window": [start, start + dur]}
+
+
+def fidelity_doc(meas: dict, note: str = "") -> dict:
+    cfg = field.config()
+    return {"score": meas["score"],
+            "dimensions": {"field": meas["score"], "coverage": meas["coverage"], "within1Jnd": meas["within1Jnd"]},
+            "metric": ("field fidelity = 1 - 0.01 x mean(dE00^2) over the cells within fieldCutoffDE of the reference, render decoded "
+                       "from its H.264 file (same pipeline); coverage = share of such cells; within1Jnd = share of all cells within "
+                       f"{cfg['jndDE']} dE00 (no mask); grid {cfg['grid']['width']}x{cfg['grid']['height']}"),
+            "fieldCutoffDE": cfg["fieldCutoffDE"], "framesCompared": meas["frames"], "deMedian": meas["deMedian"],
+            "worstFrame": meas["worstFrame"], "date": versions.stamp(), "note": note}

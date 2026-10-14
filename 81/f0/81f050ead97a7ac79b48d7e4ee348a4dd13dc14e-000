@@ -1,0 +1,254 @@
+# 14 October 2026: the music spectral trim (zrmd/audio/trim.py) applied to the sound-effect layer. NOT a copy of it: this module only imports it,
+# adds zero padding around a short window (an event is 0.2 to 1.8 s, so its edge frames would otherwise be mirrored), restricts the band layouts
+# to the ones a short window can resolve, and cuts the result back. The knobs live in params/sfx-trim.json ("spectral"), the layouts and caps in
+# params/music-trim.json (one source of truth for both layers). Only band powers measured on the reference window enter, never its samples.
+# FR : le calage spectral de la musique applique a un evenement SFX, avec marge de zeros et mises en page adaptees aux fenetres courtes.
+from __future__ import annotations
+
+import copy
+import json
+from pathlib import Path
+
+import numpy as np
+
+from . import trim as _trim
+
+PARAMS = Path(__file__).resolve().parents[2] / "params" / "sfx-trim.json"
+
+
+def cfg() -> dict:
+    return json.loads(PARAMS.read_text(encoding="utf-8"))["spectral"]
+
+
+def _merge(base: dict, over: dict) -> dict:
+    out = copy.deepcopy(base)
+    for k, v in over.items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = _merge(out[k], v)
+        else:
+            out[k] = copy.deepcopy(v)
+    return out
+
+
+def variant_cfg(name: str, spectral: dict | None = None) -> dict:
+    """The music-trim configuration with the named SFX variant laid over it (a variant lists only what it changes)."""
+    s = spectral or cfg()
+    base = {k: v for k, v in s.get("base", {}).items() if not k.startswith("_")}
+    over = {k: v for k, v in s["variants"][name].items() if not k.startswith("_")}
+    return _merge(_merge(_trim.cfg(), base), over)
+
+
+def config_sha(variant: str, spectral: dict | None = None) -> str:
+    """Short hash of the effective configuration of a variant (music-trim, the SFX base and the variant laid over it): recorded with every
+    cook so a version made under another configuration is recognised as out of date. FR : empreinte de la configuration effective."""
+    import hashlib
+    c = variant_cfg(variant, spectral)
+    return hashlib.sha256(json.dumps(c, sort_keys=True, default=float).encode("utf-8")).hexdigest()[:12]
+
+
+def trim_event(body: np.ndarray, target: np.ndarray, sr: int, variant: str, spectral: dict | None = None) -> tuple[np.ndarray, dict]:
+    """Trim one event body against its reference window, both zero padded by padSeconds so every frame of the event is a full frame.
+    Returns the trimmed body (same length) and the music-trim report (scores of every train and audit layout, before and after)."""
+    s = spectral or cfg()
+    c = variant_cfg(variant, s)
+    n = len(target)
+    body = np.asarray(body, np.float32)[:n]
+    if len(body) < n:
+        body = np.pad(body, (0, n - len(body)))
+    pad = int(round(float(s.get("padSeconds", 0.0)) * sr))
+    r = np.pad(np.asarray(target, np.float32), (pad, pad))
+    o = np.pad(body, (pad, pad))
+    y, rep = _trim.trim(r, o, sr, c)
+    return y[pad:pad + n].astype(np.float32), rep
+
+
+def trim_track(ref_track: np.ndarray, our_track: np.ndarray, sr: int, variant: str, spectral: dict | None = None) -> tuple[np.ndarray, dict]:
+    """The whole SFX track of one stem against the reference windows of that stem placed on the same timeline (silence elsewhere)."""
+    c = variant_cfg(variant, spectral)
+    y, rep = _trim.trim(np.asarray(ref_track, np.float32), np.asarray(our_track, np.float32), sr, c)
+    return y.astype(np.float32), rep
+
+
+def critic_scores(target: np.ndarray, y: np.ndarray, sr: int, variant: str = "fine", spectral: dict | None = None) -> dict:
+    """Score of a window on the music layouts (never optimised here): name -> score, plus the means of train and audit layouts."""
+    c = variant_cfg(variant, spectral)
+    s = _trim.scores(np.asarray(target, np.float32), np.asarray(y, np.float32), sr, c)
+    tn, an = _trim.train_names(c), _trim.audit_names(c)
+    out = {k: v["score"] for k, v in s.items()}
+    out["trainMean"] = round(float(np.mean([s[n]["score"] for n in tn])), 3)
+    out["auditMean"] = round(float(np.mean([s[n]["score"] for n in an])), 3) if an else None
+    out["auditMin"] = round(float(np.min([s[n]["score"] for n in an])), 3) if an else None
+    return out
+
+
+def as_gains(y: np.ndarray, x: np.ndarray, sr: int, c: dict | None = None) -> dict:
+    """The shared trim written in the STORAGE format of the per-event EQ (sfxtrim): dB gain per band and STFT frame such that applying them to
+    the untouched chain x gives back y as closely as a gain can. The ratio is taken on band power (the bands of sfxtrim, 2048 FFT / hop 256),
+    capped by the same limits; where x holds nothing (a carrier added energy there) the gain stays 0 and the carrier is left out: a gain cannot
+    create energy. FR : le calage partage ecrit dans le format de stockage de l'EQ par evenement."""
+    import torch
+    from . import sfxtrim
+    c = c or sfxtrim.cfg()
+    n_fft, hop = c["stft"]["nFft"], c["stft"]["hop"]
+    centres = sfxtrim.band_centres(sr, c)
+    M = sfxtrim._band_matrix(sr, n_fft, centres)
+    Mn = M / np.maximum(M.sum(axis=0, keepdims=True), 1e-9)
+    win = torch.hann_window(n_fft)
+
+    def band_power(s):
+        S = torch.stft(torch.as_tensor(np.asarray(s, np.float32)), n_fft, hop, window=win, return_complex=True)
+        return Mn.T @ (S.real ** 2 + S.imag ** 2).numpy().astype(np.float64)
+
+    px, py = band_power(x), band_power(y)
+    floor = px.max() * 10 ** (-10.0)                      # 100 dB under the loudest cell of the chain: nothing to scale below it
+    g = 10.0 * np.log10((py + 1e-20) / (px + 1e-20))
+    g = np.where(px > floor, g, 0.0)
+    lim = c["limits"]
+    g = np.clip(g, -lim["maxCutDb"], lim["maxBoostDb"])
+    return {"nFft": n_fft, "hop": hop, "centresHz": [round(float(v), 2) for v in centres], "gainsDb": np.round(g, c["storeDecimals"]).tolist()}
+
+
+def true_peak(y: np.ndarray, oversample: int = 4) -> float:
+    """Largest absolute value of the band-limited signal between the samples (oversampled peak), linear."""
+    from scipy import signal
+    y = np.asarray(y, np.float64)
+    if len(y) == 0:
+        return 0.0
+    up = signal.resample_poly(y, oversample, 1)
+    return float(max(np.abs(up).max(), np.abs(y).max()))
+
+
+def peak_guard(y: np.ndarray, ceiling: float, sr: int, lookahead_ms: float = 1.5, oversample: int = 4) -> np.ndarray:
+    """A short look-ahead limiter on the true peak of one event body: the gain needed to stay under `ceiling` is spread over 2 x lookahead_ms
+    (minimum filter, then a moving average of the same width, so the gain is already down when the peak arrives and the peak itself never
+    exceeds the ceiling), and everything below the ceiling is left bit for bit. Why: the calibration matches band levels and envelopes, which say
+    nothing about a peak, and a cooked effect arrives with a crest factor above the reference's (measured 14 October 2026: 13 of 42 events more
+    than 1 dB over the reference peak, up to 4.2 dB, one at 1.57 of full scale against 0.97). The final mix then pays it as limiter gain
+    reduction on the music. FR : un limiteur anticipe sur le pic vrai d'un evenement, rien n'est touche sous le plafond.
+    """
+    from scipy import ndimage, signal
+    y = np.asarray(y, np.float64)
+    if ceiling <= 0 or true_peak(y, oversample) <= ceiling:
+        return y.astype(np.float32)
+    up = signal.resample_poly(y, oversample, 1)
+    a = np.abs(up).reshape(-1, oversample).max(axis=1)[: len(y)]
+    a = np.maximum(a, np.abs(y))
+    width = 2 * max(1, int(round(lookahead_ms / 1000.0 * sr))) + 1
+    g = np.minimum(1.0, ceiling / np.maximum(a, 1e-12))
+    g = ndimage.uniform_filter1d(ndimage.minimum_filter1d(g, width), width)
+    return (y * g).astype(np.float32)
+
+
+def eq_guard(m_in: dict, m_out: dict, gate: dict, max_drop: float) -> dict:
+    """The B1 guard of the per-event EQ (14 October 2026, third pass). B1 (describe.compare: level, anchor, attack, duration, brightness,
+    spectral shape, pitch) is never optimised, but it is the only reading of the cues that are not band levels, and the gradient EQ moves
+    them: measured on the corpus, the strongest line of a tonal event slides by up to 970 cents and a centroid trajectory by several JND.
+    `targets.auditMaxDropB1` was declared in params/sfx-trim.json and enforced nowhere; this is its enforcement. The EQ output is KEPT when
+    B1 does not fall by more than max_drop points relative to the stage input. When it falls further the input is kept instead, but only if
+    the input itself passes the headline gate (the guard never trades a gate for a cue: where the input fails the gate the EQ stays and B1 is
+    reported as it is). FR : le garde-fou B1 de l'EQ, declare dans les parametres et jamais applique avant.
+    Returns {"keep": bool, "why": str, "b1In", "b1Out", "dropB1"}."""
+    b_in, b_out = m_in.get("b1"), m_out.get("b1")
+    if b_in is None or b_out is None:
+        return {"keep": True, "why": "no B1 reading on one side", "b1In": b_in, "b1Out": b_out, "dropB1": None}
+    drop = float(b_in) - float(b_out)
+    base = {"b1In": round(float(b_in), 2), "b1Out": round(float(b_out), 2), "dropB1": round(drop, 2)}
+    if drop <= max_drop:
+        return {"keep": True, "why": "B1 within the guard", **base}
+    if passes(m_in, gate):
+        return {"keep": False, "why": "B1 fell beyond the guard and the stage input passes the headline gate", **base}
+    return {"keep": True, "why": "guard waived: the stage input fails the headline gate", **base}
+
+
+def calibrate_event(chain: dict, body: np.ndarray, target: np.ndarray, sr: int, c: dict | None = None, spectral: dict | None = None) -> tuple[np.ndarray, dict]:
+    """The whole cook of one event (params/sfx-trim.json "pipeline"): the stages in order, each fed with the output of the one before, then the
+    result baked with the hash of the chain. Returns the cooked body (same length as target) and the stored record ({} when nothing improved).
+    A stage that raises is recorded with its message and skipped, never swallowed. FR : la cuisson d'un evenement, etapes puis cuit."""
+    import copy
+    from . import sfxtrim
+    c = c or sfxtrim.cfg()
+    pipe = c["pipeline"]
+    n = len(target)
+    body = np.asarray(body, np.float32)[:n]
+    if len(body) < n:
+        body = np.pad(body, (0, n - len(body)))
+    y, program = body, []
+    only_eq = list(pipe["stages"]) == ["eq"]
+    for stage in pipe["stages"]:
+        if stage == "spectral":
+            try:
+                y2, rep = trim_event(y, target, sr, pipe["variant"], spectral)
+            except Exception as exc:                                    # a window the layouts cannot frame: say so and go on
+                program.append({"stage": "spectral", "error": f"{type(exc).__name__}: {exc}"})
+                continue
+            program.append({"stage": "spectral", "variant": pipe["variant"], "configSha": config_sha(pipe["variant"], spectral),
+                            "padSeconds": (spectral or cfg()).get("padSeconds"),
+                            "criticBefore": rep["before"]["critic"]["score"], "criticAfter": rep["after"]["critic"]["score"],
+                            "auditMeanAfter": rep.get("auditMean"), "finisherKept": (rep.get("finisher") or {}).get("kept")})
+            y = y2
+        elif stage == "eq":
+            c2 = copy.deepcopy(c)
+            if pipe.get("eqSteps"):
+                c2["optimiser"]["steps"] = int(pipe["eqSteps"])
+            y2, tr = sfxtrim.trim_event(y, target, sr, c2)
+            if not tr:
+                continue
+            if only_eq:
+                return y2, tr                                           # the historical record: gains applied to the chain by every renderer
+            entry = {"stage": "eq", "e2Before": tr["e2Before"], "e2After": tr["e2After"], "bands": len(tr["centresHz"]), "frames": len(tr["gainsDb"][0]) if tr["gainsDb"] else 0}
+            guard = pipe.get("b1Guard") or {}
+            if guard.get("enabled", False):
+                max_drop = float(guard.get("maxDropB1", c.get("targets", {}).get("auditMaxDropB1", 2.0)))
+                verdict = eq_guard(metrics(y, target, sr, spectral), metrics(y2, target, sr, spectral), c["gate"], max_drop)
+                entry.update(kept=bool(verdict["keep"]), guard=verdict["why"], b1In=verdict["b1In"], b1Out=verdict["b1Out"])
+                program.append(entry)
+                if verdict["keep"]:
+                    y = y2
+                continue                                                # a rejected EQ leaves y at the stage input, which is what ships
+            program.append(entry)
+            y = y2
+        else:
+            raise ValueError(f"unknown pipeline stage {stage!r}")
+    done = [p for p in program if "error" not in p]
+    if not done:
+        return body, ({"program": program} if program else {})
+    pg = pipe.get("peakGuard") or {}
+    if pg.get("enabled", False):
+        ref_peak = true_peak(target, int(pg.get("oversample", 4)))
+        ours = true_peak(y, int(pg.get("oversample", 4)))
+        margin = float(pg.get("marginDb", 1.0))
+        if ref_peak > 0 and ours > 0:
+            over = 20.0 * np.log10(ours / ref_peak)
+            if over > margin:
+                y = peak_guard(y, ref_peak * 10 ** (margin / 20.0), sr, float(pg.get("lookaheadMs", 1.5)), int(pg.get("oversample", 4)))
+                program.append({"stage": "peak", "overDb": round(float(over), 2), "marginDb": margin,
+                                "afterDb": round(float(20.0 * np.log10(true_peak(y, int(pg.get("oversample", 4))) / ref_peak)), 2)})
+    rec = {"program": program, "chainSha": sfxtrim.chain_sha(chain)}
+    if pipe.get("bake", True):
+        rec["bake"] = sfxtrim.bake_encode(y)
+    return y.astype(np.float32), rec
+
+
+def metrics(y: np.ndarray, target: np.ndarray, sr: int, spectral: dict | None = None) -> dict:
+    """Everything one event is judged by, in one call: the official loss (ploss), its seed-invariant variant, B1, and the music layouts
+    (critic, mel, fast, mean of the train layouts, mean and minimum of the held-out audit layouts, never optimised by the SFX audit stage)."""
+    from . import sfxtrim
+    s = sfxtrim.scores(y, target, sr)
+    c = critic_scores(target, y, sr, "fine", spectral)
+    a, b = np.asarray(y, np.float64), np.asarray(target, np.float64)[: len(y)]
+    k = min(len(a), len(b))
+    xc = float(np.dot(a[:k], b[:k]) / (np.linalg.norm(a[:k]) * np.linalg.norm(b[:k]) + 1e-12))       # waveform correlation at lag 0 (a copy is near 1)
+    return {"ploss": s["ploss"], "sto": s["plossStochastic"], "b1": s["b1"], "critic": c["critic"], "mel": c["mel"], "fast": c["fast"],
+            "trainMean": c["trainMean"], "auditMean": c["auditMean"], "auditMin": c["auditMin"], "xcorr0": round(abs(xc), 4),
+            "errors": {k_: round(float(v), 3) for k_, v in s["errors"].items()}}
+
+
+def passes(m: dict, gate: dict) -> bool:
+    """The headline SFX gate of one event (params/sfx-trim.json "gate"): the seed-invariant official loss and the held-out audit layouts of the
+    music both above their minimum. The cell-exact official score is reported beside it and is not part of the gate."""
+    return bool(m["sto"] >= gate["stochasticMin"] and (m["auditMean"] or 0.0) >= gate["auditMin"])
+
+
+def passes_music(m: dict, gate: dict) -> bool:
+    """The gate shared with the music: the third-octave critic at or above criticMin."""
+    return bool(m["critic"] >= gate["criticMin"])

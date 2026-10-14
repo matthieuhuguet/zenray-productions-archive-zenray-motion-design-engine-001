@@ -1,0 +1,155 @@
+# 14 October 2026: the V1 SHADER LOOK, the editable interface of the image chantier (HDA law, rule number one).
+# One standard stack of shader-bank blocks, whose parameters are a short, named list (params/image-v1-parameters.json):
+#   L0 grade_exposure_saturation (normal)  a two-colour ramp at an angle, graded by exposure, contrast, saturation
+#   L1 glow_gaussian (add)                 soft light: colour, centre, radius, intensity
+#   L2 vignette_radial (multiply)          the backdrop colour at the frame edges
+#   L3 grain_film (add)                    film grain
+# The look is a dict of named values (colours as #rrggbb); layers(look) is the bank layer list, render(look) its numpy
+# twin evaluation, and the GLSL of the same list is what the page renders (zrmd.shaders.bank.render_glsl_batch).
+# Animation: optional tracks [{key, start, frames, from, to, ease}] drive any numeric or colour key per frame; a version of a
+# motion is its look plus its tracks, nothing else. No reference pixel is ever stored.
+# FR : le look shader V1, l'interface editable du chantier image : une pile standard de blocs, une liste courte de
+# parametres nommes ; layers() donne la liste de calques, render() son evaluation numpy, le GLSL est rendu par la page.
+from __future__ import annotations
+
+import copy
+import re
+
+import numpy as np
+
+from . import compose
+
+HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+# 14 October 2026: name -> (default, kind, min, max). Colours are '#rrggbb'. The defaults are the neutral studio look; an
+# instance carries the MEASURED values of its shot (Scripts/ReproduceField.py fit).
+SPEC = {
+    # primary (4)
+    "colourMain": ("#0b1630", "color", None, None),
+    "colourEnd": ("#f0a050", "color", None, None),
+    "glow": (0.6, "number", 0.0, 2.0),
+    "backdrop": ("#05070d", "color", None, None),
+    # secondary (8)
+    "gradientAngle": (90.0, "number", -180.0, 180.0),
+    "glowRadius": (0.16, "number", 0.02, 0.3),
+    "glowColour": ("#ffb060", "color", None, None),
+    "glowX": (0.5, "number", 0.0, 1.0),
+    "glowY": (0.7, "number", 0.0, 1.0),
+    "vignette": (0.35, "number", 0.0, 1.0),
+    "grain": (0.01, "number", 0.0, 0.2),
+    "exposure": (0.0, "number", -3.0, 3.0),
+    # tertiary, built because the bank block already has the parameter (not exposed in V1)
+    "saturation": (1.0, "number", 0.0, 2.0),
+    "contrast": (1.0, "number", 0.5, 2.0),
+    "pivot": (0.5, "number", 0.1, 0.9),
+    "vignetteInner": (0.35, "number", 0.0, 0.5),
+    "vignetteOuter": (0.85, "number", 0.55, 1.2),
+    "vignetteX": (0.5, "number", 0.0, 1.0),
+    "vignetteY": (0.5, "number", 0.0, 1.0),
+    "grainDensity": (400.0, "number", 32.0, 1024.0),
+    "grainChroma": (0.0, "number", 0.0, 1.0),
+    "grainResponse": (0.5, "number", 0.0, 1.0),
+}
+DEFAULT_LOOK = {k: v[0] for k, v in SPEC.items()}
+ASPECT = 16.0 / 9.0
+
+
+def hex_to_rgb(h: str) -> list[float]:
+    if not isinstance(h, str) or not HEX.match(h):
+        raise ValueError(f"colour {h!r} must be #rrggbb")
+    return [int(h[i:i + 2], 16) / 255.0 for i in (1, 3, 5)]
+
+
+def rgb_to_hex(rgb) -> str:
+    c = np.clip(np.round(np.asarray(rgb, float) * 255.0), 0, 255).astype(int)
+    return "#%02x%02x%02x" % tuple(int(x) for x in c)
+
+
+def resolve(look: dict | None) -> dict:
+    """Defaults filled in; an unknown key, a bad colour or a value outside its range raises (a parameter never passes silently)."""
+    look = dict(look or {})
+    unknown = set(look) - set(SPEC)
+    if unknown:
+        raise KeyError(f"unknown look keys {sorted(unknown)}")
+    out = {}
+    for k, (default, kind, lo, hi) in SPEC.items():
+        v = look.get(k, default)
+        if kind == "color":
+            hex_to_rgb(v)
+            out[k] = v.lower()
+        else:
+            if isinstance(v, bool) or not isinstance(v, (int, float)):
+                raise ValueError(f"look.{k} expects a number, got {v!r}")
+            if not lo <= v <= hi:
+                raise ValueError(f"look.{k}={v} outside [{lo}, {hi}]")
+            out[k] = float(v)
+    return out
+
+
+def layers(look: dict | None, frame: int = 0, aspect: float = ASPECT) -> list[dict]:
+    """The bank layer list of a look. Optional layers (glow, vignette, grain) are left out at zero so the list is the
+    shortest composition that draws the look."""
+    q = resolve(look)
+    out = [{"block": "grade_exposure_saturation",
+            "params": {"angle": q["gradientAngle"], "c0": hex_to_rgb(q["colourMain"]), "c1": hex_to_rgb(q["colourEnd"]),
+                       "exposure": q["exposure"], "contrast": q["contrast"], "pivot": q["pivot"], "saturation": q["saturation"]}}]
+    if q["glow"] > 0:
+        out.append({"block": "glow_gaussian", "blend": "add",
+                    "params": {"color": hex_to_rgb(q["glowColour"]), "center": [q["glowX"], q["glowY"]], "sigma": q["glowRadius"],
+                               "intensity": q["glow"], "aspect": aspect}})
+    if q["vignette"] > 0:
+        out.append({"block": "vignette_radial", "blend": "multiply",
+                    "params": {"center": [q["vignetteX"], q["vignetteY"]], "inner": q["vignetteInner"], "outer": q["vignetteOuter"],
+                               "amount": q["vignette"], "tint": hex_to_rgb(q["backdrop"]), "aspect": aspect}})
+    if q["grain"] > 0:
+        out.append({"block": "grain_film", "blend": "add",
+                    "params": {"base": [0.0, 0.0, 0.0], "amount": q["grain"], "density": q["grainDensity"], "frame": float(frame),
+                               "chroma": q["grainChroma"], "response": q["grainResponse"], "seed": 7.0, "aspect": aspect}})
+    return out
+
+
+def render(look: dict | None, w: int, h: int, frame: int = 0) -> np.ndarray:
+    """numpy twin evaluation, HxWx3 float 0..255 (rounded like the 8-bit canvas by the caller when needed)."""
+    return compose.evaluate(layers(look, frame, w / h), w, h)
+
+
+# ------------------------------------------------------------------------------------------------------------- tracks
+def _ease(name: str, t: float) -> float:
+    t = float(np.clip(t, 0.0, 1.0))
+    if name == "linear":
+        return t
+    if name == "sine.inOut":
+        return 0.5 - 0.5 * np.cos(np.pi * t)
+    if name.startswith("power") and name.endswith((".in", ".out", ".inOut")):
+        p = int(name[5]) + 1
+        kind = name.split(".")[1]
+        if kind == "in":
+            return t ** p
+        if kind == "out":
+            return 1.0 - (1.0 - t) ** p
+        return 0.5 * (2 * t) ** p if t < 0.5 else 1.0 - 0.5 * (2 * (1 - t)) ** p
+    raise ValueError(f"unknown ease {name!r} (linear, sine.inOut, power1..power4 .in/.out/.inOut)")
+
+
+def at_frame(look: dict | None, tracks: list[dict] | None, frame: int) -> dict:
+    """The look at one frame. Per key the tracks are sequential segments: before the first one the value is its `from`
+    (GSAP fromTo), inside a segment it is eased, after it the value holds its `to` until the next segment starts."""
+    q = copy.deepcopy(dict(look or {}))
+    by_key: dict[str, list[dict]] = {}
+    for tr in tracks or []:
+        if tr["key"] not in SPEC:
+            raise KeyError(f"track key {tr['key']!r} is not a look key")
+        by_key.setdefault(tr["key"], []).append(tr)
+    for k, segs in by_key.items():
+        segs = sorted(segs, key=lambda t: int(t["start"]))
+        cur = segs[0]
+        for sg in segs:
+            if int(sg["start"]) <= frame:
+                cur = sg
+        t = _ease(cur.get("ease", "linear"), (frame - int(cur["start"])) / max(int(cur["frames"]), 1))
+        if SPEC[k][1] == "color":
+            c0, c1 = np.asarray(hex_to_rgb(cur["from"])), np.asarray(hex_to_rgb(cur["to"]))
+            q[k] = rgb_to_hex(c0 + (c1 - c0) * t)
+        else:
+            q[k] = float(cur["from"]) + (float(cur["to"]) - float(cur["from"])) * t
+    return q

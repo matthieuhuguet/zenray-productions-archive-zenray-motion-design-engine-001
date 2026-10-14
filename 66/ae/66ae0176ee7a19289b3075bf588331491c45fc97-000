@@ -238,12 +238,46 @@ RESOLVERS = {"music_best": resolve_music_best, "sfx_latest": resolve_sfx_latest,
 # ------------------------------------------------------------------------------------------------------- score readers
 # Each reader returns {"value": 0..1, "detail": {...}} computed from files on disk, or None when nothing was produced yet.
 
-def score_music(slug: str) -> dict | None:
+def corpus_members(slug: str) -> list[str]:
+    """The sound-corpus members that belong to a reference (params/music-corpus.json): the reference itself when it is a whole member, its
+    excerpts <slug>-m1, -m2... otherwise (the cache folder of an excerpt exists once it is cut). A reference no corpus member claims has none."""
+    try:
+        whole = set(json.loads((REPO / "params" / "music-corpus.json").read_text(encoding="utf-8"))["members"]["whole"])
+    except (OSError, ValueError, KeyError):
+        whole = set()
+    cache = settings.path("refcache")
+    out = [slug] if slug in whole else []
+    out += sorted(p.name for p in cache.glob(f"{slug}-m[0-9]*") if p.is_dir() and re.fullmatch(re.escape(slug) + r"-m\d+", p.name))
+    return out
+
+
+def _by_members(slug: str, reader) -> dict | None:
+    """A module read per corpus member and gathered for the reference: the value is the WORST member (a video passes when every excerpt does),
+    `detail.complete` says whether every member has a reading. A reference that is its own member, or has no member, reads itself."""
+    members = corpus_members(slug)
+    if not members or members == [slug]:
+        return reader(slug)
+    rows = {m: reader(m) for m in members}
+    scored = {m: r for m, r in rows.items() if r and r.get("value") is not None}
+    if not scored:
+        return None
+    worst = min(scored, key=lambda m: scored[m]["value"])
+    return {"value": scored[worst]["value"], "version": f"{worst} {scored[worst].get('version')}",
+            "detail": {"members": {m: (r or {}).get("value") for m, r in rows.items()}, "scored": len(scored), "total": len(members),
+                       "complete": len(scored) == len(members), "worst": worst, **{k: v for k, v in (scored[worst].get("detail") or {}).items() if k != "members"}}}
+
+
+def _music_of(slug: str) -> dict | None:
     best = registry._music_state(slug)["best"]
     if not best:
         return None
     return {"value": round(best["scores"]["mix"] / 100, 4), "version": best["version"],
             "detail": {k: round(v / 100, 4) for k, v in best["scores"].items()}}
+
+
+def score_music(slug: str) -> dict | None:
+    """The music module: the official critic on the mix of the best version, per corpus member, the worst member for a whole reference."""
+    return _by_members(slug, _music_of)
 
 
 def _soundtrack_report(slug: str) -> tuple[str, dict] | None:
@@ -254,7 +288,25 @@ def _soundtrack_report(slug: str) -> tuple[str, dict] | None:
     return None
 
 
-def score_sfx(slug: str) -> dict | None:
+def _sfx_of(slug: str) -> dict | None:
+    """The SFX module of one corpus member: the headline gate of docs/ARCHITECTURE.md section 11 (params/sfx-trim.json, gate): the
+    seed-invariant official loss, loudness weighted, with the held-out audit mean and the music critic next to it. The exact cell by cell loss
+    is reported, never the gate (a noise only gets its cells back by being copied). A member with no SFX event is 100 by definition."""
+    for v in reversed(_version_dirs(_sound(slug))):
+        f = read_json(v / "sound-fidelity.json")
+        t = (f or {}).get("trim")
+        if not t:
+            continue
+        ev = t.get("events") or []
+        full = ((f.get("reports") or {}).get("full") or {}).get("scores", {})
+        inv = [e["plossStochastic"][1] for e in ev if e.get("plossStochastic")]
+        gate = t.get("gate") or {}
+        value = round(sum(inv) / len(inv) / 100, 4) if inv else (1.0 if not ev else None)
+        return {"value": value, "version": v.name,
+                "detail": {"gate": "seed-invariant official loss (headline), held-out audit and music critic beside it", "events": len(ev),
+                           "invariant": value, "critic": round(((t.get("critic") or {}).get("after") or 0) / 100, 4),
+                           "auditMean": round(((t.get("auditMean") or {}).get("after") or 0) / 100, 4), "passTitle": gate.get("pass"),
+                           "passMusic": gate.get("passMusic"), "exact": None if full.get("sfx") is None else round(full["sfx"] / 100, 4)}}
     got = _soundtrack_report(slug)
     if not got:
         return None
@@ -262,10 +314,15 @@ def score_sfx(slug: str) -> dict | None:
     sc = full.get("scores", {})
     if "sfx" not in sc:
         return None
-    return {"value": round(sc["sfx"] / 100, 4), "version": version, "detail": {k: round(v / 100, 4) for k, v in sc.items() if isinstance(v, (int, float))}}
+    return {"value": round(sc["sfx"] / 100, 4), "version": version, "detail": {"gate": "exact official loss of the assembled soundtrack (no calibration)",
+                                                                              **{k: round(v / 100, 4) for k, v in sc.items() if isinstance(v, (int, float))}}}
 
 
-def score_mix(slug: str) -> dict | None:
+def score_sfx(slug: str) -> dict | None:
+    return _by_members(slug, _sfx_of)
+
+
+def _mix_of(slug: str) -> dict | None:
     got = _soundtrack_report(slug)
     if not got:
         return None
@@ -274,6 +331,11 @@ def score_mix(slug: str) -> dict | None:
     if "mix" not in sc:
         return None
     return {"value": round(sc["mix"] / 100, 4), "version": version, "detail": {k: round(v / 100, 4) for k, v in sc.items() if isinstance(v, (int, float))}}
+
+
+def score_mix(slug: str) -> dict | None:
+    """The mix: loudness, true peak and the correlation of the short-term loudness curve of the assembled soundtrack (verify.report), per member."""
+    return _by_members(slug, _mix_of)
 
 
 def _film_report(slug: str) -> tuple[Path, dict] | None:
@@ -291,35 +353,102 @@ def _film_report(slug: str) -> tuple[Path, dict] | None:
 
 
 def score_rhythm(slug: str) -> dict | None:
-    got = _film_report(slug)
-    if not got or "rhythm" not in got[1]:
-        return None
-    r = got[1]["rhythm"]
-    return {"value": r.get("score"), "film": got[1].get("film"), "detail": {"cutsFound": r.get("found"), "cutsReference": r.get("reference"), "extraJumps": r.get("extra")}}
+    """The rhythm module of one reference. The score is the F1 at +-1 frame of the detected cuts (hard cuts, and dissolves, fades and
+    whips matched by their interval; flashes are typed apart and are not cuts) against the adjudicated truth
+    (<workshop>/rhythm/truth/<slug>.json, pooled adjudication, docs/ARCHITECTURE.md section 14), read from analysis/shots.json at every
+    call so it never goes stale. Detail: found, reference (true cuts), extra jumps, missed, F1 at 0 and at +-1 frame for the hard cuts.
+    A video with no adjudicated truth (just dropped) falls back to the cut presence of its rendered film: found, reference, extra of
+    film-report.json (the render jumps where the reference jumps)."""
+    from .analyze import rhythm_eval, rhythm_truth
+    workshop = settings.path("workshop")
+    shots = read_json(workshop / "references" / slug / "analysis" / "shots.json")
+    film = _film_report(slug)
+    presence = film[1].get("rhythm") if film else None
+    if shots and rhythm_truth.labels_path(workshop, slug).exists():
+        truth = rhythm_truth.truth_list(rhythm_truth.load_labels(workshop, slug))
+        pred = [c for c in shots.get("cuts", []) if c.get("kind") != "flash"]
+        r = rhythm_eval.summary(truth, pred)
+        a1, h1, h0 = r["cuts_tol1"], r["hard_tol1"], r["hard_tol0"]
+        detail = {"cutsFound": a1["tp"], "cutsReference": a1["truth"], "extraJumps": a1["fp"], "missed": a1["fn"], "hardF1Tol0": h0["f1"],
+                  "hardF1Tol1": h1["f1"], "cutsDetected": len(pred), "truth": "adjudicated"}
+        if presence:
+            detail["filmCutPresence"] = {"score": presence.get("score"), "found": presence.get("found"), "reference": presence.get("reference"),
+                                         "extra": presence.get("extra")}
+        return {"value": a1["f1"], "film": film[1].get("film") if film else None, "version": "shots.json", "detail": detail}
+    if presence:
+        return {"value": presence.get("score"), "film": film[1].get("film"),
+                "detail": {"cutsFound": presence.get("found"), "cutsReference": presence.get("reference"), "extraJumps": presence.get("extra"),
+                           "truth": "none (film cut presence)", "cutsDetected": len([c for c in (shots or {}).get("cuts", []) if c.get("kind") != "flash"])}}
+    if shots:
+        return {"value": None, "detail": {"cutsDetected": len([c for c in shots.get("cuts", []) if c.get("kind") != "flash"]), "truth": "none",
+                                          "shots": len(shots.get("shots", []))}}
+    return None
 
 
 def score_visual(slug: str) -> dict | None:
-    """Mean fidelity of the code-reproduced shots (text cards and graphics) and how much of the film they cover."""
-    got = _film_report(slug)
+    """The Image (shader) module of a reference, read from the disk (14 October 2026; definition: params/image-survey.json).
+    value    = field fidelity: 1 - 0.01 x mean(dE00^2) over the cells of every shot that the shader field explains (within
+               fieldCutoffDE), weighted by shot duration and field share (R04 section 11.2, JND 1), from image/<slug>/survey.json
+    coverage = time-weighted share of cells that are field (the rest is content: text, UI, photographs, plates)
+    detail   = within1Jnd (no mask), reproducible and plate time shares from the bible, the code-reproduced motions (best
+               version, mean fidelity) and the film animatic reading. Plates are animatics by design, never failures."""
+    from .verify import imagescore
+    got = imagescore.reference_image(slug)
+    film = _film_report(slug)
+    detail = dict(got["detail"]) if got else {}
+    if film:
+        plan = film[1].get("plan", [])
+        total = film[1].get("reference_frames") or 1
+        scores, covered = [], 0
+        for seg in plan:
+            if seg.get("kind") != "motion" or not seg.get("motion"):
+                continue
+            folder = settings.path("workshop") / "motions" / seg["motion"]
+            fid = read_json(folder / (imagescore.best_version(folder) or "") / "fidelity.json")
+            if fid and fid.get("score") is not None:
+                scores.append((seg["b"] - seg["a"], float(fid["score"])))
+                covered += seg["b"] - seg["a"]
+        w = sum(f for f, _ in scores)
+        detail["film"] = {"reproducedShots": len(scores), "coveredShare": round(covered / total, 4),
+                          "meanFidelity": round(sum(f * v for f, v in scores) / w, 4) if w else None}
+        if not got:
+            return {"value": detail["film"]["meanFidelity"], "coverage": detail["film"]["coveredShare"], "detail": detail}
     if not got:
         return None
-    plan = got[1].get("plan", [])
-    total = got[1].get("reference_frames") or 1
-    scores, covered = [], 0
-    for seg in plan:
-        if seg.get("kind") != "motion" or not seg.get("motion"):
-            continue
-        folder = settings.path("workshop") / "motions" / seg["motion"]
-        fid = read_json(folder / (versions.latest_version(folder) or "") / "fidelity.json")
-        if fid and fid.get("score") is not None:
-            scores.append(float(fid["score"]))
-            covered += (seg["b"] - seg["a"])
-    coverage = round(covered / total, 4)
-    return {"value": round(sum(scores) / len(scores), 4) if scores else None, "coverage": coverage,
-            "detail": {"reproducedShots": len(scores), "coveredShare": coverage}}
+    floor = read_json(settings.path("workshop") / "image" / slug / "codec-floor.json")
+    if floor and floor.get("mean") is not None:
+        detail["ceiling"] = {"kind": "codec identity floor (the reference against its own H.264 re-encode)", "value": floor["mean"], "min": floor.get("min"),
+                             "windows": len(floor.get("windows", []))}
+    return {"value": got["value"], "coverage": got["coverage"], "version": got["version"], "detail": detail}
 
 
-READERS = {"music": score_music, "sfx": score_sfx, "mix": score_mix, "rhythm": score_rhythm, "visual": score_visual}
+def score_vector(slug: str) -> dict | None:
+    """The vector module on the scene picked for this reference: mean IoU of its VECTOR layers (editable UI, shapes, text outlines).
+    Shader work (blur, glow, gradient field) and photographic residue are reported in the detail, never counted as vector."""
+    d = read_json(settings.path("workshop") / "vector" / slug / "scene.json")
+    if not d or "classes" not in d:
+        return None
+    cl = d["classes"]
+    detail = {"vectorShare": cl["share"]["vector"], "shaderShare": cl["share"]["shader"], "residualShare": cl["share"]["residual"],
+              "explained": d["verdict"]["explained"], "vectorLayersOk": cl["vectorLayersOk"], "reading": d["verdict"]["reading"],
+              "iouArea": cl.get("vectorLayerIouArea")}
+    layered = read_json(settings.path("workshop") / "vector" / slug / "layered.json")
+    if layered and layered.get("applicable") and layered.get("shot") == d.get("shot") and (layered.get("fidelity") or {}).get("fidelity") is not None:
+        # 15 October 2026: the module reads the COMPOSITE of the multi-layer fit (all layers stacked, CIEDE2000, 1 - 0.01 x mean dE00^2, the image
+        # module's definition) against the crop, not the mean IoU of single layers (which codec noise caps at 0.89 to 0.99 and which says nothing of how the
+        # picture looks). The per-layer IoU of the single-trace scene stays in the detail. FR : la valeur est le composite multi-calques.
+        detail.update({"iouMean": cl.get("vectorLayerIouMean"), "layers": layered.get("layers"), "composite": layered["fidelity"],
+                       "codecFloor": (layered.get("codecFloor") or {}).get("fidelity"), "fitSeconds": layered.get("seconds"),
+                       "definition": "composite fidelity in CIEDE2000 of the stacked layers against the crop"})
+        return {"value": layered["fidelity"]["fidelity"], "version": f"{d.get('shot')} {Path(layered.get('dir', '')).name or d.get('version')}", "detail": detail}
+    ceil = read_json(settings.path("workshop") / "vector" / slug / "ceiling.json")
+    if ceil and (ceil.get("ceiling") or {}).get("vectorLayerIouMean") is not None:
+        detail["ceiling"] = {"kind": "the same pipeline on the exact traced scene put through the reference codec", "value": ceil["ceiling"]["vectorLayerIouMean"],
+                             "iouArea": ceil["ceiling"].get("vectorLayerIouArea"), "shot": ceil.get("shot")}
+    return {"value": cl.get("vectorLayerIouMean"), "version": f"{d.get('shot')} {d.get('version')}", "detail": detail}
+
+
+READERS = {"vector": score_vector, "music": score_music, "sfx": score_sfx, "mix": score_mix, "rhythm": score_rhythm, "visual": score_visual}
 
 
 def module_scores(slug: str) -> list[dict]:
@@ -330,8 +459,13 @@ def module_scores(slug: str) -> list[dict]:
     for m in d["modules"]:
         got = READERS[m["score"]](slug)
         value = got["value"] if got else None
+        complete = (got or {}).get("detail", {}).get("complete", True) if isinstance((got or {}).get("detail"), dict) else True
+        det = (got or {}).get("detail")
+        ceil = (det.get("ceiling") or {}).get("value") if isinstance(det, dict) else None
         rows.append({"module": m["id"], "label": m["label"], "hint": m["hint"], "value": value, "target": target,
-                     "stretch": d["targets"]["stretch"], "reached": value is not None and value >= target,
+                     "stretch": d["targets"]["stretch"], "reached": value is not None and value >= target and bool(complete),
+                     # a measured physical limit under the stretch target: the module cannot honestly read higher than this whatever is rendered
+                     "ceiling": ceil, "limited": ceil is not None and ceil < d["targets"]["stretch"],
                      "version": (got or {}).get("version"), "detail": (got or {}).get("detail"),
                      "coverage": (got or {}).get("coverage")})
     return rows

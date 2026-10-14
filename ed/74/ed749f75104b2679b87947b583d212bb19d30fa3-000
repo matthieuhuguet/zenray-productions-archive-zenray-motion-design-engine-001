@@ -1,0 +1,73 @@
+# ZenRay Motion Design 1.1.0 (14 October 2026)
+
+Version déclarée UNE fois dans `params/v1-app.json` (`release`) et dans `pyproject.toml` ; `GET /api/v1/status` la rend, un test les garde égales. Le détail technique vit dans `docs/ARCHITECTURE.md` (sections 14, 16 et 17) ; ce fichier dit ce qui est livré, ce qui est mesuré, ce qui ne l'est pas, et où reprendre. (14 October 2026)
+
+## Ce que 1.1.0 ajoute à la V1 (14 October 2026)
+
+| Chantier | Livré | Preuve |
+|---|---|---|
+| Mixage | une chaîne de master en paramètres (sonie visée, saturation douce la plus petite qui suffit, courbe de gain par case de 0,05 s) rejouable depuis ses seuls nombres ; pistes rangées sans écrêtage (`stemGain`) | `tests/test_master.py` (5 contrôles vert et rouge) ; 22 membres sur 22 à 99,95 au moins ; rejeu relu à 1,1e-6 (quantification 24 bits) sur les 20 membres vérifiés |
+| Plafonds mesurés | `ceiling` et `limited` dans chaque ligne du tableau des modules ; plancher du codec pour l'image (12 références) et plafond du pipeline pour le vecteur (12 références) | `tests/test_orchestrator.py`, `tests/test_app_api.py` ; `Scripts/ReproduceField.py ceiling`, `Scripts/VectorCeiling.py` |
+| Rythme, seconde passe | côté calme d'un flash (le strobe de memo redevient une coupe), une étiquette jugée à l'oeil, transitions typées par un classifieur | `tests/test_rhythm.py` ; resubstitution 525 trouvées, 0 en trop, 0 manquée |
+| Lecture par membre du corpus | une référence en extraits vaut son PIRE extrait et n'est jamais « atteinte » tant qu'un extrait n'a pas de lecture | `tests/test_orchestrator.py` (10 contrôles, vert et rouge) |
+| Application | `release` au statut, plafond mesuré en infobulle des pastilles de la page et dans la console | `tests/test_app_api.py` |
+
+## État mesuré, douze références, six modules (14 October 2026)
+
+Valeur en pour cent lue sur le disque par `orchestrator.module_scores` ; `*` : atteint (au moins 99 et lecture complète) ; entre parenthèses le plafond mesuré. « -- » : pas de lecture (fin-4 n'a pas d'audio ; les membres restants des trois autres sont à calculer). (14 October 2026)
+
+| référence | rythme | image (plancher) | vecteur (plafond) | musique | effets | mixage |
+|---|---|---|---|---|---|---|
+| claude-opus-5-5 | 100,00* | 96,39 (99,74) | 86,43 (93,11) | 100,00* | 99,97* | 100,00* |
+| fin-4 | 100,00* | 97,19 (99,87) | 81,09 (90,58) | -- | -- | -- |
+| flora-agents-on-canvas | 100,00* | 97,79 (99,82) | 75,27 (92,56) | 100,00* | 99,98* | 100,00* |
+| interface | 100,00* | 93,24 (99,41) | 96,20 (94,97) | 100,00* | 99,98* | 100,00* |
+| kardashev-0-7 | 100,00* | 96,39 (99,58) | 93,21 (92,69) | 100,00* | 99,99* | 100,00* |
+| memo | 100,00* | 95,63 (99,95) | 92,43 (92,56) | 100,00* | 99,98* | 99,99* |
+| motion-opus-5-5 | 100,00* | 98,59 (99,90) | 93,49 (91,85) | 100,00* | 99,98* | 100,00* |
+| onekey-pro-2 | 100,00* | 97,32 (99,75) | 99,00* (98,97) | 100,00* | 99,99* | 99,98* |
+| paper-mono-code | 100,00* | 94,03 (99,42) | 82,16 (95,70) | 100,00* | 99,98* | 100,00* |
+| x-anabology-2105325733312884869 | 100,00* | 94,37 (99,40) | 86,63 (88,70) | 100,00* | 99,99 (1 membre sur 3) | 100,00 (1 sur 3) |
+| x-anabology-2106157622986748377 | 100,00* | 94,03 (99,57) | 80,86 (93,56) | 100,00* | -- (0 sur 3) | -- (0 sur 3) |
+| yt-4Q-o_ylnVnc | 100,00* | 97,52 (99,82) | 83,21 (91,98) | 100,00* | -- (0 sur 3) | -- (0 sur 3) |
+
+## Ce qui n'est PAS atteint, dit sans arrondir (14 October 2026)
+
+- **Rythme : 100 en resubstitution, pas sur vidéo neuve.** Le classifieur de transitions et la fusion sont entraînés sur ces douze références : leurs scores y valent 1,000 par cohérence des étiquettes avec un modèle qui peut les mémoriser. Une référence exclue (leave-one-reference-out de tout le produit) rend un F1 de **0,864 micro et 0,843 macro**, et le classifieur retrouve 2 des 16 transitions réelles hors référence. La cible 99,9 sur vidéo nouvelle n'est pas atteinte. (14 October 2026)
+- **Image : 93,2 à 98,6, et le plancher du codec est lui-même sous 99,9 sur onze références sur douze** (seul memo le dépasse, 99,95). 99,9 est physiquement hors d'atteinte pour ces onze-là, et l'écart restant sous le plancher (1,3 à 6,2 points) est de la structure de source à l'échelle d'une cellule qu'un champ paramétrique ne dessine pas et que la doctrine des droits interdit de recopier. (14 October 2026)
+- **Vecteur : 75,3 à 99,0, plafond du pipeline de 88,7 à 99,0.** Aucun plafond n'atteint 99,9. Six références ont de la marge mesurée entre la valeur et le plafond (flora +17,3, paper-mono-code +13,5, x-anabology-2106 +12,7, fin-4 +9,5, yt-4Q +8,8, claude-opus +6,7 points). L'IoU pondéré par l'aire dépasse déjà 99 sur claude-opus (99,98), yt-4Q (99,94) et paper-mono-code (99,46) : quelle mesure porte la valeur du module est une décision de définition qui revient à Matthieu. (14 October 2026)
+- **Effets et mixage : trois références vidéo incomplètes** (x-anabology-2105 1 membre sur 3, x-anabology-2106 et yt-4Q 0 sur 3) : le calcul prend 40 à 60 minutes par membre sur une machine chargée et a été arrêté proprement à la demande. Ce qui est lu est à 99,95 ou plus par membre. (14 October 2026)
+- **Musique :** 33 membres sur 33 à 99,9 sur chaque piste (critique officielle) ; le rejeu depuis les paramètres du calage n'est pas livré (`Scripts/MusicReplay.py` existe, les membres demandent un nouveau calage pour ranger `calibration.npz`). (14 October 2026)
+- **Publication :** rien n'est publié ; un motion ne part que si une personne pose `rights.cleared`. (14 October 2026)
+
+## Vérifier (14 October 2026)
+
+```bash
+cd /Users/zenray/Create/Build/Productions/GithubProductions/ZenRayMotionDesign
+/Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/RunTests.py                       # tous les tests, chacun dans son processus
+/Users/zenray/.venvs/zenray-motion/bin/python -I tests/test_master.py                      # la chaîne de master, vert et rouge
+/Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/Orchestrate.py status             # le tableau des modules, lu sur le disque
+/Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/Orchestrate.py serve              # http://127.0.0.1:3104/
+```
+
+## Où régler, sans me le demander (14 October 2026)
+
+| Ce que tu veux changer | Où |
+|---|---|
+| saturation du master (grille, score d'arrêt), courbe de gain (case, lissage, plafond) | `datasets/sfx-params.json`, blocs `mix.drive` et `mix.ride` ; puis `Scripts/AssembleCorpus.py --force` |
+| cibles de lecture (0,99 atteint, 0,999 visé), pipelines, port | `params/orchestrator.json` |
+| coupes : sensibilité, plus court plan, flashs, transitions typées | `params/rhythm-v1-parameters.json` (4 primaires, 8 secondaires, 16 tertiaires) |
+| budget de trace vectorielle (aire, contour, rang, temps) | `params/vector-scene.json`, bloc `budget` |
+| tailles de pages, cadence, fichiers acceptés, pipelines nommés, numéro de version | `params/v1-app.json` |
+
+## Chantiers de recherche à noter, dans l'ordre du levier (14 October 2026)
+
+1. **Terminer les effets et le mixage des trois références vidéo restantes** (11 membres, dont 3 audio seul). Pas de recherche, du temps de calcul : `Scripts/SfxCorpus.py run --wait-busy` puis `Scripts/AssembleCorpus.py`. Un membre à la fois, reprenable. (14 October 2026)
+2. **Budget de trace vectorielle plus profond** pour les six références qui ont de la marge sous leur plafond : relever `maxAreaPx` (30 000), `maxBoundaryPx` (3 000), `maxRefined` (60) et les plafonds de CPU de `params/vector-scene.json`, mesurer le gain de l'IoU moyen contre le plafond de `ceiling.json`. Protocole : `scene.analyse_frame` sur l'image ET le recadrage ENREGISTRÉS, vers un dossier de travail ; jamais `VectorScene.py --shot` ni `run_scene`, qui refont le choix de scène, réécrivent `scene.json` et remplacent l'image enregistrée (arrivé à flora pendant cette version, rétabli). Un premier essai a échoué par un arrêt du pool sous une charge de 130 : le relancer sur une machine calme. (14 October 2026)
+3. **Définition du vecteur** : décider si la valeur du module est l'IoU moyen par couche (aujourd'hui) ou l'IoU pondéré par l'aire (déjà au-dessus de 99 sur trois références). Une définition se change dans un seul fichier de lecture ; elle ne s'abaisse jamais en silence. (14 October 2026)
+4. **Image sous le plancher** : affiner localement le centre et le rayon de la lueur (non essayé, section 13), ajouter une structure de bandes ou de tramage PARAMÉTRIQUE (jamais copiée), puis mesurer l'écart au plancher de `codec-floor.json`. Seules memo (plancher 99,95) et motion-opus-5-5 (99,899) peuvent en principe lire 99,9. (14 October 2026)
+5. **Rythme sur vidéo neuve** : étiqueter davantage de références (strobes, fondus enchaînés, balayages ; 509 coupes et 16 transitions dans 11 vidéos aujourd'hui), faire relire par un second lecteur, bâtir des transitions synthétiques sur de vraies images. Commandes : `Scripts/RhythmModel.py propose`, `Scripts/RhythmTruth.py pool`, `Scripts/RhythmSheet.py train`, `Scripts/RhythmLoro.py probs --force`, `Scripts/RhythmRamps.py table`, `train`, puis `Scripts/RhythmLoro.py all`. (14 October 2026)
+6. **Calage musical rejouable** : `Scripts/MusicReplay.py` et le module de calibration passent leurs tests, il reste à refaire le calage de chaque membre pour ranger `calibration.npz`, puis à prouver le rejeu sans référence. (14 October 2026)
+7. **Protéger le choix de scène** : `scene.run_scene` ne devrait ni remplacer un `scene.json` applicable par « non applicable » ni écraser `frames/frame-<plan>.png` avant d'avoir décidé ; écrire les candidats dans un sous-dossier et ne copier que l'image retenue. Un test avec une bible dont les identifiants ont bougé. (14 October 2026)
+8. **Droits et publication** : valider `rights.cleared` motion par motion (aucune plaque n'est jamais publiée), puis le plan à blanc `scripts/Motion/PublishMotions.mjs` côté ZenRayProgress. (14 October 2026)
+9. **Service Assets arrêté** : le suivi Assets de ce chantier n'a pas pu être consigné par le service (port 3100 éteint) ; il l'est dans `Memory1/Projects/zenray-motion-design/` par le rédacteur canonique. À rejouer quand le service est relancé. (14 October 2026)

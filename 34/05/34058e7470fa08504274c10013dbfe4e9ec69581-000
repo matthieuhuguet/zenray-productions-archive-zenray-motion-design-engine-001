@@ -1,0 +1,62 @@
+# 14 October 2026: compute and cache the per-boundary rhythm signals of each picture reference (zrmd.analyze.rhythm_signals).
+# Run: nice -n 5 /Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/RhythmSignals.py [--slug X] [--force]
+# FR : calcule et met en cache les signaux par frontiere de chaque reference.
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+from zrmd import settings  # noqa: E402
+from zrmd.analyze import rhythm_cache, rhythm_signals as S  # noqa: E402
+
+PICTURE = "claude-opus-5-5 fin-4 flora-agents-on-canvas motion-opus-5-5 kardashev-0-7 memo paper-mono-code onekey-pro-2 " \
+          "interface x-anabology-2106157622986748377 x-anabology-2105325733312884869 yt-4Q-o_ylnVnc".split()
+
+
+def folder_of(slug: str) -> Path:
+    return rhythm_cache.cache_dir(settings.path("refcache"), slug)
+
+
+def load_signals(folder: Path) -> dict:
+    z = np.load(Path(folder) / "signals.npz", allow_pickle=False)
+    return {k: z[k] for k in z.files}
+
+
+def build_folder(folder: Path, force: bool = False) -> dict:
+    """Signals of a decoded cache folder (a reference or a synthetic benchmark video)."""
+    folder = Path(folder)
+    if (folder / "signals.npz").exists() and not force:
+        return load_signals(folder)
+    d = rhythm_cache.load(folder)
+    sig = S.compute(np.asarray(d["frames"]))
+    sig.update(S.codec_signal(d["size"], d["key"], sig["src"]))
+    sig["fps"] = np.array([d["meta"]["fps"]])
+    np.savez_compressed(folder / "signals.npz", **{k: np.asarray(v) for k, v in sig.items() if k != "m"})
+    return load_signals(folder)
+
+
+def build(slug: str, force: bool = False) -> dict:
+    return build_folder(folder_of(slug), force)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--slug", action="append")
+    ap.add_argument("--force", action="store_true")
+    a = ap.parse_args()
+    for slug in a.slug or PICTURE:
+        t0 = time.time()
+        sig = build(slug, a.force)
+        print(json.dumps({"slug": slug, "distinct": int(len(sig["src"])), "frames": int(len(sig["diff_full"])),
+                          "seconds": round(time.time() - t0, 1)}), flush=True)
+
+
+if __name__ == "__main__":
+    main()

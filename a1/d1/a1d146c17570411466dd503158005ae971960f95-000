@@ -1,0 +1,382 @@
+# 14 October 2026: typed transitions as a CLASSIFIED candidate, not a threshold. A cross-dissolve, a fade through a solid colour, a
+# whip and a swirl are the same kind of event: a gradual or blurred change between two pictures that are different compositions.
+# Generators with deliberately loose settings list every candidate span (`generate`: a fade through a flat run, a cross-dissolve, a
+# blur sweep, a flat run, a run of large steps; `clusters`: two or three predicted cuts close together), each candidate gets the
+# same feature vector (`features`: its shape, how straight and how well mixed the middle pictures are, how far its ends are from
+# each other by the area rule, how much sharpness collapses, how flat and dark it is, what the cut model says inside it), and ONE
+# tree ensemble trained on the adjudicated transitions decides (`score`). A candidate is labelled by being a RIGHT ANSWER
+# (`is_positive`): its instant inside the adjudicated interval, its span not much wider, no true cut swallowed outside the interval,
+# every cut the model predicts inside the interval covered. Overlapping accepted candidates keep the best score (`select`), the V1
+# thresholds gate them before that (`gate`), and the boundaries a kept span covers are no cuts of their own (rhythm_detect.decide).
+# Nothing here knows a reference: the model is data (datasets/rhythm-ramps.json) like the cut fusion, and a person who wants the
+# threshold detectors back sets transitions.method to "rule" in params/rhythm.json.
+# FR : les transitions typees sont des candidats CLASSES : generateurs larges, un meme vecteur de preuves, un seul modele ; une etiquette
+# est une BONNE REPONSE (instant dans l'intervalle, aucune coupe voisine avalee, aucune coupe predite laissee a cote).
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import cv2
+import numpy as np
+
+from . import rhythm_core as C
+from . import rhythm_fine as RFINE
+
+MODEL = Path(__file__).resolve().parents[2] / "datasets" / "rhythm-ramps.json"
+
+# generator settings: loose on purpose (the classifier does the rejecting); they are measurement constants, not user values
+GEN = {"fade": {"dark": 0.12, "flat": 0.12, "around_min": 0.0, "max_len": 60},
+       "dissolve": {"total_min": 0.03, "resid_max": 0.08, "resid_full_max": 0.06, "ncc_max": 0.9, "ncc_full_max": 0.8, "max_len": 90},
+       "whip": {"drop": 0.85, "around_min": 0.0, "max_run": 14},
+       "solid": {"flat": 0.03, "max_len": 60},
+       "cluster": {"p_min": 0.3, "gap": 5, "max_cuts": 3},
+       "run": {"step_min": 0.03, "min_len": 2, "max_len": 16, "gap": 1}}
+KINDS = ("fade", "dissolve", "whip", "solid", "cluster", "run")
+FEATURES = ["kind_fade", "kind_dissolve", "kind_whip", "kind_solid", "kind_cluster", "kind_run", "len", "len_file", "d_end", "path", "straight", "max_step",
+            "ncc_end", "resid_mix", "energy_dip", "sharp_min", "luma_min", "luma_depth", "lstd_min", "dark_run", "dark_share", "flat_share",
+            "n_cuts", "recur", "inner_sharp_min",
+            "U", "UP", "F", "ED", "EN", "S", "CH", "CL", "DL", "NW", "R", "MAD", "UA",
+            "p_in_max", "p_in_sum", "p_land", "p_enter", "calm_before", "calm_after"]
+
+
+def _dedupe(found: list[dict]) -> list[dict]:
+    seen, out = set(), []
+    for d in found:
+        k = (d["kind"], d["s"], d["e"])
+        if k not in seen and d["e"] > d["s"]:
+            seen.add(k)
+            out.append(d)
+    return out
+
+
+def sharp_of(ctx: C.Ctx) -> np.ndarray:
+    """Gradient energy per distinct picture, computed once per context."""
+    if getattr(ctx, "_sharp", None) is None:
+        ctx._sharp = C.sharpness(ctx)
+    return ctx._sharp
+
+
+def half_mix_instant(ctx: C.Ctx, s: int, e: int) -> int:
+    """The picture where the cross-fade from picture s to picture e is half done: every picture inside is projected on the
+    end-to-end difference, and the first one whose mix reaches one half is the instant. It does not depend on where the span ENDS
+    are placed (a span that runs on after the mix is done keeps its instant where the mix is half), which a span middle does."""
+    if e - s < 2:
+        return (s + e) // 2
+    g = ctx.gray
+    d = g[e] - g[s]
+    den = float((d * d).sum())
+    if den < 1e-9:
+        return (s + e) // 2
+    alpha = np.array([float(((g[j] - g[s]) * d).sum()) / den for j in range(s, e + 1)])
+    alpha = np.maximum.accumulate(alpha)
+    above = np.nonzero(alpha >= 0.5)[0]
+    j = s + int(above[0]) if len(above) else s + int(np.argmin(np.abs(alpha - 0.5)))
+    return int(min(max(j, s + 1), e - 1))
+
+
+def generate(ctx: C.Ctx) -> list[dict]:
+    """The candidate spans that need no cut probability, in the DISTINCT-picture domain: {"kind", "s", "e", "i"} with s the last
+    picture before the ramp, e the first picture after it (a whip: the blurred run bracketed by its sharp neighbours) and i the
+    instant picture of the event: the middle of the flat run of a fade, the half-mix picture of a dissolve, the blurriest picture of
+    a whip (the instant of a transition is a definition, so it is part of the candidate, not of the selection)."""
+    out: list[dict] = []
+    sh = sharp_of(ctx)
+    g = GEN["fade"]
+    for d in C.fade_spans(ctx, dark=g["dark"], flat=g["flat"], around_min=g["around_min"], max_len=g["max_len"]):
+        out.append({"kind": "fade", "s": d["s"], "e": d["e"], "i": int(d["mid"])})
+    g = GEN["dissolve"]
+    for d in C.dissolve_spans(ctx, max_len=g["max_len"], total_min=g["total_min"], resid_max=g["resid_max"], resid_full_max=g["resid_full_max"],
+                              ncc_max=g["ncc_max"], ncc_full_max=g["ncc_full_max"]):
+        out.append({"kind": "dissolve", "s": d["s"], "e": d["e"], "i": half_mix_instant(ctx, d["s"], d["e"])})
+    g = GEN["whip"]
+    for d in C.whip_spans(ctx, drop=g["drop"], around_min=g["around_min"], max_run=g["max_run"]):
+        s0, e0 = max(d["s"] - 1, 0), min(d["e"] + 1, ctx.m - 1)
+        out.append({"kind": "whip", "s": s0, "e": e0, "i": int(s0 + 1 + np.argmin(sh[s0 + 1:e0])) if e0 - s0 >= 2 else (s0 + e0) // 2})
+    # solid: a run of flat pictures (any level: black, white, a plain page) next to pictures that are not flat. A fade TO a solid
+    # colour, a fade FROM it, and a dip (a flat run between two different pictures) are three candidates of the same run.
+    luma, lstd = ctx.sig["luma"], ctx.sig["lstd"]
+    g = GEN["solid"]
+    flat = lstd < g["flat"]
+    j = 0
+    while j < ctx.m:
+        if not flat[j]:
+            j += 1
+            continue
+        k = j
+        while k + 1 < ctx.m and flat[k + 1] and abs(luma[k + 1] - luma[j]) < 0.1:
+            k += 1
+        if k - j + 1 <= g["max_len"]:
+            if j > 0:
+                s0 = max(j - 12, 0)
+                out.append({"kind": "solid", "s": s0, "e": j, "i": (s0 + j) // 2})                      # the picture settles into the run
+            if k < ctx.m - 1:
+                e0 = min(k + 12, ctx.m - 1)
+                out.append({"kind": "solid", "s": k, "e": e0, "i": (k + e0) // 2})                     # the picture comes out of the run
+            if j > 0 and k < ctx.m - 1:
+                out.append({"kind": "solid", "s": j - 1, "e": k + 1, "i": (j + k) // 2})               # the dip
+        j = k + 1
+    # run: a short run of pictures that each differ from the last by a real step (a zoom blur or a swirl that replaces the picture
+    # over several pictures with no sharp collapse to measure). The instant is the largest step of the run.
+    g = GEN["run"]
+    step = np.asarray(ctx.sig["mad"], dtype=np.float64)
+    hot = step >= g["step_min"]
+    hot[0] = False
+    j = 1
+    while j < ctx.m:
+        if not hot[j]:
+            j += 1
+            continue
+        k = j
+        while k + 1 < ctx.m and (hot[k + 1] or (k + 2 < ctx.m and hot[k + 2] and g["gap"] >= 1)):
+            k += 1
+        n = k - j + 1
+        if g["min_len"] <= n <= g["max_len"]:
+            out.append({"kind": "run", "s": j - 1, "e": k, "i": int(j + np.argmax(step[j:k + 1]))})
+        j = k + 1
+    return out
+
+
+def clusters(ctx: C.Ctx, probs: np.ndarray) -> list[dict]:
+    """Two or three predicted cuts close together are either a strobe or one transition (a whip the cut model reads as a burst of
+    cuts): one candidate per group, the classifier says which. `probs` is the cut model's probability per FILE frame. The instant
+    is the middle picture of the group."""
+    g = GEN["cluster"]
+    out: list[dict] = []
+    cuts = [jj for jj in range(1, ctx.m) if probs[int(ctx.src[jj])] >= g["p_min"]]
+    for a in range(len(cuts)):
+        for n_c in (2, 3):
+            if a + n_c - 1 >= len(cuts) or n_c > g["max_cuts"]:
+                continue
+            grp = cuts[a:a + n_c]
+            if all(grp[i + 1] - grp[i] <= g["gap"] for i in range(len(grp) - 1)):
+                out.append({"kind": "cluster", "s": max(grp[0] - 1, 0), "e": min(grp[-1], ctx.m - 1), "i": (grp[0] + grp[-1]) // 2})
+    return out
+
+
+def candidates(ctx: C.Ctx, probs: np.ndarray | None = None, base: list[dict] | None = None) -> list[dict]:
+    """Every candidate span. `base` lets a caller that already ran `generate` (the slow part) reuse it for another `probs`."""
+    out = list(base) if base is not None else generate(ctx)
+    if probs is not None:
+        out += clusters(ctx, probs)
+    return _dedupe(out)
+
+
+def _fine_pair(a: np.ndarray, b: np.ndarray, window) -> dict:
+    """The fine-pass area measures between two coarse pictures (upsampled to the fine size): the same numbers the cut model reads."""
+    ra = cv2.resize(a, (RFINE.FW, RFINE.FH), interpolation=cv2.INTER_LINEAR)
+    rb = cv2.resize(b, (RFINE.FW, RFINE.FH), interpolation=cv2.INTER_LINEAR)
+    return RFINE.measure_pair(ra, rb, window)
+
+
+PROB_COLS = ("n_cuts", "p_in_max", "p_in_sum", "p_land", "p_enter")
+
+
+def base_features(ctx: C.Ctx, cands: list[dict], frames, cache: dict | None = None) -> np.ndarray:
+    """(len(cands), len(FEATURES)) float64 with the cut-probability columns left at 0 (`with_probs` fills them). `cache` maps
+    (kind, s, e) to a finished row, so a second candidate list of the same video (another probability source) recomputes nothing."""
+    sig, m = ctx.sig, ctx.m
+    g = ctx.gray
+    step = np.asarray(sig["mad"], dtype=np.float64)
+    luma, lstd = np.asarray(sig["luma"], dtype=np.float64), np.asarray(sig["lstd"], dtype=np.float64)
+    sharp = sharp_of(ctx)
+    window = cv2.createHanningWindow((RFINE.FW, RFINE.FH), cv2.CV_64F)
+    src = ctx.src
+    out = np.zeros((len(cands), len(FEATURES)))
+    idx = {k: i for i, k in enumerate(FEATURES)}
+    for r, c in enumerate(cands):
+        key = (c["kind"], c["s"], c["e"])
+        if cache is not None and key in cache:
+            out[r] = cache[key]
+            continue
+        s, e = c["s"], c["e"]
+        row = out[r]
+        row[idx["kind_" + c["kind"]]] = 1.0
+        L = e - s
+        row[idx["len"]] = L
+        row[idx["len_file"]] = int(src[e]) - int(src[s])
+        direct = float(np.abs(g[e] - g[s]).mean())
+        path = float(step[s + 1:e + 1].sum())
+        row[idx["d_end"]] = direct
+        row[idx["path"]] = path
+        row[idx["straight"]] = direct / max(path, 1e-6)
+        row[idx["max_step"]] = float(step[s + 1:e + 1].max()) / max(path, 1e-6)
+        a_, b_ = g[s] - g[s].mean(), g[e] - g[e].mean()
+        den = float(np.sqrt((a_ * a_).sum() * (b_ * b_).sum()))
+        row[idx["ncc_end"]] = float((a_ * b_).sum() / den) if den > 1e-9 else 0.0
+        if L >= 2:
+            alpha = (np.arange(1, L) / L)[:, None, None]
+            mix = g[s][None] * (1 - alpha) + g[e][None] * alpha
+            row[idx["resid_mix"]] = float(np.abs(g[s + 1:e] - mix).mean()) / max(direct, 1e-3)
+        mid = slice(s + 1, e) if L >= 2 else slice(s, e + 1)
+        base = float(np.median(np.concatenate([sharp[max(0, s - 8):s + 1], sharp[e:e + 9]]))) or 1e-6
+        row[idx["sharp_min"]] = float(sharp[mid].min()) / max(base, 1e-6)
+        ends_en = min(sharp[s], sharp[e]) or 1e-6
+        row[idx["energy_dip"]] = float(sharp[mid].min()) / max(ends_en, 1e-6)
+        inner = luma[s:e + 1]
+        row[idx["luma_min"]] = float(inner.min())
+        row[idx["luma_depth"]] = float(min(luma[s], luma[e]) - inner.min())
+        j0 = s + int(np.argmin(inner))
+        row[idx["lstd_min"]] = float(lstd[j0])
+        dk = (luma[s:e + 1] < 0.06) & (lstd[s:e + 1] < 0.06)
+        row[idx["dark_run"]] = float(dk.sum())
+        row[idx["dark_share"]] = float(dk.mean())
+        row[idx["flat_share"]] = float((lstd[s:e + 1] < 0.03).mean())
+        # recurrence: does a picture inside come back two pictures later (a strobe) or is every picture new (a transition)?
+        if e - s >= 2:
+            d2 = np.array([float(np.abs(g[j] - g[j - 2]).mean()) for j in range(s + 2, e + 1)])
+            row[idx["recur"]] = float(d2.min()) / max(float(np.median(step[s + 1:e + 1])), 1e-4)
+        else:
+            row[idx["recur"]] = 99.0
+        row[idx["inner_sharp_min"]] = float(sharp[s + 1:e].min() / max(sharp[s], sharp[e], 1e-6)) if e - s >= 2 else 1.0
+        fp = _fine_pair(np.asarray(frames[int(src[s])]), np.asarray(frames[int(src[e])]), window)
+        for k in ("U", "UP", "F", "ED", "EN", "S", "CH", "CL", "DL", "NW", "R", "MAD", "UA"):
+            v = fp[k]
+            row[idx[k]] = 0.0 if v is None or (isinstance(v, float) and np.isnan(v)) else float(v)
+        before = step[max(1, s - 5):s + 1]
+        after = step[e + 1:e + 6]
+        row[idx["calm_before"]] = float(before.mean()) if before.size else 0.0
+        row[idx["calm_after"]] = float(after.mean()) if after.size else 0.0
+        if cache is not None:
+            cache[key] = row.copy()
+    return out
+
+
+def with_probs(ctx: C.Ctx, cands: list[dict], base: np.ndarray, probs: np.ndarray | None) -> np.ndarray:
+    """`base` plus the five cut-model columns (what the cut model says inside the span, at its entry and at its landing)."""
+    out = base.copy()
+    if probs is None:
+        return out
+    idx = {k: i for i, k in enumerate(FEATURES)}
+    src, n = ctx.src, ctx.n_file
+    for r, c in enumerate(cands):
+        fa, fb = int(src[c["s"]]), int(src[c["e"]])
+        inside = np.asarray(probs[fa + 1:fb + 1]) if fb > fa else np.zeros(1)
+        out[r, idx["p_in_max"]] = float(inside.max()) if inside.size else 0.0
+        out[r, idx["p_in_sum"]] = float(inside.sum())
+        out[r, idx["n_cuts"]] = float((inside >= 0.5).sum())
+        out[r, idx["p_land"]] = float(probs[min(fb + 1, n - 1)])
+        out[r, idx["p_enter"]] = float(probs[max(fa, 0)])
+    return out
+
+
+def features(ctx: C.Ctx, cands: list[dict], frames, probs: np.ndarray | None = None, cache: dict | None = None) -> np.ndarray:
+    """(len(cands), len(FEATURES)) float64. `probs` is the cut model's probability per FILE frame (None: those columns are 0)."""
+    return with_probs(ctx, cands, base_features(ctx, cands, frames, cache), probs)
+
+
+def is_positive(a: int, b: int, f: int, truth: list[dict], hard: list[int] | tuple = (), preds: list[int] | tuple = (), tol: int = 1,
+                width_factor: float = 3.0, width_pad: int = 6) -> bool:
+    """Would a candidate of span [a, b] (FILE frames) and instant f be a RIGHT typed transition? Four conditions, read from the
+    adjudication and from what the cut model says:
+      1. its instant lies inside an adjudicated transition widened by `tol` (the rule the score applies);
+      2. its span is not wider than `width_factor` times that interval plus `width_pad` pictures;
+      3. the boundaries it would swallow (a + 1 to b, the zone no cut is reported in) hold no adjudicated hard cut OUTSIDE the
+         interval: a span that eats a neighbouring true cut costs a missed cut, however well its instant sits;
+      4. every cut the model predicts INSIDE the interval lies in that zone: one left outside would be reported next to the typed
+         event, an extra jump inside the interval (the score matches one prediction per transition)."""
+    for t in truth:
+        if t.get("kind") not in ("dissolve", "fade", "whip") or t.get("start") is None:
+            continue
+        lo, hi = t["start"] - tol, t["end"] + tol
+        tl = max(t["end"] - t["start"], 3)
+        if not (lo <= f <= hi and (b - a) <= width_factor * tl + width_pad):
+            continue
+        if any(a + 1 <= c <= b and not lo <= c <= hi for c in hard):
+            continue
+        if any(lo <= c <= hi and not a + 1 <= c <= b for c in preds):
+            continue
+        return True
+    return False
+
+
+def label(cands: list[dict], truth: list[dict], src: np.ndarray, hard: list[int] | tuple = (), preds: list[int] | tuple = (), tol: int = 1,
+          width_factor: float = 3.0, width_pad: int = 6) -> np.ndarray:
+    """1 when a candidate is a RIGHT typed transition (`is_positive`), 0 otherwise. `hard` holds the adjudicated hard-cut frames of
+    the video, `preds` the cut frames the cut model predicts on it."""
+    y = np.zeros(len(cands), dtype=int)
+    for i, c in enumerate(cands):
+        y[i] = int(is_positive(int(src[c["s"]]), int(src[c["e"]]), int(src[c["i"]]), truth, hard, preds, tol, width_factor, width_pad))
+    return y
+
+
+def score(model: dict, X: np.ndarray) -> np.ndarray:
+    from . import rhythm_fusion as FU
+    return FU.predict(model, X) if len(X) else np.zeros(0)
+
+
+OUT_KIND = {"fade": "fade", "solid": "fade", "dissolve": "dissolve", "whip": "whip", "cluster": "whip", "run": "whip"}
+
+
+def select(ctx: C.Ctx, cands: list[dict], p: np.ndarray, thr: float = 0.5, touch: int = 3, max_union: int = 60) -> list[dict]:
+    """Accepted candidates (score >= thr), best score first; a candidate that overlaps a kept one (more than a shared end picture) is
+    dropped: non-maximum suppression, never a union that would chain neighbouring events. Two kept spans that TOUCH (within `touch`
+    pictures: the two halves of one dip through a flat run, or two readings of one whip) become one span if the union stays under
+    `max_union` pictures; the
+    instant of the merged span is that of its best candidate. Each kept span carries its kind (that of its best candidate), its
+    interval in FILE frames and its instant."""
+    order = [int(i) for i in np.argsort(-np.asarray(p), kind="stable") if p[i] >= thr]
+    kept: list[dict] = []
+    for i in order:
+        s, e = cands[i]["s"], cands[i]["e"]
+        if any(s < k["e"] and k["s"] < e for k in kept):
+            continue
+        kept.append({"kind": cands[i]["kind"], "s": s, "e": e, "i": cands[i]["i"], "score": float(p[i]), "ix": i})
+    kept.sort(key=lambda k: k["s"])
+    merged: list[dict] = []
+    for k in kept:
+        if merged and k["s"] <= merged[-1]["e"] + touch and k["e"] - merged[-1]["s"] <= max_union:
+            prev = merged[-1]
+            best = prev if prev["score"] >= k["score"] else k
+            merged[-1] = {"kind": best["kind"], "s": prev["s"], "e": k["e"], "i": best["i"], "score": best["score"], "ix": best["ix"]}
+        else:
+            merged.append(dict(k))
+    return [{"kind": OUT_KIND[k["kind"]], "start": int(ctx.src[k["s"]]), "end": int(ctx.src[k["e"]]), "frame": int(ctx.src[k["i"]]),
+             "score": round(k["score"], 3), "model": k["kind"], "ix": k["ix"]} for k in merged]
+
+
+def gate(cands: list[dict], X: np.ndarray, p: np.ndarray, types: dict | None) -> np.ndarray:
+    """The V1 values of the typed transitions, applied to the classified candidates BEFORE the non-maximum suppression (a candidate
+    the user's thresholds refuse must not suppress a neighbour that passes them). `types` is params/rhythm.json "types" as the V1
+    values resolved it, and a key that is absent is not a gate:
+      fade / dissolve / whip   a kind that is switched off is never typed;
+      fade_around_min, whip_around_min    the two ends of the span must differ by at least this (mean luma, 0 to 1);
+      dissolve_total_min      the same for a dissolve; dissolve_resid_max: the middle pictures must sit within this of the straight mix.
+    The classifier already reads these measures (d_end, resid_mix); a threshold is a way for a person to ask for MORE than it asks,
+    which is why the pipeline passes only the values that differ from the declared defaults (rhythm_pipeline.typed_spans)."""
+    if not types:
+        return np.asarray(p, dtype=float)
+    idx = {k: i for i, k in enumerate(FEATURES)}
+    out = np.array(p, dtype=float)
+    for r, c in enumerate(cands):
+        kind = OUT_KIND[c["kind"]]
+        d_end = X[r, idx["d_end"]]
+        if kind == "fade":
+            ok = bool(types.get("fade", True)) and d_end >= types.get("fade_around_min", 0.0)
+        elif kind == "dissolve":
+            resid = X[r, idx["resid_mix"]] * d_end
+            ok = bool(types.get("dissolve", True)) and d_end >= types.get("dissolve_total_min", 0.0) and resid <= types.get("dissolve_resid_max", 1.0)
+        else:
+            ok = bool(types.get("whip", True)) and d_end >= types.get("whip_around_min", 0.0)
+        if not ok:
+            out[r] = 0.0
+    return out
+
+
+def spans(sig: dict, frames, probs: np.ndarray, model: dict, thr: float = 0.5, types: dict | None = None,
+          ctx: C.Ctx | None = None, base: list[dict] | None = None, cache: dict | None = None) -> tuple[list[dict], dict]:
+    """The typed transitions of one video: generate, describe, classify, gate, select. Returns (spans, detail); `detail` carries the
+    candidates, their features and their scores (the report and the tests read them)."""
+    ctx = ctx or C.Ctx(sig, frames)
+    cands = candidates(ctx, probs, base)
+    X = features(ctx, cands, frames, probs, cache)
+    p = score(model, X)
+    q = gate(cands, X, p, types)
+    kept = select(ctx, cands, q, thr=thr)
+    out = [{k: v for k, v in sp.items() if k != "ix"} for sp in kept]
+    return out, {"candidates": cands, "X": X, "p": p, "gated": q, "kept": kept}
+
+
+def load(path: Path | str | None = None) -> dict | None:
+    p = Path(path or MODEL)
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None

@@ -67,7 +67,8 @@ async function loadRefs() {
 function modulesHtml(modules) {
   const rows = modules.map((m) => {
     const w = m.value == null ? 0 : Math.max(0, Math.min(100, m.value * 100))
-    const gap = m.value == null ? 'not measured yet' : m.reached ? 'target reached' : `${((m.target - m.value) * 100).toFixed(1)} points to the target`
+    const limit = m.limited && m.ceiling != null ? ` · measured ceiling ${pct(m.ceiling)}` : ''
+    const gap = (m.value == null ? 'not measured yet' : m.reached ? 'target reached' : `${((m.target - m.value) * 100).toFixed(1)} points to the target`) + limit
     const cov = m.coverage != null ? ` · ${(m.coverage * 100).toFixed(0)}% of the film by code` : ''
     return `<div class="mod"><div class="mod-name"><span>${esc(m.label)}</span><small>${esc(m.hint)}</small></div>
       <div class="track" role="img" aria-label="${esc(m.label)} ${pct(m.value)} of 100"><span class="fill ${m.reached ? 'reached' : ''}" style="width:${w}%"></span>

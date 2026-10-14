@@ -1780,7 +1780,9 @@
   "duckMaxDb": 12.0,
   "momentaryWindowS": 0.4,
   "momentaryHopS": 0.1,
-  "panLaw": "constantPower"
+  "panLaw": "constantPower",
+  "ride": {"enabled": true, "binS": 0.05, "smooth": 0.001, "pull": 0.0001, "maxDb": 9.0, "peakMarginDb": 0.05, "anchors": [0.02, 0.1, 0.5, 2.0], "doc": "Gain ride of the assembled soundtrack (zrmd/audio/gainride.py): one dB value per bin that moves our short-term loudness curve onto the reference's, under the local true-peak headroom, stored as numbers in the version (ride.json) and replayable without the reference. anchors: weights tried on the overall scale, the best exact mix score wins. 14 October 2026. FR : la courbe de sonie en parametres."},
+  "drive": {"enabled": true, "gridDb": [1.0, 2.0, 3.0, 4.0, 6.0], "stopScore": 99.95, "doc": "Soft-clip drive ahead of the limiter (zrmd/audio/master.py): the density a brick-wall master has and a plain sum has not. The grid is walked in ascending order after 0 dB and the SMALLEST drive whose exact mix score reaches stopScore is kept, the best of the grid otherwise; stored as driveDb in ride.json. 14 October 2026. FR : la saturation avant le limiteur, la plus petite qui suffit."}
  },
  "verify": {
   "frameSeconds": 0.016667,

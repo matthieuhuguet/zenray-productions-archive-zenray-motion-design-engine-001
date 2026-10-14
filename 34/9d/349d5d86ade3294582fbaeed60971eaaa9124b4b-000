@@ -1,0 +1,212 @@
+# 14 October 2026: per-boundary signals of the rhythm module, computed ONCE on the decoded cache and shared by every method.
+# Cadence-aware front end: a run of identical pictures (a 30 fps animation stored at 60 fps, a still hold) is collapsed to one
+# picture, so every signal compares two DIFFERENT pictures and a cut is placed on the first frame of the new picture.
+# `src[j]` maps the j-th distinct picture to its frame index in the file; boundary j lies between distinct pictures j-1 and j.
+# FR : signaux par frontiere, calcules une fois sur le cache decode ; les images identiques consecutives sont fusionnees,
+# donc un signal compare toujours deux images differentes et une coupe tombe sur la premiere image de la nouvelle.
+from __future__ import annotations
+
+import cv2
+import numpy as np
+from scipy.ndimage import median_filter
+
+LUMA = np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+
+
+def gray_of(frames: np.ndarray) -> np.ndarray:
+    """(n, h, w) float32 in 0..1 from (n, h, w, 3) uint8."""
+    out = np.empty(frames.shape[:3], dtype=np.float32)
+    for a in range(0, len(frames), 512):
+        out[a:a + 512] = (frames[a:a + 512].astype(np.float32) @ LUMA) / 255.0
+    return out
+
+
+def adjacent_diff(frames: np.ndarray) -> np.ndarray:
+    """Mean absolute RGB difference between frame i-1 and i (0 for i = 0), on the raw frame grid."""
+    n = len(frames)
+    d = np.zeros(n, dtype=np.float64)
+    for a in range(1, n, 256):
+        b = min(n, a + 256)
+        cur = frames[a:b].astype(np.int16)
+        prev = frames[a - 1:b - 1].astype(np.int16)
+        d[a:b] = np.abs(cur - prev).mean(axis=(1, 2, 3)) / 255.0
+    return d
+
+
+def distinct_index(diff: np.ndarray, eps: float) -> np.ndarray:
+    """Frame indices where the picture differs from the previous one (index 0 always starts a picture)."""
+    keep = diff >= eps
+    keep[0] = True
+    return np.nonzero(keep)[0]
+
+
+def _hist(frame: np.ndarray, bins: int = 8) -> np.ndarray:
+    q = (frame.astype(np.int32) * bins) // 256
+    idx = q[..., 0] * bins * bins + q[..., 1] * bins + q[..., 2]
+    h = np.bincount(idx.ravel(), minlength=bins ** 3).astype(np.float64)
+    return h / max(h.sum(), 1.0)
+
+
+def _edges(gray: np.ndarray) -> np.ndarray:
+    g = gray * 255.0
+    gx = np.abs(np.diff(g, axis=1, prepend=g[:, :1]))
+    gy = np.abs(np.diff(g, axis=0, prepend=g[:1, :]))
+    return (gx + gy) > 24.0
+
+
+def _ssim(a: np.ndarray, b: np.ndarray) -> float:
+    c1, c2 = 0.01 ** 2, 0.03 ** 2
+    k = (7, 7)
+    ma, mb = cv2.blur(a, k), cv2.blur(b, k)
+    saa = cv2.blur(a * a, k) - ma * ma
+    sbb = cv2.blur(b * b, k) - mb * mb
+    sab = cv2.blur(a * b, k) - ma * mb
+    s = ((2 * ma * mb + c1) * (2 * sab + c2)) / ((ma * ma + mb * mb + c1) * (saa + sbb + c2))
+    return float(s.mean())
+
+
+def _phash(gray: np.ndarray) -> np.ndarray:
+    small = cv2.resize(gray, (32, 32), interpolation=cv2.INTER_AREA).astype(np.float32)
+    dct = cv2.dct(small)[:8, :8].ravel()
+    return dct[1:] > np.median(dct[1:])
+
+
+def _block_unexplained(prev: np.ndarray, cur: np.ndarray, radius: int, grid=(8, 6), dark: float = 10 / 255.0,
+                       change: float = 12 / 255.0) -> float:
+    """Content-weighted share of `cur` that no small shift of `prev` explains (block matching, +-radius px)."""
+    gx, gy = grid
+    h, w = cur.shape
+    bh, bw = h // gy, w // gx
+    hh, ww = bh * gy, bw * gx
+    pad = np.pad(prev, radius, mode="edge")
+    best = np.full((gy, gx), np.inf, dtype=np.float32)
+    for dy in range(-radius, radius + 1):
+        for dx in range(-radius, radius + 1):
+            sh = pad[radius + dy:radius + dy + hh, radius + dx:radius + dx + ww]
+            d = np.abs(sh - cur[:hh, :ww]).reshape(gy, bh, gx, bw).mean(axis=(1, 3))
+            np.minimum(best, d, out=best)
+    cb = cur[:hh, :ww].reshape(gy, bh, gx, bw)
+    pb = prev[:hh, :ww].reshape(gy, bh, gx, bw)
+    weight = np.maximum(cb.mean(axis=(1, 3)), pb.mean(axis=(1, 3))) + 0.5 * np.maximum(cb.std(axis=(1, 3)), pb.std(axis=(1, 3)))
+    live = weight >= dark
+    total = float(weight[live].sum())
+    return float(weight[live & (best >= change)].sum() / total) if total > 0 else 0.0
+
+
+def _farneback_residual(prev: np.ndarray, cur: np.ndarray) -> float:
+    p, c = (prev * 255).astype(np.uint8), (cur * 255).astype(np.uint8)
+    flow = cv2.calcOpticalFlowFarneback(p, c, None, 0.5, 3, 15, 3, 5, 1.2, 0)
+    h, w = p.shape
+    gx, gy = np.meshgrid(np.arange(w, dtype=np.float32), np.arange(h, dtype=np.float32))
+    warped = cv2.remap(prev, gx + flow[..., 0], gy + flow[..., 1], cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    return float(np.abs(warped - cur).mean())
+
+
+def _patch_agree(p: np.ndarray, c: np.ndarray, a: np.ndarray, b: np.ndarray, r: int = 4, tol: float = 14.0) -> np.ndarray:
+    """The tracked point must look like the original one: mean absolute difference of the (2r+1)^2 patches, in 0..255.
+    Without this check Lucas-Kanade "tracks" textureless regions of two unrelated pictures with zero flow."""
+    h, w = p.shape
+    out = np.zeros(len(a), bool)
+    for k, ((x0, y0), (x1, y1)) in enumerate(zip(a, b)):
+        x0, y0, x1, y1 = int(round(x0)), int(round(y0)), int(round(x1)), int(round(y1))
+        if min(x0, y0, x1, y1) < r or x0 >= w - r or x1 >= w - r or y0 >= h - r or y1 >= h - r:
+            out[k] = True  # border points cannot be judged: keep the track verdict
+            continue
+        pa = p[y0 - r:y0 + r + 1, x0 - r:x0 + r + 1].astype(np.int16)
+        pb = c[y1 - r:y1 + r + 1, x1 - r:x1 + r + 1].astype(np.int16)
+        out[k] = float(np.abs(pa - pb).mean()) < tol
+    return out
+
+
+def _feature_loss(prev: np.ndarray, cur: np.ndarray) -> float:
+    """1 - share of corner features that Lucas-Kanade tracks forward and back to the same place."""
+    p, c = (prev * 255).astype(np.uint8), (cur * 255).astype(np.uint8)
+    pts = cv2.goodFeaturesToTrack(p, 120, 0.01, 4)
+    if pts is None or len(pts) < 8:
+        return float("nan")
+    fwd, st, _ = cv2.calcOpticalFlowPyrLK(p, c, pts, None, winSize=(15, 15), maxLevel=3)
+    back, st2, _ = cv2.calcOpticalFlowPyrLK(c, p, fwd, None, winSize=(15, 15), maxLevel=3)
+    err = np.linalg.norm((back - pts).reshape(-1, 2), axis=1)
+    ok = (st.ravel() == 1) & (st2.ravel() == 1) & (err < 0.7)
+    ok &= _patch_agree(p, c, pts.reshape(-1, 2), fwd.reshape(-1, 2))
+    return float(1.0 - ok.mean())
+
+
+def _phase_loss(prev: np.ndarray, cur: np.ndarray, window: np.ndarray) -> float:
+    (_, _), response = cv2.phaseCorrelate(prev.astype(np.float64), cur.astype(np.float64), window)
+    return float(1.0 - min(max(response, 0.0), 1.0))
+
+
+def compute(frames: np.ndarray, dup_eps: float = 1e-4, bm_prefilter: float = 0.012, bm_radius: int = 6) -> dict:
+    """All signals over the distinct-picture boundaries. Every array has length m (index 0 is 0); `src` maps to frame indices.
+
+    Signals (principle in one line each):
+      mad      mean absolute luma difference (pixel)            chi   colour histogram chi-square (global colour)
+      ecr      edge change ratio (structure appears/disappears) ssim  1 - structural similarity
+      phash    perceptual hash Hamming distance (DCT sign bits) cld   spatial colour layout distance (8x8 mean colour)
+      bm       block-matching unexplained share (motion compensated, gated by mad)
+      flow     Farneback flow-compensated residual              feat  corner features lost by Lucas-Kanade
+      phase    1 - phase correlation peak (global translation)  win2/win4/win8  two-sided window distance
+      luma, lstd  mean and spread of luma (fades, flashes)
+    """
+    diff = adjacent_diff(frames)
+    src = distinct_index(diff, dup_eps)
+    m = len(src)
+    pics = np.asarray(frames[src])
+    gray = gray_of(pics)
+    out = {"src": src, "m": m, "diff_full": diff}
+    names = ["mad", "chi", "ecr", "ssim", "phash", "cld", "bm", "flow", "feat", "phase"]
+    sig = {k: np.zeros(m, dtype=np.float64) for k in names}
+    window = cv2.createHanningWindow((gray.shape[2], gray.shape[1]), cv2.CV_64F)
+    hist = [_hist(pics[j]) for j in range(m)]
+    edges = [_edges(gray[j]) for j in range(m)]
+    hashes = [_phash(gray[j]) for j in range(m)]
+    layout = [cv2.resize(pics[j], (8, 8), interpolation=cv2.INTER_AREA).astype(np.float32) / 255.0 for j in range(m)]
+    for j in range(1, m):
+        p, c = gray[j - 1], gray[j]
+        sig["mad"][j] = float(np.abs(c - p).mean())
+        h0, h1 = hist[j - 1], hist[j]
+        den = h0 + h1
+        ok = den > 0
+        sig["chi"][j] = float(0.5 * np.sum((h0[ok] - h1[ok]) ** 2 / den[ok]))
+        e0, e1 = edges[j - 1], edges[j]
+        ent = np.logical_and(e1, ~e0).sum() / max(e1.sum(), 1)
+        ext = np.logical_and(e0, ~e1).sum() / max(e0.sum(), 1)
+        sig["ecr"][j] = float(max(ent, ext))
+        sig["ssim"][j] = 1.0 - _ssim(p, c)
+        sig["phash"][j] = float(np.count_nonzero(hashes[j - 1] != hashes[j]) / 63.0)
+        sig["cld"][j] = float(np.abs(layout[j - 1] - layout[j]).mean())
+        sig["phase"][j] = _phase_loss(p, c, window)
+        sig["flow"][j] = _farneback_residual(p, c)
+        f = _feature_loss(p, c)
+        sig["feat"][j] = 0.0 if np.isnan(f) else f
+        if sig["mad"][j] >= bm_prefilter:
+            sig["bm"][j] = _block_unexplained(p, c, bm_radius)
+    out.update(sig)
+    # Two-sided window distances: mean of k pictures after the boundary against mean of k pictures before it.
+    cum = np.concatenate([np.zeros((1,) + gray.shape[1:], dtype=np.float32), np.cumsum(gray, axis=0, dtype=np.float32)])
+    for k in (2, 4, 8):
+        w = np.zeros(m, dtype=np.float64)
+        for j in range(1, m):
+            a0, a1 = max(0, j - k), j
+            b0, b1 = j, min(m, j + k)
+            ma = (cum[a1] - cum[a0]) / (a1 - a0)
+            mb = (cum[b1] - cum[b0]) / (b1 - b0)
+            w[j] = float(np.abs(mb - ma).mean())
+        out[f"win{k}"] = w
+    out["luma"] = gray.reshape(m, -1).mean(axis=1)
+    out["lstd"] = gray.reshape(m, -1).std(axis=1)
+    return out
+
+
+def codec_signal(sizes: np.ndarray, keys: np.ndarray, src: np.ndarray, half: int = 8) -> dict:
+    """Compressed size of each distinct picture against its local median (log ratio), and the key-frame flag."""
+    m = len(src)
+    s = sizes[src].astype(np.float64)
+    base = median_filter(np.maximum(s, 1.0), size=2 * half + 1, mode="nearest")
+    return {"size": np.log(np.maximum(s, 1.0) / base).clip(min=0.0), "key": keys[src].astype(np.float64)}
+
+
+def local_median(values: np.ndarray, half: int, active: np.ndarray | None = None) -> np.ndarray:
+    """Median of the neighbourhood (the centre included: a lone spike cannot move a median over 2*half+1 values)."""
+    return median_filter(values, size=2 * half + 1, mode="nearest")

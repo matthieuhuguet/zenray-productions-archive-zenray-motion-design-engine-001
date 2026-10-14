@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+# 14 October 2026: one spectral trim in its own process (zrmd/audio/trim.py). MusicTrim starts one per stem so the four stems calibrate
+# side by side instead of one after the other; a plain subprocess (no multiprocessing pool) so nothing is left behind when the parent dies.
+#   TrimWorker.py <in.npz> <out.npz>      in: ref, ours, sr, params(json)      out: signal, report(json)
+# FR : un calage spectral dans son propre processus ; lance par MusicTrim, un par piste.
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from zrmd.audio import trim as T  # noqa: E402
+
+
+def main() -> int:
+    src = np.load(sys.argv[1], allow_pickle=False)
+    c = json.loads(str(src["params"]))
+    name = Path(sys.argv[1]).name.split(".in.npz")[0]
+    if int(src["calibrate"]) if "calibrate" in src.files else 0:
+        from zrmd.audio import calibration as CAL
+        y, rep, cal = T.trim_calibrated(src["ref"], src["ours"], int(src["sr"]), c)
+        arrays, meta = CAL.to_arrays(name, cal)
+        np.savez(sys.argv[2], signal=y.astype(np.float32), report=json.dumps(rep, default=float), calmeta=json.dumps(meta, default=float), **arrays)
+    else:
+        y, rep = T.trim(src["ref"], src["ours"], int(src["sr"]), c)
+        np.savez(sys.argv[2], signal=y.astype(np.float32), report=json.dumps(rep, default=float))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

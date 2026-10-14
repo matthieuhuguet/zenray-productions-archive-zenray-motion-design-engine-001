@@ -1,0 +1,149 @@
+# 14 October 2026: the additive tonal synthesis of zrmd/audio/sms.py as a compiled kernel (numba), for the interactive studio. Same model, same
+# numbers: sines at h * f0 whose amplitude follows the measured dB table over time (plus the per-note deviation), a note-wide attack and release.
+# Three changes of ARITHMETIC, none of MODEL: the sine of every harmonic comes from one rotation per sample (sin(h*theta + phase_h) from the
+# complex power of exp(i*theta)) instead of one sine call per harmonic; the amplitude is evaluated every BLOCK samples in dB and interpolated
+# linearly in amplitude between (a dB table is piecewise linear in time, a block is under half a millisecond); everything runs in one pass without
+# temporaries. Measured against the reference implementation by tests/test_sms_fast.py (SNR, both directions). The reference stays sms.tonal_note.
+# FR : la synthese additive de sms.py en noyau compile ; meme modele, arithmetique plus rapide, prouve contre la reference.
+from __future__ import annotations
+
+import math
+
+import numpy as np
+from numba import njit
+
+from . import sms
+
+BLOCK = 16
+
+
+@njit(cache=True)
+def _interp_db(x, knots, vals):
+    """np.interp semantics (held flat outside) for one scalar."""
+    n = knots.shape[0]
+    if x <= knots[0]:
+        return vals[0]
+    if x >= knots[n - 1]:
+        return vals[n - 1]
+    lo = 0
+    hi = n - 1
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        if knots[mid] <= x:
+            lo = mid
+        else:
+            hi = mid
+    w = (x - knots[lo]) / (knots[hi] - knots[lo])
+    return vals[lo] + w * (vals[hi] - vals[lo])
+
+
+@njit(cache=True)
+def _note_kernel(phase, nh, rows, knots, dur, devrows, devseg, dev_on, cosp, sinp, sr, amp0, rel, attack, out):
+    m = phase.shape[0]
+    a0 = np.empty(nh)
+    a1 = np.empty(nh)
+    da = np.empty(nh)
+    zr = np.empty(nh)
+    zi = np.empty(nh)
+    nb = (m + BLOCK - 1) // BLOCK
+    for h in range(nh):
+        t0 = 0.0
+        db = _interp_db(min(t0, dur), knots, rows[h])
+        if dev_on:
+            db += _interp_db(t0, devseg, devrows[h])
+        a1[h] = 10.0 ** (db / 20.0)
+    for b in range(nb):
+        i0 = b * BLOCK
+        i1 = min(i0 + BLOCK, m)
+        tt = (i0 + BLOCK) / sr
+        for h in range(nh):
+            a0[h] = a1[h]
+            db = _interp_db(min(tt, dur), knots, rows[h])
+            if dev_on:
+                db += _interp_db(tt, devseg, devrows[h])
+            a1[h] = 10.0 ** (db / 20.0)
+            da[h] = (a1[h] - a0[h]) / BLOCK
+        for i in range(i0, i1):
+            th = phase[i]
+            c1 = math.cos(th)
+            s1 = math.sin(th)
+            re = 1.0
+            im = 0.0
+            acc = 0.0
+            j = i - i0
+            for h in range(nh):
+                # z_h = z_(h-1) * z_1 ; sin(h th + phi_h) = Im(z_h) cos(phi_h) + Re(z_h) sin(phi_h)
+                nr = re * c1 - im * s1
+                im = re * s1 + im * c1
+                re = nr
+                acc += (a0[h] + da[h] * j) * (im * cosp[h] + re * sinp[h])
+            t = i / sr
+            g = amp0
+            if attack > 0.0:
+                g *= min(max(t / attack, 0.0), 1.0)
+            after = max(t - dur, 0.0)
+            g *= 10.0 ** (-3.0 * after / max(rel, 1e-3))
+            out[i] = g * acc
+
+
+def tonal_note(ev: dict, model: dict, macros: dict, T: dict, sr: int, transpose: float, rng: np.random.Generator) -> np.ndarray:
+    """Drop-in for sms.tonal_note (same arguments, same random stream, same result within numerical precision)."""
+    f0 = sms.note_hz(ev, transpose)
+    dur = max(ev["dur"], T["minGateS"])
+    rel = macros["releaseS"]
+    m = int(math.ceil((dur + rel) * sr))
+    t = np.arange(m, dtype=np.float64) / sr
+    knots = np.ascontiguousarray(np.asarray(model["knotsS"], np.float64) * macros["timeScale"])
+    tab = np.asarray(model["tableDb"], np.float64)
+    lc = np.log2(np.asarray(model["centresHz"], np.float64))
+    ft = np.full(m, f0)
+    if ev.get("glide"):
+        g0 = sms.midi_hz(ev["glide"]["fromMidi"] + transpose)
+        tau = max(ev["glide"].get("ms", 30.0), 1.0) / 1000.0 / 3.0
+        ft = f0 * (g0 / f0) ** np.exp(-t / tau)
+    phase = 2 * np.pi * np.cumsum(ft) / sr
+    nyq = min(T["fMax"], 0.45 * sr)
+    nh = 0
+    for h in range(1, T["harmonics"] + 1):
+        if h * f0 >= nyq:
+            break
+        nh = h
+    out = np.zeros(m, np.float64)
+    if nh == 0:
+        return out.astype(np.float32)
+    hs = np.arange(1, nh + 1, dtype=np.float64)
+    fh = hs * f0
+    lfh = np.log2(np.maximum(fh, 1.0))
+    rows = np.stack([np.interp(lfh, lc, tab[:, k]) for k in range(tab.shape[1])], axis=1)  # [H, K]
+    rows = rows + macros["tiltDbOct"] * np.log2(fh / T["tiltPivotHz"])[:, None]
+    dev_on = bool(ev.get("dev"))
+    if dev_on:
+        dv = ev["dev"]
+        seg = np.asarray(dv["segS"], np.float64)
+        if dv.get("devDur") and ev.get("dur"):
+            seg = seg * (ev["dur"] / dv["devDur"])
+        dtab = np.asarray(dv["db"], np.float64)
+        dlc = np.log2(np.asarray(dv["bandsHz"], np.float64))
+        devrows = np.stack([np.interp(lfh, dlc, dtab[:, k]) for k in range(dtab.shape[1])], axis=1)
+        devseg = np.ascontiguousarray(seg)
+    else:
+        devrows = np.zeros((nh, 1))
+        devseg = np.zeros(1)
+    ph0 = rng.uniform(0, 2 * np.pi, nh) * T["randomPhase"]  # same stream as one scalar draw per harmonic
+    _note_kernel(np.ascontiguousarray(phase), nh, np.ascontiguousarray(rows), knots, dur, np.ascontiguousarray(devrows), devseg, dev_on,
+                 np.cos(ph0), np.sin(ph0), float(sr), 10 ** ((ev["levelDb"] + macros["gainDb"]) / 20.0), float(rel), float(T["attackS"]), out)
+    return out.astype(np.float32)
+
+
+def render_tonal(notes: list[dict], model: dict, macros: dict, T: dict, sr: int, n: int, seed: int, transpose: float = 0.0, lead: float = 0.0) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    buf = np.zeros(n, np.float32)
+    for ev in notes:
+        y = tonal_note(ev, model, macros, T, sr, transpose, rng)
+        at = int(round((ev["t"] - lead) * sr))
+        if at < 0:
+            y, at = y[-at:], 0
+        k = min(len(y), n - at)
+        if k > 0:
+            buf[at:at + k] += y[:k]
+    return buf

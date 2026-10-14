@@ -1,0 +1,132 @@
+# 14 October 2026: the V1 user interface of the rhythm module (HDA law). The detector reads params/rhythm.json (the tuned winner,
+# internal thresholds); a person edits params/rhythm-v1-parameters.json or passes values by name:
+#   4 PRIMARY    the values that most change a storyboard (cut sensitivity, minimum shot, flashes, transitions);
+#   8 SECONDARY  the thresholds behind them, each one mapped to one internal key;
+#   16 TERTIARY  listed with their measured value and where they live (measurement constants, not exposed for editing).
+# A primary or a secondary value is applied in two places: `resolve` turns names into internal thresholds, `apply` turns the
+# detector output into the final cut list (minimum shot, flash and ramp handling). An unknown name raises an error that names it;
+# a value out of range raises an error that names the range (never a silent clamp).
+# FR : interface V1 du rythme : 4 valeurs primaires, 8 secondaires, 16 tertiaires (listees), erreurs nommees.
+from __future__ import annotations
+
+import copy
+import json
+from pathlib import Path
+
+PARAMS = Path(__file__).resolve().parents[2] / "params" / "rhythm.json"
+V1 = Path(__file__).resolve().parents[2] / "params" / "rhythm-v1-parameters.json"
+
+
+class RhythmParamError(ValueError):
+    """A V1 value that cannot be applied, with the name of the parameter in the message."""
+
+
+def interface(path: Path | str | None = None) -> dict:
+    return json.loads(Path(path or V1).read_text(encoding="utf-8"))
+
+
+def entries(doc: dict | None = None, tiers: tuple[str, ...] = ("primary", "secondary")) -> list[dict]:
+    doc = doc or interface()
+    return [dict(e, tier=t) for t in tiers for e in doc[t]]
+
+
+def defaults(doc: dict | None = None) -> dict:
+    return {e["name"]: e["default"] for e in entries(doc)}
+
+
+def _get(d: dict, path: str):
+    for k in path.split("."):
+        d = d[k]
+    return d
+
+
+def _set(d: dict, path: str, value) -> None:
+    keys = path.split(".")
+    for k in keys[:-1]:
+        d = d[k]
+    d[keys[-1]] = value
+
+
+def check(entry: dict, value):
+    """Validate one user value against its declaration; returns the value in its declared type."""
+    name = entry["name"]
+    if entry["kind"] == "choice":
+        if value not in entry["choices"]:
+            raise RhythmParamError(f"{name}: {value!r} is not one of {entry['choices']}")
+        return value
+    if entry["kind"] == "bool":
+        if not isinstance(value, bool):
+            raise RhythmParamError(f"{name}: expected true or false, got {value!r}")
+        return value
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        raise RhythmParamError(f"{name}: expected a number, got {value!r}") from None
+    lo, hi = entry["range"]
+    if not lo <= v <= hi:
+        raise RhythmParamError(f"{name}: {v} is outside the range [{lo}, {hi}] ({entry.get('unit', '')})")
+    return v
+
+
+def resolve(values: dict | None = None, base: dict | None = None, doc: dict | None = None) -> tuple[dict, dict]:
+    """(internal parameters, plan). `values` maps V1 names to user values; the others keep their declared default."""
+    doc = doc or interface()
+    prm = copy.deepcopy(base or json.loads(PARAMS.read_text(encoding="utf-8")))
+    known = {e["name"]: e for e in entries(doc)}
+    values = dict(values or {})
+    for name in values:
+        if name not in known:
+            raise RhythmParamError(f"unknown rhythm parameter {name!r}; known: {sorted(known)}")
+    chosen = {}
+    for name, e in known.items():
+        chosen[name] = check(e, values.get(name, e["default"]))
+        for m in e.get("maps", []):
+            if m["how"] == "set":
+                _set(prm, m["key"], chosen[name])
+            elif m["how"] == "scale":
+                # value = base * (1 + gain * (neutral - user)): a positive gain makes the threshold fall as the value rises. The
+                # neutral point is the value at which the tuned base applies unchanged; editing `default` in the file moves the
+                # user's value, never the neutral point (14 October 2026)
+                b = _get(prm, m["key"])
+                v = b * (1.0 + m["gain"] * (e.get("neutral", e["default"]) - chosen[name]))
+                _set(prm, m["key"], min(max(v, m["min"]), m["max"]))
+            elif m["how"] == "plan":
+                pass   # read by `apply`, not by the detector
+            else:
+                raise RhythmParamError(f"{name}: unknown mapping {m['how']!r}")
+    plan = {"min_shot_s": float(chosen.get("min_shot_s", 0.0)), "flashes": chosen.get("flashes", "ignore"),
+            "ramps": chosen.get("transitions", "typed"), "values": chosen}
+    return prm, plan
+
+
+def _strength(c: dict) -> float:
+    """How much a cut deserves to survive a minimum-shot merge: a typed ramp is decisive, a hard cut weighs its decision score
+    (the fusion probability, or the replaced share for the rule fallback)."""
+    if c["kind"] in ("dissolve", "fade", "whip") or c.get("was") in ("dissolve", "fade", "whip"):
+        return 1.0
+    return float(c["score"] if c.get("score") is not None else (c.get("U") or 0.0))
+
+
+def apply(out: dict, plan: dict, fps: float, n: int) -> list[dict]:
+    """The final cut list: flashes and ramps handled as asked, then the minimum shot length."""
+    cuts = [dict(c) for c in out["cuts"]]
+    if plan["ramps"] == "as_cuts":
+        cuts = [dict(c, kind="hard", was=c["kind"]) if c["kind"] in ("dissolve", "fade", "whip") else c for c in cuts]
+    elif plan["ramps"] == "ignore":
+        cuts = [c for c in cuts if c["kind"] not in ("dissolve", "fade", "whip")]
+    flashes = [dict(f) for f in out.get("flashes", [])]
+    if plan["flashes"] == "cut":
+        cuts += [dict(f, kind="hard", was="flash") for f in flashes]
+        flashes = []
+    cuts.sort(key=lambda c: c["frame"])
+    gap = int(round(plan["min_shot_s"] * fps))
+    if gap > 1:
+        kept: list[dict] = []
+        for c in cuts:
+            if kept and c["frame"] - kept[-1]["frame"] < gap:
+                if _strength(c) > _strength(kept[-1]):
+                    kept[-1] = c
+                continue
+            kept.append(c)
+        cuts = kept
+    return sorted(cuts + flashes, key=lambda c: c["frame"])

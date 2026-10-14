@@ -1,0 +1,141 @@
+{
+ "schema": "zrmd/sfx-trim@1",
+ "date": "14 October 2026",
+ "doc": "Interface of zrmd/audio/sfxtrim.py (HDA law): the last-mile calibration of ONE fitted sound-effect event. A smooth time-varying EQ (dB per band and STFT frame) is applied to the event's fitted bank chain and optimised by gradient descent on the official perceptual loss (ploss, the quantity the event score is made of) blended with its seed-invariant variant (stochasticWeight, 0.5), so a noise is judged both on its exact cells and on its expected spectrum, against the reference window of the event's own stem. The B1 score (describe.compare, a different set of cues) is never optimised: it is the audit. The gains are stored with the event (fit.trim), so every renderer applies them; only band levels measured on the reference enter, never its samples. FR : EQ temps-frequence lisse par evenement, optimise sur la perte perceptive officielle ; B1 sert d'audit.",
+ "stft": {
+  "nFft": 2048,
+  "hop": 256
+ },
+ "bands": {
+  "count": 120,
+  "fMin": 50.0,
+  "fMax": 18000.0
+ },
+ "optimiser": {
+  "steps": 500,
+  "lr": 0.12,
+  "patience": 120
+ },
+ "limits": {
+  "maxBoostDb": 18.0,
+  "maxCutDb": 40.0
+ },
+ "regularisation": {
+  "timeDb": 0.4,
+  "freqDb": 0.15,
+  "ridgeDb": 0.004
+ },
+ "storeDecimals": 2,
+ "targets": {
+  "event": 99.9,
+  "auditMaxDropB1": 2.0
+ },
+ "stochasticWeight": 0.5,
+ "ceilingSeeds": [
+  11,
+  12,
+  13
+ ],
+ "spectral": {
+  "_doc": "14 October 2026: the music spectral trim (zrmd/audio/trim.py, layouts and caps in params/music-trim.json) applied to a sound-effect window by zrmd/audio/sfxspectral.py. A variant lists only what it changes over music-trim. padSeconds of zeros surround a short window so no frame is mirrored. 'fine' keeps the layouts a 0.2 to 1.8 s window can resolve (FFT up to 2048); 'full' is the music configuration unchanged (its 16384 and 24576 FFT cannot resolve a short event: with one or two frames the gain copies the periodogram of the reference, which the experiment of 14 October 2026 measures). FR : calage spectral de la musique applique a un evenement SFX.",
+  "padSeconds": 0.1,
+  "base": {
+   "_doc": "14 October 2026: laid over params/music-trim.json for every SFX variant. The two guards the music added the same day against an infrasonic thump on bass stems are OFF for a short effect: minResolvedBins 0 (no gain on the bins a frame cannot resolve) and highpassHz 0 (zero-phase high-pass after each pass). Measured on four Opus events (E001 kick, E003, E005, E008), shared trim alone, official score: both off 94.1 / 95.7 / 95.9 / 94.4; guard only 90.5 / 90.5 / 94.0 / 89.5; high-pass only 92.4 / 89.3 / 94.0 / 92.9; both on 91.0 / 88.5 / 93.7 / 91.1. The 18 Hz high-pass doubles the envelope error of a 0.5 s window (E003 1.10 to 2.72 JND): the reference window carries that low-frequency thump of the event. FR : les deux garde-fous de la musique sont coupes pour un effet court, mesure sur quatre evenements.",
+   "minResolvedBins": 0,
+   "highpassHz": 0.0
+  },
+  "variants": {
+   "full": {},
+   "fine": {
+    "train": [
+     "critic",
+     "mel",
+     "fast"
+    ],
+    "audit": [
+     "auditMid",
+     "auditMel"
+    ],
+    "jitter": {
+     "choices": {
+      "nFft": [
+       512,
+       1024,
+       2048
+      ]
+     }
+    }
+   },
+   "fine-plain": {
+    "train": [
+     "critic",
+     "mel",
+     "fast"
+    ],
+    "audit": [
+     "auditMid",
+     "auditMel"
+    ],
+    "jitter": {
+     "choices": {
+      "nFft": [
+       512,
+       1024,
+       2048
+      ]
+     }
+    },
+    "fill": {
+     "enabled": false
+    },
+    "finisher": {
+     "enabled": false
+    }
+   },
+   "critic-only": {
+    "train": [
+     "critic"
+    ],
+    "audit": [
+     "auditMid",
+     "auditMel"
+    ],
+    "jitter": null,
+    "fill": {
+     "enabled": false
+    },
+    "finisher": {
+     "enabled": false
+    }
+   }
+  }
+ },
+ "pipeline": {
+  "_doc": "14 October 2026: the cook of one event, stages in order. 'spectral' = the shared multi-resolution trim of the music (variant named in spectral.variants), 'eq' = the per-event gradient EQ on the official loss, run on the output of the stage before. Both stages leave the chain untouched; the result is stored baked with the hash of the chain. ['eq'] alone keeps the pre-existing record format (gains only). FR : la cuisson d'un evenement, etapes dans l'ordre. 14 October 2026 (third pass): variant 'full' (the music layouts unchanged, the two guards off) replaced 'fine'. Same official, seed-invariant, critic and audit within 0.1 on Opus, but the B1 audit (never optimised, it carries the pitch cue) is 91.4 against 80.4 after the EQ on Opus and 85.8 against 41.0 on two memo events: the gradient EQ after 'fine' moves the strongest line of a tonal event by up to 970 cents, the 1/12 and 1/18 octave layouts of 'full' keep it. FR : la variante complete, memes layouts que la musique.",
+  "stages": [
+   "spectral",
+   "eq"
+  ],
+  "variant": "full",
+  "eqSteps": null,
+  "bake": true,
+  "peakGuard": {
+   "_doc": "14 October 2026 (third pass): the last stage of the cook. The calibration matches band levels and short-term envelopes, which carry no information about a PEAK, and the cooked effects arrive with a crest factor above the reference window's: of 42 corpus events, 28 peak above the reference, 13 by more than 1 dB, 5 by more than 2 dB, up to 4.2 dB (OneKey E005 at 1.57 of full scale against 0.97 in the reference). The final mix pays that as limiter gain reduction on the music. A look-ahead limiter (lookaheadMs each side, true peak at the oversampling) brings the event peak to the reference window's peak plus marginDb, and touches nothing below. Measured on the 13 events over 1 dB: official score -0.03 on average (worst -0.10), seed-invariant -0.001, B1 -0.1. Only the PEAK LEVEL of the reference window enters (a level, like the band levels), never a sample. FR : un plafond de pic, la crete d'un effet ne depasse plus celle de la reference de plus de marginDb.",
+   "enabled": true,
+   "marginDb": 1.0,
+   "lookaheadMs": 1.5,
+   "oversample": 4
+  },
+  "b1Guard": {
+   "_doc": "14 October 2026 (third pass): the guard declared as targets.auditMaxDropB1 and enforced nowhere until now. After the EQ stage, B1 of its output is compared with B1 of its input; a fall of more than maxDropB1 points rejects the EQ (the event ships the shared spectral trim alone) PROVIDED the input passes the headline gate (params gate); otherwise the EQ stays and the report says so. Measured before the guard, official score against B1 on the cascade: memo E001 96.2 with B1 78.6 against 95.6 with B1 99.6 for the spectral trim alone, Opus E007 96.6 with 95.5 against 95.6 with 99.7. FR : le garde-fou B1 de l'EQ, enfin applique.",
+   "enabled": true,
+   "maxDropB1": 2.0
+  }
+ },
+ "gate": {
+  "_doc": "What '99.9 for SFX' means (14 October 2026). HEADLINE: the official loss with its seed-invariant variant (ploss.stochastic, the official terms with the cell noise of a seed taken out) at or above stochasticMin, AND the mean of the held-out audit layouts of the music (never optimised) at or above auditMin. MUSIC: the third-octave critic shared with the music (params/music-trim.json specs.critic) at or above criticMin, reported beside the headline. The cell-exact official score and the identity ceiling are reported, never a gate: a noise cannot match the cells of another noise without copying them (identity ceilings 86 to 100).",
+  "stochasticMin": 99.9,
+  "auditMin": 99.0,
+  "criticMin": 99.9
+ }
+}

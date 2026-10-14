@@ -1,0 +1,89 @@
+# 14 October 2026: ear-level checks that are NOT the quantity the trim optimises, so a gain in tfBands cannot hide a loss elsewhere.
+#   holdout_score  mel spectrogram (96 mels, 2048 FFT, 11.6 ms hop): finer in time and differently banded than the critic, same
+#                  weighted dB error, same 2 dB just-noticeable difference and base 0.99 scale (99.9 means about 0.63 dB mean error)
+#   bass_fine      1/12 octave bands from 20 to 400 Hz on long windows (16384 FFT): sees the partials and spectral lines a third-octave
+#                  band hides, which is where a thin or muddy bass shows
+#   cleanliness    what makes a track sound unfinished: clicks, crackle, hiss, DC, clipping, rumble, true peak, crest factor
+# FR : controles a l'oreille, differents de ce que la calibration optimise.
+from __future__ import annotations
+
+import math
+
+import numpy as np
+from scipy import signal
+
+from . import loudness
+
+JND_DB, FLOOR_DB, BASE = 2.0, 60.0, 0.99
+
+
+def _score(r: np.ndarray, o: np.ndarray) -> dict:
+    fl = r.max() - FLOOR_DB
+    r2, o2 = np.maximum(r, fl), np.maximum(o, fl)
+    w = np.maximum(r2, o2) - fl
+    E = float((w * np.abs(o2 - r2)).sum() / (w.sum() + 1e-9) / JND_DB)
+    return {"E": round(E, 4), "score": round(100 * BASE ** (E * E), 3), "meanAbsDb": round(E * JND_DB, 3)}
+
+
+def _mono(x: np.ndarray) -> np.ndarray:
+    return x if x.ndim == 1 else x.mean(axis=1)
+
+
+def holdout_score(ref: np.ndarray, ours: np.ndarray, sr: int) -> dict:
+    import librosa
+    n = min(len(ref), len(ours))
+    kw = dict(sr=sr, n_fft=2048, hop_length=512, n_mels=96, fmin=30.0, fmax=min(16000.0, sr / 2 - 100), power=2.0)
+    a = 10 * np.log10(librosa.feature.melspectrogram(y=_mono(ref)[:n].astype(np.float32), **kw) + 1e-12)
+    b = 10 * np.log10(librosa.feature.melspectrogram(y=_mono(ours)[:n].astype(np.float32), **kw) + 1e-12)
+    return _score(a, b)
+
+
+def _fine_bands(sr: int, n_fft: int, lo: float, hi: float, per_oct: int):
+    c = lo * 2 ** (np.arange(0, int(per_oct * math.log2(hi / lo)) + 1) / per_oct)
+    f = np.fft.rfftfreq(n_fft, 1.0 / sr)
+    lf, lc = np.log2(np.maximum(f, 1e-6)), np.log2(c)
+    return c, np.maximum(0.0, 1.0 - np.abs(lf[None, :] - lc[:, None]) * per_oct)
+
+
+def bass_fine(ref: np.ndarray, ours: np.ndarray, sr: int, lo: float = 20.0, hi: float = 400.0, per_oct: int = 12, n_fft: int = 16384) -> dict:
+    n = min(len(ref), len(ours))
+    c, W = _fine_bands(sr, n_fft, lo, hi, per_oct)
+
+    def power(x):
+        x = np.pad(_mono(x)[:n].astype(np.float64), (n_fft // 2, n_fft // 2), mode="reflect")
+        m = 1 + (len(x) - n_fft) // (n_fft // 4)
+        idx = np.arange(n_fft)[None, :] + (n_fft // 4) * np.arange(m)[:, None]
+        return 10 * np.log10(np.abs(np.fft.rfft(x[idx] * np.hanning(n_fft + 1)[:-1], axis=1)) ** 2 @ W.T + 1e-20).T
+
+    out = _score(power(ref), power(ours))
+    out["bands"] = int(len(c))
+    return out
+
+
+def cleanliness(x: np.ndarray, sr: int, c: dict | None = None) -> dict:
+    """The numbers that tell a finished mix from a rough one. Thresholds live in params/music-polish.json (clean section)."""
+    c = c or {"clickZ": 14.0, "crackleZ": 8.0}
+    m = _mono(x).astype(np.float64)
+    hp = signal.sosfiltfilt(signal.butter(4, 3000.0, "hp", fs=sr, output="sos"), m)
+    win = max(8, int(0.005 * sr))
+    scale = np.maximum(np.sqrt(np.convolve(hp ** 2, np.ones(win * 10) / (win * 10), mode="same")), 1e-6)
+    z = np.abs(np.diff(hp, prepend=hp[0])) / scale
+    peaks, _ = signal.find_peaks(z, height=c["clickZ"], distance=win)
+    hf = signal.sosfiltfilt(signal.butter(4, [8000.0, min(16000.0, sr / 2 - 200)], "bp", fs=sr, output="sos"), m)
+    env = np.abs(signal.hilbert(hf))
+    env = signal.sosfiltfilt(signal.butter(2, 600.0, "lp", fs=sr, output="sos"), env)
+    bg = signal.medfilt(env[:: max(1, sr // 1000)], 101)
+    ratio = env[:: max(1, sr // 1000)] / np.maximum(bg, 1e-7)
+    crackle, _ = signal.find_peaks(ratio, height=c["crackleZ"], distance=5)
+    dur = len(m) / sr
+    rumble = signal.sosfiltfilt(signal.butter(4, 22.0, "lp", fs=sr, output="sos"), m)
+    xx = x if x.ndim == 2 else x[:, None]
+    clipped = float((np.abs(xx) >= 0.999).mean())
+    air = signal.sosfiltfilt(signal.butter(4, min(15000.0, sr / 2 - 300), "hp", fs=sr, output="sos"), m)
+    frames = air[: len(air) // 4096 * 4096].reshape(-1, 4096)
+    hiss_floor = 10 * np.log10(np.percentile(np.sqrt((frames ** 2).mean(axis=1)), 5) + 1e-12)
+    rms = float(np.sqrt((m ** 2).mean()) + 1e-12)
+    return {"clicksPerSecond": round(len(peaks) / dur, 3), "cracklePerSecond": round(len(crackle) / dur, 3), "hissFloorDb": round(float(hiss_floor), 1),
+            "dc": round(float(m.mean()), 6), "clippedShare": round(clipped, 6), "rumbleShare": round(float((rumble ** 2).sum() / ((m ** 2).sum() + 1e-12)), 5),
+            "truePeakDbtp": round(loudness.true_peak_db(x, sr, 4), 2), "lufs": round(loudness.integrated(x, sr), 2),
+            "crestDb": round(20 * math.log10(float(np.abs(m).max()) / rms), 2)}

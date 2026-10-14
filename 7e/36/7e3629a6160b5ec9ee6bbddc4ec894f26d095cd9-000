@@ -1,0 +1,262 @@
+# 14 October 2026: the production polish of a finished track (stems or mix), applied AFTER the 1:1 calibration and kept as a separate
+# listening version. Stages, in order: (1) DC and sub rumble, (2) clicks repaired, (3) crackle bursts softened, (4) harsh resonances tamed,
+# (5) bass foundation (mono below the crossover, harmonics so the bass carries on small speakers, gentle dynamics), (6) a smooth look-ahead
+# true-peak limiter. Every stage is a parameter (params/music-polish.json); the report lists what changed. The benchmark is never touched.
+# FR : passe de finition d'une piste terminee, apres la calibration 1:1, en version d'ecoute separee.
+from __future__ import annotations
+
+import json
+import math
+from pathlib import Path
+
+import numpy as np
+from scipy import ndimage, signal
+
+from . import earcheck, loudness
+
+PARAMS = Path(__file__).resolve().parents[2] / "params" / "music-polish.json"
+
+
+def cfg() -> dict:
+    return json.loads(PARAMS.read_text(encoding="utf-8"))
+
+
+def _ch(x: np.ndarray) -> list[np.ndarray]:
+    return [x] if x.ndim == 1 else [x[:, i] for i in range(x.shape[1])]
+
+
+def _stack(chs: list[np.ndarray], like: np.ndarray) -> np.ndarray:
+    return (chs[0] if like.ndim == 1 else np.stack(chs, axis=1)).astype(np.float32)
+
+
+def _sos(kind: str, f, sr: int, order: int = 4):
+    return signal.butter(order, f, kind, fs=sr, output="sos")
+
+
+def _smooth_gain(gain: np.ndarray, sr: int, attack_ms: float, release_ms: float) -> np.ndarray:
+    """Attack/release smoothing of a linear gain curve (fast down, slow up), sample by sample in blocks of one sample via lfilter-like loop."""
+    a, r = math.exp(-1.0 / max(attack_ms * 1e-3 * sr, 1.0)), math.exp(-1.0 / max(release_ms * 1e-3 * sr, 1.0))
+    out = np.empty_like(gain)
+    g = 1.0
+    for i, v in enumerate(gain):
+        g = a * g + (1 - a) * v if v < g else r * g + (1 - r) * v
+        out[i] = g
+    return out
+
+
+# (1) DC and sub rumble --------------------------------------------------------------------------------------------------
+def remove_dc_rumble(x: np.ndarray, sr: int, c: dict) -> np.ndarray:
+    sos = _sos("hp", c["highpassHz"], sr, c["order"])
+    return _stack([signal.sosfiltfilt(sos, ch.astype(np.float64)) for ch in _ch(x)], x)
+
+
+# (2) clicks -------------------------------------------------------------------------------------------------------------
+def repair_clicks(x: np.ndarray, sr: int, c: dict) -> tuple[np.ndarray, int]:
+    """A click is a very short outlier of the high-passed derivative; the samples around it are re-drawn by a cubic through the clean samples on each side."""
+    out, total = [], 0
+    hp_sos = _sos("hp", c["highpassHz"], sr)
+    win = max(8, int(0.005 * sr))
+    half = max(2, int(c["repairMs"] * 1e-3 * sr / 2))
+    for ch in _ch(x):
+        m = ch.astype(np.float64)
+        hp = signal.sosfiltfilt(hp_sos, m)
+        scale = np.maximum(np.sqrt(np.convolve(hp ** 2, np.ones(win * 10) / (win * 10), mode="same")), 1e-6)
+        z = np.abs(np.diff(hp, prepend=hp[0])) / scale
+        peaks, _ = signal.find_peaks(z, height=c["zThreshold"], distance=win)
+        y = m.copy()
+        for p in peaks:
+            a, b = max(p - half - 3, 0), min(p + half + 4, len(y))
+            if b - a < 8:
+                continue
+            xs = np.r_[np.arange(a, a + 3), np.arange(b - 3, b)]
+            idx = np.arange(a + 3, b - 3)
+            y[idx] = np.polyval(np.polyfit(xs - a, y[xs], 3), idx - a)
+            total += 1
+        out.append(y)
+    return _stack(out, x), total
+
+
+# (3) crackle ------------------------------------------------------------------------------------------------------------
+def soften_crackle(x: np.ndarray, sr: int, c: dict) -> np.ndarray:
+    """Short bursts in the 8 to 16 kHz band that stand far above their neighbourhood get a fast gain reduction on that band only."""
+    out = []
+    lo, hi = c["bandHz"][0], min(c["bandHz"][1], sr / 2 - 300.0)
+    bp = _sos("bp", [lo, hi], sr)
+    for ch in _ch(x):
+        m = ch.astype(np.float64)
+        band = signal.sosfiltfilt(bp, m)
+        env = np.abs(signal.hilbert(band))
+        env = signal.sosfiltfilt(_sos("lp", 800.0, sr, 2), env)
+        bg = ndimage.median_filter(env[:: max(1, sr // 2000)], size=101)
+        bg = np.interp(np.arange(len(env)), np.arange(len(bg)) * max(1, sr // 2000), bg)
+        ratio = env / np.maximum(bg, 1e-7)
+        need = np.where(ratio > c["zThreshold"], np.maximum(10 ** (-c["maxReductionDb"] / 20.0), c["targetRatio"] / np.maximum(ratio, 1e-9)), 1.0)
+        need = ndimage.minimum_filter1d(need, size=max(3, int(c["lookaheadMs"] * 1e-3 * sr) | 1))   # look-ahead: the gain is already down when the burst starts
+        g = _smooth_gain(need, sr, c["attackMs"], c["releaseMs"])
+        out.append(m - band * (1.0 - g))
+    return _stack(out, x)
+
+
+# (4) harsh resonances ---------------------------------------------------------------------------------------------------
+def tame_resonances(x: np.ndarray, sr: int, c: dict) -> np.ndarray:
+    n, hop = c["nFft"], c["nFft"] // 4
+    f = np.fft.rfftfreq(n, 1.0 / sr)
+    band = (f >= c["bandHz"][0]) & (f <= c["bandHz"][1])
+    k = max(3, int(round(c["smoothOct"] * (band.sum()) / max(math.log2(c["bandHz"][1] / c["bandHz"][0]), 1e-6))))
+    out = []
+    win = np.hanning(n + 1)[:-1]
+    for ch in _ch(x):
+        y = np.pad(ch.astype(np.float64), (n, n + hop))
+        idx = np.arange(n)[None, :] + hop * np.arange(1 + (len(y) - n) // hop)[:, None]
+        S = np.fft.rfft(y[idx] * win, axis=1)
+        mag = np.abs(S) + 1e-12
+        smooth = np.exp(ndimage.uniform_filter1d(np.log(mag), size=k, axis=1))
+        excess = 20 * np.log10(mag / smooth)
+        cut = np.clip((excess - c["thresholdDb"]) * c["strength"], 0.0, c["maxCutDb"]) * band[None, :]
+        # time smoothing: a resonance is cut quickly and released slowly
+        a, r = math.exp(-hop / sr / (c["attackMs"] * 1e-3)), math.exp(-hop / sr / (c["releaseMs"] * 1e-3))
+        sm = np.zeros_like(cut)
+        prev = np.zeros(cut.shape[1])
+        for i in range(len(cut)):
+            prev = np.where(cut[i] > prev, a * prev + (1 - a) * cut[i], r * prev + (1 - r) * cut[i])
+            sm[i] = prev
+        frames = np.fft.irfft(S * 10 ** (-sm / 20.0), n, axis=1) * win
+        res = np.zeros(hop * (len(frames) - 1) + n)
+        norm = np.zeros_like(res)
+        for i, fr in enumerate(frames):
+            res[i * hop:i * hop + n] += fr
+            norm[i * hop:i * hop + n] += win ** 2
+        out.append((res / np.maximum(norm, 1e-8))[n:n + len(ch)])
+    return _stack(out, x)
+
+
+# (5) bass foundation ----------------------------------------------------------------------------------------------------
+def _compress_band(x: np.ndarray, sr: int, c: dict) -> np.ndarray:
+    env = np.sqrt(ndimage.uniform_filter1d(x ** 2, size=max(8, int(0.01 * sr))) + 1e-12)
+    db = 20 * np.log10(env + 1e-12)
+    threshold = 20 * np.log10(np.sqrt((x ** 2).mean()) + 1e-12) + c["thresholdRelRmsDb"]     # relative to the band's own level: only excursions above the average are tightened
+    red = np.maximum(db - threshold, 0.0) * (1.0 - 1.0 / c["ratio"])
+    g = _smooth_gain(10 ** (-red / 20.0), sr, c["attackMs"], c["releaseMs"])
+    return x * g
+
+
+def bass_foundation(x: np.ndarray, sr: int, c: dict) -> np.ndarray:
+    """Split at the crossover (Linkwitz-Riley 4), make the low band mono, control it gently and add soft harmonics of the 40 to 110 Hz band
+    so the bass is heard on small speakers; the high band is untouched, so the rest of the track keeps its measured tone."""
+    lo_sos = _sos("lp", c["crossoverHz"], sr, 2)
+    # 14 October 2026: ONE forward-backward pass of a 2nd-order Butterworth = the LR4 magnitude with zero phase, and the high band is the exact
+    # complement (x minus low), so low + high is the input to the last bit. The first version ran each section twice (LP^2 + HP^2, a 3 dB dip
+    # at the crossover) and cost every polished mix 0.3 on the mono critic. FR : coupure plate, la bande haute est le complement exact.
+    chs = [ch.astype(np.float64) for ch in _ch(x)]
+    lows = [signal.sosfiltfilt(lo_sos, ch) for ch in chs]
+    highs = [ch - lo for ch, lo in zip(chs, lows)]
+    if c["monoBelow"] and len(lows) == 2:
+        mid = 0.5 * (lows[0] + lows[1])
+        lows = [mid, mid]
+    if c["control"]["enabled"]:
+        lows = [_compress_band(lo, sr, c["control"]) for lo in lows]
+    if c["harmonics"]["enabled"]:
+        h = c["harmonics"]
+        src_sos = _sos("bp", [h["bandHz"][0], h["bandHz"][1]], sr, 2)
+        hp70 = _sos("hp", h["highpassHz"], sr, 2)
+        add = []
+        for lo in lows:
+            band = signal.sosfiltfilt(src_sos, lo)
+            peak = max(float(np.abs(band).max()), 1e-6)
+            sat = np.tanh(h["drive"] * band / peak) * peak                     # soft clip: odd harmonics of the band
+            sat = signal.sosfiltfilt(hp70, sat)                                # keep only the harmonics, not the fundamental again
+            add.append(sat * 10 ** (h["mixDb"] / 20.0))
+        lows = [lo + a for lo, a in zip(lows, add)]
+    return _stack([lo + hi for lo, hi in zip(lows, highs)], x)
+
+
+# (6) limiter ------------------------------------------------------------------------------------------------------------
+def true_peak_limit(x: np.ndarray, sr: int, c: dict) -> np.ndarray:
+    """Smooth look-ahead true-peak limiter. need = ceiling / oversampled peak where the peak exceeds the ceiling; a minimum over the look-ahead
+    window brings the gain down BEFORE the peak, a mean over half that window rounds the corners (it can never rise above the need at the peak, every
+    value in it is at most that need), and an exponential release brings it back. One static trim of the measured excess closes the last 0.1 dB."""
+    ceil = 10 ** (c["ceilingDbtp"] / 20.0)
+    ov = c["oversample"]
+    xs = x if x.ndim == 2 else x[:, None]
+    up = signal.resample_poly(xs, ov, 1, axis=0)
+    peak = np.abs(up).max(axis=1)[: len(xs) * ov].reshape(len(xs), ov).max(axis=1)
+    need = np.minimum(1.0, ceil / np.maximum(peak, 1e-9))
+    look = max(2, int(c["lookaheadMs"] * 1e-3 * sr))
+    sm = ndimage.uniform_filter1d(ndimage.minimum_filter1d(need, size=2 * look + 1), size=max(2, look))
+    rel = math.exp(-1.0 / max(c["releaseMs"] * 1e-3 * sr, 1.0))
+    gain = np.empty_like(sm)
+    g = 1.0
+    for i, v in enumerate(sm):
+        g = min(v, rel * g + (1.0 - rel))
+        gain[i] = g
+    y = xs * gain[:, None]
+    tp = loudness.true_peak_db(y, sr, ov)
+    if tp > c["ceilingDbtp"]:
+        y = y * 10 ** ((c["ceilingDbtp"] - tp) / 20.0)
+    return (y if x.ndim == 2 else y[:, 0]).astype(np.float32)
+
+
+# the whole pass ---------------------------------------------------------------------------------------------------------
+def polish(x: np.ndarray, sr: int, c: dict | None = None, stages: list[str] | None = None, reference: np.ndarray | None = None,
+           kind: str = "mix") -> tuple[np.ndarray, dict]:
+    """Run the stages (all by default) and return the polished track with a report of what each stage did.
+    14 October 2026: `reference` (the reference signal of the same stem or mix) makes the clicks and crackle criteria RELATIVE: a hi-hat stem or a
+    loud master has crackle bursts by the detector's definition (measured: 7.6 per second in the reference mix of a track, 0.03 click per
+    second in its reference drums), and demanding zero from our render is demanding less than the reference. `kind="stem"` leaves the true-peak
+    and clipping criteria out: a stem is summed into a mix that is limited, not limited itself. The absolute verdict stays in `cleanAbsolute`.
+    FR : les criteres de clics et de crepitements sont relatifs a la reference quand on la donne ; le verdict absolu reste dans cleanAbsolute."""
+    c = c or cfg()
+    run = set(stages or ["dc", "declick", "decrackle", "resonance", "bass", "limiter"])
+    y = x.astype(np.float32)
+    det = {"clickZ": c["declick"]["zThreshold"], "crackleZ": c["decrackle"]["zThreshold"]}
+    rep = {"before": earcheck.cleanliness(y, sr, det), "stages": {}}
+    lufs0 = loudness.integrated(y, sr)
+    if "dc" in run:
+        y = remove_dc_rumble(y, sr, c["dcRumble"])
+    if "declick" in run and c["declick"]["enabled"]:
+        y, n = repair_clicks(y, sr, c["declick"])
+        rep["stages"]["declick"] = {"repaired": n}
+    if "decrackle" in run and c["decrackle"]["enabled"]:
+        y = soften_crackle(y, sr, c["decrackle"])
+    if "resonance" in run and c["resonance"]["enabled"]:
+        y = tame_resonances(y, sr, c["resonance"])
+    if "bass" in run and c["bass"]["enabled"]:
+        y = bass_foundation(y, sr, c["bass"])
+    if c["loudness"]["match"] and "limiter" in run:
+        y = (y * 10 ** ((lufs0 - loudness.integrated(y, sr)) / 20.0)).astype(np.float32)
+    if "limiter" in run:
+        pre = y
+        y = true_peak_limit(pre, sr, c["limiter"])
+        # 14 October 2026: the limiter takes level off the loud frames, so the polished mix ended up quieter than the calibrated one (a loud master
+        # measured 0.7 LU under, and the level is part of what the critic reads). Raise the drive into the limiter until the integrated loudness
+        # is back where it started (a few passes, capped), the ceiling still holds. FR : le limiteur retirait du niveau, on le compense en amont.
+        lm = c["loudness"]
+        gain_db, slope = 0.0, 0.6      # output loudness moves by about `slope` dB per dB of drive: the limiter absorbs the rest (secant after the first pass)
+        out_prev = loudness.integrated(y, sr)
+        for _ in range(int(lm.get("makeupPasses", 0))):
+            err = lufs0 - out_prev
+            if abs(err) <= lm.get("toleranceLu", 0.05):
+                break
+            step = err / max(slope, 0.15)
+            new_gain = float(np.clip(gain_db + step, -6.0, lm.get("makeupMaxDb", 6.0)))
+            if abs(new_gain - gain_db) < 1e-3:
+                break
+            yy = true_peak_limit((pre * 10 ** (new_gain / 20.0)).astype(np.float32), sr, c["limiter"])
+            out_new = loudness.integrated(yy, sr)
+            slope = (out_new - out_prev) / (new_gain - gain_db)
+            gain_db, out_prev, y = new_gain, out_new, yy
+        rep["stages"]["limiter"] = {"makeupDb": round(gain_db, 2), "lufsBefore": round(lufs0, 2), "lufsAfter": round(loudness.integrated(y, sr), 2)}
+    rep["after"] = earcheck.cleanliness(y, sr, det)
+    cl = c["clean"]
+    a = rep["after"]
+    ref_c = earcheck.cleanliness(reference, sr, det) if reference is not None else None
+    if ref_c is not None:
+        rep["reference"] = ref_c
+    allow = 1.0 + c["clean"].get("relativeAllowance", 0.25)
+    clicks_max = max(cl["clicksPerSecondMax"], ref_c["clicksPerSecond"] * allow) if ref_c else cl["clicksPerSecondMax"]
+    crackle_max = max(cl["cracklePerSecondMax"], ref_c["cracklePerSecond"] * allow) if ref_c else cl["cracklePerSecondMax"]
+    level_ok = a["truePeakDbtp"] <= cl["truePeakMaxDbtp"] + 0.05 and a["clippedShare"] <= cl["clippedShareMax"]
+    common = abs(a["dc"]) <= cl["dcMax"] and a["rumbleShare"] <= cl["rumbleShareMax"]
+    rep["cleanAbsolute"] = bool(a["clicksPerSecond"] <= cl["clicksPerSecondMax"] and a["cracklePerSecond"] <= cl["cracklePerSecondMax"] and common and level_ok)
+    rep["clean"] = bool(a["clicksPerSecond"] <= clicks_max and a["cracklePerSecond"] <= crackle_max and common and (level_ok or kind == "stem"))
+    return y, rep

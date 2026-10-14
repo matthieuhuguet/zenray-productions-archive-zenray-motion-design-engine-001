@@ -1,0 +1,51 @@
+# 14 October 2026: look at a run of pictures of a reference (decode cache, 160x90): a contact strip from frame A to frame B.
+# Run: /Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/RhythmLook.py --slug memo --a 340 --b 392 --step 4 [--cols 8]
+# FR : regarder une suite d'images d'une reference (cache de decodage), une planche de A a B.
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+import numpy as np
+from PIL import Image, ImageDraw
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+sys.path.insert(0, str(ENGINE / "Scripts"))
+from zrmd.analyze import rhythm_cache  # noqa: E402
+import RhythmSignals as RS  # noqa: E402
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--slug", required=True)
+    ap.add_argument("--a", type=int, required=True)
+    ap.add_argument("--b", type=int, required=True)
+    ap.add_argument("--step", type=int, default=1)
+    ap.add_argument("--cols", type=int, default=8)
+    ap.add_argument("--scale", type=float, default=1.0)
+    ap.add_argument("--out")
+    a = ap.parse_args()
+    fr = rhythm_cache.load(RS.folder_of(a.slug))["frames"]
+    idx = list(range(a.a, min(a.b, len(fr) - 1) + 1, a.step))
+    cols = min(a.cols, len(idx))
+    rows = (len(idx) + cols - 1) // cols
+    tw, th = int(160 * a.scale), int(90 * a.scale)
+    img = Image.new("RGB", (cols * (tw + 4), rows * (th + 4)), (20, 20, 20))
+    d = ImageDraw.Draw(img)
+    for k, i in enumerate(idx):
+        x, y = (k % cols) * (tw + 4), (k // cols) * (th + 4)
+        t = Image.fromarray(np.asarray(fr[i]))
+        if a.scale != 1.0:
+            t = t.resize((tw, th), Image.BILINEAR)
+        img.paste(t, (x, y))
+        d.rectangle([x, y, x + 36, y + 11], fill=(0, 0, 0))
+        d.text((x + 2, y), str(i), fill=(255, 255, 0))
+    out = a.out or f"/private/tmp/claude-501/-Users-zenray--claude-Memory1/d2f26016-25dd-4bcc-a6d8-122d50d3f383/scratchpad/m/look-{a.slug}-{a.a}-{a.b}.jpg"
+    img.save(out, quality=88)
+    print(out)
+
+
+if __name__ == "__main__":
+    main()

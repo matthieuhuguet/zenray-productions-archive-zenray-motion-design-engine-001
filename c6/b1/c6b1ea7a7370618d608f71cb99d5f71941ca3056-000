@@ -1,0 +1,152 @@
+# 14 October 2026: the vector component of a scene in the V1 application. The vector module (zrmd/vector, params/vector-v1-parameters.json) traces ONE
+# scene per reference into an editable component (asset.svg, component.html, params.json) and owns the V1 interface (4 primary, 8 secondary, 16
+# tertiary values). This file only reads it and exposes it to the page: the interface of a version, its files, and an "apply" that writes the NEXT
+# version beside the others (never overwriting) with the vector module's own functions. Nothing of the module is reimplemented here.
+# FR : le composant vecteur d'une scene dans l'application V1 ; le module vecteur possede l'interface, ici on la lit et on ecrit la version suivante.
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+
+from .. import settings, versions
+from .projects import AppError, SLUG_RE
+
+VERSION_RE = versions.VERSION_RE
+FILE_RE = re.compile(r"^(component\.html|asset\.svg|render\.png|fidelity\.json|version\.json|fonts/[A-Za-z0-9._\-\[\]]{1,80})$")
+MIME = {".html": "text/html; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".json": "application/json", ".woff2": "font/woff2",
+        ".woff": "font/woff", ".ttf": "font/ttf", ".otf": "font/otf"}
+
+
+def _root(slug: str) -> Path:
+    from ..vector import scene as S
+    return S._path(S.cfg()["paths"]["out"], slug)
+
+
+def _scene(slug: str) -> dict | None:
+    if not SLUG_RE.match(slug or ""):
+        raise AppError("bad project id")
+    sj = _root(slug) / "scene.json"
+    if not sj.is_file():
+        return None
+    d = versions.read_json(sj, {}) or {}
+    return d if d.get("applicable") and d.get("dir") else None
+
+
+def asset_dir(slug: str) -> Path | None:
+    d = _scene(slug)
+    return Path(d["dir"]).parent if d else None
+
+
+def summary(slug: str) -> dict | None:
+    """What the scene list needs to mark a scene as having a vector component: its shot and its newest version, or None."""
+    d = _scene(slug)
+    if not d:
+        return None
+    folder = Path(d["dir"]).parent
+    latest = versions.latest_version(folder) if folder.is_dir() else None
+    return {"shot": d.get("shot"), "time_s": d.get("time_s"), "version": latest or Path(d["dir"]).name, "verdict": (d.get("verdict") or {}).get("reading")}
+
+
+def _version_dir(slug: str, version: str | None) -> tuple[Path, str]:
+    folder = asset_dir(slug)
+    if folder is None:
+        raise AppError(f"project '{slug}' has no vector component", 404)
+    version = version or versions.latest_version(folder)
+    if not version or not VERSION_RE.match(version) or not (folder / version / "params.json").is_file():
+        raise AppError(f"the component of '{slug}' has no version {version!r}", 404)
+    return folder / version, version
+
+
+_MEMO: dict = {}
+
+
+def _interface(vdir: Path, P: dict) -> dict:
+    """V1.interface(P) measures the area every layer paints by RENDERING each layer alone (seconds, up to 15 s on a busy scene): it is computed
+    once per version file and remembered in memory and on disk, keyed by the params file's size and time."""
+    from ..vector import v1 as V1
+    st = (vdir / "params.json").stat()
+    key = f"{vdir.parent.parent.name}-{vdir.name}-{st.st_size}-{st.st_mtime_ns}"
+    if key in _MEMO:
+        return _MEMO[key]
+    from . import timeline as TL
+    disk = TL.root() / "_cache" / f"vector-interface-{key}.json"
+    if disk.is_file():
+        try:
+            _MEMO[key] = json.loads(disk.read_text(encoding="utf-8"))
+            return _MEMO[key]
+        except ValueError:
+            pass
+    out = V1.interface(P)
+    _MEMO[key] = out
+    disk.parent.mkdir(parents=True, exist_ok=True)
+    disk.write_text(json.dumps(out, ensure_ascii=False, default=float), encoding="utf-8")
+    return out
+
+
+def detail(slug: str, version: str | None = None) -> dict:
+    """The component of a reference at a version: the V1 interface with its values, the versions, and the urls of its files."""
+    vdir, version = _version_dir(slug, version)
+    P = json.loads((vdir / "params.json").read_text(encoding="utf-8"))
+    iface = _interface(vdir, P)
+    canvas = P.get("canvas") or {}
+    rows = []
+    for v in sorted((p.name for p in vdir.parent.iterdir() if p.is_dir() and VERSION_RE.match(p.name)), reverse=True)[:40]:
+        meta = versions.read_json(vdir.parent / v / "version.json", {}) or {}
+        fid = versions.read_json(vdir.parent / v / "fidelity.json", None)
+        rows.append({"version": v, "parent": meta.get("parent"), "note": meta.get("note") or "", "variation": bool((versions.read_json(vdir.parent / v / "params.json", {}) or {}).get("variation_of")),
+                     "score": (fid or {}).get("iou") if isinstance(fid, dict) else None,
+                     "render": f"/api/v1/vector-file?slug={slug}&version={v}&name=render.png"})
+    base = f"/api/v1/vector-file?slug={slug}&version={version}&name="
+    return {"slug": slug, "version": version, "latest": versions.latest_version(vdir.parent), "versions": rows,
+            "canvas": {"width": canvas.get("width"), "height": canvas.get("height")}, "component": base + "component.html", "render": base + "render.png",
+            "interface": {t: iface[t] for t in ("primary", "secondary", "tertiary")}, "selectors": iface.get("selectors")}
+
+
+def file_path(slug: str, version: str, name: str) -> Path:
+    if not FILE_RE.match(name or "") or ".." in name:
+        raise AppError("no such file", 404)
+    vdir, _ = _version_dir(slug, version)
+    p = (vdir / name).resolve()
+    if vdir.resolve() not in p.parents or not p.is_file():
+        raise AppError("no such file", 404)
+    return p
+
+
+def validate(values: dict) -> dict:
+    """Names and ranges checked with the vector module's own checks, BEFORE any job: the first refusal names the parameter."""
+    from ..vector import v1 as V1
+    if not isinstance(values, dict) or not values:
+        raise AppError("no value to apply")
+    by_name = {e["name"]: e for e in V1.entries()}
+    clean = {}
+    for name, raw in values.items():
+        e = by_name.get(name)
+        if e is None:
+            raise AppError(f"no parameter '{name}' (parameters: {', '.join(by_name)})")
+        if not e["built"]:
+            raise AppError(f"parameter '{name}' is listed for the next version and is not built yet")
+        try:
+            clean[name] = V1._check(e, raw)
+        except ValueError as err:
+            raise AppError(str(err))
+    return clean
+
+
+def apply_values(slug: str, base_version: str | None, values: dict):
+    """A function for the job registry: the NEXT version of the component with the values written (the base stays as it was)."""
+    clean = validate(values)
+    vdir, base = _version_dir(slug, base_version)
+
+    def run(step):
+        from ..vector import asset as A, scene as S, texts as TX, v1 as V1
+        P = json.loads((vdir / "params.json").read_text(encoding="utf-8"))
+        step("apply", detail=f"{len(clean)} value(s)")
+        P2 = V1.apply(P, clean)
+        P2["variation_of"] = base
+        step("cook", detail="svg, render, component")
+        nv = A.write_version(vdir.parent, P2, None, None, parent=base, note="app: " + ", ".join(sorted(clean)))
+        urls = TX.ship_fonts(P2, nv) if P2.get("texts") else None
+        (nv / "component.html").write_text(S.export_html(P2, P2.get("asset", slug), fonts=urls), encoding="utf-8")
+        return {"slug": slug, "version": nv.name, "parent": base, "values": clean}
+    return run

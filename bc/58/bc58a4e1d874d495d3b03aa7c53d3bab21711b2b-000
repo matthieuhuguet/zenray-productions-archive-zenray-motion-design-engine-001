@@ -1,0 +1,358 @@
+# 14 October 2026: projects, scenes and scene editing for the V1 application. A project is a reference of the registry (a video or a sound the
+# user dropped, or one of the indexed videos); its scenes are the shots of its bible; a scene that was reproduced by code points to its motion
+# (a versioned HyperFrames composition) whose exposed parameters, ordered by the V1 tiers, can be changed and applied as a NEW version.
+# Lists are always PAGED (offset, limit) so a catalogue is never loaded at once. No path comes from the page: ids only, validated.
+# FR : projets, scenes et edition de scene ; toute liste est paginee, aucun chemin ne vient de la page.
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+
+from .. import exposed, orchestrator as orch, registry, settings, versions
+from . import tiers
+
+SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$")
+MOTION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
+SCENE_RE = re.compile(r"^S\d{2,4}$")
+FRAME_RE = re.compile(r"^[A-Za-z0-9._-]+\.jpg$")
+HIDDEN_ORIGINS = {"music-corpus"}
+RECIPE_ORDER = {"textcard": 0, "graphic": 1, "plate": 5}
+
+
+class AppError(Exception):
+    def __init__(self, message: str, status: int = 400):
+        super().__init__(message)
+        self.status = status
+
+
+def workshop() -> Path:
+    return settings.path("workshop")
+
+
+def motions_dir() -> Path:
+    return workshop() / "motions"
+
+
+def _references() -> list[dict]:
+    return [r for r in registry.table() if r.get("origin") not in HIDDEN_ORIGINS]
+
+
+def _check_slug(slug: str) -> dict:
+    if not SLUG_RE.match(slug or ""):
+        raise AppError("bad project id")
+    ref = next((r for r in registry.table() if r["slug"] == slug), None)
+    if not ref:
+        raise AppError(f"unknown project '{slug}'", 404)
+    return ref
+
+
+def _modules(slug: str) -> list[dict]:
+    out = []
+    for m in orch.module_scores(slug):
+        out.append({"module": m["module"], "label": m.get("label"), "value": m.get("value"), "target": m.get("target"), "reached": bool(m.get("reached")),
+                    "version": m.get("version"), "ceiling": m.get("ceiling"), "limited": bool(m.get("limited"))})
+    return out
+
+
+def card(ref: dict) -> dict:
+    st = ref.get("status", {})
+    return {"slug": ref["slug"], "title": ref.get("title") or ref["slug"], "durationS": ref.get("duration_s"), "brand": ref.get("brand"), "origin": ref.get("origin"),
+            "hasFile": bool(st.get("file")), "hasAudio": bool(ref.get("has_audio")), "shots": st.get("shots"), "motions": st.get("motions"),
+            "music": (st.get("music") or {}).get("best"), "modules": _modules(ref["slug"])}
+
+
+def list_projects(offset: int = 0, limit: int = 12) -> dict:
+    refs = _references()
+    limit = max(1, min(int(limit), 50))
+    offset = max(0, int(offset))
+    page = refs[offset: offset + limit]
+    return {"total": len(refs), "offset": offset, "limit": limit, "hasMore": offset + len(page) < len(refs), "items": [card(r) for r in page]}
+
+
+def project(slug: str) -> dict:
+    ref = _check_slug(slug)
+    out = card(ref)
+    out["runs"] = orch.list_runs(slug, 8)
+    out["results"] = orch.results(slug)
+    out["steps"] = [{"id": s["id"], "label": s["label"], "module": s["module"]} for s in orch.definition()["steps"]]
+    meta = orch.read_json(workshop() / "references" / slug / "reference.json", {})
+    out["meta"] = {k: meta.get(k) for k in ("width", "height", "fps", "duration_s", "has_audio", "file_name", "normalized")}
+    return out
+
+
+# ------------------------------------------------------------------------------------------------ scenes
+
+def _bible(slug: str) -> dict:
+    return orch.read_json(workshop() / "references" / slug / "bible.json", {}) or {}
+
+
+def _motions_of(slug: str, fps: float | None = None) -> list[dict]:
+    """Every motion that belongs to this reference, with its time span in SECONDS of the reference, its recipe and its latest version.
+    Motions of a plate come from the film plan (frames of the reference), because a plate motion's own `source` times are film frames over 60
+    (31 frames of a 25 fps reference read as 0.52 s): the plan is the truth for them; every other recipe is placed by its source times."""
+    out = []
+    root = motions_dir()
+    if not root.is_dir():
+        return out
+    plan = {}
+    got = orch._film_report(slug)
+    if got:
+        ref_fps = float(fps or 25.0)
+        for seg in got[1].get("plan", []) or []:
+            if seg.get("motion") and seg.get("a") is not None:
+                plan[seg["motion"]] = (float(seg["a"]) / ref_fps, float(seg["b"]) / ref_fps)
+    for folder in sorted(root.iterdir()):
+        mj = folder / "motion.json"
+        if not folder.is_dir() or not mj.exists():
+            continue
+        m = versions.read_json(mj, {}) or {}
+        src = m.get("source") or {}
+        if src.get("slug") != slug or src.get("start") is None:
+            continue
+        if m.get("recipe") == "plate":
+            if folder.name not in plan:
+                continue
+            start, end = plan[folder.name]
+        else:
+            start, end = float(src["start"]), float(src.get("end") or src["start"])
+        out.append({"id": folder.name, "title": m.get("title") or folder.name, "recipe": m.get("recipe"),
+                    "latest": m.get("latest") or versions.latest_version(folder), "start": start, "end": end})
+    return out
+
+
+def _overlap(a0: float, a1: float, b0: float, b1: float) -> float:
+    return max(0.0, min(a1, b1) - max(a0, b0))
+
+
+def _has_vector(vec: dict | None, shot: dict) -> bool:
+    """The traced scene belongs to the shot that contains its time (the shot ids move when the cuts are detected again); without a time the id decides."""
+    if not vec:
+        return False
+    t = vec.get("time_s")
+    if t is not None:
+        return float(shot["start"]) - 1e-6 <= float(t) < float(shot["end"]) + 1e-6
+    return vec.get("shot") == shot.get("id")
+
+
+def _scene_row(slug: str, shot: dict, motions: list[dict], vec: dict | None = None) -> dict:
+    s0, s1 = float(shot["start"]), float(shot["end"])
+    dur = max(s1 - s0, 1e-6)
+    hits = []
+    for m in motions:
+        ov = _overlap(s0, s1, m["start"], m["end"])
+        if ov / dur >= 0.5 or ov / max(m["end"] - m["start"], 1e-6) >= 0.8:
+            hits.append(m)
+    hits.sort(key=lambda m: (RECIPE_ORDER.get(m["recipe"], 3), m["id"]))
+    sid = shot["id"]
+    return {"id": sid, "start": s0, "end": s1, "duration": round(s1 - s0, 3), "family": shot.get("family"), "content": shot.get("content"),
+            "description": shot.get("description"), "enter": shot.get("enter"),
+            "palette": [p.get("hex") for p in (shot.get("palette") or [])[:5] if isinstance(p, dict)],
+            "poster": f"/api/v1/frame?slug={slug}&name={sid}-mid.jpg", "motions": [{"id": m["id"], "recipe": m["recipe"], "latest": m["latest"]} for m in hits],
+            "vector": ({"version": vec["version"], "reading": vec.get("verdict")} if _has_vector(vec, shot) else None),
+            "editable": any(tiers.scene(m["recipe"], None).get("supported") for m in hits) or _has_vector(vec, shot)}
+
+
+def list_scenes(slug: str, offset: int = 0, limit: int = 24) -> dict:
+    _check_slug(slug)
+    bible = _bible(slug)
+    shots = bible.get("shots") or []
+    motions = _motions_of(slug, bible.get("fps"))
+    from . import vectors
+    vec = vectors.summary(slug)
+    limit = max(1, min(int(limit), 100))
+    offset = max(0, int(offset))
+    page = shots[offset: offset + limit]
+    return {"slug": slug, "total": len(shots), "offset": offset, "limit": limit, "hasMore": offset + len(page) < len(shots),
+            "items": [_scene_row(slug, s, motions, vec) for s in page]}
+
+
+def _version_rows(motion: str) -> list[dict]:
+    folder = motions_dir() / motion
+    rows = []
+    for v in sorted((n for n in (p.name for p in folder.iterdir() if p.is_dir()) if versions.VERSION_RE.match(n)), reverse=True)[:40]:
+        meta = versions.read_json(folder / v / "version.json", {}) or {}
+        fid = versions.read_json(folder / v / "fidelity.json", None)
+        rows.append({"version": v, "parent": meta.get("parent"), "note": meta.get("note") or "", "author": meta.get("author"),
+                     "score": (fid or {}).get("score"), "hasRender": (folder / v / "render.mp4").exists(),
+                     "render": f"/api/v1/motion-media?motion={motion}&version={v}&kind=render" if (folder / v / "render.mp4").exists() else None,
+                     "poster": f"/api/v1/motion-media?motion={motion}&version={v}&kind=poster" if (folder / v / "poster.jpg").exists() else None})
+    return rows
+
+
+def motion_detail(motion: str, version: str | None = None) -> dict:
+    if not MOTION_RE.match(motion or ""):
+        raise AppError("bad motion id")
+    folder = motions_dir() / motion
+    if not (folder / "motion.json").exists():
+        raise AppError(f"unknown motion '{motion}'", 404)
+    meta = versions.read_json(folder / "motion.json", {}) or {}
+    version = version or meta.get("latest") or versions.latest_version(folder)
+    if not version or not versions.VERSION_RE.match(version) or not (folder / version).is_dir():
+        raise AppError(f"motion {motion} has no version {version!r}", 404)
+    params = versions.read_json(folder / version / "params.json", {}) or {}
+    t = tiers.scene(meta.get("recipe"), params if isinstance(params, dict) else {})
+    comp = _composition_dir(folder / version)
+    canvas = params.get("canvas") if isinstance(params, dict) and isinstance(params.get("canvas"), dict) else {}
+    render = folder / version / "render.mp4"
+    duration = None
+    if render.is_file():
+        try:
+            from ..emit import montage as legacy
+            duration = round(float(legacy.probe(render)["duration"]), 3)
+        except Exception:  # noqa: BLE001  an unreadable render has no duration; the page then shows none
+            duration = None
+    return {"id": motion, "title": meta.get("title") or motion, "recipe": meta.get("recipe"), "version": version, "versions": _version_rows(motion),
+            "duration": duration, "latest": meta.get("latest") or versions.latest_version(folder),
+            "rights": {"cleared": bool(isinstance(meta.get("rights"), dict) and meta["rights"].get("cleared") is True), "by": (meta.get("rights") or {}).get("by"),
+                       "date": (meta.get("rights") or {}).get("date")},
+            "tiers": t["tiers"], "supported": t["supported"], "source": meta.get("source"), "tags": meta.get("tags", []),
+            "canvas": {"width": canvas.get("width"), "height": canvas.get("height"), "fps": canvas.get("fps"), "frames": canvas.get("frames")},
+            "composition": f"/api/v1/composition/{motion}/{version}/index.html" if comp else None,
+            "measured": (params.get("measured") if isinstance(params, dict) else None)}
+
+
+def scene_detail(slug: str, sid: str) -> dict:
+    _check_slug(slug)
+    if not SCENE_RE.match(sid or ""):
+        raise AppError("bad scene id")
+    shot = next((s for s in (_bible(slug).get("shots") or []) if s.get("id") == sid), None)
+    if not shot:
+        raise AppError(f"unknown scene {sid}", 404)
+    from . import vectors
+    row = _scene_row(slug, shot, _motions_of(slug, _bible(slug).get("fps")), vectors.summary(slug))
+    row["frames"] = {k: f"/api/v1/frame?slug={slug}&name={sid}-{k}.jpg" for k in ("in", "mid", "out")}
+    row["camera"] = shot.get("camera")
+    row["elements"] = shot.get("elements_tracked")
+    row["textLines"] = shot.get("text_lines")
+    row["motionDetails"] = [motion_detail(m["id"]) for m in row["motions"][:3]]
+    return row
+
+
+# ------------------------------------------------------------------------------------------------ files (no path comes from the page)
+
+def frame_path(slug: str, name: str) -> Path:
+    if not SLUG_RE.match(slug or "") or not FRAME_RE.match(name or ""):
+        raise AppError("no such frame", 404)
+    p = settings.path("refcache") / slug / "storyboard" / name
+    if not p.is_file():
+        raise AppError("no such frame", 404)
+    return p
+
+
+def media_path(motion: str, version: str, kind: str) -> Path:
+    if not MOTION_RE.match(motion or "") or not versions.VERSION_RE.match(version or "") or kind not in ("render", "poster"):
+        raise AppError("no such media", 404)
+    p = motions_dir() / motion / version / ("render.mp4" if kind == "render" else "poster.jpg")
+    if not p.is_file():
+        raise AppError("no such media", 404)
+    return p
+
+
+def _composition_dir(vdir: Path) -> Path | None:
+    for cand in sorted(vdir.iterdir()) if vdir.is_dir() else []:
+        if cand.is_dir() and (cand / "index.html").exists():
+            return cand
+    return None
+
+
+COMP_FILE_RE = re.compile(r"^[A-Za-z0-9._\-\[\]]+(/[A-Za-z0-9._\-\[\]]+){0,3}$")
+
+
+def composition_file(motion: str, version: str, rel: str) -> Path:
+    if not MOTION_RE.match(motion or "") or not versions.VERSION_RE.match(version or "") or not COMP_FILE_RE.match(rel or "") or ".." in rel:
+        raise AppError("no such file", 404)
+    base = _composition_dir(motions_dir() / motion / version)
+    if base is None:
+        raise AppError("no such file", 404)
+    p = (base / rel).resolve()
+    if base.resolve() not in p.parents or not p.is_file():
+        raise AppError("no such file", 404)
+    return p
+
+
+# ------------------------------------------------------------------------------------------------ editing
+
+def validate_values(motion: str, base_version: str | None, values: dict) -> tuple[str, dict, dict]:
+    """The overrides the engine will receive, coerced and bounded by the exposed definitions, or an AppError naming the first refusal."""
+    folder = motions_dir() / motion
+    meta = versions.read_json(folder / "motion.json", {}) or {}
+    parent = base_version or meta.get("latest") or versions.latest_version(folder)
+    params = versions.read_json(folder / parent / "params.json") if parent else None
+    if not isinstance(params, dict):
+        raise AppError(f"motion {motion} has no readable params for {parent}", 404)
+    if not isinstance(values, dict) or not values:
+        raise AppError("no value to apply")
+    try:
+        clean = exposed.validate(params, meta.get("recipe"), values)
+    except ValueError as error:
+        raise AppError(str(error))
+    return parent, clean, meta
+
+
+def apply_scene(motion: str, base_version: str | None, values: dict, note: str | None = None):
+    """A function for the job registry: the engine iterates the motion (strict door), cooks, renders, verifies; returns the new version."""
+    if not MOTION_RE.match(motion or ""):
+        raise AppError("bad motion id")
+    parent, clean, _meta = validate_values(motion, base_version, values)
+    import subprocess
+    import sys
+
+    def run(step):
+        import shutil
+        import subprocess
+        import sys
+        folder = motions_dir() / motion
+        recipe = (versions.read_json(folder / "motion.json", {}) or {}).get("recipe")
+        before = set(versions.list_versions(folder))
+        note_text = note or f"app: {len(clean)} value(s)"
+        if recipe == "shader-field":  # the look is rendered by its own GLSL pipeline (Scripts/ReproduceField.py), not by a HyperFrames cook
+            args = [str(settings.path("python")), "-I", str(settings.REPO / "Scripts" / "ReproduceField.py"), "iterate", "--motion", str(folder),
+                    "--parent", parent, "--strict", "--author", "app", "--note", note_text]
+        else:
+            args = [str(settings.path("python")), "-I", "-m", "zrmd.cli", "iterate", motion, "--strict", "--parent", parent, "--author", "app", "--note", note_text]
+        for k, v in clean.items():
+            args += ["--set", f"{k}={json.dumps(v)}"]
+        step("render", detail="cook, render, verify")
+        r = subprocess.run(args, cwd=str(settings.REPO), capture_output=True, text=True)
+        try:
+            out = json.loads(r.stdout[r.stdout.index("{"):])
+        except (ValueError, json.JSONDecodeError):
+            out = {}
+        if r.returncode != 0 or not out.get("ok"):
+            # a failed cook must not leave a half version behind (a folder without its render breaks "latest" and the library)
+            for v in set(versions.list_versions(folder)) - before:
+                if not (folder / v / "render.mp4").is_file():
+                    shutil.rmtree(folder / v, ignore_errors=True)
+            meta = versions.read_json(folder / "motion.json", {}) or {}
+            meta["versions"] = [v for v in meta.get("versions", []) if (folder / v).is_dir()]
+            meta["latest"] = meta["latest"] if (folder / str(meta.get("latest"))).is_dir() else (versions.latest_version(folder) or parent)
+            versions.write_json(folder / "motion.json", meta)
+            raise RuntimeError(out.get("error") or (r.stderr.strip().splitlines() or ["iterate failed"])[-1])
+        step("catalogue")
+        subprocess.run([str(settings.path("python")), "-I", "-m", "zrmd.cli", "catalog"], cwd=str(settings.REPO), capture_output=True, text=True)
+        return {"motion": motion, "version": out["version"], "parent": parent, "score": out.get("score"), "dimensions": out.get("dimensions"),
+                "overrides": clean}
+    return run
+
+
+def promote(motion: str, version: str):
+    """A function for the job registry: make `version` the main version of the motion (what the library and the montage use by default).
+    Nothing is deleted or rewritten: `latest` in motion.json moves, every version stays; the catalogue is refreshed so the library follows."""
+    if not MOTION_RE.match(motion or ""):
+        raise AppError("bad motion id")
+    folder = motions_dir() / motion
+    if not versions.VERSION_RE.match(version or "") or not (folder / version / "params.json").is_file():
+        raise AppError(f"motion {motion} has no version {version!r}", 404)
+
+    def run(step):
+        import subprocess
+        meta = versions.read_json(folder / "motion.json", {}) or {}
+        previous = meta.get("latest")
+        meta["latest"] = version
+        meta["updated"] = versions.today()
+        versions.write_json(folder / "motion.json", meta)
+        step("catalogue")
+        subprocess.run([str(settings.path("python")), "-I", "-m", "zrmd.cli", "catalog"], cwd=str(settings.REPO), capture_output=True, text=True)
+        return {"motion": motion, "version": version, "previous": previous}
+    return run

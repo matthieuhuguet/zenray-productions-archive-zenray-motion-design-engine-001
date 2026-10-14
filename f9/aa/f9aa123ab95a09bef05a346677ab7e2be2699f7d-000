@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+# 14 October 2026: per-event calibration of the sound-effect track (zrmd/audio/sfxspectral.py cascade: shared spectral trim, then the
+# per-event EQ of zrmd/audio/sfxtrim.py) for ANY reference. Reads a sound version
+# (events.json with fitted chains), cuts each event's reference window from the Demucs stem it was detected on (analysis only), optimises the
+# smooth EQ of every chain event on the official perceptual loss, audits with B1, and writes the next sound version V_NNN: events.json with the
+# stored trim per event (fit.trim), the SFX track sfx.wav, a sound-fidelity.json with the per-event numbers before and after.
+#   SfxTrim.py --slug S [--version V_NNN] [--out <sound folder>] [--workers N]
+# FR : calibrage par evenement de la piste SFX, version neuve, B1 en audit.
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import time
+from concurrent.futures import ProcessPoolExecutor
+from pathlib import Path
+
+import numpy as np
+
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+
+def _job(job: dict) -> dict:
+    import torch
+    torch.set_num_threads(1)
+    from zrmd.audio import bank, sfxspectral, sfxtrim
+    ch = job["chain"]
+    sr = ch["sr"]
+    body = bank.render_chain(ch).astype(np.float32)
+    target = np.asarray(job["target"], np.float32)
+    n = min(len(body), len(target))
+    body, target = body[:n], target[:n]
+    ceiling = sfxtrim.identity_ceiling(ch, sr)
+    before = sfxspectral.metrics(body, target, sr)
+    # 14 October 2026: the cook is the pipeline of params/sfx-trim.json (shared spectral trim, then the per-event EQ), baked with the chain hash.
+    y, trim = sfxspectral.calibrate_event(ch, body, target, sr)
+    after = sfxspectral.metrics(y, target, sr) if trim else before
+    return {"id": job["id"], "trim": trim, "before": before, "after": after, "samples": n, "ceiling": ceiling}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--slug", required=True)
+    ap.add_argument("--version", default="")
+    ap.add_argument("--out", default="")
+    ap.add_argument("--workers", type=int, default=8)
+    a = ap.parse_args()
+    from zrmd import settings, versions
+    from zrmd.audio import config, sfxspectral, sfxtrim
+    from zrmd.media import load_audio, write_wav
+    cfgs = config.cfg()
+    gate = sfxtrim.cfg()["gate"]
+    sr = cfgs["audio"]["sampleRate"]
+    out_root = Path(a.out) if a.out else settings.path("sound_out") / a.slug
+    cands = [v for v in versions.list_versions(out_root)
+             if (out_root / v / "events.json").exists() and (versions.read_json(out_root / v / "version.json", {}) or {}).get("kind") != "soundtrack-benchmark"]
+    version = a.version or (cands[-1] if cands else "")
+    if not version:
+        print(json.dumps({"ok": False, "error": f"no sound version in {out_root}: run ReproduceSound.py first"}))
+        return 1
+    ev = versions.read_json(out_root / version / "events.json")
+    stem_dir = settings.path("refcache") / a.slug / "stems" / "out" / "htdemucs" / "mix"
+    stems = {k: load_audio(stem_dir / f"{k}.wav", sr, mono=True)[0].astype(np.float64) for k in ("drums", "bass", "other")}
+    jobs, by_id = [], {}
+    for e in ev["events"]:
+        f = e.get("fit") or {}
+        if not f.get("chain"):
+            continue
+        y = sum(stems[k] for k in e["stem"].split("+"))
+        x = y[int(e["windowStart"] * sr):int(e["windowEnd"] * sr)]
+        jobs.append({"id": e["id"], "chain": f["chain"], "target": x})
+        by_id[e["id"]] = e
+    t0 = time.time()
+    with ProcessPoolExecutor(max_workers=min(a.workers, max(len(jobs), 1))) as pool:
+        results = list(pool.map(_job, jobs))
+    name = versions.next_version(out_root)
+    vdir = out_root / name
+    vdir.mkdir(parents=True)
+    res = {r["id"]: r for r in results}
+    n_total = int(ev["span"][1] * sr) if ev.get("span") else max(int(e["windowEnd"] * sr) for e in ev["events"]) + 1
+    track = np.zeros(n_total)
+    rows, weights = [], []
+    for e in ev["events"]:
+        f = e.get("fit")
+        r = res.get(e["id"])
+        if not f:
+            continue
+        score_before = f.get("score")
+        if r:
+            score_before = r["before"]["ploss"]          # 14 October 2026: the raw chain on the official loss, whatever version this trim started from (a retrim starts from a trim)
+            f["trim"] = r["trim"] or None
+            f["trimmed"] = {"plossBefore": r["before"]["ploss"], "plossAfter": r["after"]["ploss"],
+                            "plossStochasticBefore": r["before"]["sto"], "plossStochasticAfter": r["after"]["sto"], "b1Before": r["before"]["b1"], "b1After": r["after"]["b1"],
+                            "criticBefore": r["before"]["critic"], "criticAfter": r["after"]["critic"],
+                            "auditMeanBefore": r["before"]["auditMean"], "auditMeanAfter": r["after"]["auditMean"],
+                            "errorsBefore": r["before"]["errors"], "errorsAfter": r["after"]["errors"], "ceiling": r["ceiling"]}
+            f["score"] = max(r["after"]["ploss"], 0.0) if r["trim"] else f.get("score")      # the event score stays the official ploss
+            body = sfxtrim.render(f).astype(np.float64)
+            a0 = int(round(e["windowStart"] * sr))
+            body = body[: max(0, n_total - a0)]
+            track[a0:a0 + len(body)] += body
+        w = 10 ** (e["levelDb"] / 20.0)
+        weights.append(w)
+        rows.append({"id": e["id"], "kind": f.get("kind"), "scoreBefore": score_before, "scoreAfter": f.get("score"),
+                     "ploss": [r["before"]["ploss"], r["after"]["ploss"]] if r else None,
+                     "plossStochastic": [r["before"]["sto"], r["after"]["sto"]] if r else None,
+                     "b1": [r["before"]["b1"], r["after"]["b1"]] if r else None,
+                     "critic": [r["before"]["critic"], r["after"]["critic"]] if r else None,
+                     "auditMean": [r["before"]["auditMean"], r["after"]["auditMean"]] if r else None,
+                     "ceiling": r["ceiling"] if r else None,
+                     "atCeiling": bool(r and r["ceiling"] and f.get("score") is not None and f["score"] >= r["ceiling"]["official"] - 0.3),
+                     "pass": bool(r and sfxspectral.passes(r["after"], gate)),
+                     "passMusic": bool(r and sfxspectral.passes_music(r["after"], gate)),
+                     "program": [p.get("stage") + (":rejected" if p.get("kept") is False else "") for p in ((f.get("trim") or {}).get("program") or [])]
+                                or (["eq"] if f.get("trim") else []),
+                     "eqGuard": next(({k: p.get(k) for k in ("kept", "guard", "b1In", "b1Out")} for p in ((f.get("trim") or {}).get("program") or []) if p.get("stage") == "eq"), None)})
+    sfx_before = float(np.average([r["scoreBefore"] or 0 for r in rows], weights=weights)) if rows else 100.0
+    sfx_after = float(np.average([r["scoreAfter"] or 0 for r in rows], weights=weights)) if rows else 100.0
+    b1_b = [r["b1"][0] for r in rows if r["b1"] and r["b1"][0] is not None]
+    b1_a = [r["b1"][1] for r in rows if r["b1"] and r["b1"][1] is not None]
+    versions.write_json(vdir / "events.json", {**ev, "date": versions.stamp(), "trimmedFrom": version})
+    write_wav(vdir / "sfx.wav", np.stack([track, track], axis=1), sr)
+    def wmean(idx):
+        vals = [(r["critic"][idx], w_) for r, w_ in zip(rows, weights) if r["critic"] and r["critic"][idx] is not None]
+        return round(float(np.average([v for v, _ in vals], weights=[w_ for _, w_ in vals])), 3) if vals else None
+
+    def wmean_of(key, idx):
+        vals = [(r[key][idx], w_) for r, w_ in zip(rows, weights) if r.get(key) and r[key][idx] is not None]
+        return round(float(np.average([v for v, _ in vals], weights=[w_ for _, w_ in vals])), 3) if vals else None
+    summary = {"sfx": {"before": round(sfx_before, 3), "after": round(sfx_after, 3)},
+               "b1Mean": {"before": round(float(np.mean(b1_b)), 3) if b1_b else None, "after": round(float(np.mean(b1_a)), 3) if b1_a else None},
+               "critic": {"before": wmean(0), "after": wmean(1)},
+               "stochastic": {"before": wmean_of("plossStochastic", 0), "after": wmean_of("plossStochastic", 1)},
+               "auditMean": {"before": wmean_of("auditMean", 0), "after": wmean_of("auditMean", 1)},
+               "gate": {"events": len(rows), "pass": sum(1 for r in rows if r["pass"]), "passMusic": sum(1 for r in rows if r["passMusic"]),
+                        "atCeiling": sum(1 for r in rows if r["atCeiling"]), "eqRejectedByB1Guard": sum(1 for r in rows if (r.get("eqGuard") or {}).get("kept") is False),
+                        "spec": gate},
+               "events": rows}
+    # 14 October 2026: the strict number and the gate numbers side by side, all in the scores of the report so that the orchestrator's detail shows
+    # them: sfx is the exact official score (the one the verifier averages), the others are the readings the SFX gate is made of. The ceiling-
+    # normalised score divides each event's exact score by its identity ceiling (capped at 100): 100 means "as good as the chain can be against
+    # another draw of its own noise", never "99.9 raw". FR : le chiffre strict et les chiffres de la porte, cote a cote.
+    def norm(r):
+        c = (r.get("ceiling") or {}).get("official")
+        return min(100.0, 100.0 * (r["scoreAfter"] or 0.0) / c) if c else None
+    nv = [(norm(r), w_) for r, w_ in zip(rows, weights) if norm(r) is not None]
+    extra = {"sfxInvariant": summary["stochastic"]["after"], "sfxCritic": summary["critic"]["after"], "sfxAudit": summary["auditMean"]["after"],
+             "sfxB1": summary["b1Mean"]["after"], "sfxCeilingNormalised": round(float(np.average([v for v, _ in nv], weights=[w_ for _, w_ in nv])), 3) if nv else None,
+             "sfxGateShare": round(100.0 * summary["gate"]["pass"] / max(summary["gate"]["events"], 1), 2) if rows else 100.0}
+    extra = {k: v for k, v in extra.items() if v is not None}
+    versions.write_json(vdir / "sound-fidelity.json", {"date": versions.stamp(), "slug": a.slug, "version": name, "parent": version, "kind": "sfx-trim",
+                                                         "reports": {"full": {"scores": {"sfx": round(sfx_after, 3), **extra}, "perEvent": rows}}, "trim": summary,
+                                                         "seconds": round(time.time() - t0, 1),
+                                                         "rights": "outputs are our synthesis only; the reference contributed band levels, never samples"})
+    versions.write_json(vdir / "version.json", {"version": name, "parent": version, "created": versions.stamp(), "kind": "sfx-trim",
+                                                "pipeline": sfxtrim.cfg()["pipeline"], "spectralSha": sfxspectral.config_sha(sfxtrim.cfg()["pipeline"]["variant"]),
+                                                "note": f"shared spectral trim then per-event EQ (pipeline of params/sfx-trim.json) from {version}; B1 audited, not optimised"})
+    print(json.dumps({"ok": True, "version": name, "from": version, **summary, "seconds": round(time.time() - t0, 1)}, default=float))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

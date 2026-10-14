@@ -1,0 +1,40 @@
+# 14 October 2026: decode every reference ONCE for the rhythm module (frame-exact 160x90 RGB plus codec packets).
+# Run (isolated, nice): nice -n 5 /Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/RhythmCache.py [--slug X] [--force]
+# FR : decode une fois chaque reference (images exactes en 160x90 et paquets du codec) pour le module rythme.
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+from zrmd import settings  # noqa: E402
+from zrmd.analyze import rhythm_cache  # noqa: E402
+
+PICTURE_REFERENCES = "claude-opus-5-5 flora-agents-on-canvas memo motion-opus-5-5 kardashev-0-7 paper-mono-code interface " \
+                     "x-anabology-2105325733312884869 x-anabology-2106157622986748377 yt-4Q-o_ylnVnc onekey-pro-2 fin-4".split()
+
+
+def reference_video(slug: str) -> str:
+    meta = json.loads((settings.path("workshop") / "references" / slug / "reference.json").read_text(encoding="utf-8"))
+    return str(settings.path("refcache") / slug / meta["file_name"])
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--slug", action="append")
+    ap.add_argument("--force", action="store_true")
+    ap.add_argument("--threads", type=int, default=2)
+    a = ap.parse_args()
+    for slug in a.slug or PICTURE_REFERENCES:
+        t0 = time.time()
+        meta = rhythm_cache.build(reference_video(slug), rhythm_cache.cache_dir(settings.path("refcache"), slug), a.force, a.threads)
+        print(json.dumps({"slug": slug, "frames": meta["frames"], "fps": round(meta["fps"], 4), "container_frames": meta["nb_frames_container"],
+                          "packets": meta["packets"], "aligned": meta["packets_aligned"], "seconds": round(time.time() - t0, 1)}), flush=True)
+
+
+if __name__ == "__main__":
+    main()

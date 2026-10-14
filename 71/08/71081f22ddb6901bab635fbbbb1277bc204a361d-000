@@ -1,0 +1,345 @@
+# 14 October 2026: the rhythm method sheet on the ADJUDICATED references (and the synthetic videos for the transitions).
+# Twenty methods, four phases each, one truth, leave-one-reference-out: a method is tuned on the other references and judged on the
+# held-out one, so a number is always a number on a video the method never saw.
+#   P1 signal      the number per boundary, scored by the area under the ROC curve of true cuts against (a) every boundary,
+#                  (b) the judged traps (boundaries an eye called "not a cut");
+#   P2 candidates  peak picking (adaptive or global), scored F1 at +-1 frame;
+#   P3 verify      persistence, flash return, isolation, F1 at +-1 frame;
+#   P4 place       exact frame, F1 at 0 and at +-1 frame.
+# M01-M15 single signals, M16-M18 transitions, M19 the area-rule conjunction, M20 the learned fusion (rhythm_fusion).
+# Run:  nice -n 5 /Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/RhythmSheet.py run [--json out.json] [--md out.md]
+#       ... train        (fit the fusion on every adjudicated reference and write datasets/rhythm-fusion.json)
+# FR : la feuille de methodes sur les references adjudiquees : vingt methodes, quatre phases, validation par reference exclue.
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+sys.path.insert(0, str(ENGINE / "Scripts"))
+from zrmd import settings  # noqa: E402
+from zrmd.analyze import (rhythm_cache, rhythm_core as C, rhythm_detect as D, rhythm_eval as E, rhythm_features as RF,  # noqa: E402
+                          rhythm_fusion as FU, rhythm_methods as M, rhythm_truth as T)
+import RhythmBench as B  # noqa: E402
+import RhythmSignals as RS  # noqa: E402
+import RhythmSynth  # noqa: E402
+
+WORKSHOP = settings.path("workshop")
+REFS = ["claude-opus-5-5", "flora-agents-on-canvas", "motion-opus-5-5", "kardashev-0-7", "memo", "paper-mono-code", "onekey-pro-2",
+        "interface", "x-anabology-2106157622986748377", "x-anabology-2105325733312884869", "yt-4Q-o_ylnVnc"]
+SYNTH = ["S1", "S2", "S3", "S4"]
+HARD = ("hard",)
+RULE = dict(D.params(), decision={"method": "rule"})   # M19 is the explainable conjunction whatever the product uses
+GRID_Q = {"global": [0.5, 0.8, 0.9, 0.95, 0.98], "adaptive": [0.0, 0.8, 0.9, 0.95]}
+GRID_R = {"global": [1.0], "adaptive": [1.5, 2.5, 4.0, 6.0, 10.0]}
+
+
+# ------------------------------------------------------------------------------------------------------------------ loading
+def load(name: str) -> dict:
+    synth = name in SYNTH
+    folder = RhythmSynth.root() / name / "cache" if synth else RS.folder_of(name)
+    sig = RS.load_signals(folder)
+    z = np.load(folder / "fine.npz")
+    fine = {k: z[k] for k in z.files}
+    frames = rhythm_cache.load(folder)["frames"]
+    if synth:
+        truth = B.synth_truth(json.loads((RhythmSynth.root() / name / "truth.json").read_text(encoding="utf-8")))
+        lab = {"labels": {}, "spans": []}
+        t = json.loads((RhythmSynth.root() / name / "truth.json").read_text(encoding="utf-8"))
+        lab["labels"] = {str(f): "C" for f in t["hard"]}
+    else:
+        lab = T.load_labels(WORKSHOP, name)
+        truth = T.truth_list(lab)
+    return {"name": name, "synth": synth, "folder": folder, "sig": sig, "fine": fine, "frames": frames, "truth": truth, "lab": lab,
+            "ctx": C.Ctx(sig, frames), "mat": RF.cached(folder, sig, fine, frames), "n": len(fine["need"])}
+
+
+def auc(pos: np.ndarray, neg: np.ndarray) -> float:
+    if len(pos) == 0 or len(neg) == 0:
+        return float("nan")
+    allv = np.concatenate([pos, neg])
+    order = allv.argsort(kind="mergesort")
+    sv = allv[order]
+    ranks = np.empty(len(allv))
+    i = 0
+    while i < len(sv):
+        k = i
+        while k + 1 < len(sv) and sv[k + 1] == sv[i]:
+            k += 1
+        ranks[order[i:k + 1]] = (i + k) / 2.0 + 1
+        i = k + 1
+    return float((ranks[:len(pos)].sum() - len(pos) * (len(pos) + 1) / 2) / (len(pos) * len(neg)))
+
+
+def trap_auc(d: dict, s: np.ndarray) -> float:
+    """AUC of true cuts against the boundaries an eye judged `not a cut` (the traps)."""
+    ctx = d["ctx"]
+    pos = sorted({ctx.frame_to_j(int(k)) for k, c in d["lab"]["labels"].items() if c == "C"})
+    neg = sorted({ctx.frame_to_j(int(k)) for k, c in d["lab"]["labels"].items() if c == "N"} - set(pos))
+    pos = [p for p in pos if 1 <= p < ctx.m]
+    neg = [q for q in neg if 1 <= q < ctx.m]
+    return auc(s[pos], s[neg]) if pos and neg else float("nan")
+
+
+def f1s(truth, pred, kinds=HARD) -> dict:
+    a, b = E.score(truth, pred, 0, kinds=kinds), E.score(truth, pred, 1, kinds=kinds)
+    return {"tp0": a["tp"], "tp": b["tp"], "fp": b["fp"], "fn": b["fn"], "f1_0": a["f1"], "f1": b["f1"], "truth": b["truth"],
+            "missed": b["missed"], "extra": b["extra"]}
+
+
+# -------------------------------------------------------------------------------------------------------- signal methods
+def signal_table(d: dict) -> dict:
+    """{method id: {combo: row}} for M01-M15 on one video: every (quantile, ratio) of the grid, scored after P2, P3 and P4."""
+    out = {}
+    ctx, truth = d["ctx"], d["truth"]
+    for mid, label, principle, key, picker in M.SIGNAL_METHODS:
+        s = M.signal_of(ctx, key)
+        rows = {}
+        p1 = {"auc_all": round(M.p1_auc(ctx, s, truth), 4), "auc_traps": round(trap_auc(d, s), 4)}
+        rad = {"winmax": 4}.get(key, 0)
+        for q in GRID_Q[picker]:
+            for r in GRID_R[picker]:
+                thr = M.resolve_abs(ctx, key, q)
+                res = M.run_signal_method(ctx, key, picker, {"abs_min": thr, "ratio_min": r}, snap_rad=rad)
+                p2, p3 = f1s(truth, res["p2"]), f1s(truth, res["p3"])
+                p4 = f1s(truth, res["p4"])
+                rows[f"{q}|{r}"] = {"p2": p2["f1"], "p3": p3["f1"], "p4_0": p4["f1_0"], "p4_1": p4["f1"], "tp": p4["tp"], "fp": p4["fp"],
+                                    "fn": p4["fn"], "n": len(res["p4"])}
+        out[mid] = {"p1": p1, "rows": rows}
+    return out
+
+
+def span_table(d: dict) -> dict:
+    out = {}
+    for mid, label, principle, which in M.SPAN_METHODS:
+        res = M.run_span_method(d["ctx"], which)
+        kinds = (which,)
+        out[mid] = {"p2": f1s(d["truth"], res["p2"], kinds), "p3": f1s(d["truth"], res["p3"], kinds), "p4": f1s(d["truth"], res["p4"], kinds)}
+    return out
+
+
+# --------------------------------------------------------------------------------------------------------------- the fusion
+def labelled_set(d: dict, seed: int = 7) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """(frames, y, weight) of the judged boundaries of a video: 1 a hard cut, 0 not a cut; transitions and ambiguous boundaries are
+    left out, and a sample of the boundaries no evidence flagged is added as certain negatives, down-weighted."""
+    n, mat, lab = d["n"], d["mat"], d["lab"]
+    y = np.full(n, -1)
+    if d["synth"]:
+        t = json.loads((RhythmSynth.root() / d["name"] / "truth.json").read_text(encoding="utf-8"))
+        y[mat["need"]] = 0
+        for f in t["hard"]:
+            y[f] = 1
+        for tr in t["transitions"]:
+            y[tr["start"]:tr["end"] + 1] = -1
+        idx = np.nonzero(y >= 0)[0]
+        return idx, y[idx], np.ones(len(idx))
+    for k, c in lab["labels"].items():
+        y[int(k)] = 1 if c == "C" else 0 if c == "N" else -1
+    for sp in lab.get("spans", []):
+        y[int(sp["start"]):int(sp["end"]) + 1] = -1
+    for k, c in lab["labels"].items():
+        if c == "A":
+            y[int(k)] = -1
+    judged = T.judged_frames(lab)
+    rng = np.random.default_rng(seed)
+    free = np.nonzero(mat["need"] & (y < 0) & ~np.isin(np.arange(n), list(judged)))[0]
+    take = rng.choice(free, size=min(len(free), 150), replace=False) if len(free) else np.array([], dtype=int)
+    y[take] = 0
+    idx = np.nonzero(y >= 0)[0]
+    w = np.ones(len(idx))
+    w[np.isin(idx, take)] = max(len(free) / max(len(take), 1), 1.0) * 0.1
+    return idx, y[idx], w
+
+
+def fit_model(sets: list[dict]):
+    from sklearn.ensemble import HistGradientBoostingClassifier
+    X = np.concatenate([s["X"] for s in sets])
+    y = np.concatenate([s["y"] for s in sets])
+    w = np.concatenate([s["w"] for s in sets])
+    clf = HistGradientBoostingClassifier(max_depth=4, learning_rate=0.08, max_iter=200, l2_regularization=1.0, min_samples_leaf=5,
+                                         random_state=0)
+    clf.fit(X, y, sample_weight=w)
+    return clf
+
+
+def with_sets(datas: dict, keys: list[str]) -> dict:
+    out = {}
+    for name, d in datas.items():
+        idx, y, w = labelled_set(d)
+        if len(idx) and y.sum() + (y == 0).sum():
+            out[name] = {"idx": idx, "y": y, "w": w, "X": FU.design(d["mat"], keys)[idx]}
+    return out
+
+
+# ------------------------------------------------------------------------------------------------------------------- run
+def run(args) -> dict:
+    t0 = time.time()
+    names = REFS + SYNTH
+    datas = {n: load(n) for n in names}
+    print(f"loaded {len(datas)} videos {time.time() - t0:.0f}s", flush=True)
+    sig_tab = {n: signal_table(datas[n]) for n in names}
+    print(f"signal methods {time.time() - t0:.0f}s", flush=True)
+    span_tab = {n: span_table(datas[n]) for n in names}
+    print(f"transition methods {time.time() - t0:.0f}s", flush=True)
+    keys = FU.feature_names(datas[REFS[0]]["mat"])
+    sets = with_sets(datas, keys)
+    # leave-one-video-out for the references; the synthetic videos are always in the training pool, never held out of it
+    probs, rule = {}, {}
+    for h in REFS:
+        train = [sets[k] for k in sets if k != h]
+        clf = fit_model(train)
+        d = datas[h]
+        need = d["mat"]["need"]
+        p = np.zeros(d["n"])
+        p[need] = clf.predict_proba(FU.design(d["mat"], keys)[need])[:, 1]
+        probs[h] = p
+        spans = D.ramps(d["sig"], d["frames"])
+        rule[h] = (D.decide(d["sig"], d["fine"], d["frames"], spans, RULE), spans)
+    print(f"fusion {time.time() - t0:.0f}s", flush=True)
+    # ---- assemble the sheet
+    table = []
+    for mid, label, principle, key, picker in M.SIGNAL_METHODS:
+        per, tot = {}, [0, 0, 0]
+        for h in REFS:
+            others = [r for r in REFS if r != h]
+            best, bscore = None, -1.0
+            for combo in sig_tab[h][mid]["rows"]:
+                v = float(np.mean([sig_tab[r][mid]["rows"][combo]["p4_1"] for r in others]))
+                if v > bscore:
+                    best, bscore = combo, v
+            row = sig_tab[h][mid]["rows"][best]
+            per[h] = dict(row, combo=best, **sig_tab[h][mid]["p1"])
+            tot[0] += row["tp"]; tot[1] += row["fp"]; tot[2] += row["fn"]
+        table.append({"id": mid, "label": label, "principle": principle, "family": "signal", "per": per, "tot": tot})
+    # M19 rule, M20 fusion
+    for mid, label, principle, which in (("M19", "evidence-conjunction", "area rule: replaced share, no tracked features, not a return, not a ramp", "rule"),
+                                         ("M20", "learned-fusion", "gradient-boosted trees on the whole evidence matrix", "fusion")):
+        per, tot = {}, [0, 0, 0]
+        for h in REFS:
+            d = datas[h]
+            need = d["mat"]["need"]
+            if which == "rule":
+                out, spans = rule[h]
+                p4 = [c for c in out["cuts"] if c["kind"] == "hard"]
+                cand = np.nonzero(D.candidate_mask(d["fine"], RULE["hard"]))[0]
+                p2 = [{"frame": int(i), "kind": "hard"} for i in cand]
+                p3 = p4
+                s = np.nan_to_num(np.asarray(d["fine"]["U"], dtype=np.float64))[d["ctx"].src]
+            else:
+                p = probs[h]
+                # the PRODUCT decision (rhythm_detect.decide with the shipped types: fades typed, dissolves and whips off), fed with the
+                # leave-one-reference-out probabilities, so the sheet scores exactly what shots.detect would report on an unseen video
+                prm = dict(D.params(), decision={"method": "fusion"})
+                spans = D.ramps(d["sig"], d["frames"], dict(prm["types"], dissolve=False, whip=False))
+                prod = D.decide(d["sig"], d["fine"], d["frames"], spans, prm, probs=p)
+                p2 = [{"frame": int(i), "kind": "hard"} for i in np.nonzero(need & (p >= 0.02))[0] if i > 0]
+                p3 = [c for c in prod["cuts"] if c["kind"] == "hard"]
+                p4 = p3
+                s = p[d["ctx"].src]
+            r2, r3, r4 = f1s(d["truth"], p2), f1s(d["truth"], p3), f1s(d["truth"], p4)
+            per[h] = {"p4_1": r4["f1"], "p4_0": r4["f1_0"], "p3": r3["f1"], "p2": r2["f1"], "tp": r4["tp"], "fp": r4["fp"], "fn": r4["fn"],
+                      "n": len(p4), "auc_all": round(M.p1_auc(d["ctx"], s, d["truth"]), 4), "auc_traps": round(trap_auc(d, s), 4),
+                      "missed": r4["missed"], "extra": r4["extra"]}
+            tot[0] += r4["tp"]; tot[1] += r4["fp"]; tot[2] += r4["fn"]
+        table.append({"id": mid, "label": label, "principle": principle, "family": which, "per": per, "tot": tot})
+    # transitions pooled over every video (references and synthetic)
+    trans = []
+    for mid, label, principle, which in M.SPAN_METHODS:
+        row = {"id": mid, "label": label, "principle": principle, "kind": which, "per": {}}
+        tot = {"p2": [0, 0, 0], "p3": [0, 0, 0], "p4": [0, 0, 0]}
+        for n in names:
+            r = span_tab[n][mid]
+            row["per"][n] = {ph: (r[ph]["tp"], r[ph]["fp"], r[ph]["fn"]) for ph in ("p2", "p3", "p4")}
+            for ph in tot:
+                tot[ph][0] += r[ph]["tp"]; tot[ph][1] += r[ph]["fp"]; tot[ph][2] += r[ph]["fn"]
+        row["tot"] = tot
+        trans.append(row)
+    doc = {"schema": "zrmd/rhythm-sheet@1", "date": "14 October 2026", "references": REFS, "synthetic": SYNTH, "methods": table,
+           "transitions": trans, "seconds": round(time.time() - t0)}
+    if args.json:
+        Path(args.json).write_text(json.dumps(doc, indent=1, default=float) + "\n", encoding="utf-8")
+    if args.md:
+        Path(args.md).write_text(markdown(doc, datas), encoding="utf-8")
+    for m in table:
+        tp, fp, fn = m["tot"]
+        P, R = tp / max(tp + fp, 1), tp / max(tp + fn, 1)
+        macro = float(np.mean([m["per"][h]["p4_1"] for h in REFS]))
+        print(f"{m['id']} {m['label']:26s} macro {macro:.3f} micro P {P:.3f} R {R:.3f} F1 {2 * P * R / max(P + R, 1e-9):.3f} ({tp}/{fp}/{fn})")
+    return doc
+
+
+def prf(tp: int, fp: int, fn: int) -> tuple[float, float, float]:
+    P, R = tp / max(tp + fp, 1), tp / max(tp + fn, 1)
+    return P, R, 2 * P * R / max(P + R, 1e-9)
+
+
+def markdown(doc: dict, datas: dict) -> str:
+    refs = doc["references"]
+    lines = ["# Rhythm: method sheet on the adjudicated references (14 October 2026)", "",
+             "Twenty methods, four phases each, one truth (pooled adjudication, `<workshop>/rhythm/truth/<slug>.json`), leave-one-reference-out: "
+             "the thresholds of a method are chosen on the OTHER references and applied to the held-out one, so every number below is a number on a "
+             "video the method never saw. Scores are F1 at +-1 frame of the hard cuts (hard cuts only; transitions and ambiguous boundaries are neutral). "
+             "FR : vingt methodes, quatre phases, verite adjudiquee, validation par reference exclue. (14 October 2026)", "",
+             "Phases: P1 the number per boundary, scored by the area under the ROC curve of true cuts against every boundary (AUC all) and against the "
+             "judged traps (AUC traps); P2 peak picking; P3 persistence, flash return, isolation; P4 exact placement, F1 at 0 and at +-1 frame. "
+             "(14 October 2026)", "",
+             "| id | method | principle | AUC all | AUC traps | P2 F1 | P3 F1 | P4 F1 @0 | P4 F1 @+-1 | micro P | micro R | micro F1 | TP | FP | FN |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    for m in doc["methods"]:
+        per = m["per"]
+        mean = lambda k: float(np.nanmean([per[h][k] for h in refs]))
+        tp, fp, fn = m["tot"]
+        P, R, F = prf(tp, fp, fn)
+        lines.append(f"| {m['id']} | {m['label']} | {m['principle']} | {mean('auc_all'):.3f} | {mean('auc_traps'):.3f} | {mean('p2'):.3f} | "
+                     f"{mean('p3'):.3f} | {mean('p4_0'):.3f} | {mean('p4_1'):.3f} | {P:.3f} | {R:.3f} | {F:.3f} | {tp} | {fp} | {fn} |")
+    lines += ["", "Columns AUC and P2 to P4 are the mean over the eleven references (macro); micro columns pool every cut of every reference. (14 October 2026)", ""]
+    lines += ["## Transitions (M16 to M18), pooled over the references and the four synthetic videos (14 October 2026)", "",
+              "| id | method | kind | P2 tp/fp/fn | P3 tp/fp/fn | P4 tp/fp/fn | P4 F1 |", "|---|---|---|---|---|---|---|"]
+    for t in doc["transitions"]:
+        tp, fp, fn = t["tot"]["p4"]
+        lines.append(f"| {t['id']} | {t['label']} | {t['kind']} | {'/'.join(map(str, t['tot']['p2']))} | {'/'.join(map(str, t['tot']['p3']))} | "
+                     f"{'/'.join(map(str, t['tot']['p4']))} | {prf(tp, fp, fn)[2]:.3f} |")
+    lines += ["", "## Per reference, M19 and M20 (F1 at +-1 frame, tp/fp/fn) (14 October 2026)", "",
+              "| reference | true cuts | M19 rule | M20 fusion |", "|---|---|---|---|"]
+    byid = {m["id"]: m for m in doc["methods"]}
+    for h in refs:
+        a, b = byid["M19"]["per"][h], byid["M20"]["per"][h]
+        lines.append(f"| {h} | {a['tp'] + a['fn']} | {a['p4_1']:.3f} ({a['tp']}/{a['fp']}/{a['fn']}) | {b['p4_1']:.3f} ({b['tp']}/{b['fp']}/{b['fn']}) |")
+    return "\n".join(lines) + "\n"
+
+
+def train(args) -> None:
+    names = REFS + SYNTH
+    datas = {n: load(n) for n in names}
+    keys = FU.feature_names(datas[REFS[0]]["mat"])
+    sets = with_sets(datas, keys)
+    clf = fit_model(list(sets.values()))
+    model = FU.export(clf, keys, {"date": "14 October 2026", "trained_on": list(sets), "boundaries": int(sum(len(s["y"]) for s in sets.values())),
+                                  "cuts": int(sum(int(s["y"].sum()) for s in sets.values())),
+                                  "doc": "Trained by Scripts/RhythmSheet.py train on the adjudicated references and the synthetic videos. "
+                                         "FR : entrainee sur les references adjudiquees."})
+    X = np.concatenate([s["X"] for s in sets.values()])
+    err = float(np.abs(FU.predict(model, X) - clf.predict_proba(X)[:, 1]).max())
+    FU.MODEL.write_text(json.dumps(model) + "\n", encoding="utf-8")
+    print(json.dumps({"model": str(FU.MODEL), "trees": len(model["trees"]), "features": len(keys), "max_abs_error_vs_sklearn": err}))
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    r = sub.add_parser("run")
+    r.add_argument("--json")
+    r.add_argument("--md")
+    sub.add_parser("train")
+    a = ap.parse_args()
+    run(a) if a.cmd == "run" else train(a)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,258 @@
+# 14 October 2026: procedural test videos with cuts known BY CONSTRUCTION (no reference pixel is used).
+# They carry what makes real cuts hard: dissolves, a fade through black, a whip (blur sweep), a flash that is NOT a cut,
+# false-positive traps (a very fast pan, a light sweep, a pop-in, a strobe), a UI recording whose canvas is replaced while
+# the chrome stays, and a doubled-frame cadence. Ground truth is returned with the frames: hard cut frames (first frame of
+# the new shot), transition intervals, region cuts, and the traps that must NOT be reported.
+# FR : videos de test procedurales dont les coupes sont connues par construction (aucun pixel de reference).
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+import cv2
+import numpy as np
+
+W, H = 640, 360
+
+
+def _noise(rng, w, h, octaves=(6, 12, 24)):
+    acc = np.zeros((h, w, 3), np.float32)
+    for k, o in enumerate(octaves):
+        small = rng.random((max(2, o * h // w), o, 3), dtype=np.float32)
+        acc += cv2.resize(small, (w, h), interpolation=cv2.INTER_CUBIC) / (k + 1)
+    acc -= acc.min()
+    return acc / max(acc.max(), 1e-6)
+
+
+class Shot:
+    """A procedural shot sampled at any local time (negative or beyond its length too, so transitions can overlap)."""
+
+    def __init__(self, kind: str, seed: int):
+        self.kind, rng = kind, np.random.default_rng(seed)
+        self.rng = rng
+        self.c0, self.c1 = rng.random(3).astype(np.float32), rng.random(3).astype(np.float32)
+        self.v = rng.uniform(-3.0, 3.0, 2).astype(np.float32)
+        if kind in ("noise", "stripes"):
+            self.canvas = _noise(rng, int(W * 1.6), int(H * 1.6))
+        if kind == "card":
+            self.bars = [(rng.integers(40, 300), rng.integers(30, 330), rng.integers(80, 360), rng.integers(8, 22),
+                          rng.random(3).astype(np.float32)) for _ in range(6)]
+            self.start = rng.integers(0, 6, 6)
+        self.circles = [(rng.uniform(0.1, 0.9), rng.uniform(0.1, 0.9), rng.uniform(0.04, 0.12), rng.random(3).astype(np.float32),
+                         rng.uniform(-0.01, 0.01, 2)) for _ in range(3)]
+        self.layout_seed = int(seed)
+        # crisp foreground clutter: rectangles with hard edges, slow drift (what text, UI and objects contribute in real pictures)
+        self.shapes = [(int(rng.integers(20, W - 160)), int(rng.integers(20, H - 80)), int(rng.integers(30, 150)), int(rng.integers(8, 70)),
+                        rng.random(3).astype(np.float32), float(rng.uniform(-0.4, 0.4)), float(rng.uniform(-0.2, 0.2)),
+                        bool(rng.random() < 0.5)) for _ in range(14)]
+
+    def at(self, t: int) -> np.ndarray:
+        img = self._base(t)
+        h, w = H, W
+        for (x, y, bw, bh, col, vx, vy, outline) in self.shapes:
+            xx, yy = int((x + vx * t) % (w - bw)), int((y + vy * t) % (h - bh))
+            if outline:
+                img[yy:yy + 2, xx:xx + bw] = col
+                img[yy + bh - 2:yy + bh, xx:xx + bw] = col
+                img[yy:yy + bh, xx:xx + 2] = col
+                img[yy:yy + bh, xx + bw - 2:xx + bw] = col
+            else:
+                img[yy:yy + bh, xx:xx + bw] = col
+        return img
+
+    def _base(self, t: int) -> np.ndarray:
+        h, w = H, W
+        if self.kind == "grad":
+            yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+            a = np.clip((xx / w * 0.7 + yy / h * 0.3), 0, 1)[..., None]
+            img = self.c0 * (1 - a) + self.c1 * a
+            for cx, cy, r, col, vel in self.circles:
+                x, y = (cx + vel[0] * t) % 1.0, (cy + vel[1] * t) % 1.0
+                d = np.hypot(xx - x * w, yy - y * h) / (r * w)
+                img = img * (1 - np.clip(1.4 - d, 0, 1)[..., None]) + col * np.clip(1.4 - d, 0, 1)[..., None]
+            return img
+        if self.kind in ("noise", "stripes"):
+            sp = 1.0 if self.kind == "noise" else 14.0
+            rx, ry = self.canvas.shape[1] - w, self.canvas.shape[0] - h
+
+            def tri(x, r):  # continuous ping-pong path: a pan never jumps
+                x = x % (2 * r)
+                return int(r - abs(x - r))
+            ox = tri(rx / 2 + self.v[0] * sp * t, rx)
+            oy = tri(ry / 2 + self.v[1] * sp * t * 0.5, ry)
+            return self.canvas[oy:oy + h, ox:ox + w].copy()
+        if self.kind == "card":
+            img = np.ones((h, w, 3), np.float32) * self.c0 * 0.5
+            for k, (x, y, bw, bh, col) in enumerate(self.bars):
+                a = np.clip((t - self.start[k]) / 6.0, 0.0, 1.0)
+                if a <= 0:
+                    continue
+                ww = int(bw * a)
+                img[y:y + bh, x:x + ww] = col
+            return img
+        if self.kind in ("ui", "ui2"):
+            # chrome (header and sidebar) never changes; only the canvas does. ui: canvas = 74 percent of the frame, ui2: 44 percent.
+            head, side = (36, 110) if self.kind == "ui" else (90, 260)
+            img = np.ones((h, w, 3), np.float32) * 0.92
+            img[:head, :] = 0.2
+            img[head:, :side] = 0.82
+            yy, xx = np.mgrid[head:h, side:w].astype(np.float32)
+            wave = (0.5 + 0.5 * np.sin((xx + self.v[0] * t * 2) * 0.05 + yy * 0.03))[..., None]
+            img[head:, side:] = (self.c0 * 0.35 + 0.1) * 0.6 + 0.4 * self.c1 * wave
+            return img
+        raise ValueError(self.kind)
+
+
+def _whip_blur(img: np.ndarray, amount: int) -> np.ndarray:
+    k = max(1, amount)
+    return cv2.blur(img, (k, 1))
+
+
+def build(plan: list[dict], seed: int = 0, fps: int = 24, cadence: int = 1) -> dict:
+    """plan: [{kind, length, into: hard|dissolve|fade|whip|region, L}], one entry per shot (the first has no `into`).
+    Returns {frames (n,H,W,3) uint8, truth {...}}. A `region` transition replaces the canvas of a `ui` shot only."""
+    rng = np.random.default_rng(seed)
+    shots = [Shot(p["kind"], seed * 1000 + i) for i, p in enumerate(plan)]
+    # A cut between two nearly identical pictures is not a detectable event by any method: redraw the incoming shot until the
+    # step is visible (0.05 for a hard cut, 0.08 across a transition), so that the ceiling of the benchmark is 1.0.
+    for k in range(1, len(plan)):
+        need = 0.05 if plan[k].get("into", "hard") == "hard" else 0.08
+        a_last = shots[k - 1].at(plan[k - 1]["length"] - 1)
+        for attempt in range(1, 40):
+            if float(np.abs(a_last - shots[k].at(0)).mean()) >= need:
+                break
+            shots[k] = Shot(plan[k]["kind"], seed * 1000 + k + 7919 * attempt)
+    starts, cursor = [], 0
+    for p in plan:
+        starts.append(cursor)
+        cursor += p["length"]
+    total = cursor
+    frames = np.zeros((total, H, W, 3), np.float32)
+    truth = {"hard": [], "transitions": [], "region": [], "traps": [], "flashes": []}
+    for k, p in enumerate(plan):
+        a, b = starts[k], starts[k] + p["length"]
+        for g in range(a, b):
+            frames[g] = shots[k].at(g - a)
+    for k in range(1, len(plan)):
+        b = starts[k]
+        into, L = plan[k].get("into", "hard"), int(plan[k].get("L", 8))
+        if into == "hard":
+            if plan[k - 1]["kind"] == plan[k]["kind"] == "ui2":
+                truth["region"].append(b)  # a 44 percent canvas replaced under a fixed chrome: an event, below the 50 percent cut rule
+            else:
+                truth["hard"].append(b)
+        elif into == "dissolve":
+            h = L // 2
+            for g in range(b - h, b - h + L):
+                if 0 <= g < total:
+                    al = (g - (b - h) + 1) / (L + 1)
+                    pa = shots[k - 1].at(g - starts[k - 1])
+                    pb = shots[k].at(g - starts[k])
+                    frames[g] = pa * (1 - al) + pb * al
+            truth["transitions"].append({"kind": "dissolve", "start": b - h, "end": b - h + L - 1, "frame": b})
+        elif into == "fade":
+            L = L | 1  # odd length: the middle picture is exactly black
+            h = L // 2
+            for g in range(b - h, b - h + L):
+                if 0 <= g < total:
+                    x = (g - (b - h)) / (L - 1)
+                    lvl = abs(2 * x - 1)
+                    src = shots[k - 1].at(g - starts[k - 1]) if x < 0.5 else shots[k].at(g - starts[k])
+                    frames[g] = src * lvl
+            truth["transitions"].append({"kind": "fade", "start": b - h, "end": b - h + L - 1, "frame": b})
+        elif into == "whip":
+            h = L // 2
+            for g in range(b - h, b - h + L):
+                if 0 <= g < total:
+                    x = (g - (b - h) + 0.5) / L
+                    amount = int(1 + 70 * (1 - abs(2 * x - 1)))
+                    src = shots[k - 1].at(g - starts[k - 1]) if x < 0.5 else shots[k].at(g - starts[k])
+                    frames[g] = _whip_blur(src, amount)
+            truth["transitions"].append({"kind": "whip", "start": b - h, "end": b - h + L - 1, "frame": b})
+        elif into == "flash":  # kept for completeness: a flash is typed apart, not a cut
+            truth["flashes"].append(b)
+    # traps inside shots (never cuts): fast pan, light sweep, pop-in, strobe
+    for k, p in enumerate(plan):
+        for trap in p.get("traps", []):
+            g = starts[k] + int(trap["at"])
+            kind = trap["kind"]
+            if kind == "strobe" and g < total:
+                frames[g] = np.clip(frames[g] + 0.3, 0, 1)
+            elif kind == "sweep":
+                for d in range(12):
+                    if g + d < total:
+                        x0 = int(W * d / 12)
+                        frames[g + d, :, max(0, x0 - 30):x0 + 30] += 0.25
+            elif kind == "popin":
+                x0, y0 = int(rng.integers(40, W - 220)), int(rng.integers(40, H - 140))
+                col = rng.random(3).astype(np.float32)
+                for d in range(6):
+                    if g + d < total:
+                        s = (d + 1) / 6
+                        frames[g + d:g + 6 + 40, y0:y0 + int(100 * s), x0:x0 + int(180 * s)] = col
+            elif kind == "fastpan":
+                for d in range(5):
+                    if g + d < total:
+                        frames[g + d] = np.roll(frames[g + d], 40 * (d + 1), axis=1)
+                if g + 5 < total:
+                    pass
+            truth["traps"].append({"kind": kind, "frame": g})
+    out = (np.clip(frames, 0, 1) * 255).astype(np.uint8)
+    if cadence > 1:
+        out = np.repeat(out, cadence, axis=0)
+        for key in ("hard", "region"):
+            truth[key] = [f * cadence for f in truth[key]]
+        for t in truth["transitions"]:
+            for key in ("start", "end", "frame"):
+                t[key] *= cadence
+        truth["traps"] = [dict(t, frame=t["frame"] * cadence) for t in truth["traps"]]
+    truth["frames"] = len(out)
+    truth["fps"] = fps * cadence
+    return {"frames": out, "truth": truth, "fps": fps * cadence}
+
+
+def standard_plan(seed: int = 7, shots: int = 40) -> list[dict]:
+    """A varied plan: every transition type several times, traps in some shots, short and long shots, and UI runs whose
+    canvas is replaced under a fixed chrome (ui: 74 percent canvas = a cut, ui2: 44 percent canvas = a region event)."""
+    rng = np.random.default_rng(seed)
+    kinds = ["grad", "noise", "card", "stripes"]
+    intos = ["hard"] * 5 + ["dissolve", "dissolve", "fade", "whip"]
+    plan: list[dict] = []
+    ui_left, ui_kind = 0, "ui"
+    while len(plan) < shots:
+        i = len(plan)
+        if ui_left > 0:
+            kind, ui_left = ui_kind, ui_left - 1
+        elif rng.random() < 0.12:
+            ui_kind = "ui" if rng.random() < 0.5 else "ui2"
+            kind, ui_left = ui_kind, 3
+        else:
+            kind = kinds[int(rng.integers(0, len(kinds)))]
+        length = int(rng.choice([6, 9, 14, 20, 28, 45, 60]))
+        item = {"kind": kind, "length": length}
+        if i:
+            into = "hard" if kind in ("ui", "ui2") and plan[-1]["kind"] == kind else intos[int(rng.integers(0, len(intos)))]
+            item["into"] = into
+            item["L"] = int(rng.choice([6, 10, 16])) if into != "hard" else 0
+            if into != "hard":
+                plan[-1]["length"] = max(plan[-1]["length"], item["L"] + 4)
+                item["length"] = max(item["length"], item["L"] + 4)
+        if item["length"] >= 36 and kind not in ("ui", "ui2") and rng.random() < 0.6:
+            # a trap never overlaps a transition zone (half a transition on each side, 8 pictures at most) or its own tail
+            item["traps"] = [{"kind": str(rng.choice(["strobe", "sweep", "popin", "fastpan"])), "at": int(rng.integers(10, item["length"] - 24))}]
+        plan.append(item)
+    return plan
+
+
+def write_mp4(frames: np.ndarray, path: str | Path, fps: float, crf: int = 20) -> Path:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    h, w = frames.shape[1:3]
+    proc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{w}x{h}", "-r", str(fps),
+                             "-i", "-", "-c:v", "libx264", "-crf", str(crf), "-preset", "veryfast", "-pix_fmt", "yuv420p",
+                             "-threads", "2", str(path)], stdin=subprocess.PIPE)
+    proc.stdin.write(np.ascontiguousarray(frames).tobytes())
+    proc.stdin.close()
+    if proc.wait() != 0:
+        raise RuntimeError("ffmpeg failed while writing the synthetic video")
+    return path

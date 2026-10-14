@@ -1,0 +1,94 @@
+# 14 October 2026: the MASTER chain of an assembled soundtrack as PARAMETERS. A soundtrack rebuilt from music stems and SFX events is a sum with
+# its own crest factor; the reference is a finished master (a brick-wall one, often: PLR of 7.9 dB on the Sonic Riots excerpt). Under the same
+# -1 dBTP ceiling a sum that is more dynamic than the reference cannot reach the reference loudness AND its loudness curve: the limiter takes
+# back every raise (measured: loudness part 99.62, score 99.864, the ceiling of the plain chain on that member). The master chain has three
+# numbers per soundtrack and no sample of the reference:
+#   1. driveDb, a soft clip (tanh, knee at the ceiling) ahead of the limiter: the density a mastering saturator gives; searched on an ascending
+#      grid, the SMALLEST drive whose exact mix score reaches stopScore is kept (parsimony: never saturate more than the score needs);
+#   2. targetLufs, the integrated loudness the soundtrack is brought to (a number);
+#   3. the gain ride (zrmd/audio/gainride.py): one dB value per 0.05 to 0.1 s bin, the loudness curve.
+# render() replays the chain from these numbers alone: it is the contract, fit() only chooses the numbers. FR : la chaine de master en parametres.
+from __future__ import annotations
+
+import numpy as np
+
+from . import gainride, loudness, mix
+
+SCHEMA = "zrmd/master-chain@1"
+
+
+def soft_clip(x: np.ndarray, ceiling_db: float) -> np.ndarray:
+    """tanh soft clip whose unit is the ceiling: linear well under it, a smooth saturation at it."""
+    pk = 10 ** (ceiling_db / 20.0)
+    return np.tanh(x / pk) * pk
+
+
+def settle(sig: np.ndarray, sr: int, cfg: dict, target_lufs: float) -> np.ndarray:
+    """Loudness to the target, then the true-peak limiter, repeated until both hold (the same loop as mix.mix)."""
+    m = cfg["mix"]
+    for _ in range(m["maxIterations"]):
+        sig = sig * mix.db_gain(target_lufs - loudness.integrated(sig, sr))
+        sig = mix.limiter(sig, sr, m["truePeakCeilingDbtp"] - 0.1, cfg)
+        if abs(loudness.integrated(sig, sr) - target_lufs) < 0.1 and loudness.true_peak_db(sig, sr, m["oversample"]) <= m["truePeakCeilingDbtp"]:
+            break
+    return sig
+
+
+def _driven(raw: np.ndarray, sr: int, cfg: dict, target_lufs: float, drive_db: float) -> np.ndarray:
+    """The sum at the target loudness, saturated by drive_db when it is positive, then settled under the ceiling."""
+    m = cfg["mix"]
+    if drive_db and drive_db > 0:
+        x = raw * mix.db_gain(target_lufs - loudness.integrated(raw, sr)) * mix.db_gain(drive_db)
+        raw = soft_clip(x, m["truePeakCeilingDbtp"] - 0.1)
+    return settle(raw, sr, cfg, target_lufs)
+
+
+def _ride_on(base: np.ndarray, sr: int, cfg: dict, ride: dict | None) -> np.ndarray:
+    m = cfg["mix"]
+    out = gainride.apply(base, ride, sr)
+    if loudness.true_peak_db(out, sr, m["oversample"]) > m["truePeakCeilingDbtp"]:
+        out = mix.limiter(out, sr, m["truePeakCeilingDbtp"] - 0.1, cfg)          # never over the ceiling
+    return out
+
+
+def render(raw: np.ndarray, sr: int, cfg: dict, spec: dict) -> np.ndarray:
+    """The soundtrack from the stored numbers only: no reference sample, no reference loudness (targetLufs is in the spec)."""
+    base = _driven(raw, sr, cfg, float(spec["targetLufs"]), float(spec.get("driveDb", 0.0)))
+    out = base
+    for ride in spec.get("chain", []):
+        out = _ride_on(out, sr, cfg, ride)
+    return out
+
+
+def fit(ref: np.ndarray, raw: np.ndarray, sr: int, cfg: dict, target_lufs: float | None = None) -> tuple[np.ndarray, dict, list[dict]]:
+    """Choose the numbers: the smallest drive of the grid whose exact mix score (verify.report's) reaches mix.drive.stopScore, the best of the
+    grid otherwise, each with its own gain ride. Returns (output, spec, tried) with tried the per-drive record (drive, three parts, score)."""
+    m = cfg["mix"]
+    dc, rc = m.get("drive") or {}, m.get("ride") or {}
+    target = round(float(loudness.integrated(ref, sr) if target_lufs is None else target_lufs), 3)    # stored as is: render() replays the same number
+    grid = [0.0] + [float(g) for g in (dc.get("gridDb") or []) if float(g) > 0] if dc.get("enabled") else [0.0]
+    stop = float(dc.get("stopScore", 99.95))
+    best, tried = None, []
+    for drive in grid:
+        base = _driven(raw, sr, cfg, target, drive)
+        chain = []
+        if rc.get("enabled"):
+            chain.append(gainride.fit(ref, base, sr, cfg, rc, target_lufs=target))
+        out = base
+        for ride in chain:
+            out = _ride_on(out, sr, cfg, ride)
+        parts = gainride.mix_parts(ref, out, sr, cfg)
+        tried.append({"driveDb": drive, **{k: round(v, 3) for k, v in parts.items()}})
+        if best is None or parts["score"] > best[0]["score"]:
+            best = (parts, out, {"schema": SCHEMA, "targetLufs": target, "driveDb": drive, "chain": chain})
+        if parts["score"] >= stop:
+            break
+    return best[1], best[2], tried
+
+
+def stem_gain(arrays: list[np.ndarray], headroom: float = 0.98) -> float:
+    """One common gain (<= 1) that keeps every stored stem under full scale. A 24-bit WAV clips at +-1 and the summed stems are hotter than the
+    master that comes out of them: stored unscaled, music.wav and sfx.wav lose their peaks and the sum can no longer be replayed. The value is
+    rounded to 6 decimals and stored in ride.json (stemGain): raw = (music.wav + sfx.wav) / stemGain."""
+    peak = max([float(np.abs(a).max()) for a in arrays if len(a)] + [1e-9])
+    return round(min(1.0, headroom / peak), 6)

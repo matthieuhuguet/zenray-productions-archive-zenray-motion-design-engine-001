@@ -1,0 +1,55 @@
+# 14 October 2026: build the synthetic benchmark videos of the rhythm module (cuts known by construction), encode them as H.264,
+# decode them through the SAME cache path as a reference and compute their signals. Output: <workshop>/rhythm/synthetic/<id>/.
+# Run: nice -n 5 /Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/RhythmSynth.py [--force]
+# FR : construit les videos synthetiques de reference du module rythme, coupes connues par construction.
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+sys.path.insert(0, str(ENGINE / "Scripts"))
+from zrmd import settings  # noqa: E402
+from zrmd.analyze import rhythm_cache, rhythm_synth  # noqa: E402
+import RhythmSignals  # noqa: E402
+
+# id -> (seed, shots, cadence, fps)
+VIDEOS = {"S1": (11, 44, 1, 24), "S2": (23, 44, 2, 24), "S3": (37, 44, 1, 30), "S4": (51, 44, 1, 25)}
+
+
+def root() -> Path:
+    return settings.path("workshop") / "rhythm" / "synthetic"
+
+
+def build(vid: str, force: bool = False) -> Path:
+    seed, shots, cadence, fps = VIDEOS[vid]
+    folder = root() / vid
+    video = folder / f"{vid}.mp4"
+    truth_path = folder / "truth.json"
+    if not (video.exists() and truth_path.exists()) or force:
+        built = rhythm_synth.build(rhythm_synth.standard_plan(seed, shots), seed=seed, fps=fps, cadence=cadence)
+        rhythm_synth.write_mp4(built["frames"], video, built["fps"])
+        truth_path.write_text(json.dumps(built["truth"], indent=1) + "\n", encoding="utf-8")
+    cache = folder / "cache"
+    rhythm_cache.build(str(video), cache, force)
+    RhythmSignals.build_folder(cache, force)
+    return folder
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--force", action="store_true")
+    ap.add_argument("--id", action="append")
+    a = ap.parse_args()
+    for vid in a.id or VIDEOS:
+        folder = build(vid, a.force)
+        t = json.loads((folder / "truth.json").read_text(encoding="utf-8"))
+        print(json.dumps({"id": vid, "frames": t["frames"], "hard": len(t["hard"]), "transitions": len(t["transitions"]),
+                          "region": len(t["region"]), "traps": len(t["traps"])}), flush=True)
+
+
+if __name__ == "__main__":
+    main()

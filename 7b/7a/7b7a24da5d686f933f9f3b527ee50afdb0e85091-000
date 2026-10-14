@@ -1,0 +1,121 @@
+# 14 October 2026: the per-reference table of the Image (shader) chantier, read from the disk, every number labelled.
+# Sources: references/<slug>/bible.json (families and durations), image/<slug>/survey*.json (the backdrop field of every
+# shot, params/image-survey.json), motions/* (code-reproduced shots and their fidelity.json), via zrmd.verify.imagescore.
+# Output: <workshop>/image/image-table.json and image-table.md (numbers and names only, never a pixel).
+# Run: python -I Scripts/ReproduceImageTable.py [--rounds round0,round1] [--out <dir>]
+# FR : le tableau par reference du chantier Image (shader), lu sur le disque, chaque nombre etiquete.
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+from zrmd import settings, versions  # noqa: E402
+from zrmd.verify import imagescore  # noqa: E402
+
+ORDER = ["claude-opus-5-5", "flora-agents-on-canvas", "memo", "motion-opus-5-5", "kardashev-0-7", "paper-mono-code", "interface",
+         "x-anabology-2105325733312884869", "x-anabology-2106157622986748377", "yt-4Q-o_ylnVnc", "arkadata-music-02",
+         "onekey-pro-2", "fin-4"]
+
+
+def families(slug: str) -> dict | None:
+    """Shots, seconds and family time shares of the shots the survey MEASURED (its own list, so the table is consistent with
+    its numbers even when the bible was rebuilt since); the live bible only when no survey exists. `stale` is set when the
+    live bible no longer has the survey's cuts."""
+    survey = imagescore.read_survey(slug)
+    if survey:
+        fam = survey.get("byFamily", {})
+        total = sum(f.get("timeShare", 0) for f in fam.values()) or 1.0
+        return {"shots": len(survey["shots"]), "seconds": round(survey["frames"] / float(survey["fps"] or 60.0), 1),
+                "share": {k: round(v.get("timeShare", 0) / total, 3) for k, v in sorted(fam.items(), key=lambda kv: -kv[1].get("timeShare", 0))},
+                "stale": imagescore.stale_against_bible(slug, survey)}
+    path = settings.path("workshop") / "references" / slug / "bible.json"
+    if not path.exists():
+        return None
+    b = json.loads(path.read_text(encoding="utf-8"))
+    fps = float(b.get("fps") or 60.0)
+    out, total = {}, 0.0
+    for s in b["shots"]:
+        d = (int(s["end_frame"]) - int(s["start_frame"])) / fps
+        out[s["family"]] = out.get(s["family"], 0.0) + d
+        total += d
+    return {"shots": len(b["shots"]), "seconds": round(total, 1),
+            "share": {k: round(v / total, 3) for k, v in sorted(out.items(), key=lambda kv: -kv[1])}, "stale": None}
+
+
+def row(slug: str, rounds: list[str]) -> dict:
+    fam = families(slug)
+    surveys = {}
+    for tag in rounds:
+        d = imagescore.read_survey(slug) if tag == "current" else json.loads(imagescore.survey_path(slug, tag).read_text(encoding="utf-8")) \
+            if imagescore.survey_path(slug, tag).exists() else None
+        if d:
+            surveys[tag] = {**d["aggregate"], "glowShare": d.get("glowShare"), "models": d.get("models"),
+                            "reproducible": d["byFamily"].get("graphic", {}).get("coverage"), "byFamily": d["byFamily"]}
+    motions = imagescore.motion_results(slug)
+    plates = imagescore.plate_results(slug)
+    code = [m for m in motions if m["recipe"] in ("textcard", "graphic")]
+    scored = [m for m in motions if isinstance(m["score"], (int, float)) and m["frames"] > 0]
+    tf = sum(m["frames"] for m in scored)
+    dims = {}
+    for m in scored:
+        for k, v in m["dimensions"].items():
+            if isinstance(v, (int, float)):
+                dims.setdefault(k, []).append((m["frames"], v))
+    return {"slug": slug, "families": fam,
+            "survey": surveys,
+            "motions": {"codeReproducedShots": len(code), "allReproducedShots": len(motions), "scored": len(scored),
+                        "meanScore": round(sum(m["score"] * m["frames"] for m in scored) / tf, 4) if tf else None,
+                        "minScore": min((m["score"] for m in scored), default=None),
+                        "dimensions": {k: round(sum(f * v for f, v in lst) / sum(f for f, _ in lst), 4) for k, lst in dims.items()},
+                        "items": [{k: m[k] for k in ("motion", "recipe", "version", "score")} for m in motions]},
+            "plates": {"animatics": len(plates), "gradeMedian": sorted([p["grade"] for p in plates if isinstance(p["grade"], (int, float))])[len(plates) // 2]
+                       if any(isinstance(p["grade"], (int, float)) for p in plates) else None}}
+
+
+def pct(x, d=1):
+    return "-" if x is None else f"{100 * x:.{d}f}"
+
+
+def markdown(rows: list[dict], rounds: list[str]) -> str:
+    head = ("| reference | shots | s | families by time (text card, graphic, plate, montage) | survey " + " / ".join(rounds) +
+            ": coverage, field fidelity, within 1 JND | code motions (shots, mean fidelity) | plates (animatics) |\n|---|---|---|---|---|---|---|\n")
+    lines = []
+    for r in rows:
+        f = r["families"]
+        if not f:
+            lines.append(f"| {r['slug']} | 0 | - | no picture (audio only source) | not applicable | - | - |")
+            continue
+        sh = f["share"]
+        fam = " / ".join(pct(sh.get(k, 0), 0) for k in ("textcard", "graphic", "plate", "montage"))
+        sv = " ; ".join(f"{t}: {pct(r['survey'][t]['coverage'])} / {pct(r['survey'][t]['value'], 2)} / {pct(r['survey'][t]['within1Jnd'])}"
+                        for t in rounds if t in r["survey"])
+        m = r["motions"]
+        mm = f"{m['codeReproducedShots']} shots, {m['meanScore']}" if m["codeReproducedShots"] else "0 shots"
+        lines.append(f"| {r['slug']} | {f['shots']} | {f['seconds']} | {fam} | {sv} | {mm} | {r['plates']['animatics']} |")
+    return head + "\n".join(lines) + "\n"
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--rounds", default="round0,round1")
+    ap.add_argument("--out", default=None)
+    a = ap.parse_args()
+    rounds = [t for t in a.rounds.split(",") if t]
+    out = Path(a.out) if a.out else settings.path("workshop") / "image"
+    out.mkdir(parents=True, exist_ok=True)
+    rows = [row(s, rounds) for s in ORDER]
+    doc = {"schema": "zrmd/image-table@1", "date": versions.stamp(), "rounds": rounds,
+           "definition": "params/image-survey.json (definition list)", "rows": rows}
+    (out / "image-table.json").write_text(json.dumps(doc, indent=1) + "\n", encoding="utf-8")
+    md = markdown(rows, rounds)
+    (out / "image-table.md").write_text(md, encoding="utf-8")
+    print(md)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

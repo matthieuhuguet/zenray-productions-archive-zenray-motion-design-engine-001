@@ -1,0 +1,41 @@
+# 14 October 2026: contact sheets of candidate cut boundaries (eye adjudication). Frames come from a JSON list on the command
+# line or from a named group computed here. Sheets go to <refcache>/<slug>/rhythm/sheets/ (reference pixels: private).
+# Run: /Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/RhythmSheets.py --slug X --frames 120,340,512 --name probe
+# FR : planches de frontieres candidates pour la revue a l'oeil.
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+sys.path.insert(0, str(ENGINE / "Scripts"))
+from zrmd.analyze import rhythm_sheet  # noqa: E402
+import RhythmCache  # noqa: E402
+import RhythmSignals as RS  # noqa: E402
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--slug", required=True)
+    ap.add_argument("--frames", required=True, help="comma separated file frame indices (first picture of the new shot)")
+    ap.add_argument("--name", default="probe")
+    ap.add_argument("--rows", type=int, default=8)
+    a = ap.parse_args()
+    folder = RS.folder_of(a.slug)
+    fine = np.load(folder / "fine.npz")
+    sig = RS.load_signals(folder)
+    fps = float(sig["fps"][0])
+    entries = []
+    for f in [int(x) for x in a.frames.split(",") if x.strip()]:
+        entries.append({"frame": f, "label": f"f={f}  t={f / fps:.2f}s\nU={fine['U'][f]:.2f} S={fine['S'][f]:.2f}\nF={fine['F'][f]:.2f} R={fine['R'][f]:.2f}\nMAD={fine['MAD'][f]:.3f}"})
+    files = rhythm_sheet.sheet(RhythmCache.reference_video(a.slug), entries, folder / "sheets" / a.name, a.rows, fps)
+    print(json.dumps([str(p) for p in files]))
+
+
+if __name__ == "__main__":
+    main()

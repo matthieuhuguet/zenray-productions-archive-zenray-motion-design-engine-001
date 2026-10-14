@@ -1,0 +1,187 @@
+# 14 October 2026: the V1 application API proven in both directions, without a socket (zrmd/app/api.py route()). GREEN: the routes answer
+# with paged lists, the tiers hold 4/8/16, an upload is described and listed, a dropped sound becomes a project in an ISOLATED workshop, a spec is
+# validated. RED: every unknown id, traversal, out-of-range value, bad upload and malformed spec is refused with its cause. FR : l'API de l'application.
+import json
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+WORK = Path.home() / ".claude" / "tmp" / ("tmp-zenray-app-api-test-" + os.urandom(3).hex())
+WORK.mkdir(parents=True, exist_ok=True)
+os.environ["ZRMD_PATH_TIMELINES"] = str(WORK / "timelines")
+
+from zrmd.app import api, ingest, tiers  # noqa: E402
+
+FAIL = []
+
+
+def check(name, cond, detail=""):
+    print(("ok   " if cond else "FAIL ") + name + (f"  {detail}" if detail and not cond else ""))
+    if not cond:
+        FAIL.append(name)
+
+
+def get(path, **q):
+    return api.route("GET", path, {k: str(v) for k, v in q.items()})
+
+
+def post(path, body=None, **q):
+    return api.route("POST", path, {k: str(v) for k, v in q.items()}, body or {})
+
+
+def refused(r, status, needle=""):
+    return r.get("json", {}).get("ok") is False and r.get("status") == status and needle.lower() in r["json"].get("error", "").lower()
+
+
+def run() -> int:
+    # ---------------------------------------------------------------- GREEN on the real workshop (read only)
+    s = get("/api/v1/status")["json"]
+    check("status answers V1 with sound tiers", s["ok"] and s["version"] == "V1" and s["tierProblems"] == [], s.get("tierProblems"))
+    import tomllib
+    pyproject = tomllib.loads((Path(__file__).resolve().parent.parent / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+    check("the release is declared once (params/v1-app.json) and matches pyproject", s["release"] == pyproject == "1.1.0", (s.get("release"), pyproject))
+    cfg = get("/api/v1/config")["json"]
+    check("config lists the named pipelines and the page sizes", {"scenes", "visual", "music", "sound"} <= set(cfg["pipelines"]) and cfg["paging"]["projects"] > 0)
+    check("config limits are 4, 8 and 16", cfg["limits"] == {"primary": 4, "secondary": 8, "tertiary": 16}, cfg["limits"])
+    page = get("/api/v1/projects", limit=5)["json"]
+    check("projects are paged", len(page["items"]) <= 5 and page["total"] >= len(page["items"]) and page["hasMore"] == (page["total"] > 5), page["total"])
+    check("every module card says whether a measured ceiling limits it", all("ceiling" in m and isinstance(m["limited"], bool) for it in page["items"] for m in it["modules"]), page["items"][0]["modules"])
+    beyond = get("/api/v1/projects", offset=100000, limit=5)["json"]
+    check("an offset beyond the end is an empty page", beyond["items"] == [] and beyond["hasMore"] is False)
+    slug = page["items"][0]["slug"]
+    detail = get("/api/v1/project", slug=slug)["json"]
+    check("a project carries its modules, steps and results", detail["slug"] == slug and detail["steps"] and isinstance(detail["results"], list))
+    sc = get("/api/v1/scenes", slug=slug, limit=3)["json"]
+    check("scenes are paged and carry their poster", len(sc["items"]) <= 3 and all(i["poster"].startswith("/api/v1/frame") for i in sc["items"]))
+    if sc["items"]:
+        one = get("/api/v1/scene", slug=slug, id=sc["items"][0]["id"])["json"]
+        check("a scene carries its three frames", set(one["frames"]) == {"in", "mid", "out"})
+    t = get("/api/v1/tiers")["json"]
+    check("tiers: no scene recipe above 4 primary and 8 secondary", all(len(v["primary"]) <= 4 and len(v["secondary"]) <= 8 and len(v["tertiary"]) <= 16 for v in t["scene"].values()))
+    check("tiers: music and montage fit the limits and none is a problem", t["problems"] == [] and len(t["music"]["primary"]) <= 4)
+    lib = get("/api/v1/library", kind="motions", limit=5)["json"]
+    needle = (lib["items"][0]["title"] or "").split()[0].lower() if lib["items"] else ""
+    filt = get("/api/v1/library", kind="motions", q=needle, limit=100)["json"] if needle else {"items": [], "total": 0}
+    check("library search returns only matching motions", filt["total"] <= lib["total"] and all(needle in (i["title"] + i["id"] + str(i["recipe"])).lower() for i in filt["items"]), needle)
+    fam = get("/api/v1/timeline/config")["json"]
+    check("timeline config lists the four formats", set(fam["formats"]) == {"16x9", "9x16", "4x5", "1x1"})
+    vec_slug = next((i["slug"] for i in get("/api/v1/projects", limit=50)["json"]["items"]
+                     if get("/api/v1/vector", slug=i["slug"])["json"].get("ok")), None)
+    if vec_slug:
+        vd = get("/api/v1/vector", slug=vec_slug)["json"]
+        check("a vector component exposes 4 primary, 8 secondary and 16 tertiary values", [len(vd["interface"][t]) for t in ("primary", "secondary", "tertiary")] == [4, 8, 16], vd["interface"].keys())
+        f = api.route("GET", "/api/v1/vector-file", {"slug": vec_slug, "version": vd["version"], "name": "component.html"})
+        check("its component page is served", "file" in f and str(f["file"]).endswith("component.html"))
+        check("RED: a vector file name with traversal is 404", refused(get("/api/v1/vector-file", slug=vec_slug, version=vd["version"], name="../params.json"), 404))
+        check("RED: a vector apply with an unknown parameter names it", refused(post("/api/v1/vector/apply", {"slug": vec_slug, "values": {"glitter": 1}}), 400, "glitter"))
+        check("RED: a vector apply with a colour that is not #rrggbb is refused", refused(post("/api/v1/vector/apply", {"slug": vec_slug, "values": {"shapeColour": "red"}}), 400))
+        check("RED: a vector apply of an adjustment out of range is refused", refused(post("/api/v1/vector/apply", {"slug": vec_slug, "values": {"adjust": {"hue": 3.0}}}), 400, "range"))
+    check("RED: a project without a vector component is 404", refused(get("/api/v1/vector", slug="nope-nope"), 404))
+    # ---------------------------------------------------------------- RED on ids and paths
+    corpus = next((i["slug"] for i in get("/api/v1/projects", limit=50)["json"]["items"] if i["origin"] != "dropped"), None)
+    if corpus:
+        check("RED: a corpus project cannot be deleted from the app", refused(post("/api/v1/project/delete", {"slug": corpus}), 403, "dropped"))
+        check("the corpus project is still there after the refusal", get("/api/v1/project", slug=corpus)["json"].get("ok") is True)
+    check("RED: unknown project is 404", refused(get("/api/v1/project", slug="nope-nope"), 404, "unknown"))
+    check("RED: a project id with a slash is refused", refused(get("/api/v1/project", slug="../etc"), 400, "bad"))
+    check("RED: a bad scene id is refused", refused(get("/api/v1/scene", slug=slug, id="S1x"), 400, "bad"))
+    check("RED: an unknown scene is 404", refused(get("/api/v1/scene", slug=slug, id="S9999"), 404, "unknown"))
+    check("RED: a frame name with traversal is 404", refused(get("/api/v1/frame", slug=slug, name="../x.jpg"), 404))
+    check("RED: a composition file with traversal is 404", refused(get("/api/v1/composition/onekey-s02-caption-shine/V_001/../../x"), 404))
+    check("RED: an unknown job is 404", refused(get("/api/v1/job", id="nope"), 404))
+    check("RED: an unknown timeline is 404", refused(get("/api/v1/timeline", id="nope-nope"), 404))
+    check("RED: a bad timeline id is refused", refused(get("/api/v1/timeline", id="../x"), 400))
+    check("RED: unknown music member is 404", refused(get("/api/v1/music/state", slug="nope"), 404))
+    check("RED: a bad upload id is refused", refused(post("/api/v1/project/create", {"upload": "../../etc/passwd"}), 400, "bad"))
+    check("RED: an unknown upload is 404", refused(post("/api/v1/project/create", {"upload": "1700000000-missing.mp4"}), 404, "unknown"))
+    check("RED: an unknown pipeline is refused", refused(post("/api/v1/project/run", {"slug": slug, "pipeline": "all-of-it"}), 400, "pipeline"))
+    check("RED: cancelling an unknown run is refused", refused(post("/api/v1/run/cancel", {"id": "run-00000000-000000-aaaaaa"}), 400))
+    # a textcard of the real workshop, values refused BEFORE any job exists
+    motion = "onekey-s02-caption-shine"
+    if (ingest.TL.motions_dir() / motion / "motion.json").exists():
+        check("RED: apply without a value is refused", refused(post("/api/v1/scene/apply", {"motion": motion, "values": {}}), 400, "no value"))
+        check("RED: apply with a value out of range names the key", refused(post("/api/v1/scene/apply", {"motion": motion, "values": {"layers.@caption.font.size": 99999}}), 400, "font.size"))
+        check("RED: apply with an unknown key is refused", refused(post("/api/v1/scene/apply", {"motion": motion, "values": {"layers.@caption.nothing": 1}}), 400))
+        check("RED: promote of an unknown version is 404", refused(post("/api/v1/motion/promote", {"motion": motion, "version": "V_999"}), 404))
+        d = get("/api/v1/motion", motion=motion)["json"]
+        check("a textcard offers its primary values with a live binding", len(d["tiers"]["primary"]) == 4 and all("key" in i for i in d["tiers"]["primary"]) and d["supported"])
+    # ---------------------------------------------------------------- publication: rights and confirmation (the real publisher is never called here)
+    pub_slug = "onekey-pro-2"
+    pm = get("/api/v1/publish/motions", slug=pub_slug)["json"]
+    check("the motions of a project are listed with their rights", pm.get("ok") and pm["motions"] and all("rights" in m for m in pm["motions"]), pm.get("error"))
+    check("RED: validating rights without a confirmation is refused", refused(post("/api/v1/motion/rights", {"motion": "onekey-s02-caption-shine", "cleared": True}), 400, "confirmed"))
+    check("RED: publishing without a confirmation is refused", refused(post("/api/v1/publish/run", {"slug": pub_slug, "motions": ["onekey-s02-caption-shine"]}), 400, "confirm"))
+    uncleared = next((m["id"] for m in pm.get("motions", []) if not m["rights"]["cleared"] and m["hasRender"]), None)
+    if uncleared:
+        check("RED: a motion without validated rights is refused before any job", refused(post("/api/v1/publish/run", {"slug": pub_slug, "motions": [uncleared], "confirm": True}), 400, "rights"))
+    plate = next((m["id"] for m in pm.get("motions", []) if m["recipe"] == "plate"), None)
+    if plate:
+        check("RED: a plate (a clip of the reference video) can never be validated", refused(post("/api/v1/motion/rights", {"motion": plate, "cleared": True, "confirmed": True}), 403, "reference"))
+        check("RED: a plate is never published even with a confirmation", refused(post("/api/v1/publish/run", {"slug": pub_slug, "motions": [plate], "confirm": True}), 400, "never published"))
+    check("RED: a motion of another project is refused", refused(post("/api/v1/publish/run", {"slug": pub_slug, "motions": ["not-a-motion"], "confirm": True}), 400, "does not belong"))
+    # ---------------------------------------------------------------- GREEN: uploads and a dropped sound, in an ISOLATED workshop
+    iso = WORK / "workshop"
+    for name in ("WORKSHOP", "REFCACHE"):
+        os.environ[f"ZRMD_PATH_{name}"] = str(iso if name == "WORKSHOP" else WORK / "refcache")
+    snd = WORK / "tone.mp3"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "sine=f=330:d=3", "-c:a", "libmp3lame", str(snd)], check=True)
+    data = snd.read_bytes()
+    pos = {"i": 0}
+
+    def raw(n):
+        chunk = data[pos["i"]: pos["i"] + n]
+        pos["i"] += len(chunk)
+        return chunk
+    up = api.route("POST", "/api/v1/media/upload", {"name": "tone.mp3", "length": str(len(data))}, None, raw)["json"]
+    check("an upload is described (sound, duration)", up["ok"] and up["kind"] == "audio" and abs(up["duration"] - 3.0) < 0.2, up)
+    listed = get("/api/v1/uploads")["json"]
+    check("the upload is listed with its url", any(i["id"] == up["id"] and i["url"].startswith("/api/v1/upload-file") for i in listed["items"]))
+    bad = api.route("POST", "/api/v1/media/upload", {"name": "script.sh", "length": "3"}, None, lambda n: b"abc")["json"]
+    check("RED: a script upload is refused", bad["ok"] is False and "refused" in bad["error"])
+    made = post("/api/v1/project/create", {"upload": up["id"], "title": "Tone test"})["json"]
+    check("a dropped sound becomes a project whose slug comes from its title", made["ok"] and made["slug"] == "tone-test" and made["kind"] == "audio", made)
+    check("the upload is consumed by the project (stored once)", refused(post("/api/v1/project/create", {"upload": up["id"]}), 404, "unknown"))
+    pos["i"] = 0
+    up = api.route("POST", "/api/v1/media/upload", {"name": "tone.mp3", "length": str(len(data))}, None, raw)["json"]
+    again = post("/api/v1/project/create", {"upload": up["id"], "title": "Tone test"})["json"]
+    check("the same bytes are the same project", again["ok"] and again["slug"] == "tone-test" and again["created"] is False, again)
+    proj = get("/api/v1/project", slug="tone-test")["json"]
+    check("the dropped project is readable and has sound", proj["hasAudio"] and abs((proj["durationS"] or 0) - 3.0) < 0.3, proj.get("durationS"))
+    pos["i"] = 0
+    up2 = api.route("POST", "/api/v1/media/upload", {"name": "tone2.mp3", "length": str(len(data))}, None, raw)["json"]
+    saved = post("/api/v1/timeline/save", {"spec": {"id": "api-save", "tracks": [{"kind": "audio", "clips": [{"source": {"kind": "file", "path": up2["path"]}}]}]}})["json"]
+    check("a montage is saved", saved["ok"] and saved["id"] == "api-save", saved)
+    in_use = post("/api/v1/upload/delete", {"id": up2["id"]})["json"]
+    check("RED: an upload used by a saved montage is not deleted", in_use["ok"] is False and "api-save" in in_use["error"], in_use)
+    check("a saved montage is deleted", post("/api/v1/timeline/delete", {"id": "api-save"})["json"].get("removed") == "api-save")
+    check("RED: deleting an unknown montage is refused", refused(post("/api/v1/timeline/delete", {"id": "api-save"}), 404, "unknown"))
+    check("RED: a bad montage id is refused", refused(post("/api/v1/timeline/delete", {"id": "../x"}), 400))
+    check("an unused upload is deleted", post("/api/v1/upload/delete", {"id": up2["id"]})["json"].get("removed") == up2["id"])
+    check("RED: deleting a missing upload is refused", refused(post("/api/v1/upload/delete", {"id": up2["id"]}), 404))
+    check("RED: a traversal upload id is refused", refused(post("/api/v1/upload/delete", {"id": "../../etc/passwd"}), 400))
+    gone = post("/api/v1/project/delete", {"slug": "tone-test"})["json"]
+    check("a dropped project is deleted with its calculs", gone["ok"] and any("tone-test" in p for p in gone["removed"]), gone)
+    check("RED: the deleted project is gone", refused(get("/api/v1/project", slug="tone-test"), 404, "unknown"))
+    check("RED: deleting it again is refused", refused(post("/api/v1/project/delete", {"slug": "tone-test"}), 403))
+    pos["i"] = 0
+    up = api.route("POST", "/api/v1/media/upload", {"name": "tone.mp3", "length": str(len(data))}, None, raw)["json"]
+    v = post("/api/v1/timeline/validate", {"spec": {"id": "api-test", "tracks": [{"kind": "audio", "clips": [{"source": {"kind": "file", "path": up["path"]}}]}]}})["json"]
+    check("a spec with the uploaded sound validates and reports each clip", v["ok"] and v["tracks"][0]["items"][0]["kind"] == "audio" and abs(v["seconds"] - 3.0) < 0.2, v)
+    check("RED: a spec with an empty text is refused with the clip named", refused(post("/api/v1/timeline/validate", {"spec": {"id": "x", "tracks": [{"kind": "text", "clips": [{"text": " "}]}]}}), 400, "clip 1"))
+    check("RED: exporting an unknown saved timeline is 404", refused(post("/api/v1/timeline/export", {"id": "never-saved", "format": "16x9"}), 404))
+    print(f"\n{'FAILED: ' + ', '.join(FAIL) if FAIL else 'all checks passed'}")
+    return 1 if FAIL else 0
+
+
+if __name__ == "__main__":
+    code = 1
+    try:
+        code = run()
+    finally:
+        import shutil
+        shutil.rmtree(WORK, ignore_errors=True)
+    sys.exit(code)

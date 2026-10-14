@@ -1,0 +1,152 @@
+# 14 October 2026: survey of the BACKDROP FIELD of every shot of a reference (the Image, "shader", chantier).
+# For each shot of the bible, K frames are decoded EXACTLY (ffmpeg select on the container frame number, one pass),
+# area-averaged to the survey grid, and fitted as a shader-bank composition (zrmd/shaders/field.py: bilinear_gradient4
+# plus an optional glow_gaussian). The metric is CIEDE2000 per cell (definition in params/image-survey.json):
+# field share (cells within fieldCutoffDE), field fidelity (R04: 1 - 0.01 x mean dE^2), within1Jnd (no mask).
+# Output: <workshop>/image/<slug>/survey.json, numbers and layer parameters only, never a pixel. The layer list of each
+# keyframe is the editable reproduction of that shot's backdrop (one JSON, rendered by the GLSL of the same blocks).
+# Run: python -I Scripts/ReproduceFieldSurvey.py --slug kardashev-0-7 | --all [--jobs 2] [--force] [--keys 3]
+# FR : releve du champ de fond de chaque plan d'une reference ; K images exactes par plan, ajustees en composition de la
+# banque de shaders, mesurees en CIEDE2000 ; que des nombres et des parametres, aucun pixel.
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from concurrent.futures import ProcessPoolExecutor
+from pathlib import Path
+
+import numpy as np
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+from zrmd import settings, versions  # noqa: E402
+from zrmd.shaders import field  # noqa: E402
+from zrmd.verify import imagescore  # noqa: E402
+
+
+def keyframe_numbers(shot: dict, k: int) -> list[int]:
+    a, b = int(shot["start_frame"]), int(shot["end_frame"])
+    n = max(1, b - a)
+    return sorted({min(max(a, b - 1), a + int((j + 0.5) / k * n)) for j in range(k)})
+
+
+def decode(video: str, wanted: list[int], w: int, h: int, threads: int) -> np.ndarray:
+    """The wanted container frames, area-averaged to w x h, in ascending order. One streaming pass over the file keeping
+    only the wanted frames (a select expression of more than about 100 terms makes ffmpeg exit with -12)."""
+    from zrmd.media import iter_frames
+    want = set(wanted)
+    last = max(wanted)
+    kept = []
+    for n, frame in enumerate(iter_frames(video, w, h, threads=threads)):
+        if n in want:
+            kept.append(frame.copy())
+        if n >= last:
+            break
+    if not kept:
+        raise RuntimeError(f"no wanted frame decoded from {video}")
+    return np.stack(kept)
+
+
+def survey(slug: str, force: bool = False, keys: int | None = None, models: list[str] | None = None, tag: str | None = None) -> dict:
+    cfg = field.config()
+    if models:
+        cfg["models"] = models
+    k = int(keys or cfg["keyframesPerShot"])
+    out = imagescore.survey_path(slug, tag)
+    if out.exists() and not force:
+        return json.loads(out.read_text(encoding="utf-8"))
+    t0 = time.time()
+    ws = settings.path("workshop")
+    meta = json.loads((ws / "references" / slug / "reference.json").read_text(encoding="utf-8"))
+    video = str(settings.path("refcache") / slug / meta["file_name"])
+    bible = json.loads((ws / "references" / slug / "bible.json").read_text(encoding="utf-8"))
+    rows = [(s, keyframe_numbers(s, k)) for s in bible["shots"]]
+    wanted = sorted({n for _, idx in rows for n in idx})
+    g = cfg["grid"]
+    frames = decode(video, wanted, g["width"], g["height"], int(g["threads"]))
+    if len(frames) < len(wanted):  # a stream shorter than the bible: the missing tail repeats the last decoded frame
+        pad = np.repeat(frames[-1:], len(wanted) - len(frames), axis=0)
+        frames = np.concatenate([frames, pad])
+    by_n = {n: frames[i] for i, n in enumerate(wanted)}
+    fps = float(bible.get("fps") or 60.0)
+    shots, glow_keys, n_keys = [], 0, 0
+    for s, idx in rows:
+        keyed = []
+        for n in idx:
+            r = field.fit_frame(by_n[n], cfg)
+            m = dict(r["metrics"])
+            glow_keys += 1 if m.get("glow") else 0
+            n_keys += 1
+            keyed.append({"frame": n, **m, "layers": r["layers"]})
+        curve = {}
+        for c in cfg.get("curveCutoffs", []):
+            pts = [x["curve"][str(c)] for x in keyed if x.get("curve") and x["curve"].get(str(c))]
+            cs = [(sh, sc) for sh, sc in pts if sc is not None]
+            curve[str(c)] = [round(float(np.mean([sh for sh, _ in pts])), 4) if pts else None,
+                             round(sum(sh * sc for sh, sc in cs) / sum(sh for sh, _ in cs), 5) if cs and sum(sh for sh, _ in cs) > 0 else None]
+        shares = [x["share"] for x in keyed]
+        scores = [(x["share"], x["score"]) for x in keyed if x["score"] is not None]
+        sw = sum(a for a, _ in scores)
+        frames_n = int(s["end_frame"]) - int(s["start_frame"])
+        shots.append({"id": s["id"], "family": s["family"], "start_frame": int(s["start_frame"]), "end_frame": int(s["end_frame"]),
+                      "frames": frames_n, "seconds": round(frames_n / fps, 3),
+                      "share": round(float(np.mean(shares)), 4), "within1": round(float(np.mean([x["within1"] for x in keyed])), 4),
+                      "score": round(sum(a * b for a, b in scores) / sw, 5) if sw > 0 else None,
+                      "deMedian": round(float(np.mean([x["deMedian"] for x in keyed if x["deMedian"] is not None])), 3) if sw > 0 else None,
+                      "curve": curve, "keys": keyed})
+    doc = {"schema": "zrmd/image-survey-result@1", "slug": slug, "date": versions.stamp(), "title": meta.get("title"),
+           "grid": g, "models": cfg.get("models"), "tag": tag, "fieldCutoffDE": cfg["fieldCutoffDE"], "jndDE": cfg["jndDE"], "keyframesPerShot": k,
+           "fps": fps, "frames": int(bible.get("frames") or sum(s["frames"] for s in shots)),
+           "reproducibleFamilies": cfg["reproducibleFamilies"], "targets": cfg["targets"],
+           "aggregate": imagescore.aggregate(shots), "byFamily": imagescore.by_family(shots),
+           "cutoffCurve": imagescore.cutoff_curve(shots, cfg.get("curveCutoffs", [])),
+           "glowShare": round(glow_keys / max(n_keys, 1), 4), "seconds": round(time.time() - t0, 1), "shots": shots}
+    out.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(doc, separators=(",", ":")) + "\n", encoding="utf-8")
+    tmp.replace(out)
+    return doc
+
+
+def _worker(args):
+    slug, force, keys, models, tag = args
+    try:
+        doc = survey(slug, force, keys, models, tag)
+        return {"slug": slug, "ok": True, "aggregate": doc["aggregate"], "seconds": doc["seconds"], "glowShare": doc["glowShare"]}
+    except Exception as e:  # noqa: BLE001
+        return {"slug": slug, "ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--slug", action="append", default=[])
+    ap.add_argument("--all", action="store_true", help="every reference of the registry that has a bible")
+    ap.add_argument("--jobs", type=int, default=1)
+    ap.add_argument("--force", action="store_true")
+    ap.add_argument("--keys", type=int, default=None)
+    ap.add_argument("--models", default=None, help="comma list of bases: bilinear,stops6_v,stops6_h")
+    ap.add_argument("--tag", default=None, help="write survey-<tag>.json instead of survey.json (a round)")
+    a = ap.parse_args()
+    slugs = list(a.slug)
+    if a.all:
+        ws = settings.path("workshop")
+        slugs += [p.parent.name for p in sorted((ws / "references").glob("*/bible.json"))
+                  if p.parent.name not in slugs and (json.loads(p.read_text(encoding="utf-8")).get("shots"))]
+    if not slugs:
+        print(json.dumps({"ok": False, "error": "no reference: pass --slug or --all"}))
+        return 2
+    models = [m for m in (a.models or "").split(",") if m] or None
+    jobs = [(s, a.force, a.keys, models, a.tag) for s in slugs]
+    if a.jobs > 1:
+        with ProcessPoolExecutor(max_workers=a.jobs) as pool:
+            results = list(pool.map(_worker, jobs))
+    else:
+        results = [_worker(j) for j in jobs]
+    print(json.dumps(results, indent=1))
+    return 0 if all(r["ok"] for r in results) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

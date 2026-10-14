@@ -1,0 +1,94 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["mcp>=1.2,<2"]
+# ///
+# 14 October 2026: the application MCP proven over a REAL stdio round trip (the server is started by uv exactly as an agent would start it).
+# GREEN: the tools are listed, the app answers through them, an own file is uploaded and its montage validated, a dropped sound becomes a
+# project and is deleted. RED: unknown ids, a refused value and a bad spec come back as {ok: false, error}, never as a crash.
+# FR : le MCP de l'application, prouve par un vrai aller-retour stdio.
+import asyncio
+import json
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+ROOT = Path(__file__).resolve().parent.parent
+SERVER = ROOT / "mcp" / "zrmd_app_mcp.py"
+FAIL = []
+
+
+def check(name, cond, detail=""):
+    print(("ok   " if cond else "FAIL ") + name + (f"  {str(detail)[:200]}" if detail and not cond else ""))
+    if not cond:
+        FAIL.append(name)
+
+
+async def call(session, name, **args):
+    r = await session.call_tool(name, args)
+    text = "".join(c.text for c in r.content if getattr(c, "type", "") == "text")
+    try:
+        return json.loads(text)
+    except ValueError:
+        return {"ok": False, "error": text[:300], "isError": r.isError}
+
+
+async def main() -> int:
+    params = StdioServerParameters(command="uv", args=["run", "--script", str(SERVER)])
+    tmp = Path(tempfile.mkdtemp(prefix="zrmd-mcp-test-", dir=str(Path.home() / ".claude" / "tmp")))
+    wav = tmp / "mcp-tone.wav"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "sine=f=262:d=2", str(wav)], check=True)
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as s:
+            await s.initialize()
+            names = {t.name for t in (await s.list_tools()).tools}
+            need = {"app_status", "app_projects", "app_scene", "app_set", "app_import", "app_music_cook", "app_timeline_export", "app_timeline_validate",
+                    "app_library", "app_run", "app_promote", "app_delete_project"}
+            check("the tools are listed", need <= names, need - names)
+            st = await call(s, "app_status")
+            check("app_status answers V1 with sound tiers", st.get("ok") and st.get("version") == "V1" and st.get("tierProblems") == [], st)
+            pr = await call(s, "app_projects", limit=2)
+            check("app_projects is paged", pr.get("ok") and len(pr["items"]) <= 2 and pr["total"] >= 1, pr)
+            lib = await call(s, "app_library", query="caption", limit=3)
+            check("app_library searches the motions", lib.get("ok") and lib["items"] and all("caption" in (i["id"] + i["title"]).lower() for i in lib["items"]), lib)
+            t = await call(s, "app_tiers")
+            check("app_tiers lists 4 primary values for a textcard", t.get("ok") and len(t["scene"]["textcard"]["primary"]) == 4, t.get("problems"))
+            # RED
+            r = await call(s, "app_scene", slug="nope-nope", scene_id="S01")
+            check("RED: an unknown project is a refusal, not a crash", r.get("ok") is False and "unknown" in r.get("error", ""), r)
+            r = await call(s, "app_set", motion="onekey-s02-caption-shine", values={"layers.@caption.font.size": 99999})
+            check("RED: a value out of range is refused before any job", r.get("ok") is False and "font.size" in r.get("error", ""), r)
+            r = await call(s, "app_timeline_validate", spec={"id": "x", "tracks": [{"kind": "text", "clips": [{"text": " "}]}]})
+            check("RED: a bad spec names the clip", r.get("ok") is False and "clip 1" in r.get("error", ""), r)
+            r = await call(s, "app_import", path=str(tmp / "missing.mp4"))
+            check("RED: importing a missing file is a refusal", r.get("ok") is False and "no such file" in r.get("error", ""), r)
+            # GREEN: own media and a montage spec
+            up = await call(s, "app_upload", path=str(wav))
+            check("app_upload describes the sound", up.get("ok") and up["kind"] == "audio" and abs(up["duration"] - 2.0) < 0.2, up)
+            v = await call(s, "app_timeline_validate", spec={"id": "mcp-check", "tracks": [{"kind": "audio", "clips": [{"source": {"kind": "file", "path": up["path"]}}]}]})
+            check("a spec with the uploaded sound validates", v.get("ok") and abs(v["seconds"] - 2.0) < 0.2, v)
+            d = await call(s, "app_upload_delete", id=up["id"])
+            check("the upload is removed again", d.get("ok") and d["removed"] == up["id"], d)
+            # a dropped sound becomes a project, then is deleted
+            imp = await call(s, "app_import", path=str(wav), title="MCP tone check", pipeline=None)
+            check("app_import creates a project from a sound", imp.get("ok") and imp["slug"] == "mcp-tone-check" and imp["kind"] == "audio", imp)
+            if imp.get("ok"):
+                pj = await call(s, "app_project", slug=imp["slug"])
+                check("the dropped project is readable", pj.get("ok") and pj["hasAudio"], pj)
+                gone = await call(s, "app_delete_project", slug=imp["slug"])
+                check("the dropped project is deleted", gone.get("ok") and gone.get("removed"), gone)
+            r = await call(s, "app_delete_project", slug=pr["items"][0]["slug"]) if pr["items"][0]["origin"] != "dropped" else {"ok": False, "error": "skipped"}
+            check("RED: a corpus project cannot be deleted through the MCP", r.get("ok") is False, r)
+    import shutil
+    shutil.rmtree(tmp, ignore_errors=True)
+    print(f"\n{'FAILED: ' + ', '.join(FAIL) if FAIL else 'all checks passed'}")
+    return 1 if FAIL else 0
+
+
+if __name__ == "__main__":
+    sys.exit(asyncio.run(main()))

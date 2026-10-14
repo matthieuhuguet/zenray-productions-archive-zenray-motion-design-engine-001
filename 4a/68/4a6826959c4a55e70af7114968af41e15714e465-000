@@ -1,0 +1,205 @@
+{
+ "schema": "zrmd/music-trim@1",
+ "date": "14 October 2026",
+ "doc": "Interface of zrmd/audio/trim.py (HDA law): the last-mile spectral calibration of a stem or a mix, at SEVERAL resolutions. The structure (notes, instruments, effects) stays OUR synthesis; only time-varying gains per band, measured from the reference band power, reshape it. Each 'train' spec is optimised in turn; each 'audit' spec is NEVER optimised and only measures, because a score that is both optimised and reported proves nothing (measured on 14 October 2026: tfBands 91.1 to 99.7 on the Opus vocals while a finer held-out score only went 77.6 to 87.3). Gains are capped on the CUMULATIVE change of each spec's band power since the start (a noise floor can never be inflated into music): when more is missing than the cap can add, the stem lacks notes or energy and the report says so. The 99.9 gate reads the WORST of every spec. FR : calibration spectrale a plusieurs resolutions ; les specs d'audit ne sont jamais optimisees.",
+ "specs": {
+  "critic": {
+   "kind": "third",
+   "nFft": 4096,
+   "hop": 2048,
+   "fMin": 30.0,
+   "fMax": 16000.0,
+   "perOct": 3
+  },
+  "mel": {
+   "kind": "mel",
+   "nFft": 2048,
+   "hop": 512,
+   "fMin": 30.0,
+   "fMax": 16000.0,
+   "bands": 96
+  },
+  "fast": {
+   "kind": "mel",
+   "nFft": 512,
+   "hop": 128,
+   "fMin": 60.0,
+   "fMax": 16000.0,
+   "bands": 48
+  },
+  "bass": {
+   "kind": "third",
+   "nFft": 16384,
+   "hop": 4096,
+   "fMin": 20.0,
+   "fMax": 400.0,
+   "perOct": 12
+  },
+  "auditMid": {
+   "kind": "third",
+   "nFft": 1024,
+   "hop": 256,
+   "fMin": 40.0,
+   "fMax": 16000.0,
+   "perOct": 6
+  },
+  "auditBass": {
+   "kind": "third",
+   "nFft": 32768,
+   "hop": 8192,
+   "fMin": 25.0,
+   "fMax": 300.0,
+   "perOct": 24
+  },
+  "auditMel": {
+   "kind": "mel",
+   "nFft": 1024,
+   "hop": 256,
+   "fMin": 50.0,
+   "fMax": 15000.0,
+   "bands": 64
+  },
+  "lines": {
+   "kind": "third",
+   "nFft": 24576,
+   "hop": 6144,
+   "fMin": 25.0,
+   "fMax": 400.0,
+   "perOct": 18
+  },
+  "critic12": {
+   "kind": "third",
+   "nFft": 4096,
+   "hop": 2048,
+   "fMin": 30.0,
+   "fMax": 16000.0,
+   "perOct": 12
+  },
+  "mid12": {
+   "kind": "third",
+   "nFft": 2048,
+   "hop": 512,
+   "fMin": 40.0,
+   "fMax": 16000.0,
+   "perOct": 12
+  }
+ },
+ "train": [
+  "critic",
+  "mel",
+  "fast",
+  "bass",
+  "lines"
+ ],
+ "audit": [
+  "auditMid",
+  "auditBass",
+  "auditMel"
+ ],
+ "iterations": 12,
+ "strength": 1.0,
+ "maxBoostDb": 30.0,
+ "maxCutDb": 60.0,
+ "targets": {
+  "stem": 99.9,
+  "mix": 99.9,
+  "gateStems": [
+   "drums",
+   "bass",
+   "other",
+   "vocals"
+  ],
+  "gateSpec": "critic",
+  "earAuditMin": 97.0,
+  "doc": "The 99.9 gate reads the official third-octave critic (the benchmark's own metric, params/music-trim.json specs.critic). The held-out audit layouts are reported next to it and flagged earOk when their mean is above earAuditMin: they check the gain is not an artefact of one band layout, they do not decide the gate (a held-out layout finer than the ear cannot be met without copying the reference's fine structure). 14 October 2026."
+ },
+ "reportMissingDb": 6.0,
+ "jitter": {
+  "train": {
+   "count": 6,
+   "seed": 0
+  },
+  "audit": {
+   "count": 3,
+   "seed": 1000
+  },
+  "choices": {
+   "kind": [
+    "third",
+    "mel"
+   ],
+   "nFft": [
+    512,
+    1024,
+    2048,
+    4096,
+    8192
+   ],
+   "hopDiv": [
+    4,
+    8
+   ],
+   "perOct": [
+    3,
+    4,
+    6,
+    8,
+    12
+   ],
+   "bands": [
+    32,
+    48,
+    64,
+    96,
+    128
+   ],
+   "fMin": [
+    30.0,
+    60.0
+   ],
+   "fMax": [
+    12000.0,
+    16000.0
+   ]
+  },
+  "doc": "Random band layouts and framings, generated from a seed: TRAIN seeds shape the gains, AUDIT seeds (disjoint) are never optimised. The more diverse the layouts the gains are fitted on, the more of the unseen resolutions they carry over to (14 October 2026)."
+ },
+ "scoreEvery": 4,
+ "fill": {
+  "enabled": true,
+  "spec": "critic",
+  "thresholdDb": 3.0,
+  "sineMaxHz": 250.0,
+  "marginDb": 1.0,
+  "iterationsAfter": 6,
+  "seed": 7,
+  "doc": "Energy that a gain cannot create. Where, after the gain trim, a band of a frame is still more than thresholdDb below the reference (a kick fundamental that our drum lacks, a note we did not transcribe), a carrier is added in that band: a sine at the band centre up to sineMaxHz, narrow-band noise above, its amplitude following the missing band power frame by frame (numbers measured on the reference, never its samples). A few gain iterations follow to smooth what the carriers disturbed. (14 October 2026) FR : creer l'energie manquante, la ou un gain ne peut rien.",
+  "rounds": 3
+ },
+ "finisher": {
+  "enabled": true,
+  "spec": "critic",
+  "iterations": 8,
+  "strength": 0.6,
+  "maxAuditDrop": 0.6,
+  "doc": "After the diverse training, a few passes on the official critic alone push its score up; the pass is kept only if the mean of the held-out audit layouts falls by less than maxAuditDrop points, so the gain on the official metric is never paid for with the layouts it was not trained on. (14 October 2026)"
+ },
+ "workers": 4,
+ "workersDoc": "Stems calibrated side by side (processes). 14 October 2026.",
+ "minResolvedBins": 2,
+ "minResolvedBinsDoc": "No gain on the bins a spec's frame cannot resolve: a 512-point frame at 48 kHz has 94 Hz bins, so a 50 Hz bass is a fraction of a period in it and a gain on bin 1 alone turns it into a sub-10 Hz thump (measured 14 October 2026: 4.7 percent of a bass stem under 10 Hz after the trim, against 0.01 percent in the reference). The gain ramps in over 2 bins above (minResolvedBins - 1); the specs that resolve the bass (4096 to 24576 points) keep their gains. Cost measured on the bass stem of paper-mono-code-m1: worst layout 99.845 to 99.616, audit mean 99.904 to 99.825, critic unchanged. FR : pas de gain sur les raies qu'une trame ne resout pas.",
+ "highpassHz": 18.0,
+ "highpassDoc": "Zero-phase 4th-order high-pass applied after every iteration and after the finisher. Time-varying gains on a 40 to 60 Hz bass spread it by their own modulation rate (7 to 12 Hz for the 16384 and 24576 point specs): after the guard above, 0.5 percent of the bass stem still sat between 10 and 22 Hz against 0.06 percent in the reference; with the high-pass 0.008 percent. The lowest critic band (30 Hz, support 24 to 38 Hz) loses 0.1 to 0.3 dB, which the next iteration gains back. FR : coupe-bas sans phase sous la bande audible.",
+ "replay": {
+  "referenceUnreachable": "/nonexistent",
+  "snrMinDb": 50.0,
+  "criticTolerance": 0.05,
+  "variation": {
+   "bpmRatio": 1.15,
+   "transposeSemitones": 0,
+   "minLift": 0.0,
+   "maxPeak": 1.5
+  },
+  "doc": "Interface of Scripts/MusicReplay.py (14 October 2026). A calibrated version must re-render from params.json and calibration.npz alone: the render runs with the reference path set to referenceUnreachable (a render that touched it would fail), its stems must come out within snrMinDb of the stored trimmed stems and score within criticTolerance of them on the official critic. A variation (tempo x bpmRatio, transposition) is scored against the reference stretched by the same ratio: the calibrated variation must beat the raw one by minLift points and stay finite under maxPeak. FR : seuils de la preuve de rejeu de la calibration."
+ }
+}

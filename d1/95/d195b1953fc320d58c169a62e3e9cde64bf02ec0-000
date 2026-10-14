@@ -1,0 +1,281 @@
+#!/usr/bin/env python3
+# 14 October 2026: the decisive experiment for the SFX layer: does the shared multi-resolution spectral trim of the music (zrmd/audio/trim.py,
+# through zrmd/audio/sfxspectral.py) win on sound effects, alone or together with the per-event EQ (zrmd/audio/sfxtrim.py)?
+# For every fitted event of the latest sound version of a reference it renders the raw chain once, builds each variant, and measures every
+# variant the same way: the official perceptual loss (ploss, the event score), its seed-invariant variant, B1 (describe.compare), the music
+# layouts (third-octave critic, mel, fast; audit layouts never optimised) and the identity ceiling of the chain.
+#   SfxSpectral.py experiment --slug S [--variants chain,eq,full,fine,fine-plain,critic-only,fine+eq,eq+fine] [--events E001,E004] [--no-cache]
+#   SfxSpectral.py table --slug S
+#   SfxSpectral.py price --slug S --events E001,E004 [--specs 120,240,513,513:128]   the PRICE of the cell-exact official score (see price())
+# Reference windows are cut from the Demucs stem of each event (analysis only); nothing of them is written out except numbers.
+# FR : l'experience decisive, le calage spectral partage de la musique contre l'EQ par evenement sur les effets sonores.
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+ALL = ["chain", "eq", "full", "fine", "fine-plain", "critic-only", "fine+eq", "eq+fine", "full+eq"]
+
+
+def sound_version(slug: str):
+    from zrmd import settings, versions
+    out_root = settings.path("sound_out") / slug
+    cands = [v for v in versions.list_versions(out_root)
+             if (out_root / v / "events.json").exists() and (versions.read_json(out_root / v / "version.json", {}) or {}).get("kind") != "soundtrack-benchmark"]
+    return out_root, (cands[-1] if cands else None)
+
+
+def load_events(slug: str, only: list[str]):
+    from zrmd import settings, versions
+    from zrmd.audio import config
+    from zrmd.media import load_audio
+    sr = config.cfg()["audio"]["sampleRate"]
+    out_root, version = sound_version(slug)
+    ev = versions.read_json(out_root / version / "events.json")
+    stem_dir = settings.path("refcache") / slug / "stems" / "out" / "htdemucs" / "mix"
+    stems = {k: load_audio(stem_dir / f"{k}.wav", sr, mono=True)[0].astype(np.float64) for k in ("drums", "bass", "other")}
+    rows = []
+    for e in ev["events"]:
+        f = e.get("fit") or {}
+        if not f.get("chain") or (only and e["id"] not in only):
+            continue
+        y = sum(stems[k] for k in e["stem"].split("+"))
+        rows.append({"event": e, "chain": f["chain"], "target": y[int(e["windowStart"] * sr):int(e["windowEnd"] * sr)].astype(np.float32)})
+    return rows, sr, version, stems
+
+
+def build(variant: str, body: np.ndarray, target: np.ndarray, sr: int, cache: dict):
+    """Returns (signal, info) of one variant. A variant is a '+' joined list of stages applied in order, each on the output of the one before:
+    chain (nothing), a spectral variant of params/sfx-trim.json (fine, full, fine-plain, critic-only),
+    eq (gradient EQ, eqNNN for NNN steps). Prefixes are memoised in `cache`. FR : une variante est une suite d'etapes jointes par +."""
+    import copy
+    from zrmd.audio import sfxspectral, sfxtrim
+    t0 = time.time()
+    parts = variant.split("+")
+    y, info = body, {}
+    for i, st in enumerate(parts):
+        key = "+".join(parts[: i + 1])
+        if key in cache:
+            y, info = cache[key]
+            continue
+        if st == "chain":
+            pass
+        elif st.startswith("eq"):
+            c = copy.deepcopy(sfxtrim.cfg())
+            if len(st) > 2:
+                c["optimiser"]["steps"] = int(st[2:])
+            y, trim = sfxtrim.trim_event(y, target, sr, c)
+            info = {**info, "eqStored": bool(trim)}
+        else:
+            y, rep = sfxspectral.trim_event(y, target, sr, st)
+            info = {**info, "gateCritic": rep.get("gateCritic"), "finisher": (rep.get("finisher") or {}).get("kept")}
+        cache[key] = (np.asarray(y, np.float32), dict(info))
+    info = dict(info)
+    info["seconds"] = round(time.time() - t0, 1)
+    return np.asarray(y, np.float32), info
+
+
+def measure(y: np.ndarray, target: np.ndarray, sr: int) -> dict:
+    from zrmd.audio import sfxspectral, sfxtrim
+    s = sfxtrim.scores(y, target, sr)
+    c = sfxspectral.critic_scores(target, y, sr, "fine")
+    return {"ploss": s["ploss"], "sto": s["plossStochastic"], "b1": s["b1"], "critic": c["critic"], "mel": c["mel"], "fast": c["fast"],
+            "trainMean": c["trainMean"], "auditMean": c["auditMean"], "auditMin": c["auditMin"],
+            "errors": {k: round(float(v), 3) for k, v in s["errors"].items()}}
+
+
+def experiment(a) -> int:
+    import torch
+    torch.set_num_threads(1)
+    from zrmd import settings
+    from zrmd.audio import bank, sfxtrim
+    variants = [v for v in a.variants.split(",") if v]
+    only = [x for x in a.events.split(",") if x]
+    rows, sr, version, _ = load_events(a.slug, only)
+    log_dir = settings.path("workshop") / "logs" / "sfx-spectral"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    out_path = log_dir / f"{a.slug}.json"
+    state = json.loads(out_path.read_text()) if out_path.exists() and not a.no_cache else {"slug": a.slug, "version": version, "events": {}}
+    for r in rows:
+        e = r["event"]
+        eid = e["id"]
+        body = bank.render_chain(r["chain"]).astype(np.float32)
+        target = r["target"]
+        n = min(len(body), len(target))
+        body, target = body[:n], target[:n]
+        slot = state["events"].setdefault(eid, {"stem": e["stem"], "seconds": round(n / sr, 3), "levelDb": e["levelDb"], "variants": {}})
+        if "ceiling" not in slot:
+            slot["ceiling"] = sfxtrim.identity_ceiling(r["chain"], sr)
+        eq_cache: dict = {}   # prefix memo of build()
+        for v in variants:
+            if v in slot["variants"]:
+                continue
+            y, info = build(v, body, target, sr, eq_cache)
+            m = measure(y, target, sr)
+            slot["variants"][v] = {**m, **info}
+            out_path.write_text(json.dumps(state, indent=1, default=float))
+            print(f"{a.slug} {eid} {v:<12} ploss={m['ploss']:7.2f} sto={m['sto']:7.2f} b1={m['b1']} critic={m['critic']:7.2f} train={m['trainMean']:7.2f} "
+                  f"audit={m['auditMean']:7.2f} ceil={slot['ceiling']['official']:.1f}/{slot['ceiling']['stochastic']:.1f} {info['seconds']}s", flush=True)
+    return table(a)
+
+
+def track(a) -> int:
+    """Variant (a): the whole SFX track of each stem against the reference windows of that stem placed on the same timeline, one spectral trim
+    per stem track, then each event window of the trimmed track measured like any other variant. FR : le calage de la piste entiere."""
+    import torch
+    torch.set_num_threads(1)
+    from zrmd import settings
+    from zrmd.audio import bank, sfxspectral
+    rows, sr, version, stems = load_events(a.slug, [])
+    n_total = max(int(r["event"]["windowEnd"] * sr) for r in rows) + int(0.2 * sr)
+    by_stem: dict = {}
+    for r in rows:
+        by_stem.setdefault(r["event"]["stem"], []).append(r)
+    out_path = settings.path("workshop") / "logs" / "sfx-spectral" / f"{a.slug}.json"
+    state = json.loads(out_path.read_text())
+    for stem, rs in by_stem.items():
+        ref_t, our_t = np.zeros(n_total, np.float32), np.zeros(n_total, np.float32)
+        place = {}
+        for r in rs:
+            e = r["event"]
+            a0 = int(round(e["windowStart"] * sr))
+            body = bank.render_chain(r["chain"]).astype(np.float32)
+            n = min(len(body), len(r["target"]))
+            ref_t[a0:a0 + n] += r["target"][:n]
+            our_t[a0:a0 + n] += body[:n]
+            place[e["id"]] = (a0, n)
+        t0 = time.time()
+        y, rep = sfxspectral.trim_track(ref_t, our_t, sr, a.variant)
+        print(f"{a.slug} track {stem}: {len(rs)} events, {round(time.time() - t0, 1)}s, gateCritic {rep.get('gateCritic')}", flush=True)
+        for r in rs:
+            e = r["event"]
+            a0, n = place[e["id"]]
+            m = measure(y[a0:a0 + n], r["target"][:n], sr)
+            slot = state["events"].setdefault(e["id"], {"stem": e["stem"], "variants": {}})
+            slot["variants"][f"track-{a.variant}"] = {**m, "seconds": round(time.time() - t0, 1)}
+            print(f"  {e['id']} track-{a.variant:<8} ploss={m['ploss']:7.2f} sto={m['sto']:7.2f} b1={m['b1']} critic={m['critic']:7.2f} audit={m['auditMean']:7.2f}", flush=True)
+    out_path.write_text(json.dumps(state, indent=1, default=float))
+    return table(a)
+
+
+def price(a) -> int:
+    """14 October 2026: what would the cell-exact official score cost? The shared spectral trim (variant `full`) is run once per event, then the
+    per-event EQ is re-run with more bands (and optionally a finer hop): spec "B" or "B:HOP". The table lists, per spec, the official score, its
+    seed-invariant variant, the third-octave critic, the held-out audit and B1, beside the SIZE of the stored gain table (bands x frames) and the
+    number of samples of the window: a table that holds as many numbers as the window has samples describes the cells of the reference, it does
+    not describe the reference's level distribution any more. Experiment only: nothing of this is stored in a sound version, the pipeline of
+    params/sfx-trim.json is unchanged. FR : le prix du score officiel exact, mesure par la taille de la table de gains.
+    """
+    import copy
+    import torch
+    torch.set_num_threads(1)
+    from zrmd import settings
+    from zrmd.audio import bank, sfxspectral, sfxtrim
+    specs = [x for x in a.specs.split(",") if x]
+    only = [x for x in a.events.split(",") if x]
+    rows, sr, version, _ = load_events(a.slug, only)
+    log_dir = settings.path("workshop") / "logs" / "sfx-spectral"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    out_path = log_dir / f"price-{a.slug}.json"
+    state = json.loads(out_path.read_text()) if out_path.exists() and not a.no_cache else {"slug": a.slug, "version": version, "events": {}}
+    base_cfg = sfxtrim.cfg()
+    pipe = base_cfg["pipeline"]
+    for r in rows:
+        eid = r["event"]["id"]
+        body = bank.render_chain(r["chain"]).astype(np.float32)
+        target = r["target"]
+        n = min(len(body), len(target))
+        body, target = body[:n], target[:n]
+        slot = state["events"].setdefault(eid, {"seconds": round(n / sr, 3), "samples": int(n), "levelDb": r["event"]["levelDb"], "specs": {}})
+        y1, _ = sfxspectral.trim_event(body, target, sr, pipe["variant"])        # deterministic: recomputed for a cached event, 4 s
+        if "spectral" not in slot:
+            slot["spectral"] = {k: v for k, v in measure(y1, target, sr).items() if k != "errors"}
+        for spec in specs:
+            if spec in slot["specs"]:
+                continue
+            bands, _, hop = spec.partition(":")
+            c = copy.deepcopy(base_cfg)
+            c["bands"]["count"] = int(bands)
+            if hop:
+                c["stft"]["hop"] = int(hop)
+            t0 = time.time()
+            y2, trim = sfxtrim.trim_event(y1, target, sr, c)
+            y2 = y2 if trim else y1
+            m = measure(y2, target, sr)
+            frames = len(trim["gainsDb"][0]) if trim else 0
+            slot["specs"][spec] = {**{k: v for k, v in m.items() if k != "errors"}, "bands": int(bands), "hop": c["stft"]["hop"], "frames": frames,
+                                   "tableSize": int(bands) * frames, "seconds": round(time.time() - t0, 1)}
+            out_path.write_text(json.dumps(state, indent=1, default=float))
+            print(f"{a.slug} {eid} spec {spec:<8} official={m['ploss']:6.2f} sto={m['sto']:6.2f} critic={m['critic']:6.2f} audit={m['auditMean']:6.2f} b1={m['b1']} "
+                  f"table={int(bands) * frames} numbers for {n} samples ({slot['specs'][spec]['seconds']}s)", flush=True)
+    print(f"\n{a.slug} ({version}): price of the cell-exact official score")
+    print(f"{'event':<6} {'spec':<9} {'official':>8} {'invariant':>9} {'critic':>7} {'audit':>7} {'b1':>6} {'table':>8} {'samples':>8} {'table/samples':>13}")
+    for eid, slot in state["events"].items():
+        sp = slot["spectral"]
+        print(f"{eid:<6} {'spectral':<9} {sp['ploss']:8.2f} {sp['sto']:9.2f} {sp['critic']:7.2f} {sp['auditMean']:7.2f} {sp['b1'] or 0:6.1f} {'-':>8} {slot['samples']:8d} {'-':>13}")
+        for spec, m in slot["specs"].items():
+            print(f"{eid:<6} {'eq ' + spec:<9} {m['ploss']:8.2f} {m['sto']:9.2f} {m['critic']:7.2f} {m['auditMean']:7.2f} {m['b1'] or 0:6.1f} {m['tableSize']:8d} {slot['samples']:8d} {m['tableSize'] / slot['samples']:13.2f}")
+    return 0
+
+
+def table(a) -> int:
+    from zrmd import settings
+    p = settings.path("workshop") / "logs" / "sfx-spectral" / f"{a.slug}.json"
+    st = json.loads(p.read_text())
+    ev = st["events"]
+    names = []
+    for e in ev.values():
+        for v in e["variants"]:
+            if v not in names:
+                names.append(v)
+    w = {k: 10 ** (e["levelDb"] / 20.0) for k, e in ev.items()}
+    print(f"\n{a.slug} ({st['version']}), {len(ev)} events; mean weighted by loudness (as the event score), then unweighted")
+    print(f"{'variant':<12} {'official':>9} {'ceil':>7} {'gap':>6} {'sto':>7} {'b1':>6} {'critic':>7} {'train':>7} {'audit':>7} {'auditMin':>8}")
+    ceil_w = float(np.average([e["ceiling"]["official"] for e in ev.values()], weights=list(w.values())))
+    for v in names:
+        ks = [k for k, e in ev.items() if v in e["variants"]]
+        ww = [w[k] for k in ks]
+
+        def mean(field, weighted=True):
+            vals = [ev[k]["variants"][v][field] for k in ks]
+            vals = [x if x is not None else 0.0 for x in vals]
+            return float(np.average(vals, weights=ww if weighted else None))
+        cw = float(np.average([ev[k]["ceiling"]["official"] for k in ks], weights=ww))
+        print(f"{v:<12} {mean('ploss'):9.2f} {cw:7.2f} {mean('ploss') - cw:6.2f} {mean('sto'):7.2f} {mean('b1'):6.1f} {mean('critic'):7.2f} {mean('trainMean'):7.2f} {mean('auditMean'):7.2f} {mean('auditMin'):8.2f}")
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    e = sub.add_parser("experiment")
+    e.add_argument("--slug", required=True)
+    e.add_argument("--variants", default=",".join(ALL))
+    e.add_argument("--events", default="")
+    e.add_argument("--no-cache", action="store_true")
+    t = sub.add_parser("table")
+    t.add_argument("--slug", required=True)
+    k = sub.add_parser("track")
+    k.add_argument("--slug", required=True)
+    k.add_argument("--variant", default="fine")
+    q = sub.add_parser("price")
+    q.add_argument("--slug", required=True)
+    q.add_argument("--events", default="")
+    q.add_argument("--specs", default="120,240,513,513:128")
+    q.add_argument("--no-cache", action="store_true")
+    a = ap.parse_args()
+    return {"experiment": experiment, "table": table, "track": track, "price": price}[a.cmd](a)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
