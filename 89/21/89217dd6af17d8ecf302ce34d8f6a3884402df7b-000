@@ -1,0 +1,60 @@
+# 14 October 2026: the stem-iteration scripts start from V_034 on OneKey and from the best bench version on any other reference
+# (zrmd.audio.resynth.resolve_base). Proven in both directions on a temporary bench: the named base is kept when it exists, the
+# best-scoring version wins when it does not, an empty bench is refused with its cause, and no script keeps a OneKey path.
+# FR : la version de depart d'une iteration de piste se resout depuis le banc de la video en cours.
+import json
+import sys
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from zrmd.audio import resynth as RS  # noqa: E402
+
+FAIL = []
+
+
+def check(name, cond, detail=""):
+    print(("ok   " if cond else "FAIL ") + name + (f"  {detail}" if detail and not cond else ""))
+    if not cond:
+        FAIL.append(name)
+
+
+def make(bench: Path, name: str, mix: float | None):
+    (bench / name).mkdir(parents=True)
+    (bench / name / "mix.wav").write_bytes(b"RIFF")
+    if mix is not None:
+        (bench / name / "scores.json").write_text(json.dumps({"headline": {"mix": {"tfBands": mix}}}))
+
+
+def run() -> int:
+    tmp = Path(tempfile.mkdtemp(prefix="zrmd-base-"))
+    P = {"paths": {"bench": str(tmp)}}
+    try:
+        RS.resolve_base("V_034", P)
+        check("empty bench is refused", False, "no error")
+    except FileNotFoundError as e:
+        check("empty bench is refused with its cause", "build the music first" in str(e))
+    make(tmp, "V_001", 90.0)
+    make(tmp, "V_002", 97.5)
+    make(tmp, "V_003", 95.0)
+    check("best version wins when the named base is missing", RS.resolve_base("V_034", P) == "V_002")
+    make(tmp, "V_034", 80.0)
+    check("the named base is kept when it exists", RS.resolve_base("V_034", P) == "V_034")
+    make(tmp, "V_004", None)
+    (tmp / "V_034").rename(tmp / "V_034x")
+    check("an unscored version never beats a scored one", RS.resolve_base("V_034", P) == "V_002")
+    for script in ("IterateBass.py", "IterateVocals.py", "IterateDrums.py", "IterateOther.py"):
+        text = (ROOT / "Scripts" / script).read_text(encoding="utf-8")
+        code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+        check(f"{script} keeps no OneKey path in code", "sound/onekey-pro-2" not in code)
+    print(f"{len(FAIL)} failure(s)")
+    return 1 if FAIL else 0
+
+
+def test_resolve_base():
+    assert run() == 0
+
+
+if __name__ == "__main__":
+    sys.exit(run())

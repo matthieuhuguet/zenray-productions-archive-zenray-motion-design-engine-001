@@ -1,0 +1,599 @@
+# 14 October 2026: the local orchestrator of ZenRay Motion Design. It takes ANY reference video (a dropped file or a registry
+# slug) through every module in one deterministic run: cuts, stems, music, sound effects, soundtrack, film. No language model
+# is called anywhere: the pipeline is DATA (params/orchestrator.json), each step is a command, and an agent, the GUI or a
+# shell script all drive the same contract (CLI Scripts/Orchestrate.py, HTTP zrmd/orchestrator_server.py).
+# Run state lives in <workshop>/runs/<run-id>/run.json (atomic writes); module scores are computed from the DISK on demand
+# (like zrmd/registry.py) so they never go stale. A run is executed by a detached runner process: closing the GUI, the
+# server or the terminal never kills it, and a dead runner is reported as "interrupted", never as "running".
+# FR : l'orchestrateur local ; le pipeline est une donnee, chaque etape une commande, aucun LLM n'est appele.
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import time
+import uuid
+from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+from . import registry, settings, versions
+
+REPO = settings.REPO
+# 14 October 2026: ZRMD_ORCH_DEF points the runner, the CLI and the server at another definition (isolated tests), like ZRMD_PATH_*.
+DEF_PATH = Path(os.environ.get("ZRMD_ORCH_DEF") or REPO / "params" / "orchestrator.json")
+SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,120}$")
+RUN_ID_RE = re.compile(r"^run-[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$")
+TOKEN_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+STATES_DONE = ("done", "below-target")
+
+
+class OrchestratorError(Exception):
+    """A refusal that names its cause (never a silent partial result)."""
+
+
+def definition() -> dict:
+    return json.loads(DEF_PATH.read_text(encoding="utf-8"))
+
+
+def base_tokens() -> dict:
+    return {"py": str(settings.path("python")), "engine": str(REPO), "workshop": str(settings.path("workshop")),
+            "refcache": str(settings.path("refcache"))}
+
+
+def expand(text: str, tok: dict) -> str:
+    """Replace {name} tokens; an unknown token raises an error that names it (no silent partial command)."""
+    def sub(m):
+        if m.group(1) not in tok:
+            raise OrchestratorError(f"unresolved parameter {{{m.group(1)}}} in '{text}'")
+        return str(tok[m.group(1)])
+    return TOKEN_RE.sub(sub, text)
+
+
+def stamp() -> str:
+    return versions.stamp()
+
+
+def iso() -> str:
+    return datetime.now(ZoneInfo("Europe/Paris")).isoformat(timespec="seconds")
+
+
+def atomic_json(path: Path, data) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex[:6]}.tmp")
+    tmp.write_text(json.dumps(data, indent=1, ensure_ascii=False, default=float) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def read_json(path: Path, default=None):
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return default
+
+
+# ---------------------------------------------------------------------------------------------------------------- ingest
+
+def slugify(name: str, limit: int) -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    return (s or "video")[:limit].strip("-") or "video"
+
+
+def probe_media(path: Path) -> dict:
+    raw = subprocess.run(["ffprobe", "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)],
+                         capture_output=True, text=True, timeout=120)
+    if raw.returncode != 0:
+        raise OrchestratorError(f"ffprobe cannot read '{path.name}': {raw.stderr.strip()[-200:]}")
+    data = json.loads(raw.stdout)
+    video = next((s for s in data.get("streams", []) if s.get("codec_type") == "video"), None)
+    audio = next((s for s in data.get("streams", []) if s.get("codec_type") == "audio"), None)
+    if not video:
+        raise OrchestratorError(f"'{path.name}' has no video stream")
+    def rate(text) -> float:
+        num, _, den = str(text or "0/1").partition("/")
+        return float(num) / float(den or 1) if float(den or 1) else 0.0
+    fps, r_fps = rate(video.get("avg_frame_rate")), rate(video.get("r_frame_rate"))
+    vfr = fps <= 0 or r_fps <= 0 or abs(fps - r_fps) > 0.01 * max(fps, r_fps)  # average and base rates disagree: the rate varies
+    return {"vfr": vfr, "r_fps": round(r_fps, 3), "duration_s": round(float(data["format"].get("duration", 0)), 3), "video_codec": video.get("codec_name"),
+            "width": video.get("width"), "height": video.get("height"), "fps": round(fps, 3), "has_audio": audio is not None,
+            "audio_codec": audio.get("codec_name") if audio else None,
+            "sample_rate_hz": int(audio["sample_rate"]) if audio and audio.get("sample_rate") else None,
+            "channels": audio.get("channels") if audio else None, "container": data["format"].get("format_name")}
+
+
+def sha256_of(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def normalize_video(src: Path, dst: Path, info: dict, cfg: dict) -> dict:
+    """Rewrite a dropped video as a near-lossless constant-frame-rate H.264 MP4 (the frame-exact contract of every module)."""
+    guess = info["r_fps"] or info["fps"]
+    if guess <= 0:  # no usable rate in the container: count the decoded frames
+        raw = subprocess.run(["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries", "stream=nb_read_frames",
+                              "-of", "default=nw=1:nk=1", str(src)], capture_output=True, text=True, timeout=600)
+        frames = int(raw.stdout.strip() or 0) if raw.returncode == 0 else 0
+        guess = frames / info["duration_s"] if frames and info["duration_s"] else 25.0
+    fps = min(cfg["fpsChoices"], key=lambda c: abs(c - guess))
+    cmd = ["ffmpeg", "-v", "error", "-y", "-i", str(src), "-map", "0:v:0", "-vf", f"fps={fps}", "-c:v", "libx264", "-crf", str(cfg["crf"]),
+           "-preset", cfg["preset"], "-pix_fmt", "yuv420p"]
+    cmd += ["-map", "0:a:0?", "-c:a", "aac", "-b:a", f"{cfg['audioKbps']}k"] if info["has_audio"] else ["-an"]
+    done = subprocess.run(cmd + [str(dst)], capture_output=True, text=True, timeout=3600)
+    if done.returncode != 0:
+        dst.unlink(missing_ok=True)
+        raise OrchestratorError(f"cannot normalise '{src.name}': {done.stderr.strip()[-200:]}")
+    return {"normalized_fps": fps}
+
+
+def ingest_local(src: str | Path, slug: str | None = None, title: str | None = None, move: bool = False) -> dict:
+    """Register a local video as a reference: copy into the reference cache (never archived), write reference.json.
+    Idempotent: the same bytes under the same slug return the existing reference."""
+    cfg = definition()["ingest"]
+    src = Path(src).expanduser().resolve()
+    if not src.is_file():
+        raise OrchestratorError(f"no such file: {src}")
+    if src.suffix.lower() not in cfg["extensions"]:
+        raise OrchestratorError(f"unsupported extension '{src.suffix}' (allowed: {', '.join(cfg['extensions'])})")
+    info = probe_media(src)
+    if not cfg["minDurationS"] <= info["duration_s"] <= cfg["maxDurationS"]:
+        raise OrchestratorError(f"duration {info['duration_s']} s is outside {cfg['minDurationS']} to {cfg['maxDurationS']} s")
+    digest = sha256_of(src)
+    known = {r["slug"]: r for r in registry.load()["references"]}
+    wanted = slugify(slug or src.stem, cfg["slugMaxChars"])
+    if slug and not SLUG_RE.match(slug):
+        raise OrchestratorError(f"invalid slug '{slug}'")
+    final, n = wanted, 1
+    while True:
+        meta = read_json(settings.path("workshop") / "references" / final / "reference.json")
+        if meta is None and final not in known:
+            break
+        if meta and meta.get("sha256") == digest:  # same bytes: reuse
+            if move and src.exists():
+                src.unlink()
+            return {"slug": final, "created": False, "reference": meta}
+        n += 1
+        final = f"{wanted[: cfg['slugMaxChars'] - 4]}-{n}"
+    cache = settings.path("refcache") / final
+    cache.mkdir(parents=True, exist_ok=True)
+    norm = cfg["normalize"]
+    needs_norm = src.suffix.lower() not in norm["keepAsIs"] or info["vfr"]
+    name = f"{final} [{digest[:8]}]{'.mp4' if needs_norm else src.suffix.lower()}"
+    target = cache / name
+    notes = ["Dropped into the orchestrator; the media stays in the reference cache (never archived or published)."]
+    extra = {}
+    if needs_norm:
+        extra = normalize_video(src, target, info, norm)
+        info = {**probe_media(target), "vfr": False}
+        notes.append(f"Rewritten as a constant-frame-rate MP4 at {extra['normalized_fps']} fps (the original was {src.suffix.lower()}, variable rate: {extra and True}).")
+        if move:
+            src.unlink()
+    else:
+        shutil.move(str(src), target) if move else shutil.copy2(src, target)
+    meta = {"schema": "zenray-motion-design/reference@1", "slug": final, "page_url": None, "media_url": None, "date": versions.today(),
+            "file_name": name, "sha256": digest, "bytes": target.stat().st_size, **info, **extra, "normalized": needs_norm, "family": "dropped",
+            "title": title or src.stem, "notes": notes}
+    atomic_json(settings.path("workshop") / "references" / final / "reference.json", meta)
+    add_dropped({"slug": final, "title": meta["title"], "page_url": None, "origin": "dropped", "duration_s": info["duration_s"],
+                 "has_audio": info["has_audio"], "brand": None, "focus": "dropped in the orchestrator"})
+    return {"slug": final, "created": True, "reference": meta}
+
+
+def dropped_path() -> Path:
+    return settings.path("workshop") / "references" / "dropped.json"
+
+
+def add_dropped(entry: dict) -> None:
+    data = read_json(dropped_path(), {"schema": "zrmd/references-dropped@1", "references": []})
+    data["references"] = [r for r in data["references"] if r["slug"] != entry["slug"]] + [entry]
+    atomic_json(dropped_path(), data)
+
+
+# ---------------------------------------------------------------------------------------------------------- resolvers
+
+def _sound(slug: str) -> Path:
+    return settings.path("sound_out") / slug
+
+
+def _version_dirs(folder: Path) -> list[Path]:
+    return sorted(p for p in folder.glob("V_*") if p.is_dir() and versions.VERSION_RE.match(p.name)) if folder.exists() else []
+
+
+def resolve_music_best(slug: str, run: dict | None) -> str | None:
+    best = registry._music_state(slug)["best"]
+    return best["version"] if best else None
+
+
+def resolve_sfx_latest(slug: str, run: dict | None) -> str | None:
+    for v in reversed(_version_dirs(_sound(slug))):
+        meta = read_json(v / "version.json", {}) or {}
+        if (v / "events.json").exists() and meta.get("kind") != "soundtrack-benchmark":
+            return v.name
+    return None
+
+
+def resolve_soundtrack_mix(slug: str, run: dict | None) -> str | None:
+    if run:
+        step = next((s for s in run["steps"] if s["id"] == "soundtrack"), None)
+        for v in reversed(step.get("produced", []) if step else []):
+            if (_sound(slug) / v / "mix.wav").exists():
+                return str(_sound(slug) / v / "mix.wav")
+    for v in reversed(_version_dirs(_sound(slug))):
+        meta = read_json(v / "version.json", {}) or {}
+        if meta.get("kind") == "soundtrack-benchmark" and (v / "mix.wav").exists():
+            return str(v / "mix.wav")
+    return None
+
+
+RESOLVERS = {"music_best": resolve_music_best, "sfx_latest": resolve_sfx_latest, "soundtrack_mix": resolve_soundtrack_mix}
+
+
+# ------------------------------------------------------------------------------------------------------- score readers
+# Each reader returns {"value": 0..1, "detail": {...}} computed from files on disk, or None when nothing was produced yet.
+
+def score_music(slug: str) -> dict | None:
+    best = registry._music_state(slug)["best"]
+    if not best:
+        return None
+    return {"value": round(best["scores"]["mix"] / 100, 4), "version": best["version"],
+            "detail": {k: round(v / 100, 4) for k, v in best["scores"].items()}}
+
+
+def _soundtrack_report(slug: str) -> tuple[str, dict] | None:
+    for v in reversed(_version_dirs(_sound(slug))):
+        rep = read_json(v / "sound-fidelity.json")
+        if rep and "reports" in rep and "full" in rep["reports"]:
+            return v.name, rep["reports"]["full"]
+    return None
+
+
+def score_sfx(slug: str) -> dict | None:
+    got = _soundtrack_report(slug)
+    if not got:
+        return None
+    version, full = got
+    sc = full.get("scores", {})
+    if "sfx" not in sc:
+        return None
+    return {"value": round(sc["sfx"] / 100, 4), "version": version, "detail": {k: round(v / 100, 4) for k, v in sc.items() if isinstance(v, (int, float))}}
+
+
+def score_mix(slug: str) -> dict | None:
+    got = _soundtrack_report(slug)
+    if not got:
+        return None
+    version, full = got
+    sc = full.get("scores", {})
+    if "mix" not in sc:
+        return None
+    return {"value": round(sc["mix"] / 100, 4), "version": version, "detail": {k: round(v / 100, 4) for k, v in sc.items() if isinstance(v, (int, float))}}
+
+
+def _film_report(slug: str) -> tuple[Path, dict] | None:
+    try:
+        from .emit import montage
+        base = montage.root() / f"{slug}-film"
+    except Exception:  # noqa: BLE001
+        return None
+    best = None
+    for rep in sorted(base.glob("*/film-report.json")) if base.exists() else []:
+        data = read_json(rep)
+        if data:
+            best = (rep, data)
+    return best
+
+
+def score_rhythm(slug: str) -> dict | None:
+    got = _film_report(slug)
+    if not got or "rhythm" not in got[1]:
+        return None
+    r = got[1]["rhythm"]
+    return {"value": r.get("score"), "film": got[1].get("film"), "detail": {"cutsFound": r.get("found"), "cutsReference": r.get("reference"), "extraJumps": r.get("extra")}}
+
+
+def score_visual(slug: str) -> dict | None:
+    """Mean fidelity of the code-reproduced shots (text cards and graphics) and how much of the film they cover."""
+    got = _film_report(slug)
+    if not got:
+        return None
+    plan = got[1].get("plan", [])
+    total = got[1].get("reference_frames") or 1
+    scores, covered = [], 0
+    for seg in plan:
+        if seg.get("kind") != "motion" or not seg.get("motion"):
+            continue
+        folder = settings.path("workshop") / "motions" / seg["motion"]
+        fid = read_json(folder / (versions.latest_version(folder) or "") / "fidelity.json")
+        if fid and fid.get("score") is not None:
+            scores.append(float(fid["score"]))
+            covered += (seg["b"] - seg["a"])
+    coverage = round(covered / total, 4)
+    return {"value": round(sum(scores) / len(scores), 4) if scores else None, "coverage": coverage,
+            "detail": {"reproducedShots": len(scores), "coveredShare": coverage}}
+
+
+READERS = {"music": score_music, "sfx": score_sfx, "mix": score_mix, "rhythm": score_rhythm, "visual": score_visual}
+
+
+def module_scores(slug: str) -> list[dict]:
+    """The table the GUI and agents read: one row per module, computed from the disk right now."""
+    d = definition()
+    target = d["targets"]["default"]
+    rows = []
+    for m in d["modules"]:
+        got = READERS[m["score"]](slug)
+        value = got["value"] if got else None
+        rows.append({"module": m["id"], "label": m["label"], "hint": m["hint"], "value": value, "target": target,
+                     "stretch": d["targets"]["stretch"], "reached": value is not None and value >= target,
+                     "version": (got or {}).get("version"), "detail": (got or {}).get("detail"),
+                     "coverage": (got or {}).get("coverage")})
+    return rows
+
+
+# ------------------------------------------------------------------------------------------------------------- results
+# What a listener or viewer can open for a reference, each resolved from the disk and served by kind (the GUI never sees a path).
+
+MEDIA_KINDS = {
+    "reference": ("Reference video", "video/mp4"), "film": ("Our film", "video/mp4"), "mix": ("Our soundtrack", "audio/wav"),
+    "music": ("Our music", "audio/wav"), "sfx": ("Our sound effects", "audio/wav"), "compare": ("A/B listening", "audio/mpeg"),
+    "storyboard": ("Storyboard and bible", "text/html"),
+}
+MIME_BY_SUFFIX = {".html": "text/html; charset=utf-8", ".mp4": "video/mp4", ".mov": "video/quicktime", ".mkv": "video/x-matroska", ".webm": "video/webm", ".m4v": "video/mp4",
+                  ".wav": "audio/wav", ".mp3": "audio/mpeg"}
+
+
+def media_file(slug: str, kind: str) -> Path | None:
+    if not SLUG_RE.match(slug or "") or kind not in MEDIA_KINDS:
+        return None
+    path = None
+    if kind == "reference":
+        path = registry.reference_file(slug)
+    elif kind == "film":
+        got = _film_report(slug)
+        path = Path(got[1]["film"]) if got and got[1].get("film") else None
+    elif kind == "mix":
+        v = resolve_soundtrack_mix(slug, None)
+        path = Path(v) if v else None
+    elif kind == "music":
+        best = registry._music_state(slug)["best"]
+        path = _sound(slug) / "music-bench" / best["version"] / "mix.wav" if best else None
+    elif kind == "sfx":
+        v = resolve_sfx_latest(slug, None)
+        path = _sound(slug) / v / "sfx.wav" if v else None
+    elif kind == "storyboard":
+        path = settings.path("workshop") / "references" / slug / "storyboard.html"
+    elif kind == "compare":
+        found = sorted((settings.path("refcache") / slug).glob("compare-*/AB.mp3"))
+        path = found[-1] if found else None
+    return path if path and path.is_file() else None
+
+
+def results(slug: str) -> list[dict]:
+    out = []
+    for kind, (label, mime) in MEDIA_KINDS.items():
+        f = media_file(slug, kind)
+        out.append({"kind": kind, "label": label, "mime": MIME_BY_SUFFIX.get(f.suffix.lower(), mime) if f else mime,
+                    "exists": f is not None, "bytes": f.stat().st_size if f else 0, "name": f.name if f else None})
+    return out
+
+
+# --------------------------------------------------------------------------------------------------------------- runs
+
+def runs_dir() -> Path:
+    return Path(expand(definition()["paths"]["runs"], base_tokens()))
+
+
+def run_folder(run_id: str) -> Path:
+    if not RUN_ID_RE.match(run_id or ""):
+        raise OrchestratorError(f"invalid run id '{str(run_id)[:40]}'")
+    return runs_dir() / run_id
+
+
+def new_run(slug: str, steps: list[str] | None = None, params: dict | None = None) -> dict:
+    d = definition()
+    if not (settings.path("workshop") / "references" / slug / "reference.json").exists():
+        raise OrchestratorError(f"unknown reference '{slug}': ingest the video first")
+    known = {s["id"] for s in d["steps"]}
+    chosen = steps or [s["id"] for s in d["steps"]]
+    bad = [s for s in chosen if s not in known]
+    if bad:
+        raise OrchestratorError(f"unknown step(s): {', '.join(bad)}")
+    params = {**d["defaults"], **(params or {})}
+    for k, v in params.items():
+        if k not in d["defaults"] or not isinstance(v, str) or not re.fullmatch(r"[A-Za-z0-9_,.\-]{1,200}", v):
+            raise OrchestratorError(f"invalid parameter '{k}'")
+    now = datetime.now(ZoneInfo("Europe/Paris"))
+    run_id = f"run-{now:%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"
+    run = {"schema": "zrmd/run@1", "id": run_id, "slug": slug, "created": stamp(), "createdIso": iso(), "state": "queued", "pid": None,
+           "params": params, "targets": d["targets"],
+           "steps": [{"id": s["id"], "label": s["label"], "module": s["module"], "state": "pending" if s["id"] in chosen else "skipped",
+                      "log": None, "seconds": None, "returncode": None, "produced": [], "score": None, "note": None}
+                     for s in d["steps"]]}
+    atomic_json(run_folder(run_id) / "run.json", run)
+    return run
+
+
+def load_run(run_id: str) -> dict:
+    run = read_json(run_folder(run_id) / "run.json")
+    if run is None:
+        raise OrchestratorError(f"unknown run '{run_id}'")
+    if run["state"] in ("running", "queued") and run.get("pid") and not _alive(run["pid"]):
+        run["state"] = "interrupted"
+    return run
+
+
+def list_runs(slug: str | None = None, limit: int = 100) -> list[dict]:
+    out = []
+    for p in sorted(runs_dir().glob("run-*/run.json"), reverse=True)[:limit]:
+        try:
+            run = load_run(p.parent.name)
+        except OrchestratorError:
+            continue
+        if slug is None or run["slug"] == slug:
+            out.append(run)
+    return out
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def _save(run: dict) -> None:
+    atomic_json(run_folder(run["id"]) / "run.json", run)
+
+
+def cancel_requested(run_id: str) -> bool:
+    return (run_folder(run_id) / "CANCEL").exists()
+
+
+def request_cancel(run_id: str) -> dict:
+    run = load_run(run_id)
+    if run["state"] not in ("running", "queued"):
+        raise OrchestratorError(f"run {run_id} is {run['state']}, nothing to cancel")
+    (run_folder(run_id) / "CANCEL").write_text(stamp() + "\n", encoding="utf-8")
+    return run
+
+
+def start_detached(run_id: str) -> dict:
+    """Launch the runner as its own session: the run survives the server, the GUI and the terminal."""
+    run = load_run(run_id)
+    log = run_folder(run_id) / "runner.log"
+    with open(log, "ab") as out:
+        child = subprocess.Popen([str(settings.path("python")), "-I", str(REPO / "Scripts" / "Orchestrate.py"), "run", "--id", run_id],
+                                 stdout=out, stderr=out, stdin=subprocess.DEVNULL, start_new_session=True, cwd=str(REPO))
+    run["pid"], run["state"] = child.pid, "queued"
+    _save(run)
+    return run
+
+
+def _build_argv(step: dict, tok: dict) -> list[str]:
+    argv = [expand(a, tok) for a in step["argv"]]
+    for opt in step.get("optionalArgs", []):
+        if tok.get(opt["when"]):
+            argv += [expand(a, tok) for a in opt["args"]]
+    return argv
+
+
+def _produced(watch: Path | None, before: set[str]) -> list[str]:
+    if not watch or not watch.exists():
+        return []
+    return sorted(p.name for p in watch.glob("V_*") if p.is_dir() and p.name not in before)
+
+
+def execute(run_id: str, only: list[str] | None = None, force: bool = False) -> dict:
+    """Run the selected steps in order, sequentially (the machine is one: MPS, CMA-ES and Chrome do not share well)."""
+    d = definition()
+    steps_def = {s["id"]: s for s in d["steps"]}
+    run = load_run(run_id)
+    run["pid"], run["state"] = os.getpid(), "running"
+    run["startedAt"] = stamp()
+    _save(run)
+    folder = run_folder(run_id)
+    cancelled = False
+    for st in run["steps"]:
+        if cancelled or st["state"] == "skipped" or (only and st["id"] not in only):
+            continue
+        if st["state"] in STATES_DONE and not force:
+            continue
+        sd = steps_def[st["id"]]
+        tok = {**base_tokens(), "slug": run["slug"], "run": str(folder), **run["params"]}
+        for name in ("music_best", "sfx_latest", "soundtrack_mix"):
+            value = RESOLVERS[name](run["slug"], run)
+            if value:
+                tok[name] = value
+        missing = [n for n in sd.get("needs", []) if not tok.get(n)]
+        if missing:
+            st.update(state="blocked", note=f"waiting for: {', '.join(missing)}")
+            _save(run)
+            continue
+        try:
+            argv = _build_argv(sd, tok)
+            cwd = expand(sd.get("cwd", "{engine}"), tok)
+            watch = Path(expand(sd["watch"], tok)) if sd.get("watch") else None
+        except OrchestratorError as e:
+            st.update(state="failed", note=str(e))
+            _save(run)
+            continue
+        before = {p.name for p in watch.glob("V_*")} if watch and watch.exists() else set()
+        log = folder / f"{st['id']}.log"
+        st.update(state="running", log=log.name, note=None, startedAt=stamp(), command=" ".join(argv))
+        _save(run)
+        t0 = time.time()
+        env = {**os.environ, "PYTHONUNBUFFERED": "1", "OMP_NUM_THREADS": "1"}
+        with open(log, "wb") as out:
+            proc = subprocess.Popen(argv, cwd=cwd, stdout=out, stderr=subprocess.STDOUT, env=env, start_new_session=True)
+            timeout = sd.get("timeoutS", 3600)
+            code = None
+            while code is None:
+                try:
+                    code = proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    if cancel_requested(run_id) or time.time() - t0 > timeout:
+                        os.killpg(proc.pid, signal.SIGTERM)
+                        try:
+                            code = proc.wait(timeout=10)
+                        except subprocess.TimeoutExpired:
+                            os.killpg(proc.pid, signal.SIGKILL)
+                            code = proc.wait()
+                        cancelled = cancel_requested(run_id)
+                        st["note"] = "cancelled" if cancelled else f"timeout after {timeout} s"
+                        code = code if code else -1
+                    st["seconds"] = round(time.time() - t0, 1)
+                    _save(run)
+        st["seconds"], st["returncode"] = round(time.time() - t0, 1), code
+        st["produced"] = _produced(watch, before)
+        reader = READERS.get(sd.get("score", ""))
+        got = reader(run["slug"]) if reader else None
+        st["score"] = got["value"] if got else None
+        if cancelled:
+            st["state"] = "cancelled"
+        elif code in sd.get("okCodes", [0]):
+            st["state"] = "below-target" if st["score"] is not None and st["score"] < d["targets"]["default"] else "done"
+        else:
+            st["state"] = "failed"
+            last = next((ln.strip() for ln in reversed(log_tail_text(log).splitlines()) if ln.strip()), "")
+            st["note"] = st["note"] or f"exit code {code}: {last[:160]}" if last else f"exit code {code}; see {log.name}"
+        _save(run)
+    states = {s["state"] for s in run["steps"]}
+    run["state"] = "cancelled" if cancelled else "failed" if "failed" in states else "done"
+    run["endedAt"] = stamp()
+    run["scores"] = {r["module"]: r["value"] for r in module_scores(run["slug"])}
+    run["pid"] = None
+    try:  # the static web report is rebuilt after every run; a failure is shown, never hidden, and never fails the run
+        from . import report
+        run["report"] = report.build()
+    except Exception as exc:  # noqa: BLE001
+        run["reportError"] = str(exc)[:200]
+    _save(run)
+    return run
+
+
+def log_tail_text(log: Path, lines: int = 80) -> str:
+    if not log.exists():
+        return ""
+    size = log.stat().st_size
+    with open(log, "rb") as f:
+        f.seek(max(0, size - 64 * 1024))
+        return "\n".join(f.read().decode("utf-8", "replace").splitlines()[-lines:])
+
+
+def log_tail(run_id: str, step_id: str, lines: int = 80) -> str:
+    log = run_folder(run_id) / f"{re.sub(r'[^a-z0-9_-]', '', step_id)}.log"
+    if not log.exists():
+        return ""
+    size = log.stat().st_size
+    with open(log, "rb") as f:
+        f.seek(max(0, size - 64 * 1024))
+        text = f.read().decode("utf-8", "replace")
+    return "\n".join(text.splitlines()[-lines:])

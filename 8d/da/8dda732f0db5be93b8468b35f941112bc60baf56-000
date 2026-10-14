@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+# 14 October 2026: automatic stem iteration of the music bench for ANY reference (the OneKey 99.1 was reached by hand, one
+# operation at a time; this script replays those recipes with a plateau stop, then assembles the best stem of each kind).
+#   MusicIterate.py --slug claude-opus-5-5 [--stems drums,bass] [--no-assemble] [--critic]
+# Recipes and stop rules: params/music-iterate.json. Every stem version is a new folder (never overwritten); the paths come from
+# the reference's ZRMD_RESYNTH_OVERRIDES (Scripts/MusicRun.py env_for), so no OneKey path is involved.
+# Exit code 0 when the assemble stage wrote a version (or was skipped on purpose), 1 otherwise.
+# FR : iteration automatique des pistes de la musique pour n'importe quelle video, avec arret sur plateau, puis assemblage.
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+sys.path.insert(0, str(ENGINE / "Scripts"))
+from zrmd import settings  # noqa: E402
+import MusicRun  # noqa: E402
+
+PY = str(settings.path("python"))
+
+
+def log(*a):
+    print(time.strftime("%H:%M:%S"), *a, flush=True)
+
+
+def tf_bands(scores: dict) -> float | None:
+    """First numeric tfBands in a scores.json (flat or nested), the number the critic ranks stems by."""
+    if isinstance(scores.get("tfBands"), (int, float)):
+        return float(scores["tfBands"])
+    for v in scores.values():
+        if isinstance(v, dict):
+            got = tf_bands(v)
+            if got is not None:
+                return got
+    return None
+
+
+def versions_of(folder: Path) -> list[str]:
+    return sorted(p.name for p in folder.glob("V_[0-9][0-9][0-9]") if p.is_dir()) if folder.exists() else []
+
+
+def version_score(folder: Path, name: str) -> float | None:
+    try:
+        return tf_bands(json.loads((folder / name / "scores.json").read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return None
+
+
+def run_op(script: str, op: list[str], parent: str | None, chain: bool, env: dict, timeout: int) -> int:
+    cmd = [PY, "-I", str(ENGINE / "Scripts" / script), *op]
+    if chain and parent and op and op[0] != "run":
+        cmd += ["--from", parent]
+    log("$", " ".join(cmd[2:]))
+    try:
+        return subprocess.run(cmd, env=env, timeout=timeout).returncode
+    except subprocess.TimeoutExpired:
+        log("operation timed out after", timeout, "s")
+        return 124
+
+
+def iterate_stem(stem: str, spec: dict, folder: Path, cfg: dict, env: dict) -> dict:
+    best_v = next(iter(reversed([v for v in versions_of(folder) if version_score(folder, v) is not None])), None)
+    best = version_score(folder, best_v) if best_v else None
+    flat = 0
+    ran = 0
+    for op in spec["ops"]:
+        before = set(versions_of(folder))
+        code = run_op(spec["script"], op, best_v, spec["chain"], env, cfg["opTimeoutS"])
+        ran += 1
+        fresh = [v for v in versions_of(folder) if v not in before]
+        if code != 0 or not fresh:
+            log(f"{stem}: operation {op or ['default']} gave exit {code} and {len(fresh)} new version(s)")
+            flat += 1
+        else:
+            score = version_score(folder, fresh[-1])
+            log(f"{stem}: {fresh[-1]} tfBands {score}")
+            if score is not None and (best is None or score > best + cfg["minGain"]):
+                best, best_v, flat = score, fresh[-1], 0
+            else:
+                flat += 1
+        if flat >= cfg["plateau"]:
+            log(f"{stem}: plateau after {ran} operation(s)")
+            break
+    return {"stem": stem, "best": best_v, "tfBands": best, "operations": ran}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--slug", required=True)
+    ap.add_argument("--stems", default="")
+    ap.add_argument("--no-assemble", action="store_true")
+    ap.add_argument("--critic", action="store_true")
+    a = ap.parse_args()
+    cfg = json.loads((ENGINE / "params" / "music-iterate.json").read_text(encoding="utf-8"))
+    MusicRun.ensure_stems(a.slug)
+    env = MusicRun.env_for(a.slug)
+    bench = Path(MusicRun.slug_paths(a.slug)["bench"])
+    chosen = [s for s in (a.stems.split(",") if a.stems else cfg["order"]) if s in cfg["stems"]]
+    results = [iterate_stem(s, cfg["stems"][s], bench / "stem-iter" / s, cfg, env) for s in chosen]
+    print(json.dumps({"iterated": results}), flush=True)
+    if a.no_assemble or not cfg["assemble"]:
+        return 0
+    code = subprocess.run([PY, "-I", str(ENGINE / "Scripts" / "MusicRun.py"), "--slug", a.slug, "--stages", "assemble", *(["--critic"] if a.critic else [])]).returncode
+    return 0 if code == 0 else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

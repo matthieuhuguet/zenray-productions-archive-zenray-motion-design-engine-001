@@ -1,0 +1,257 @@
+# 14 October 2026: local HTTP server of the orchestrator (standard library only): the GUI in app/, a JSON API over
+# zrmd/orchestrator.py, uploads by drag and drop, and range-aware media streaming for the players. Loopback only, a client
+# header on every POST, an Origin allowlist, no path ever comes from the page (media are asked by slug and kind).
+# It starts nothing heavy: a run is a detached runner process, so stopping this server never stops a run.
+# FR : serveur HTTP local de l'orchestrateur ; boucle locale uniquement ; un run vit dans son propre processus.
+from __future__ import annotations
+
+import json
+import mimetypes
+import re
+import shutil
+import sys
+import uuid
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
+
+from . import orchestrator as orch
+from . import registry
+
+CFG = orch.definition()
+SERVER = CFG["server"]
+BASE = orch.base_tokens()
+APP_DIR = Path(orch.expand(CFG["gui"]["dir"], BASE))
+FONT_DIR = Path(CFG["gui"]["fontDir"])
+UPLOADS = Path(orch.expand(CFG["paths"]["uploads"], BASE))
+STATIC_NAME = re.compile(r"^[A-Za-z0-9._-]{1,80}$")
+
+
+class Refusal(Exception):
+    def __init__(self, message: str, status: int = 400):
+        super().__init__(message)
+        self.status = status
+
+
+def references_view() -> list[dict]:
+    out = []
+    for r in registry.table():
+        out.append({"slug": r["slug"], "title": r.get("title") or r["slug"], "duration_s": r.get("duration_s"), "brand": r.get("brand"),
+                    "focus": r.get("focus"), "origin": r.get("origin"), "hasFile": bool(r["status"]["file"]),
+                    "modules": orch.module_scores(r["slug"]), "status": {k: r["status"][k] for k in ("shots", "stems", "sfx_versions", "motions")}})
+    return out
+
+
+def reference_view(slug: str) -> dict:
+    ref = next((r for r in registry.table() if r["slug"] == slug), None)
+    if not ref:
+        raise Refusal(f"unknown reference '{slug}'", 404)
+    return {"slug": slug, "title": ref.get("title") or slug, "duration_s": ref.get("duration_s"), "focus": ref.get("focus"),
+            "modules": orch.module_scores(slug), "results": orch.results(slug), "runs": orch.list_runs(slug, 20),
+            "meta": orch.read_json(orch.settings.path("workshop") / "references" / slug / "reference.json", {})}
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "ZenRayMotionOrchestrator/1"
+
+    def log_message(self, fmt, *args):  # keep the terminal quiet; errors are returned to the page
+        pass
+
+    # ---------------------------------------------------------------------------------------------- plumbing
+    def _json(self, data, status=200):
+        body = json.dumps(data, ensure_ascii=False, default=float).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _guard(self, post: bool):
+        origin = self.headers.get("Origin")
+        port = self.server.server_port  # the port actually bound (tests and a second instance use another one)
+        if origin and origin not in {f"http://{SERVER['host']}:{port}", f"http://localhost:{port}"}:
+            raise Refusal("origin refused", 403)
+        if post and self.headers.get(SERVER["clientHeader"]) != SERVER["clientValue"]:
+            raise Refusal("missing client header", 403)
+
+    def _body_json(self) -> dict:
+        n = int(self.headers.get("Content-Length") or 0)
+        if n > 262144:
+            raise Refusal("body too large", 413)
+        try:
+            return json.loads(self.rfile.read(n) or b"{}")
+        except ValueError:
+            raise Refusal("body is not JSON")
+
+    def _bytes(self, body: bytes, mime: str):
+        self.send_response(200)
+        self.send_header("Content-Type", mime)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _file(self, path: Path, mime: str, cache: str = "no-store"):
+        size = path.stat().st_size
+        start, end, status = 0, size - 1, 200
+        rng = self.headers.get("Range")
+        if rng:
+            m = re.fullmatch(r"bytes=(\d*)-(\d*)", rng.strip())
+            if not m or (not m.group(1) and not m.group(2)):
+                raise Refusal("bad range", 416)
+            if m.group(1):
+                start = int(m.group(1))
+                end = int(m.group(2)) if m.group(2) else size - 1
+            else:
+                start = max(0, size - int(m.group(2)))
+            end = min(end, size - 1)
+            if start > end:
+                raise Refusal("range not satisfiable", 416)
+            status = 206
+        self.send_response(status)
+        self.send_header("Content-Type", mime)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(end - start + 1))
+        self.send_header("Cache-Control", cache)
+        if status == 206:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.end_headers()
+        with open(path, "rb") as f:
+            f.seek(start)
+            left = end - start + 1
+            while left > 0:
+                block = f.read(min(1 << 20, left))
+                if not block:
+                    break
+                try:
+                    self.wfile.write(block)
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+                left -= len(block)
+
+    # ------------------------------------------------------------------------------------------------- GET
+    def do_GET(self):
+        try:
+            self._guard(False)
+            url = urlparse(self.path)
+            q = {k: v[0] for k, v in parse_qs(url.query).items()}
+            p = unquote(url.path)
+            if p == "/":
+                return self._file(APP_DIR / "index.html", "text/html; charset=utf-8")
+            if p.startswith("/app/") or p.startswith("/fonts/"):
+                folder, name = (APP_DIR, p[5:]) if p.startswith("/app/") else (FONT_DIR, p[7:])
+                if not STATIC_NAME.match(name) or not (folder / name).is_file():
+                    raise Refusal("not found", 404)
+                mime = "font/woff2" if name.endswith(".woff2") else mimetypes.guess_type(name)[0] or "application/octet-stream"
+                return self._file(folder / name, mime)
+            if p == "/report":
+                from . import report
+                page = report.reports_dir() / "index.html"
+                if not page.is_file():
+                    report.build()
+                return self._file(page, "text/html; charset=utf-8")
+            if p == "/api/status":
+                return self._json({"ok": True, "service": "zenray-motion-orchestrator", "targets": CFG["targets"], "modules": CFG["modules"],
+                                   "steps": [{k: s[k] for k in ("id", "label", "module")} for s in CFG["steps"]], "defaults": CFG["defaults"],
+                                   "limits": CFG["honestLimits"], "maxUploadMB": SERVER["maxUploadMB"], "pollMs": SERVER["pollMs"],
+                                   "extensions": CFG["ingest"]["extensions"], "activeRuns": [r["id"] for r in orch.list_runs(limit=30) if r["state"] in ("running", "queued")]})
+            if p == "/api/references":
+                return self._json({"ok": True, "references": references_view()})
+            if p == "/api/reference":
+                return self._json({"ok": True, **reference_view(q.get("slug", ""))})
+            if p == "/api/runs":
+                return self._json({"ok": True, "runs": orch.list_runs(q.get("slug"))})
+            if p == "/api/run":
+                return self._json({"ok": True, "run": orch.load_run(q.get("id", ""))})
+            if p == "/api/log":
+                return self._json({"ok": True, "tail": orch.log_tail(q.get("id", ""), q.get("step", ""), min(int(q.get("lines", 80)), 400))})
+            if p == "/frame":  # a storyboard thumbnail of the reference, from the local cache (this Mac only)
+                slug, name = q.get("slug", ""), q.get("name", "")
+                f = orch.settings.path("refcache") / slug / "storyboard" / name
+                if not orch.SLUG_RE.match(slug) or not re.fullmatch(r"[A-Za-z0-9._-]+\.jpg", name) or not f.is_file():
+                    raise Refusal("no such frame", 404)
+                return self._file(f, "image/jpeg")
+            if p == "/media":
+                f = orch.media_file(q.get("slug", ""), q.get("kind", ""))
+                if not f:
+                    raise Refusal("no such media", 404)
+                if q.get("kind") == "storyboard":  # thumbnails are relative paths into the cache: point them at /frame
+                    text = re.sub(r'src="[^"]*/storyboard/([A-Za-z0-9._-]+\.jpg)"', lambda m: f'src="/frame?slug={q["slug"]}&name={m.group(1)}"', f.read_text(encoding="utf-8"))
+                    return self._bytes(text.encode(), "text/html; charset=utf-8")
+                return self._file(f, orch.MIME_BY_SUFFIX.get(f.suffix.lower(), "application/octet-stream"))
+            raise Refusal("not found", 404)
+        except Refusal as e:
+            self._json({"ok": False, "error": str(e)}, e.status)
+        except orch.OrchestratorError as e:
+            self._json({"ok": False, "error": str(e)}, 400)
+
+    # ------------------------------------------------------------------------------------------------ POST
+    def do_POST(self):
+        try:
+            self._guard(True)
+            url = urlparse(self.path)
+            q = {k: v[0] for k, v in parse_qs(url.query).items()}
+            if url.path == "/api/upload":
+                return self._json(self._upload(q))
+            body = self._body_json()
+            if url.path == "/api/run":
+                run = orch.new_run(str(body.get("slug", "")), body.get("steps"), body.get("params"))
+                return self._json({"ok": True, "run": orch.start_detached(run["id"])})
+            if url.path == "/api/cancel":
+                return self._json({"ok": True, "run": orch.request_cancel(str(body.get("id", "")))})
+            if url.path == "/api/ingest-path":
+                path = Path(str(body.get("path", ""))).expanduser().resolve()
+                if Path.home() not in path.parents:
+                    raise Refusal("only files inside your home folder can be ingested", 403)
+                return self._json({"ok": True, **orch.ingest_local(path, body.get("slug"), body.get("title"))})
+            raise Refusal("not found", 404)
+        except Refusal as e:
+            self._json({"ok": False, "error": str(e)}, e.status)
+        except orch.OrchestratorError as e:
+            self._json({"ok": False, "error": str(e)}, 400)
+
+    def _upload(self, q: dict) -> dict:
+        name = Path(q.get("name", "")).name
+        n = int(self.headers.get("Content-Length") or 0)
+        if not name or not n:
+            raise Refusal("upload needs a file name and a body")
+        if Path(name).suffix.lower() not in CFG["ingest"]["extensions"]:
+            raise Refusal(f"unsupported extension (allowed: {', '.join(CFG['ingest']['extensions'])})")
+        if n > SERVER["maxUploadMB"] * 1048576:
+            self.close_connection = True  # the body is not read: the connection ends after the answer (the GUI also checks the size)
+            raise Refusal(f"file larger than {SERVER['maxUploadMB']} MB", 413)
+        folder = UPLOADS / uuid.uuid4().hex[:12]
+        folder.mkdir(parents=True, exist_ok=True)
+        target = folder / name
+        try:
+            with open(target, "wb") as out:
+                left = n
+                while left > 0:
+                    block = self.rfile.read(min(1 << 20, left))
+                    if not block:
+                        raise Refusal("upload interrupted")
+                    out.write(block)
+                    left -= len(block)
+            return {"ok": True, **orch.ingest_local(target, q.get("slug") or None, q.get("title") or None, move=True)}
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
+
+
+def make_server(port: int | None = None) -> ThreadingHTTPServer:
+    return ThreadingHTTPServer((SERVER["host"], port if port is not None else SERVER["port"]), Handler)
+
+
+def main() -> int:
+    srv = make_server()
+    print(json.dumps({"ok": True, "url": f"http://{SERVER['host']}:{srv.server_port}/"}), flush=True)
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

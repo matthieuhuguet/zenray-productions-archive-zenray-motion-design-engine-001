@@ -1,0 +1,32 @@
+<!doctype html>
+<!-- 14 October 2026: ZenRay Motion Design orchestrator, local GUI. Drop a video, run every module, read the scores and open the
+     results. Served by zrmd/orchestrator_server.py; every value (port, fonts, targets, steps) comes from params/orchestrator.json.
+     FR : interface locale de l'orchestrateur ; deposer une video, lancer les modules, lire les scores, ouvrir les resultats. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Motion Orchestrator</title>
+<link rel="stylesheet" href="/app/orchestrator.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="side" aria-label="References">
+    <div class="brand"><span class="brand-name">ZenRay Motion Design</span><button class="icon-btn" id="theme" title="Switch light and dark" aria-label="Switch light and dark theme"></button></div>
+    <button class="new" id="pick" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 14V4m0 0L6 8m4-4 4 4M4 16h12"/></svg><span>Add a video</span></button>
+    <input type="file" id="file" accept="video/*,.mkv" hidden>
+    <ul class="refs" id="refs" aria-live="polite"></ul>
+  </aside>
+  <main class="main" id="main">
+    <section class="drop" id="drop" tabindex="0" aria-label="Drop a video here">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 14V4m0 0L6 8m4-4 4 4M4 16h12"/></svg>
+      <div><strong>Drop a video here</strong><p id="dropHint">MP4, MOV, MKV or WebM. It stays on this Mac, in the reference cache, and is never archived or published.</p></div>
+      <div class="bar" id="uploadBar" hidden><i id="uploadFill"></i></div>
+    </section>
+    <div id="view"></div>
+  </main>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script type="module" src="/app/orchestrator.js"></script>
+</body>
+</html>

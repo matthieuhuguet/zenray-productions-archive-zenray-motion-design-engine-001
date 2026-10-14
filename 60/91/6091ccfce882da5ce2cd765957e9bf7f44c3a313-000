@@ -1,0 +1,16 @@
+{
+ "schema": "zrmd/music-iterate@1",
+ "date": "14 October 2026",
+ "doc": "The recipe of Scripts/MusicIterate.py (HDA law): per stem, the iteration script and its operations in order. With chain=true every operation continues from the best version so far; the loop of a stem stops after `plateau` operations in a row that gain less than `minGain` tfBands points. The recipes are what reached 99.1 on OneKey by hand (drums 25 versions, bass 22, vocals 12); 'other' stays weak (94.7), which the report shows honestly. FR : la recette des iterations de pistes, par piste.",
+ "stems": {
+  "drums": {"script": "IterateDrums.py", "chain": true, "ops": [["body"], ["bed"], ["tables"], ["gaps"], ["gaps"], ["segeq"], ["tables"]]},
+  "bass": {"script": "IterateBass.py", "chain": false, "ops": [["run", "--max", "12"]]},
+  "vocals": {"script": "IterateVocals.py", "chain": false, "ops": [[]]},
+  "other": {"script": "IterateOther.py", "chain": false, "ops": [["build"]]}
+ },
+ "order": ["drums", "bass", "vocals", "other"],
+ "plateau": 2,
+ "minGain": 0.01,
+ "opTimeoutS": 7200,
+ "assemble": true
+}

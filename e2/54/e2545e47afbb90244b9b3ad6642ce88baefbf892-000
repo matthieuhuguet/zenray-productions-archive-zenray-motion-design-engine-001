@@ -1,0 +1,22 @@
+#!/bin/zsh
+# 14 October 2026: installs (or removes) the LaunchAgent com.zenray.motion-orchestrator, then proves the GUI answers on 3104.
+# Usage: service/install-orchestrator.sh [--uninstall]      FR : installe l'agent de l'interface, puis prouve qu'elle repond.
+set -euo pipefail
+SERVICE="${0:A:h}"
+ENGINE="${SERVICE:h}"
+LABEL=com.zenray.motion-orchestrator
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+LOGS="$HOME/Library/Application Support/ZenRayMotion"
+DOMAIN="gui/$(id -u)"
+PYTHON="$(python3 -c "import json;print(json.load(open('$ENGINE/settings.json'))['paths']['python'])")"
+launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
+if [[ "${1:-}" == "--uninstall" ]]; then rm -f "$PLIST"; echo '{"ok":true,"uninstalled":true}'; exit 0; fi
+mkdir -p "$LOGS" "${PLIST:h}"
+sed -e "s|@PYTHON@|$PYTHON|g" -e "s|@ENGINE@|$ENGINE|g" -e "s|@LOGS@|$LOGS|g" "$SERVICE/launchd/$LABEL.plist.template" > "$PLIST"
+plutil -lint "$PLIST" >/dev/null
+launchctl bootstrap "$DOMAIN" "$PLIST"
+for i in {1..20}; do
+  if curl -s -m 2 http://127.0.0.1:3104/api/status | grep -q '"ok": true'; then echo "{\"ok\":true,\"label\":\"$LABEL\",\"plist\":\"$PLIST\"}"; exit 0; fi
+  sleep 0.5
+done
+echo "{\"ok\":false,\"error\":\"GUI did not answer on 127.0.0.1:3104, see $LOGS/Orchestrator.error.log\"}"; exit 1

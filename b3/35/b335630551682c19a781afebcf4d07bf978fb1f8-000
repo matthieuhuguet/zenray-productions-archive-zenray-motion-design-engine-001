@@ -1,0 +1,20 @@
+# ZenRay Motion Design (engine)
+
+Deterministic motion reproduction: a reference video goes in, every module (cuts, image, music, sound effects, mix) is rebuilt by code and scored against the reference. No generative model. Details: `docs/ARCHITECTURE.md`.
+
+## Start (14 October 2026)
+
+```bash
+# the GUI: drop a video, run every module, read the scores and open the results
+/Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/Orchestrate.py serve       # http://127.0.0.1:3104/
+service/install-orchestrator.sh                                                      # optional: keep it running at login
+
+# the same thing from a terminal or any agent (one JSON object per command)
+python -I Scripts/Orchestrate.py ingest ~/Movies/clip.mp4
+python -I Scripts/Orchestrate.py run --slug clip --detach
+python -I Scripts/Orchestrate.py status --slug clip
+python -I Scripts/Orchestrate.py report                                              # static web report in the workshop
+python -I Scripts/RunTests.py                                                        # every test, red and green proofs
+```
+
+Everything tunable lives in `params/orchestrator.json` (pipeline, targets, port, import rules) and `settings.json` (paths). The reference cache is never archived or published. Assets archiving: `node Scripts/AssetsLink.mjs register | inventory | archive`.

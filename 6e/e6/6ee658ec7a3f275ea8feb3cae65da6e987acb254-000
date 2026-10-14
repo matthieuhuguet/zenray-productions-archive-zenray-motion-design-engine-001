@@ -1,0 +1,238 @@
+// 14 October 2026: orchestrator GUI (vanilla ES module, no library). It only talks to zrmd/orchestrator_server.py: the pipeline,
+// the targets, the parameters and the limits all come from /api/status (params/orchestrator.json), never from this file.
+// FR : l'interface ne connait aucune valeur du pipeline, tout vient de /api/status.
+const CLIENT = { 'x-zr-orchestrator-client': '1' }
+const $ = (sel, root = document) => root.querySelector(sel)
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+const pct = (v) => (v == null ? '—' : (v * 100).toFixed(1))
+const clock = (s) => (s == null ? '' : s >= 3600 ? `${(s / 3600).toFixed(1)} h` : s >= 60 ? `${(s / 60).toFixed(1)} min` : `${Math.round(s)} s`)
+
+const state = { status: null, refs: [], slug: localStorage.getItem('zrmd.slug') || null, detail: null, openLog: null, logText: '', params: {}, startAfterDrop: localStorage.getItem('zrmd.startAfterDrop') === '1', timer: null }
+
+async function api(path, options = {}) {
+  const post = options.method === 'POST'
+  const response = await fetch(path, { ...options, headers: { ...(post ? CLIENT : {}), ...(options.headers || {}) } })
+  const data = await response.json().catch(() => ({ ok: false, error: `HTTP ${response.status}` }))
+  if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`)
+  return data
+}
+const post = (path, body) => api(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+
+let toastTimer
+function toast(message) {
+  const el = $('#toast')
+  el.textContent = message
+  el.hidden = false
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => { el.hidden = true }, 5200)
+}
+
+// ------------------------------------------------------------------------------------------------------------ theme
+const root = document.documentElement
+const THEME_ICON = '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="3.6"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/></svg>'
+function applyTheme(theme) {
+  if (theme) root.dataset.theme = theme; else delete root.dataset.theme
+  try { theme ? localStorage.setItem('zrmd.theme', theme) : localStorage.removeItem('zrmd.theme') } catch { /* private window */ }
+}
+try { applyTheme(localStorage.getItem('zrmd.theme')) } catch { /* private window */ }
+$('#theme').innerHTML = THEME_ICON
+$('#theme').addEventListener('click', () => {
+  const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches
+  applyTheme(dark ? 'light' : 'dark')
+})
+
+// ---------------------------------------------------------------------------------------------------------- sidebar
+function renderRefs() {
+  const list = $('#refs')
+  list.innerHTML = state.refs.map((r) => {
+    const pips = r.modules.map((m) => `<i class="${m.reached ? 'reached' : ''}" title="${esc(m.label)} ${pct(m.value)}"><b style="width:${m.value == null ? 0 : Math.round(m.value * 100)}%"></b></i>`).join('')
+    return `<li><button class="ref" type="button" data-slug="${esc(r.slug)}" aria-current="${r.slug === state.slug}">
+      <span class="ref-title">${esc(r.title)}</span>
+      <span class="ref-meta"><span class="mono">${esc(r.slug)}</span>${r.duration_s ? `<span class="num">${r.duration_s.toFixed(1)} s</span>` : ''}${r.hasFile ? '' : '<span>no file</span>'}</span>
+      <span class="pips">${pips}</span></button></li>`
+  }).join('')
+}
+$('#refs').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-slug]')
+  if (b) select(b.dataset.slug)
+})
+
+async function loadRefs() {
+  state.refs = (await api('/api/references')).references
+  if (!state.slug || !state.refs.some((r) => r.slug === state.slug)) state.slug = state.refs[0]?.slug || null
+  renderRefs()
+}
+
+// ------------------------------------------------------------------------------------------------------- main view
+function modulesHtml(modules) {
+  const rows = modules.map((m) => {
+    const w = m.value == null ? 0 : Math.max(0, Math.min(100, m.value * 100))
+    const gap = m.value == null ? 'not measured yet' : m.reached ? 'target reached' : `${((m.target - m.value) * 100).toFixed(1)} points to the target`
+    const cov = m.coverage != null ? ` · ${(m.coverage * 100).toFixed(0)}% of the film by code` : ''
+    return `<div class="mod"><div class="mod-name"><span>${esc(m.label)}</span><small>${esc(m.hint)}</small></div>
+      <div class="track" role="img" aria-label="${esc(m.label)} ${pct(m.value)} of 100"><span class="fill ${m.reached ? 'reached' : ''}" style="width:${w}%"></span>
+        <span class="tick" style="left:${m.target * 100}%" title="target"></span><span class="tick stretch" style="left:${m.stretch * 100}%" title="stretch"></span></div>
+      <div class="mod-score"><span class="score">${pct(m.value)}</span><small>${esc(gap)}${esc(cov)}${m.version ? ` · ${esc(m.version)}` : ''}</small></div></div>`
+  }).join('')
+  const t = state.status.targets
+  return `<div class="mods">${rows}</div><p class="legend">Dark tick: target ${(t.default * 100).toFixed(0)}. Light tick: stretch ${(t.stretch * 100).toFixed(1)}. Scores are read from the files on disk each time, never stored.</p>`
+}
+
+function playersHtml(d) {
+  const has = (kind) => d.results.find((r) => r.kind === kind)?.exists
+  const url = (kind) => `/media?slug=${encodeURIComponent(d.slug)}&kind=${kind}`
+  const video = (kind, label) => has(kind) ? `<div><p class="player-label">${label}</p><video controls preload="metadata" src="${url(kind)}"></video></div>` : `<div><p class="player-label">${label}</p><div class="empty">${kind === 'film' ? 'No film yet. Run the orchestrator to build it.' : 'No file in the cache.'}</div></div>`
+  const audio = (kind, label) => has(kind) ? `<div><p class="player-label">${label}</p><audio controls preload="none" src="${url(kind)}"></audio></div>` : ''
+  const audios = ['music', 'sfx', 'mix', 'compare'].map((k) => audio(k, d.results.find((r) => r.kind === k).label)).join('')
+  const links = [has('storyboard') && `<a class="link" href="${url('storyboard')}" target="_blank" rel="noopener">Open the storyboard and bible</a>`, `<a class="link" href="/report" target="_blank" rel="noopener">Open the web report</a>`].filter(Boolean).join(' · ')
+  return `<p class="legend" style="margin:0 0 var(--gap-s)">${links}</p><div class="grid2">${video('reference', 'Reference video')}${video('film', 'Our film (animatic where a shot is photographed)')}</div>${audios ? `<div class="grid2" style="margin-top:var(--gap)">${audios}</div>` : ''}`
+}
+
+function stepsHtml(d) {
+  const run = d.runs[0]
+  const byId = Object.fromEntries((run?.steps || []).map((s) => [s.id, s]))
+  const active = run && ['running', 'queued'].includes(run.state)
+  const rows = state.status.steps.map((def) => {
+    const s = byId[def.id] || { state: 'pending' }
+    const label = s.state === 'blocked' ? `blocked: ${s.note}` : s.state === 'failed' ? (s.note || 'failed') : s.state === 'below-target' ? `below target (${pct(s.score)})` : s.state === 'done' && s.score != null ? `done (${pct(s.score)})` : s.state
+    const log = state.openLog === def.id ? `<pre class="log mono">${esc(state.logText || 'No log yet.')}</pre>` : ''
+    return `<div class="step"><span class="dot ${esc(s.state)}"></span><div>${esc(def.label)}<br><small>${esc(def.module)}</small></div>
+      <span class="step-state ${s.state === 'failed' ? 'failed' : ''}">${esc(label)}</span><span class="num secs">${clock(s.seconds)}</span>
+      <span>${s.log ? `<button class="link" data-log="${esc(def.id)}" type="button">${state.openLog === def.id ? 'Hide log' : 'Log'}</button>` : ''}<button class="link" data-step="${esc(def.id)}" type="button" ${active ? 'disabled' : ''}>Run only this</button></span>${log}</div>`
+  }).join('')
+  const head = run ? `<span class="mono">${esc(run.id)}</span> · ${esc(run.created)} · <b>${esc(run.state)}</b>` : 'No run yet for this reference.'
+  return `<div class="toolbar"><button class="btn primary" id="runAll" type="button" ${active ? 'disabled' : ''}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 4l9 6-9 6z"/></svg>Run every module</button>
+    ${active ? '<button class="btn danger" id="cancel" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="1.5"/></svg>Stop the run</button>' : ''}<span class="step-state">${head}</span></div><div class="steps">${rows}</div>`
+}
+
+function paramsHtml() {
+  const defaults = state.status.defaults
+  const fields = Object.keys(defaults).map((k) => `<label class="field">${esc(k)}<input type="text" data-param="${esc(k)}" value="${esc(state.params[k] ?? defaults[k])}" spellcheck="false" autocomplete="off"></label>`).join('')
+  return `<div class="params">${fields}<label class="check"><input type="checkbox" id="startAfterDrop" ${state.startAfterDrop ? 'checked' : ''}>Start a run as soon as a video is dropped</label></div>
+    <p class="legend">Defaults come from params/orchestrator.json. A value changed here applies to the next run only.</p>`
+}
+
+function runsHtml(d) {
+  if (!d.runs.length) return '<div class="empty">No run yet.</div>'
+  return `<table><thead><tr><th>Run</th><th>Started</th><th>State</th><th>Music</th><th>Sound effects</th><th>Mix</th></tr></thead><tbody>${d.runs.map((r) => `<tr><td class="mono">${esc(r.id.slice(4, 19))}</td><td>${esc(r.created)}</td><td>${esc(r.state)}</td>
+    <td class="num">${pct(r.scores?.music)}</td><td class="num">${pct(r.scores?.sfx)}</td><td class="num">${pct(r.scores?.mix)}</td></tr>`).join('')}</tbody></table>`
+}
+
+// Each section is re-rendered only when its HTML changed, so a poll never resets a playing video or a field being typed in.
+const cache = {}
+function setSection(id, html, className = '') {
+  let el = document.getElementById('s-' + id)
+  if (!el) { el = document.createElement('section'); el.id = 's-' + id; $('#view').appendChild(el) }
+  el.className = className
+  if (cache[id] !== html) { el.innerHTML = html; cache[id] = html }
+}
+
+function renderView() {
+  const d = state.detail
+  const view = $('#view')
+  if (!d) { view.innerHTML = '<div class="empty">Drop a video above, or choose a reference on the left.</div>'; for (const k of Object.keys(cache)) delete cache[k]; return }
+  if (view.dataset.slug !== d.slug) { view.innerHTML = ''; view.dataset.slug = d.slug; for (const k of Object.keys(cache)) delete cache[k] }
+  const m = d.meta || {}
+  const facts = [m.width && `<span class="num">${m.width}×${m.height}</span>`, m.fps && `<span class="num">${m.fps} fps</span>`, d.duration_s && `<span class="num">${Number(d.duration_s).toFixed(1)} s</span>`, m.has_audio === false ? '<span>no audio</span>' : m.audio_codec && `<span>${esc(m.audio_codec)}</span>`, d.focus && `<span>${esc(d.focus)}</span>`].filter(Boolean).join('')
+  setSection('head', `<h1>${esc(d.title)}</h1><div class="sub"><span class="mono">${esc(d.slug)}</span>${facts}</div>`)
+  setSection('mods', `<h2>Fidelity by module</h2>${modulesHtml(d.modules)}`, 'card')
+  setSection('players', playersHtml(d))
+  setSection('steps', `<h2>Pipeline</h2>${stepsHtml(d)}`, 'card')
+  if (!document.getElementById('s-params')) setSection('params', `<h2>Parameters</h2>${paramsHtml()}`, 'card')
+  setSection('runs', `<h2>Runs</h2>${runsHtml(d)}`, 'card')
+  setSection('limits', `<h2>Honest limits</h2><ul class="limits">${state.status.limits.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>`, 'card')
+}
+
+async function loadDetail() {
+  if (!state.slug) { state.detail = null; renderView(); return }
+  state.detail = await api('/api/reference?slug=' + encodeURIComponent(state.slug))
+  const run = state.detail.runs[0]
+  if (state.openLog && run) state.logText = (await api(`/api/log?id=${run.id}&step=${state.openLog}&lines=120`).catch(() => ({ tail: '' }))).tail
+  renderView()
+}
+
+async function select(slug) {
+  state.slug = slug
+  state.openLog = null
+  try { localStorage.setItem('zrmd.slug', slug) } catch { /* private window */ }
+  renderRefs()
+  await loadDetail()
+}
+
+// ------------------------------------------------------------------------------------------------------ interactions
+$('#view').addEventListener('click', async (e) => {
+  const t = e.target.closest('button')
+  if (!t) return
+  try {
+    if (t.id === 'runAll') await startRun(null)
+    else if (t.dataset.step) await startRun([t.dataset.step])
+    else if (t.id === 'cancel') { await post('/api/cancel', { id: state.detail.runs[0].id }); toast('Stopping the run…') }
+    else if (t.dataset.log) { state.openLog = state.openLog === t.dataset.log ? null : t.dataset.log; await loadDetail() }
+    await loadDetail()
+  } catch (error) { toast(error.message) }
+})
+$('#view').addEventListener('input', (e) => {
+  if (e.target.dataset.param) state.params[e.target.dataset.param] = e.target.value
+})
+$('#view').addEventListener('change', (e) => {
+  if (e.target.id === 'startAfterDrop') { state.startAfterDrop = e.target.checked; try { localStorage.setItem('zrmd.startAfterDrop', e.target.checked ? '1' : '0') } catch { /* private window */ } }
+})
+
+async function startRun(steps) {
+  const run = (await post('/api/run', { slug: state.slug, steps, params: state.params })).run
+  toast(`Run started: ${run.id}`)
+  schedule()
+}
+
+// ------------------------------------------------------------------------------------------------------------ upload
+const drop = $('#drop')
+function upload(file) {
+  const ext = '.' + file.name.split('.').pop().toLowerCase()
+  if (!state.status.extensions.includes(ext)) { toast(`Unsupported file type ${ext}. Allowed: ${state.status.extensions.join(', ')}`); return }
+  if (file.size > state.status.maxUploadMB * 1048576) { toast(`That file is larger than ${state.status.maxUploadMB} MB.`); return }
+  const bar = $('#uploadBar'), fill = $('#uploadFill')
+  bar.hidden = false
+  fill.style.width = '0%'
+  const xhr = new XMLHttpRequest()
+  xhr.open('POST', '/api/upload?name=' + encodeURIComponent(file.name))
+  xhr.setRequestHeader('x-zr-orchestrator-client', '1')
+  xhr.upload.onprogress = (e) => { if (e.lengthComputable) fill.style.width = `${(e.loaded / e.total) * 100}%` }
+  xhr.onload = async () => {
+    bar.hidden = true
+    let data
+    try { data = JSON.parse(xhr.responseText) } catch { data = { ok: false, error: `HTTP ${xhr.status}` } }
+    if (!data.ok) { toast(data.error); return }
+    toast(data.created ? `Added ${data.slug}` : `Already known: ${data.slug}`)
+    await loadRefs()
+    await select(data.slug)
+    if (state.startAfterDrop) startRun(null).then(loadDetail).catch((error) => toast(error.message))
+  }
+  xhr.onerror = () => { bar.hidden = true; toast('Upload failed: the server did not answer.') }
+  xhr.send(file)
+}
+for (const ev of ['dragenter', 'dragover']) window.addEventListener(ev, (e) => { if (e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); drop.classList.add('over') } })
+for (const ev of ['dragleave', 'drop']) window.addEventListener(ev, (e) => { if (ev === 'drop' || e.target === document.documentElement) drop.classList.remove('over') })
+window.addEventListener('drop', (e) => { e.preventDefault(); const file = e.dataTransfer?.files?.[0]; if (file) upload(file) })
+$('#pick').addEventListener('click', () => $('#file').click())
+drop.addEventListener('click', () => $('#file').click())
+drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#file').click() } })
+$('#file').addEventListener('change', (e) => { const file = e.target.files[0]; e.target.value = ''; if (file) upload(file) })
+
+// -------------------------------------------------------------------------------------------------------------- polling
+function schedule() {
+  clearTimeout(state.timer)
+  const active = state.detail?.runs?.some((r) => ['running', 'queued'].includes(r.state))
+  state.timer = setTimeout(async () => {
+    try { if (!document.hidden) { await loadDetail(); if (!active) await loadRefs() } } catch { /* server restarting: try again */ }
+    schedule()
+  }, active ? state.status.pollMs : state.status.pollMs * 4)
+}
+
+try {
+  state.status = await api('/api/status')
+  await loadRefs()
+  await loadDetail()
+  schedule()
+} catch (error) {
+  $('#view').innerHTML = `<div class="empty">The orchestrator server does not answer: ${esc(error.message)}. Start it with <code>Scripts/Orchestrate.py serve</code>.</div>`
+}

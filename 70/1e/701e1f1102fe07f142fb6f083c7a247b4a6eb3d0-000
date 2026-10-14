@@ -1,7 +1,7 @@
 {
  "schema": "zrmd/assets-sources@1",
  "date": "13 October 2026",
- "doc": "What ZenRay Assets archives for the project zenray-motion-design (definition; applied by Scripts/AssetsLink.mjs). Rights: reference videos and audio are never in the workshop (they live in the reference cache, outside every source); the 1:1 reproductions are private. First pass (13 October 2026): code, parameters, scores, documents and light renders; audio files (*.wav, *.mp3) and separated stems are left out because they are regenerated from params.json, and go in a second pass after Matthieu validates their size. Scope rules of the service have no globs and no extension filter: `exclude` entries are folder names or path prefixes, `excludeExtensions` is expanded into an explicit include list by AssetsLink.mjs register (re-run it when new folders appear).",
+ "doc": "What ZenRay Assets archives for the project zenray-motion-design (definition; applied by Scripts/AssetsLink.mjs). Rights: reference videos and audio are never in the workshop (they live in the reference cache, outside every source); the 1:1 reproductions are private. First pass (13 October 2026): code, parameters, scores, documents and light renders; audio files (*.wav, *.mp3) and separated stems are left out because they are regenerated from params.json, and go in a second pass after Matthieu validates their size. Scope rules of the service have no globs and no extension filter: `exclude` entries are folder names or path prefixes, `excludeExtensions` is expanded into an explicit include list by AssetsLink.mjs register (re-run it when new folders appear). The live run folders (runs/) are not archived: they change while a run works; the numbers live in reports/ (rebuilt after every run).",
  "projectId": "zenray-motion-design",
  "sources": [
   {
@@ -35,7 +35,8 @@
     "1x1",
     "9x16",
     "node_modules",
-    "egg-info"
+    "egg-info",
+    "runs"
    ],
    "excludeExtensions": [
     ".wav",

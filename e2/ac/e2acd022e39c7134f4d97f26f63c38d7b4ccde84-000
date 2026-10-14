@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+# 14 October 2026: command line of the local orchestrator (zrmd/orchestrator.py). Every command prints ONE JSON object on
+# stdout (agents and the GUI read it), exit code 0 on success, 1 on a refusal that names its cause, 2 on a usage error.
+#   Orchestrate.py ingest <video> [--slug S] [--title T]      copy a video into the reference cache and register it
+#   Orchestrate.py run --slug S [--steps a,b] [--set k=v] [--detach] [--force] | run --id RUN
+#   Orchestrate.py status [--slug S]                          module scores computed from the disk right now
+#   Orchestrate.py runs [--slug S] | cancel --id RUN | log --id RUN --step ID | report | serve | check
+# FR : ligne de commande de l'orchestrateur ; une seule sortie JSON ; aucun LLM n'est appele.
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from zrmd import orchestrator as orch  # noqa: E402
+from zrmd import registry  # noqa: E402
+
+
+def out(data, code=0):
+    print(json.dumps(data, indent=1, ensure_ascii=False, default=float))
+    return code
+
+
+def check() -> dict:
+    """The definition proves itself: every module step exists, every script exists, every token resolves."""
+    d = orch.definition()
+    problems, ids = [], {s["id"] for s in d["steps"]}
+    tok = {**orch.base_tokens(), "slug": "x", "run": "x", **d["defaults"], "music_best": "V_001", "sfx_latest": "V_001", "soundtrack_mix": "x.wav"}
+    for m in d["modules"]:
+        problems += [f"module {m['id']} names unknown step {s}" for s in m["steps"] if s not in ids]
+        if m["score"] not in orch.READERS:
+            problems.append(f"module {m['id']} names unknown score reader {m['score']}")
+    for s in d["steps"]:
+        try:
+            argv = orch._build_argv(s, tok)
+        except orch.OrchestratorError as e:
+            problems.append(f"step {s['id']}: {e}")
+            continue
+        script = next((a for a in argv if a.endswith((".py", ".mjs"))), None)
+        if script and not Path(script).exists():
+            problems.append(f"step {s['id']}: script missing {script}")
+        if s.get("score") and s["score"] not in orch.READERS:
+            problems.append(f"step {s['id']}: unknown score reader {s['score']}")
+        for n in s.get("needs", []):
+            if n not in orch.RESOLVERS:
+                problems.append(f"step {s['id']}: unknown resolver {n}")
+    return {"ok": not problems, "problems": problems, "steps": len(d["steps"]), "modules": len(d["modules"])}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("ingest"); s.add_argument("path"); s.add_argument("--slug"); s.add_argument("--title")
+    s = sub.add_parser("run"); s.add_argument("--slug"); s.add_argument("--id"); s.add_argument("--steps"); s.add_argument("--set", action="append", default=[])
+    s.add_argument("--detach", action="store_true"); s.add_argument("--force", action="store_true")
+    s = sub.add_parser("status"); s.add_argument("--slug")
+    s = sub.add_parser("runs"); s.add_argument("--slug")
+    s = sub.add_parser("cancel"); s.add_argument("--id", required=True)
+    s = sub.add_parser("log"); s.add_argument("--id", required=True); s.add_argument("--step", required=True); s.add_argument("--lines", type=int, default=80)
+    sub.add_parser("serve"); sub.add_parser("check"); sub.add_parser("report")
+    a = ap.parse_args()
+    try:
+        if a.cmd == "ingest":
+            return out({"ok": True, **orch.ingest_local(a.path, a.slug, a.title)})
+        if a.cmd == "run":
+            if a.id:
+                run = orch.execute(a.id, force=a.force)
+            else:
+                if not a.slug:
+                    return out({"ok": False, "error": "run needs --slug or --id"}, 2)
+                params = dict(kv.split("=", 1) for kv in a.set)
+                run = orch.new_run(a.slug, a.steps.split(",") if a.steps else None, params)
+                run = orch.start_detached(run["id"]) if a.detach else orch.execute(run["id"], force=a.force)
+            return out({"ok": run["state"] != "failed", "run": run})
+        if a.cmd == "status":
+            slugs = [a.slug] if a.slug else registry.slugs()
+            return out({"ok": True, "references": [{"slug": sl, "modules": orch.module_scores(sl)} for sl in slugs]})
+        if a.cmd == "runs":
+            return out({"ok": True, "runs": orch.list_runs(a.slug)})
+        if a.cmd == "cancel":
+            return out({"ok": True, "run": orch.request_cancel(a.id)})
+        if a.cmd == "log":
+            return out({"ok": True, "tail": orch.log_tail(a.id, a.step, a.lines)})
+        if a.cmd == "check":
+            res = check()
+            return out(res, 0 if res["ok"] else 1)
+        if a.cmd == "report":
+            from zrmd import report
+            return out({"ok": True, **report.build()})
+        if a.cmd == "serve":
+            from zrmd import orchestrator_server
+            return orchestrator_server.main()
+    except (orch.OrchestratorError, KeyError) as e:
+        return out({"ok": False, "error": str(e)}, 1)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

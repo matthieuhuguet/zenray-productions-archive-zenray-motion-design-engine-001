@@ -1,0 +1,151 @@
+# 14 October 2026: the orchestrator HTTP server proven end to end in an isolated workshop with a fake pipeline: the page and
+# fonts are served, uploads become references, a run starts in a detached runner and finishes, media streams with ranges,
+# and every unsafe request is refused with its cause (no client header, foreign origin, path tricks, huge or wrong files).
+# FR : le serveur de l'orchestrateur prouve de bout en bout dans un atelier isole, dans les deux sens.
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+TMP = Path(tempfile.mkdtemp(prefix="zrmd-orch-srv-"))
+os.environ["ZRMD_PATH_WORKSHOP"] = str(TMP / "workshop")
+os.environ["ZRMD_PATH_REFCACHE"] = str(TMP / "refcache")
+os.environ["ZRMD_PATH_SOUND_OUT"] = str(TMP / "workshop" / "sound")
+PY = sys.executable
+real = json.loads((ROOT / "params" / "orchestrator.json").read_text())
+real["steps"] = [{"id": "a", "label": "A", "module": "music", "argv": [PY, "-c", "print('fake step ok')"], "cwd": "{engine}"}]
+real["modules"] = [m for m in real["modules"] if m["id"] == "music"]
+real["modules"][0]["steps"] = ["a"]
+real["server"]["maxUploadMB"] = 1
+(TMP / "def.json").write_text(json.dumps(real))
+os.environ["ZRMD_ORCH_DEF"] = str(TMP / "def.json")
+
+from zrmd import orchestrator_server as srv  # noqa: E402
+
+FAIL = []
+
+
+def check(name, cond, detail=""):
+    print(("ok   " if cond else "FAIL ") + name + (f"  {detail}" if detail and not cond else ""))
+    if not cond:
+        FAIL.append(name)
+
+
+def call(base, path, method="GET", body=None, headers=None, raw=None):
+    h = {srv.SERVER["clientHeader"]: srv.SERVER["clientValue"], **(headers or {})} if method == "POST" else dict(headers or {})
+    data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
+    req = urllib.request.Request(base + path, data=data, method=method, headers=h)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.status, r.read(), dict(r.headers)
+    except urllib.error.HTTPError as e:
+        return e.code, e.read(), dict(e.headers)
+
+
+def jcall(*a, **k):
+    status, body, _ = call(*a, **k)
+    return status, json.loads(body)
+
+
+def run() -> int:
+    video = TMP / "clip.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=green:s=160x90:r=25:d=2", "-f", "lavfi", "-i", "sine=f=330:d=2",
+                    "-shortest", "-pix_fmt", "yuv420p", str(video)], check=True)
+    httpd = srv.make_server(0)
+    base = f"http://127.0.0.1:{httpd.server_port}"
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        status, html_, hdr = call(base, "/")
+        check("page is served", status == 200 and b"<title>" in html_ and "text/html" in hdr["Content-Type"], status)
+        for font in ("InterVariable.woff2", "AnthropicSerif-Romans.woff2", "AnthropicMono.woff2"):
+            status, body, hdr = call(base, "/fonts/" + font)
+            check(f"font {font} served", status == 200 and hdr["Content-Type"] == "font/woff2" and len(body) > 10000, status)
+        check("path trick on app refused", call(base, "/app/..%2Fsettings.json")[0] in (400, 404))
+        check("path trick on fonts refused", call(base, "/fonts/..%2F..%2Fsettings.json")[0] in (400, 404))
+        status, st = jcall(base, "/api/status")
+        check("status lists steps and targets", status == 200 and st["targets"]["default"] == 0.99 and st["steps"][0]["id"] == "a")
+        check("post without client header refused", call(base, "/api/run", "POST", {"slug": "x"}, headers={srv.SERVER["clientHeader"]: "0"})[0] == 403)
+        check("foreign origin refused", call(base, "/api/status", headers={"Origin": "http://evil.example"})[0] == 403)
+        check("unknown route is 404", call(base, "/api/nope")[0] == 404)
+        check("unknown media is 404", call(base, "/media?slug=ghost&kind=reference")[0] == 404)
+        check("media kind trick refused", call(base, "/media?slug=..&kind=reference")[0] == 404)
+
+        # upload: wrong extension, too large, good
+        status, r = jcall(base, "/api/upload?name=notes.txt", "POST", raw=b"hello")
+        check("upload wrong extension refused", status == 400 and "extension" in r["error"], r)
+        try:  # the server answers 413 without reading the body; the client may see the answer or the closed connection
+            status, r = jcall(base, "/api/upload?name=big.mp4", "POST", raw=b"\0" * (1048576 + 10))
+            refused = status == 413
+        except (urllib.error.URLError, ConnectionError):
+            refused = True
+        check("upload too large refused", refused)
+        check("nothing was stored for the refused upload", not any(srv.UPLOADS.glob("*/*")) if srv.UPLOADS.exists() else True)
+        status, r = jcall(base, "/api/upload?name=clip.mp4&title=Test%20clip", "POST", raw=video.read_bytes())
+        check("upload becomes a reference", status == 200 and r["created"] and r["slug"] == "clip", r)
+        check("upload folder is cleaned", not any((srv.UPLOADS).glob("*/*")) if srv.UPLOADS.exists() else True)
+        status, refs = jcall(base, "/api/references")
+        check("reference appears in the list", any(x["slug"] == "clip" and x["hasFile"] for x in refs["references"]))
+        status, one = jcall(base, "/api/reference?slug=clip")
+        check("reference view has results and modules", status == 200 and one["results"][0]["kind"] == "reference" and one["results"][0]["exists"] and one["modules"][0]["module"] == "music")
+
+        # media with range
+        status, body, hdr = call(base, "/media?slug=clip&kind=reference", headers={"Range": "bytes=0-99"})
+        check("media range answers 206 with the right slice", status == 206 and len(body) == 100 and hdr["Content-Range"].startswith("bytes 0-99/"), status)
+        status, body, hdr = call(base, "/media?slug=clip&kind=reference")
+        check("media full answers 200", status == 200 and len(body) == video.stat().st_size)
+        check("bad range refused", call(base, "/media?slug=clip&kind=reference", headers={"Range": "bytes=abc"})[0] == 416)
+
+        # storyboard: thumbnails are rewritten to /frame and served from the cache; names and slugs cannot escape
+        ws = TMP / "workshop" / "references" / "clip"
+        (TMP / "refcache" / "clip" / "storyboard").mkdir(parents=True, exist_ok=True)
+        (TMP / "refcache" / "clip" / "storyboard" / "S01-in.jpg").write_bytes(b"\xff\xd8\xff\xd9")
+        (ws / "storyboard.html").write_text('<img src="../../../tmp-zenray-motion-design-refcache/clip/storyboard/S01-in.jpg">', encoding="utf-8")
+        status, body, hdr = call(base, "/media?slug=clip&kind=storyboard")
+        check("storyboard thumbnails point at /frame", status == 200 and b'src="/frame?slug=clip&name=S01-in.jpg"' in body and b"tmp-zenray" not in body, body[:160])
+        status, body, hdr = call(base, "/frame?slug=clip&name=S01-in.jpg")
+        check("frame is served as a jpeg", status == 200 and hdr["Content-Type"] == "image/jpeg" and body.startswith(b"\xff\xd8"))
+        check("frame name trick refused", call(base, "/frame?slug=clip&name=..%2F..%2Freference.mp4")[0] == 404)
+        check("frame slug trick refused", call(base, "/frame?slug=..&name=S01-in.jpg")[0] == 404)
+
+        # run: unknown slug refused, good run finishes in the detached runner, log readable
+        status, r = jcall(base, "/api/run", "POST", {"slug": "ghost"})
+        check("run on unknown slug refused", status == 400 and "ghost" in r["error"], r)
+        status, r = jcall(base, "/api/run", "POST", {"slug": "clip"})
+        check("run starts", status == 200 and r["run"]["state"] == "queued" and r["run"]["pid"], r)
+        run_id = r["run"]["id"]
+        for _ in range(60):
+            time.sleep(1)
+            status, cur = jcall(base, "/api/run?id=" + run_id)
+            if cur["run"]["state"] in ("done", "failed", "cancelled", "interrupted"):
+                break
+        check("detached run finishes done", cur["run"]["state"] == "done" and cur["run"]["steps"][0]["state"] == "done", cur["run"]["state"])
+        status, lg = jcall(base, f"/api/log?id={run_id}&step=a")
+        check("log is readable", "fake step ok" in lg["tail"], lg)
+        check("bad run id refused", call(base, "/api/run?id=../../x")[0] == 400)
+        check("cancel of a finished run refused", jcall(base, "/api/cancel", "POST", {"id": run_id})[0] == 400)
+        status, path_out = jcall(base, "/api/ingest-path", "POST", {"path": "/etc/hosts"})
+        check("ingest-path outside home refused", status == 403, path_out)
+    finally:
+        httpd.shutdown()
+    print(f"{len(FAIL)} failure(s)")
+    return 1 if FAIL else 0
+
+
+def test_orchestrator_server():
+    assert run() == 0
+
+
+if __name__ == "__main__":
+    code = run()
+    import shutil
+    shutil.rmtree(TMP, ignore_errors=True)
+    sys.exit(code)

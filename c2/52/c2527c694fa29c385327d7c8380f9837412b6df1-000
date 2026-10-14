@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 14 October 2026: LaunchAgent of the orchestrator GUI (http://127.0.0.1:3104/). Runs: @PYTHON@ -I Scripts/Orchestrate.py serve.
+     A run is a detached runner, so restarting this agent never stops a run. FR : l'agent de l'interface de l'orchestrateur. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.zenray.motion-orchestrator</string>
+  <key>ProgramArguments</key>
+  <array><string>@PYTHON@</string><string>-I</string><string>@ENGINE@/Scripts/Orchestrate.py</string><string>serve</string></array>
+  <key>WorkingDirectory</key><string>@ENGINE@</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string></dict>
+  <key>StandardOutPath</key><string>@LOGS@/Orchestrator.log</string>
+  <key>StandardErrorPath</key><string>@LOGS@/Orchestrator.error.log</string>
+</dict>
+</plist>
