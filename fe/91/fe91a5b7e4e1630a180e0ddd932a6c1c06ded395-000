@@ -56,7 +56,7 @@ def codec_floor(slug: str, d: dict, composite: np.ndarray, frame: np.ndarray) ->
     return fidelity(composite, dec[cr["y"] - y0:cr["y"] - y0 + h, cr["x"] - x0:cr["x"] - x0 + w])
 
 
-def run(slug: str, max_layers: int | None = None, max_seconds: float | None = None, write: bool = True, log=None, stop_de: float = 0.4) -> dict:
+def run(slug: str, max_layers: int | None = None, max_seconds: float | None = None, write: bool = True, log=None, stop_de: float = 0.4, profile: str = "auto") -> dict:
     c = S.cfg()
     ws = settings.path("workshop")
     d = json.loads((S._path(c["paths"]["out"], slug) / "scene.json").read_text(encoding="utf-8"))
@@ -67,18 +67,32 @@ def run(slug: str, max_layers: int | None = None, max_seconds: float | None = No
     cr = d["crop"]
     w, h = P0["canvas"]["width"], P0["canvas"]["height"]
     piece = frame[cr["y"]:cr["y"] + h, cr["x"]:cr["x"] + w]
-    cfg = {}
-    if max_layers:
-        lv = [dict(l) for l in LF.DEFAULTS["levels"]]
-        lv[-1].update(maxLayers=int(max_layers), stopDE=stop_de, minDE=stop_de)      # the budget and the stop are those of the full-resolution level
-        cfg["levels"] = lv
-    if max_seconds:
-        cfg["maxSeconds"] = float(max_seconds)
+    base_cfg = {"maxSeconds": float(max_seconds)} if max_seconds else {}
+    full_levels = [dict(l) for l in LF.DEFAULTS["levels"]]
+    direct = [{"scale": 1, "maxLayers": LF.DEFAULTS["maxLayers"], "stopDE": stop_de, "minDE": stop_de, "window": 60}]
+    for lv in (direct, full_levels):
+        lv[-1].update(stopDE=stop_de, minDE=stop_de, **({"maxLayers": int(max_layers)} if max_layers else {}))
+    # two profiles, the better composite wins: DIRECT (full resolution only: crisp UI and text, where a coarse wash only leaves traces to repair) and
+    # PYRAMID (coarse to fine: soft backdrops, glows and textures, where it is far cheaper). Measured: fin-4 0.9987 direct against 0.9937 pyramid.
+    profiles = {"direct": direct, "pyramid": full_levels}
+    chosen = [profile] if profile in profiles else ["direct", "pyramid"]
     t0 = time.time()
-    res = LF.fit(piece, cfg, log=log)
-    res["report"]["refine"] = LF.refine(res["layers"], piece, sweeps=2, log=log)     # colour, blur and removal against the exact local render
-    res["report"]["layers"] = len(res["layers"])
-    res["report"]["groups"] = LF.assign_groups_and_roles(res["layers"])
+    best = None
+    tried = {}
+    for name in chosen:
+        cfg = {**base_cfg, "levels": profiles[name], "maxLayers": profiles[name][-1]["maxLayers"], "stopDE": stop_de, "minDE": stop_de}
+        res_i = LF.fit(piece, cfg, log=log)
+        res_i["report"]["refine"] = LF.refine(res_i["layers"], piece, sweeps=2, log=log)     # colour, blur and removal against the exact local render
+        res_i["report"]["layers"] = len(res_i["layers"])
+        res_i["report"]["groups"] = LF.assign_groups_and_roles(res_i["layers"])
+        c_i = R.render_svg(A.cook_svg({"canvas": {"width": w, "height": h}, "palette": {}, "layers": res_i["layers"], "view": {}}), w, h, engine="skia", ss=1)[..., :3]
+        f_i = fidelity(c_i, piece)
+        tried[name] = {"fidelity": f_i["fidelity"], "layers": len(res_i["layers"]), "seconds": res_i["report"]["seconds"]}
+        if best is None or f_i["fidelity"] > best[0]["fidelity"]:
+            best = (f_i, res_i, name)
+    res = best[1]
+    res["report"]["profile"] = best[2]
+    res["report"]["profilesTried"] = tried
     params = {**{k: v for k, v in P0.items() if k not in ("layers", "texts", "palette")}, "layers": res["layers"], "palette": {}}
     params["trace"] = {**(P0.get("trace") or {}), "method": "multi-layer residual pursuit", "layers": len(res["layers"]), "raster_ss": 1}
     comp = R.render_svg(A.cook_svg({**params, "view": {}}), w, h, engine="skia", ss=1)[..., :3]
@@ -97,15 +111,35 @@ def run(slug: str, max_layers: int | None = None, max_seconds: float | None = No
     return out
 
 
+def adopt(slug: str) -> dict:
+    """Make the BEST version of a scene's multi-layer fits the one the module reads: the highest composite fidelity among the versions that carry a
+    layered.json (runs differ by profile and budget; every one is kept, none is overwritten). FR : adopte la meilleure version multi-calques."""
+    c = S.cfg()
+    d = json.loads((S._path(c["paths"]["out"], slug) / "scene.json").read_text(encoding="utf-8"))
+    best = None
+    for f in sorted((Path(d["dir"]).parent).glob("V_*/layered.json")):
+        j = json.loads(f.read_text(encoding="utf-8"))
+        if j.get("shot") == d["shot"] and (best is None or j["fidelity"]["fidelity"] > best["fidelity"]["fidelity"]):
+            best = {**j, "dir": str(f.parent)}
+    if best:
+        (S._path(c["paths"]["out"], slug) / "layered.json").write_text(json.dumps(best, indent=1, default=float), encoding="utf-8")
+    return {"slug": slug, "adopted": best and {"version": Path(best["dir"]).name, "layers": best["layers"], "fidelity": best["fidelity"]["fidelity"]}}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--slug", required=True)
+    ap.add_argument("--adopt", action="store_true", help="only make the best existing multi-layer version the one the module reads")
     ap.add_argument("--max-layers", type=int, default=None)
     ap.add_argument("--max-seconds", type=float, default=None)
     ap.add_argument("--stop-de", type=float, default=0.4, help="stop when the smoothed CIEDE2000 error peak falls under this (also the smallest region repaired)")
+    ap.add_argument("--profile", choices=["auto", "direct", "pyramid"], default="auto")
     ap.add_argument("--no-write", action="store_true")
     a = ap.parse_args()
-    out = run(a.slug, a.max_layers, a.max_seconds, write=not a.no_write, log=lambda m: print(m, file=sys.stderr, flush=True), stop_de=a.stop_de)
+    if a.adopt:
+        print(json.dumps(adopt(a.slug), default=float))
+        return 0
+    out = run(a.slug, a.max_layers, a.max_seconds, write=not a.no_write, log=lambda m: print(m, file=sys.stderr, flush=True), stop_de=a.stop_de, profile=a.profile)
     print(json.dumps(out, default=float))
     return 0
 

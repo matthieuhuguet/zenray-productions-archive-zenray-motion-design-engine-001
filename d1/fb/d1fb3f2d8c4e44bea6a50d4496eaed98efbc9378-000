@@ -482,7 +482,10 @@ def assign_groups_and_roles(layers: list[dict]) -> int:
     from scipy.sparse import coo_matrix
     from scipy.sparse.csgraph import connected_components
     rl = bank()["roles"]
+    W = max((_layer_bbox(l)[2] for l in layers if l["kind"] != "rect"), default=1.0)
+    # a huge soft layer (a wash, a coarse level of the pyramid) overlaps everything and would fuse every object into one group: it stays alone
     body = [l for l in layers if not (l.get("fit") or {}).get("background")]
+    big = {id(l) for l in body if (lambda b: (b[2] - b[0]) * (b[3] - b[1]))(_layer_bbox(l)) > 0.08 * W * W * 0.5}
     for l in layers:
         b = l["effects"].get("blur", 0.0)
         if (l.get("fit") or {}).get("background"):
@@ -494,8 +497,11 @@ def assign_groups_and_roles(layers: list[dict]) -> int:
         else:
             role = "body"
         l.setdefault("fit", {})["role"] = role
+    for n_, l in enumerate(x for x in body if id(x) in big):
+        l["fit"]["group"] = f"W{n_:03d}"
+    body = [l for l in body if id(l) not in big]
     if not body:
-        return 0
+        return len(big)
     bb = np.array([_layer_bbox(l) for l in body], dtype=np.float64)
     ar = np.maximum((bb[:, 2] - bb[:, 0]) * (bb[:, 3] - bb[:, 1]), 1e-6)
     rows, cols = [], []
@@ -516,7 +522,7 @@ def assign_groups_and_roles(layers: list[dict]) -> int:
     k, lab = connected_components(m, directed=False)
     for l, g in zip(body, lab):
         l["fit"]["group"] = f"G{int(g):03d}"
-    return int(k)
+    return int(k) + len(big)
 
 
 def _render_subset(layers: list[dict], box, w: int, h: int, only: dict | None = None, white: bool = False) -> np.ndarray:
