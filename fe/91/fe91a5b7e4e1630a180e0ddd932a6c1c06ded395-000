@@ -69,13 +69,16 @@ def run(slug: str, max_layers: int | None = None, max_seconds: float | None = No
     piece = frame[cr["y"]:cr["y"] + h, cr["x"]:cr["x"] + w]
     cfg = {}
     if max_layers:
-        cfg["levels"] = [{"scale": 1, "maxLayers": int(max_layers), "stopDE": stop_de, "minDE": stop_de}]
-        cfg["maxLayers"] = int(max_layers)
-        cfg["stopDE"] = cfg["minDE"] = stop_de
+        lv = [dict(l) for l in LF.DEFAULTS["levels"]]
+        lv[-1].update(maxLayers=int(max_layers), stopDE=stop_de, minDE=stop_de)      # the budget and the stop are those of the full-resolution level
+        cfg["levels"] = lv
     if max_seconds:
         cfg["maxSeconds"] = float(max_seconds)
     t0 = time.time()
     res = LF.fit(piece, cfg, log=log)
+    res["report"]["refine"] = LF.refine(res["layers"], piece, sweeps=2, log=log)     # colour, blur and removal against the exact local render
+    res["report"]["layers"] = len(res["layers"])
+    res["report"]["groups"] = LF.assign_groups_and_roles(res["layers"])
     params = {**{k: v for k, v in P0.items() if k not in ("layers", "texts", "palette")}, "layers": res["layers"], "palette": {}}
     params["trace"] = {**(P0.get("trace") or {}), "method": "multi-layer residual pursuit", "layers": len(res["layers"]), "raster_ss": 1}
     comp = R.render_svg(A.cook_svg({**params, "view": {}}), w, h, engine="skia", ss=1)[..., :3]
