@@ -66,7 +66,8 @@ def _interface(vdir: Path, P: dict) -> dict:
     once per version file and remembered in memory and on disk, keyed by the params file's size and time."""
     from ..vector import v1 as V1
     st = (vdir / "params.json").stat()
-    key = f"{vdir.parent.parent.name}-{vdir.name}-{st.st_size}-{st.st_mtime_ns}"
+    code = int(max(Path(V1.__file__).stat().st_mtime, V1.SPEC_PATH.stat().st_mtime)) if hasattr(V1, "SPEC_PATH") else int(Path(V1.__file__).stat().st_mtime)
+    key = f"{vdir.parent.parent.name}-{vdir.name}-{st.st_size}-{st.st_mtime_ns}-{code}"       # a change of the interface code or file invalidates the cache
     if key in _MEMO:
         return _MEMO[key]
     from . import timeline as TL

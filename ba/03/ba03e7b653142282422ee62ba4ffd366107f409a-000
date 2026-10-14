@@ -90,7 +90,11 @@ def _units(P: dict) -> dict:
     """{unit key: [layer dicts]} of a multi-layer fit: every group ("G012", layers that are one visual object) and every role ("role:glow"). Empty
     for a component whose layers carry no fit.group / fit.role."""
     units: dict = {}
-    for l in P.get("layers", []):
+    layers = P.get("layers", [])
+    if len(layers) > MANY_LAYERS and not any((l.get("fit") or {}).get("group") for l in layers):
+        from zrmd.vector import layerfit as LF        # a stack written before groups existed: name its units now (deterministic annotation)
+        LF.assign_groups_and_roles(layers)
+    for l in layers:
         f = l.get("fit") or {}
         if f.get("background"):
             continue
