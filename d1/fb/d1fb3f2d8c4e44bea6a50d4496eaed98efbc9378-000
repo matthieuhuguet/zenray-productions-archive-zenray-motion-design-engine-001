@@ -726,6 +726,22 @@ def refine_vertices(layers: list[dict], target: np.ndarray, deltas=(0.25, 0.12, 
     return st
 
 
+def extend(layers: list[dict], target: np.ndarray, max_new: int, stop_de: float = 0.25, cfg: dict | None = None, log=None) -> int:
+    """Continue the pursuit on an existing stack (full-resolution coordinates): the composite is the render of `layers`, new layers are appended
+    until max_new or the error peak falls under stop_de. Returns the number of layers added. FR : prolonge la poursuite sur une pile existante."""
+    c = {**DEFAULTS, **{"window": 60, "stopDE": stop_de, "minDE": stop_de}, **(cfg or {})}
+    tgt = np.asarray(target, np.float32)[..., :3]
+    H, W = tgt.shape[:2]
+    S = Stack(tgt, init=_render_stack(layers, W, H))
+    n0 = len(layers)
+    c["maxLayers"] = n0 + int(max_new)
+    _pursue(S, layers, c, log=log)
+    for i, l in enumerate(layers):
+        l["id"], l["z"] = f"L{i:03d}", i
+        l["name"] = f"L{i:03d}-{l['kind']}" if i else "L00-background"
+    return len(layers) - n0
+
+
 def _round_geom(g: dict) -> dict:
     return {k: (round(float(v), 2) if not isinstance(v, str) else v) for k, v in g.items()}
 
