@@ -28,23 +28,34 @@ def level(path: Path) -> float:
 
 
 def propose(m: dict, lv: dict) -> list:
+    """Sixteen variations or more (15 October 2026), each decided from what the reproduction holds: a silent stem is never soloed or pushed."""
     has = {s: lv.get(s, -120) > SILENT_DB for s in banks.STEMS}
     up = 1 if m["bpm"] < 128 else 0
     out = []
-    bed = {"drums": -60, "bass": -4, "other": 1, "tilt": -2}
-    if has["vocals"]:
-        bed["vocals"] = -6
-    out.append({"id": "bed", "label": "Nappe sans batterie", "why": "sous une voix off ou un texte long", "values": bed})
-    if has["drums"]:
-        out.append({"id": "pulse", "label": "Pulsation", "why": "batterie et basse seules, pour un montage rythmé",
-                    "values": {"drums": 1, "bass": 2, "other": -12, "vocals": -60, "tilt": 1}})
-    else:
-        out.append({"id": "low", "label": "Basse en avant", "why": "la reproduction n'a presque pas de batterie : la basse porte le rythme",
-                    "values": {"bass": 4, "other": -3, "vocals": -60, "tilt": -1}})
-    out.append({"id": "energy", "label": "Plus d'énergie", "why": f"{'+1 demi-ton, ' if up else ''}batterie et aigus en avant, plus large",
-                "values": {"semitones": up, "drums": 2 if has["drums"] else 0, "tilt": 2.5, "width": 1.25}})
-    out.append({"id": "calm", "label": "Version calme", "why": "-1 demi-ton, batterie en retrait, plus sombre",
-                "values": {"semitones": -1, "drums": -10 if has["drums"] else 0, "tilt": -3, "width": 0.9, "fadeIn": 1.5}})
+    def add(i, label, why, values, ok=True):
+        if ok:
+            out.append({"id": i, "label": label, "why": why, "values": values})
+    bed = {"drums": -60, "bass": -4, "other": 1, "tilt": -2, **({"vocals": -6} if has["vocals"] else {})}
+    add("bed", "Nappe sans batterie", "sous une voix off ou un texte long", bed)
+    add("pulse", "Pulsation", "batterie et basse seules, pour un montage rythmé", {"drums": 1, "bass": 2, "other": -12, "vocals": -60, "tilt": 1}, has["drums"])
+    add("low", "Basse en avant", "la basse porte le rythme", {"bass": 4, "other": -3, "vocals": -60, "tilt": -1}, not has["drums"])
+    add("drums", "Batterie seule", "le squelette rythmique, pour caler un montage", {"bass": -60, "other": -60, "vocals": -60, "drums": 2}, has["drums"])
+    add("nobass", "Sans basse", "plus léger, laisse la place à un sound design grave", {"bass": -60, "tilt": 0.5})
+    add("keys", "Instruments seuls", "mélodie et harmonie, sans rythme", {"drums": -60, "bass": -60, "vocals": -60, "other": 3}, has["other"])
+    add("voice", "Voix en avant", "la voix devant, le reste en retrait", {"vocals": 3, "other": -4, "drums": -4}, has["vocals"])
+    add("energy", "Plus d'énergie", f"{'+1 demi-ton, ' if up else ''}batterie et aigus en avant, plus large",
+        {"semitones": up, "drums": 2 if has["drums"] else 0, "tilt": 2.5, "width": 1.25})
+    add("calm", "Version calme", "-1 demi-ton, batterie en retrait, plus sombre", {"semitones": -1, "drums": -10 if has["drums"] else 0, "tilt": -3, "width": 0.9, "fadeIn": 1.5})
+    add("radio", "Radio", "bande étroite et saturée, comme un vieux poste", {"lowCut": 450, "highCut": 3800, "drive": 0.35, "width": 0.2, "volume": -5})
+    add("underwater", "Sous l'eau", "coupe-haut fort et réverbération, pour une transition", {"highCut": 700, "reverb": 0.45, "tilt": -4})
+    add("hall", "Cathédrale", "grande réverbération, très large", {"reverb": 0.7, "width": 1.45, "drums": -6 if has["drums"] else 0, "fadeIn": 2})
+    add("rise", "Montée", "+2 demi-tons, plus brillant : une fin qui décolle", {"semitones": 2, "tilt": 3, "width": 1.2})
+    add("deep", "Grave", "-2 demi-tons, basse appuyée", {"semitones": -2, "bass": 3, "tilt": -2.5})
+    add("minimal", "Minimal", "tout en retrait sauf la basse, aigus adoucis", {"drums": -8, "other": -8, "vocals": -12, "highCut": 8000})
+    add("lofi", "Lo-fi", "étroit, adouci et légèrement saturé", {"semitones": -1, "highCut": 2600, "drive": 0.25, "width": 0.6, "tilt": -1})
+    add("intro", "Intro douce", "longue entrée progressive", {"fadeIn": 4, "tilt": -2, "reverb": 0.2})
+    add("punch", "Percutant", "batterie +4 dB, saturation légère, coupe-bas à 60 Hz", {"drums": 4, "drive": 0.15, "lowCut": 60, "tilt": 1.5}, has["drums"])
+    add("airy", "Aérien", "coupe-bas haut, réverbération, très large", {"lowCut": 300, "reverb": 0.35, "width": 1.5, "tilt": 2})
     return out
 
 
