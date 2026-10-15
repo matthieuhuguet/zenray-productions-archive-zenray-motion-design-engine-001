@@ -1,416 +1,424 @@
 {
- "schema": "zrmd/orchestrator@1",
- "date": "14 October 2026",
- "doc": "The single parameter interface of the local orchestrator (HDA law): the pipeline is DATA, the code only runs it. No language model is called anywhere: every step is a deterministic command, so any agent (Claude, Codex, Gemini, a shell script) or the GUI drives the same CLI/HTTP contract. Tokens: {py} {engine} {workshop} {refcache} {slug} {run} plus the resolvers listed under `resolvers`. FR : interface unique de l'orchestrateur ; le pipeline est une donnee, aucun LLM n'est appele.",
- "server": {
-  "host": "127.0.0.1",
-  "port": 3104,
-  "maxUploadMB": 2048,
-  "pollMs": 1500,
-  "clientHeader": "x-zr-orchestrator-client",
-  "clientValue": "1"
- },
- "paths": {
-  "runs": "{workshop}/runs",
-  "uploads": "{refcache}/_uploads",
-  "logsKeep": 200
- },
- "gui": {
-  "dir": "{engine}/app",
-  "fontDir": "/Users/zenray/Create/Build/Productions/GithubProductions/ZenRayProgress/public/fonts"
- },
- "ingest": {
-  "extensions": [
-   ".mp4",
-   ".mov",
-   ".mkv",
-   ".webm",
-   ".m4v"
-  ],
-  "slugMaxChars": 60,
-  "minDurationS": 1.0,
-  "maxDurationS": 600.0,
-  "normalize": {
-   "keepAsIs": [
-    ".mp4",
-    ".m4v"
-   ],
-   "fpsChoices": [
-    23.976,
-    24,
-    25,
-    29.97,
-    30,
-    50,
-    59.94,
-    60
-   ],
-   "crf": 12,
-   "preset": "medium",
-   "audioKbps": 256,
-   "doc": "A dropped video that is not a constant-frame-rate MP4 (WebM, MKV, a QuickTime screen recording that varies its rate) is rewritten as a near-lossless CFR MP4 so every module can count frames exactly. A plain MP4 is never re-encoded."
-  }
- },
- "targets": {
-  "default": 0.99,
-  "stretch": 0.999
- },
- "modules": [
-  {
-   "id": "rhythm",
-   "label": "Rhythm",
-   "hint": "cuts and timing",
-   "steps": [
-    "shots",
-    "book",
-    "film"
-   ],
-   "score": "rhythm"
+  "schema": "zrmd/orchestrator@1",
+  "date": "14 October 2026",
+  "doc": "The single parameter interface of the local orchestrator (HDA law): the pipeline is DATA, the code only runs it. No language model is called anywhere: every step is a deterministic command, so any agent (Claude, Codex, Gemini, a shell script) or the GUI drives the same CLI/HTTP contract. Tokens: {py} {engine} {workshop} {refcache} {slug} {run} plus the resolvers listed under `resolvers`. FR : interface unique de l'orchestrateur ; le pipeline est une donnee, aucun LLM n'est appele.",
+  "server": {
+    "host": "127.0.0.1",
+    "port": 3104,
+    "maxUploadMB": 2048,
+    "pollMs": 1500,
+    "clientHeader": "x-zr-orchestrator-client",
+    "clientValue": "1",
+    "embedOrigins": [
+      "https://zenray-progress.pages.dev",
+      "http://127.0.0.1:3300",
+      "http://localhost:3300",
+      "http://127.0.0.1:5173",
+      "http://localhost:5173"
+    ],
+    "embedDoc": "15 October 2026: the sites that show this application in a frame (ZenRayProgress, Motion Design > Studio). They may only read GET /api/embed/status (with CORS and the private network header); inside the frame the page talks to its own origin as before. FR : les sites qui affichent l'app dans un cadre ; ils ne lisent que l'etat."
   },
-  {
-   "id": "visual",
-   "label": "Image",
-   "hint": "shaders, 3D, 2D, fonts",
-   "steps": [
-    "image",
-    "film"
-   ],
-   "score": "visual"
+  "paths": {
+    "runs": "{workshop}/runs",
+    "uploads": "{refcache}/_uploads",
+    "logsKeep": 200
   },
-  {
-   "id": "vector",
-   "label": "Vector UI",
-   "hint": "multi-layer SVG: composite fidelity in CIEDE2000, layers editable",
-   "steps": [
-    "vector",
-    "layers"
-   ],
-   "score": "vector"
+  "gui": {
+    "dir": "{engine}/app",
+    "fontDir": "/Users/zenray/Create/Build/Productions/GithubProductions/ZenRayProgress/public/fonts"
   },
-  {
-   "id": "music",
-   "label": "Music",
-   "hint": "stems, notes, instruments",
-   "steps": [
-    "stems",
-    "music",
-    "music-trim",
-    "music-polish"
-   ],
-   "score": "music"
-  },
-  {
-   "id": "sfx",
-   "label": "Sound effects",
-   "hint": "events and synthesis",
-   "steps": [
-    "sfx",
-    "sfx-trim"
-   ],
-   "score": "sfx"
-  },
-  {
-   "id": "mix",
-   "label": "Mix",
-   "hint": "loudness and balance",
-   "steps": [
-    "soundtrack"
-   ],
-   "score": "mix"
-  }
- ],
- "steps": [
-  {
-   "id": "shots",
-   "label": "Cut detection",
-   "module": "rhythm",
-   "timeoutS": 900,
-   "argv": [
-    "{py}",
-    "-I",
-    "-m",
-    "zrmd.cli",
-    "shots",
-    "{slug}"
-   ],
-   "cwd": "{engine}",
-   "outputs": [
-    "{workshop}/references/{slug}/analysis/shots.json"
-   ]
-  },
-  {
-   "id": "book",
-   "label": "Bible and storyboard",
-   "module": "rhythm",
-   "timeoutS": 3600,
-   "okCodes": [
-    0
-   ],
-   "argv": [
-    "{py}",
-    "-I",
-    "{engine}/Scripts/BuildReferenceBook.py",
-    "--slug",
-    "{slug}"
-   ],
-   "cwd": "{engine}",
-   "outputs": [
-    "{workshop}/references/{slug}/storyboard.html"
-   ]
-  },
-  {
-   "id": "vector",
-   "label": "Vector UI scene",
-   "module": "vector",
-   "timeoutS": 3600,
-   "okCodes": [
-    0
-   ],
-   "argv": [
-    "{py}",
-    "-I",
-    "{engine}/Scripts/VectorScene.py",
-    "--slug",
-    "{slug}"
-   ],
-   "cwd": "{engine}",
-   "score": "vector",
-   "outputs": [
-    "{workshop}/vector/{slug}/scene.json"
-   ]
-  },
-  {
-   "id": "layers",
-   "label": "Multi-layer vector fit",
-   "module": "vector",
-   "timeoutS": 7200,
-   "okCodes": [
-    0
-   ],
-   "argv": [
-    "{py}",
-    "-I",
-    "{engine}/Scripts/VectorLayers.py",
-    "--slug",
-    "{slug}",
-    "--max-layers",
-    "4000",
-    "--max-seconds",
-    "3000"
-   ],
-   "cwd": "{engine}",
-   "score": "vector",
-   "outputs": [
-    "{workshop}/vector/{slug}/layered.json"
-   ]
-  },
-  {
-   "id": "stems",
-   "label": "Stem separation",
-   "module": "music",
-   "timeoutS": 1800,
-   "argv": [
-    "{py}",
-    "-I",
-    "{engine}/Scripts/MusicRun.py",
-    "--slug",
-    "{slug}"
-   ],
-   "cwd": "{engine}",
-   "outputs": [
-    "{refcache}/{slug}/stems/out/htdemucs/mix/drums.wav"
-   ]
-  },
-  {
-   "id": "music",
-   "label": "Music rebuild",
-   "module": "music",
-   "timeoutS": 14400,
-   "okCodes": [
-    0
-   ],
-   "argv": [
-    "{py}",
-    "-I",
-    "{engine}/Scripts/MusicRun.py",
-    "--slug",
-    "{slug}",
-    "--transcribe",
-    "--stages",
-    "{musicStages}",
-    "--set",
-    "residual.stems=[\"drums\",\"bass\",\"other\",\"vocals\"]",
-    "--critic"
-   ],
-   "cwd": "{engine}",
-   "watch": "{workshop}/sound/{slug}/music-bench",
-   "score": "music"
-  },
-  {
-   "id": "music-trim",
-   "label": "Music calibration (stems then mix)",
-   "module": "music",
-   "timeoutS": 7200,
-   "okCodes": [
-    0
-   ],
-   "argv": [
-    "{py}",
-    "-I",
-    "{engine}/Scripts/MusicTrim.py",
-    "--slug",
-    "{slug}"
-   ],
-   "cwd": "{engine}",
-   "score": "music",
-   "watch": "{workshop}/sound/{slug}/music-bench"
-  },
-  {
-   "id": "music-polish",
-   "label": "Music polish (official above the gate, preview below)",
-   "module": "music",
-   "timeoutS": 3600,
-   "okCodes": [
-    0
-   ],
-   "argv": [
-    "{py}",
-    "-I",
-    "{engine}/Scripts/MusicPolish.py",
-    "--slug",
-    "{slug}",
-    "--force"
-   ],
-   "cwd": "{engine}",
-   "score": "music"
-  },
-  {
-   "id": "sfx",
-   "label": "Sound effects rebuild",
-   "module": "sfx",
-   "timeoutS": 14400,
-   "okCodes": [
-    0,
-    1
-   ],
-   "argv": [
-    "{py}",
-    "-I",
-    "{engine}/Scripts/ReproduceSound.py",
-    "--slug",
-    "{slug}",
-    "--out",
-    "{workshop}/sound/{slug}"
-   ],
-   "cwd": "{engine}",
-   "watch": "{workshop}/sound/{slug}",
-   "score": "sfx"
-  },
-  {
-   "id": "sfx-trim",
-   "label": "Sound effects calibration (per event)",
-   "module": "sfx",
-   "timeoutS": 3600,
-   "okCodes": [
-    0
-   ],
-   "argv": [
-    "{py}",
-    "-I",
-    "{engine}/Scripts/SfxTrim.py",
-    "--slug",
-    "{slug}"
-   ],
-   "cwd": "{engine}",
-   "score": "sfx",
-   "watch": "{workshop}/sound/{slug}"
-  },
-  {
-   "id": "soundtrack",
-   "label": "Soundtrack assembly",
-   "module": "mix",
-   "timeoutS": 3600,
-   "okCodes": [
-    0,
-    1
-   ],
-   "needs": [
-    "music_best",
-    "sfx_latest"
-   ],
-   "argv": [
-    "{py}",
-    "-I",
-    "{engine}/Scripts/AssembleSoundtrack.py",
-    "--slug",
-    "{slug}",
-    "--music",
-    "{music_best}",
-    "--sfx",
-    "{sfx_latest}"
-   ],
-   "cwd": "{engine}",
-   "watch": "{workshop}/sound/{slug}",
-   "score": "mix"
-  },
-  {
-   "id": "image",
-   "label": "Image field survey",
-   "module": "visual",
-   "timeoutS": 1800,
-   "okCodes": [
-    0
-   ],
-   "argv": [
-    "{py}",
-    "-I",
-    "{engine}/Scripts/ReproduceFieldSurvey.py",
-    "--slug",
-    "{slug}"
-   ],
-   "cwd": "{engine}",
-   "outputs": [
-    "{workshop}/image/{slug}/survey.json"
-   ],
-   "score": "visual"
-  },
-  {
-   "id": "film",
-   "label": "Film animatic",
-   "module": "visual",
-   "timeoutS": 7200,
-   "okCodes": [
-    0
-   ],
-   "argv": [
-    "{py}",
-    "-I",
-    "{engine}/Scripts/ReproduceFilm.py",
-    "--slug",
-    "{slug}",
-    "--id",
-    "{slug}-film"
-   ],
-   "cwd": "{engine}",
-   "optionalArgs": [
-    {
-     "when": "soundtrack_mix",
-     "args": [
-      "--audio",
-      "{soundtrack_mix}"
-     ]
+  "ingest": {
+    "extensions": [
+      ".mp4",
+      ".mov",
+      ".mkv",
+      ".webm",
+      ".m4v"
+    ],
+    "slugMaxChars": 60,
+    "minDurationS": 1.0,
+    "maxDurationS": 600.0,
+    "normalize": {
+      "keepAsIs": [
+        ".mp4",
+        ".m4v"
+      ],
+      "fpsChoices": [
+        23.976,
+        24,
+        25,
+        29.97,
+        30,
+        50,
+        59.94,
+        60
+      ],
+      "crf": 12,
+      "preset": "medium",
+      "audioKbps": 256,
+      "doc": "A dropped video that is not a constant-frame-rate MP4 (WebM, MKV, a QuickTime screen recording that varies its rate) is rewritten as a near-lossless CFR MP4 so every module can count frames exactly. A plain MP4 is never re-encoded."
     }
-   ],
-   "score": "rhythm"
-  }
- ],
- "defaults": {
-  "musicStages": "sms,bus,dev,gap,retag,bus"
- },
- "honestLimits": [
-  "visual: only text cards and graphic shots are reproduced by code; photographed plates stay colour animatics",
-  "music: the gate is the official critic at 99.9 on every stem, then the final mix; a stem limited by note transcription (pads, chords) stays below it and the report says which",
-  "sfx: each event is calibrated by an EQ on the perceptual loss; deterministic events with a wrong chain structure stay below their identity ceiling",
-  "vector: one scene per reference is traced; blur, glow and gradient fields are sorted as shader work, photographs as plates, only shapes, text outlines and UI components count as vector"
- ]
+  },
+  "targets": {
+    "default": 0.99,
+    "stretch": 0.999
+  },
+  "modules": [
+    {
+      "id": "rhythm",
+      "label": "Rhythm",
+      "hint": "cuts and timing",
+      "steps": [
+        "shots",
+        "book",
+        "film"
+      ],
+      "score": "rhythm"
+    },
+    {
+      "id": "visual",
+      "label": "Image",
+      "hint": "shaders, 3D, 2D, fonts",
+      "steps": [
+        "image",
+        "film"
+      ],
+      "score": "visual"
+    },
+    {
+      "id": "vector",
+      "label": "Vector UI",
+      "hint": "multi-layer SVG: composite fidelity in CIEDE2000, layers editable",
+      "steps": [
+        "vector",
+        "layers"
+      ],
+      "score": "vector"
+    },
+    {
+      "id": "music",
+      "label": "Music",
+      "hint": "stems, notes, instruments",
+      "steps": [
+        "stems",
+        "music",
+        "music-trim",
+        "music-polish"
+      ],
+      "score": "music"
+    },
+    {
+      "id": "sfx",
+      "label": "Sound effects",
+      "hint": "events and synthesis",
+      "steps": [
+        "sfx",
+        "sfx-trim"
+      ],
+      "score": "sfx"
+    },
+    {
+      "id": "mix",
+      "label": "Mix",
+      "hint": "loudness and balance",
+      "steps": [
+        "soundtrack"
+      ],
+      "score": "mix"
+    }
+  ],
+  "steps": [
+    {
+      "id": "shots",
+      "label": "Cut detection",
+      "module": "rhythm",
+      "timeoutS": 900,
+      "argv": [
+        "{py}",
+        "-I",
+        "-m",
+        "zrmd.cli",
+        "shots",
+        "{slug}"
+      ],
+      "cwd": "{engine}",
+      "outputs": [
+        "{workshop}/references/{slug}/analysis/shots.json"
+      ]
+    },
+    {
+      "id": "book",
+      "label": "Bible and storyboard",
+      "module": "rhythm",
+      "timeoutS": 3600,
+      "okCodes": [
+        0
+      ],
+      "argv": [
+        "{py}",
+        "-I",
+        "{engine}/Scripts/BuildReferenceBook.py",
+        "--slug",
+        "{slug}"
+      ],
+      "cwd": "{engine}",
+      "outputs": [
+        "{workshop}/references/{slug}/storyboard.html"
+      ]
+    },
+    {
+      "id": "vector",
+      "label": "Vector UI scene",
+      "module": "vector",
+      "timeoutS": 3600,
+      "okCodes": [
+        0
+      ],
+      "argv": [
+        "{py}",
+        "-I",
+        "{engine}/Scripts/VectorScene.py",
+        "--slug",
+        "{slug}"
+      ],
+      "cwd": "{engine}",
+      "score": "vector",
+      "outputs": [
+        "{workshop}/vector/{slug}/scene.json"
+      ]
+    },
+    {
+      "id": "layers",
+      "label": "Multi-layer vector fit",
+      "module": "vector",
+      "timeoutS": 7200,
+      "okCodes": [
+        0
+      ],
+      "argv": [
+        "{py}",
+        "-I",
+        "{engine}/Scripts/VectorLayers.py",
+        "--slug",
+        "{slug}",
+        "--max-layers",
+        "4000",
+        "--max-seconds",
+        "3000"
+      ],
+      "cwd": "{engine}",
+      "score": "vector",
+      "outputs": [
+        "{workshop}/vector/{slug}/layered.json"
+      ]
+    },
+    {
+      "id": "stems",
+      "label": "Stem separation",
+      "module": "music",
+      "timeoutS": 1800,
+      "argv": [
+        "{py}",
+        "-I",
+        "{engine}/Scripts/MusicRun.py",
+        "--slug",
+        "{slug}"
+      ],
+      "cwd": "{engine}",
+      "outputs": [
+        "{refcache}/{slug}/stems/out/htdemucs/mix/drums.wav"
+      ]
+    },
+    {
+      "id": "music",
+      "label": "Music rebuild",
+      "module": "music",
+      "timeoutS": 14400,
+      "okCodes": [
+        0
+      ],
+      "argv": [
+        "{py}",
+        "-I",
+        "{engine}/Scripts/MusicRun.py",
+        "--slug",
+        "{slug}",
+        "--transcribe",
+        "--stages",
+        "{musicStages}",
+        "--set",
+        "residual.stems=[\"drums\",\"bass\",\"other\",\"vocals\"]",
+        "--critic"
+      ],
+      "cwd": "{engine}",
+      "watch": "{workshop}/sound/{slug}/music-bench",
+      "score": "music"
+    },
+    {
+      "id": "music-trim",
+      "label": "Music calibration (stems then mix)",
+      "module": "music",
+      "timeoutS": 7200,
+      "okCodes": [
+        0
+      ],
+      "argv": [
+        "{py}",
+        "-I",
+        "{engine}/Scripts/MusicTrim.py",
+        "--slug",
+        "{slug}"
+      ],
+      "cwd": "{engine}",
+      "score": "music",
+      "watch": "{workshop}/sound/{slug}/music-bench"
+    },
+    {
+      "id": "music-polish",
+      "label": "Music polish (official above the gate, preview below)",
+      "module": "music",
+      "timeoutS": 3600,
+      "okCodes": [
+        0
+      ],
+      "argv": [
+        "{py}",
+        "-I",
+        "{engine}/Scripts/MusicPolish.py",
+        "--slug",
+        "{slug}",
+        "--force"
+      ],
+      "cwd": "{engine}",
+      "score": "music"
+    },
+    {
+      "id": "sfx",
+      "label": "Sound effects rebuild",
+      "module": "sfx",
+      "timeoutS": 14400,
+      "okCodes": [
+        0,
+        1
+      ],
+      "argv": [
+        "{py}",
+        "-I",
+        "{engine}/Scripts/ReproduceSound.py",
+        "--slug",
+        "{slug}",
+        "--out",
+        "{workshop}/sound/{slug}"
+      ],
+      "cwd": "{engine}",
+      "watch": "{workshop}/sound/{slug}",
+      "score": "sfx"
+    },
+    {
+      "id": "sfx-trim",
+      "label": "Sound effects calibration (per event)",
+      "module": "sfx",
+      "timeoutS": 3600,
+      "okCodes": [
+        0
+      ],
+      "argv": [
+        "{py}",
+        "-I",
+        "{engine}/Scripts/SfxTrim.py",
+        "--slug",
+        "{slug}"
+      ],
+      "cwd": "{engine}",
+      "score": "sfx",
+      "watch": "{workshop}/sound/{slug}"
+    },
+    {
+      "id": "soundtrack",
+      "label": "Soundtrack assembly",
+      "module": "mix",
+      "timeoutS": 3600,
+      "okCodes": [
+        0,
+        1
+      ],
+      "needs": [
+        "music_best",
+        "sfx_latest"
+      ],
+      "argv": [
+        "{py}",
+        "-I",
+        "{engine}/Scripts/AssembleSoundtrack.py",
+        "--slug",
+        "{slug}",
+        "--music",
+        "{music_best}",
+        "--sfx",
+        "{sfx_latest}"
+      ],
+      "cwd": "{engine}",
+      "watch": "{workshop}/sound/{slug}",
+      "score": "mix"
+    },
+    {
+      "id": "image",
+      "label": "Image field survey",
+      "module": "visual",
+      "timeoutS": 1800,
+      "okCodes": [
+        0
+      ],
+      "argv": [
+        "{py}",
+        "-I",
+        "{engine}/Scripts/ReproduceFieldSurvey.py",
+        "--slug",
+        "{slug}"
+      ],
+      "cwd": "{engine}",
+      "outputs": [
+        "{workshop}/image/{slug}/survey.json"
+      ],
+      "score": "visual"
+    },
+    {
+      "id": "film",
+      "label": "Film animatic",
+      "module": "visual",
+      "timeoutS": 7200,
+      "okCodes": [
+        0
+      ],
+      "argv": [
+        "{py}",
+        "-I",
+        "{engine}/Scripts/ReproduceFilm.py",
+        "--slug",
+        "{slug}",
+        "--id",
+        "{slug}-film"
+      ],
+      "cwd": "{engine}",
+      "optionalArgs": [
+        {
+          "when": "soundtrack_mix",
+          "args": [
+            "--audio",
+            "{soundtrack_mix}"
+          ]
+        }
+      ],
+      "score": "rhythm"
+    }
+  ],
+  "defaults": {
+    "musicStages": "sms,bus,dev,gap,retag,bus"
+  },
+  "honestLimits": [
+    "visual: only text cards and graphic shots are reproduced by code; photographed plates stay colour animatics",
+    "music: the gate is the official critic at 99.9 on every stem, then the final mix; a stem limited by note transcription (pads, chords) stays below it and the report says which",
+    "sfx: each event is calibrated by an EQ on the perceptual loss; deterministic events with a wrong chain structure stay below their identity ceiling",
+    "vector: one scene per reference is traced; blur, glow and gradient fields are sorted as shader work, photographs as plates, only shapes, text outlines and UI components count as vector"
+  ]
 }
