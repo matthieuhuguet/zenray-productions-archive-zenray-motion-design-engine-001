@@ -1,0 +1,557 @@
+#!/usr/bin/env python3
+# 15 October 2026: the MOTION module of ZenRay Motion Design (the procedural editor). It only serves and stores: the editor page, the runtime,
+# the fonts, the motion projects (one folder each: project.json, its versions as CODE in versions/V_NNN.json, its imported media) and the export
+# job. Every motion and every sound is computed live by the browser; nothing here analyses a video. Export = HyperFrames renders the same runtime
+# page to MP4, ffmpeg muxes the mix the browser rendered and brings it to the target loudness. handle() is mounted by the application server
+# (zrmd/orchestrator_server.py, port 3104) under /motion and /api/motion; `python3 motion/server.py --port N` runs it alone (tests).
+# FR : le module motion de l'application ; il sert et range, le navigateur calcule tout en direct ; les versions sont du code, jamais un MP4.
+from __future__ import annotations
+
+import argparse
+import copy
+import hashlib
+import json
+import mimetypes
+import os
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import time
+import uuid
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
+
+MOTION = Path(__file__).resolve().parent
+REPO = MOTION.parent
+CFG = json.loads((MOTION / "params" / "motion.json").read_text(encoding="utf-8"))
+SCHEMA = "zrmd/motion-project@1"
+OLD_SCHEMAS = {"zenray-studio/project@1"}
+ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,79}$")
+NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,120}$")
+VER_RE = re.compile(r"^V_\d{3}$")
+JOBS: dict[str, dict] = {}
+LOCK = threading.Lock()
+FORMATS = {"16x9": (1920, 1080), "9x16": (1080, 1920), "1x1": (1080, 1080), "4x5": (1080, 1350)}
+
+
+class Refusal(Exception):
+    def __init__(self, msg: str, status: int = 400):
+        super().__init__(msg)
+        self.status = status
+
+
+def J(data, status=200) -> dict:
+    return {"json": data, "status": status}
+
+
+def F(path: Path, mime: str | None = None) -> dict:
+    if not Path(path).is_file():
+        raise Refusal("not found", 404)
+    return {"file": Path(path), "mime": mime or mimetypes.guess_type(Path(path).name)[0] or "application/octet-stream"}
+
+
+def B(body: bytes, mime: str) -> dict:
+    return {"bytes": body, "mime": mime}
+
+
+# ---------------------------------------------------------------------------------------------------- projects
+def projects_root() -> Path:
+    p = Path(os.environ.get("ZRMD_MOTION_PROJECTS") or os.path.expanduser(CFG["paths"]["projects"]))
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def project_dir(pid: str) -> Path:
+    if not ID_RE.match(pid or ""):
+        raise Refusal("bad project id")
+    return projects_root() / pid
+
+
+def read_project(pid: str) -> dict:
+    f = project_dir(pid) / "project.json"
+    if not f.is_file():
+        raise Refusal(f"no motion project {pid}", 404)
+    p = json.loads(f.read_text(encoding="utf-8"))
+    if p.get("schema") in OLD_SCHEMAS:
+        p["schema"] = SCHEMA
+    return p
+
+
+def validate(p: dict) -> dict:
+    """The shape the runtime needs; the values themselves are bounded by the templates (an unknown value never breaks the page)."""
+    if not isinstance(p, dict) or p.get("schema") not in {SCHEMA, *OLD_SCHEMAS}:
+        raise Refusal(f"project must have schema {SCHEMA}")
+    if p.get("format") not in FORMATS:
+        raise Refusal("format must be 16x9, 9x16, 1x1 or 4x5")
+    scenes = p.get("scenes")
+    if not isinstance(scenes, list) or not scenes or len(scenes) > 400:
+        raise Refusal("a project has 1 to 400 scenes")
+    for s in scenes:
+        if not isinstance(s, dict) or not isinstance(s.get("template"), str) or not isinstance(s.get("params", {}), dict):
+            raise Refusal("every scene needs a template name and a params object")
+        d = s.get("duration")
+        if not isinstance(d, (int, float)) or not (0.02 <= d <= 120):
+            raise Refusal(f"scene {s.get('id')}: duration between 0.02 and 120 s")
+    if sum(s["duration"] for s in scenes) > 900:
+        raise Refusal("a project lasts at most 15 minutes")
+    return p
+
+
+def write_project(pid: str, p: dict) -> dict:
+    validate(p)
+    d = project_dir(pid)
+    d.mkdir(parents=True, exist_ok=True)
+    p = {**p, "schema": SCHEMA, "id": pid, "updated": time.strftime("%d %B %Y, %H:%M")}
+    tmp = d / "project.json.tmp"
+    tmp.write_text(json.dumps(p, indent=1, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(d / "project.json")
+    return p
+
+
+def list_projects() -> list[dict]:
+    out = []
+    for f in sorted(projects_root().glob("*/project.json"), key=lambda x: -x.stat().st_mtime):
+        try:
+            p = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        out.append({"id": f.parent.name, "title": p.get("title") or f.parent.name, "format": p.get("format"), "scenes": len(p.get("scenes", [])),
+                    "duration": round(sum(s.get("duration", 0) for s in p.get("scenes", [])), 2), "updated": p.get("updated"),
+                    "reference": p.get("reference"), "versions": len(list((f.parent / "versions").glob("V_*.json")))})
+    return out
+
+
+def presets() -> list[dict]:
+    out = []
+    for f in sorted((REPO / CFG["presets"]).glob("*.json")):
+        p = json.loads(f.read_text(encoding="utf-8"))
+        out.append({"id": f.stem, "title": p.get("title"), "format": p.get("format"), "doc": p.get("doc", "")})
+    return out
+
+
+def _free_id(base: str) -> str:
+    base = re.sub(r"[^a-z0-9]+", "-", base.lower()).strip("-")[:60] or "motion"
+    pid, n = base, 2
+    while (projects_root() / pid).exists():
+        pid, n = f"{base}-{n}", n + 1
+    return pid
+
+
+def create_project(preset: str, title: str | None) -> dict:
+    f = REPO / CFG["presets"] / f"{preset}.json"
+    if not ID_RE.match(preset or "") or not f.is_file():
+        raise Refusal(f"no preset {preset}", 404)
+    p = json.loads(f.read_text(encoding="utf-8"))
+    pid = _free_id(title or p.get("title") or preset)
+    p["title"] = title or p.get("title") or pid
+    p.pop("doc", None)
+    return write_project(pid, p)
+
+
+def duplicate(src_id: str, title: str) -> dict:
+    """A copy of a project (and of its media) under a new id: an experiment never touches the original."""
+    p = copy.deepcopy(read_project(src_id))
+    pid = _free_id(title)
+    p["title"] = title
+    out = write_project(pid, p)
+    if (project_dir(src_id) / "assets").is_dir():
+        shutil.copytree(project_dir(src_id) / "assets", project_dir(pid) / "assets")
+    return out
+
+
+# ---------------------------------------------------------------------------------------------------- versions (code, never MP4)
+def list_versions(pid: str) -> list[dict]:
+    d = project_dir(pid) / "versions"
+    out = []
+    for f in sorted(d.glob("V_*.json")) if d.is_dir() else []:
+        try:
+            p = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        out.append({"version": f.stem, "note": p.get("versionNote", ""), "saved": p.get("versionSaved"), "scenes": len(p.get("scenes", []))})
+    return out
+
+
+def save_version(pid: str, note: str) -> dict:
+    p = read_project(pid)
+    d = project_dir(pid) / "versions"
+    d.mkdir(parents=True, exist_ok=True)
+    n = 1 + max([int(f.stem[2:]) for f in d.glob("V_*.json")] + [0])
+    v = f"V_{n:03d}"
+    p = {**p, "versionNote": (note or "")[:200], "versionSaved": time.strftime("%d %B %Y, %H:%M"), "version": v}
+    (d / f"{v}.json").write_text(json.dumps(p, indent=1, ensure_ascii=False), encoding="utf-8")
+    return {"version": v, "note": p["versionNote"], "saved": p["versionSaved"]}
+
+
+def restore_version(pid: str, v: str) -> dict:
+    if not VER_RE.match(v or ""):
+        raise Refusal("bad version")
+    f = project_dir(pid) / "versions" / f"{v}.json"
+    if not f.is_file():
+        raise Refusal(f"no version {v}", 404)
+    save_version(pid, f"avant le retour à {v}")          # the current state is kept: a restore never loses work
+    p = json.loads(f.read_text(encoding="utf-8"))
+    for k in ("versionNote", "versionSaved", "version"):
+        p.pop(k, None)
+    return write_project(pid, p)
+
+
+# ---------------------------------------------------------------------------------------------------- media
+def asset_path(pid: str, name: str) -> Path:
+    if not NAME_RE.match(name or "") or ".." in name:
+        raise Refusal("bad file name")
+    p = project_dir(pid) / "assets" / name
+    if not p.is_file():
+        raise Refusal("no such file", 404)
+    return p
+
+
+def save_upload(pid: str, name: str, read, length: int) -> dict:
+    project_dir(pid)
+    ext = Path(name or "").suffix.lower()
+    kind = next((k for k, exts in CFG["uploads"].items() if ext in exts), None)
+    if not kind:
+        raise Refusal(f"file type {ext or '?'} not accepted (video, image or audio)")
+    if length <= 0 or length > CFG["maxUploadBytes"]:
+        raise Refusal("file too large or empty", 413)
+    clean = re.sub(r"[^A-Za-z0-9._ -]+", "_", Path(name).stem)[:80].strip() or "media"
+    dest_dir = project_dir(pid) / "assets"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest, n = dest_dir / f"{clean}{ext}", 2
+    while dest.exists():
+        dest, n = dest_dir / f"{clean}-{n}{ext}", n + 1
+    with open(dest, "wb") as f:
+        left = length
+        while left > 0:
+            block = read(min(1 << 20, left))
+            if not block:
+                break
+            f.write(block)
+            left -= len(block)
+    return {"name": dest.name, "kind": kind, "bytes": dest.stat().st_size, "url": f"/motion/files/{pid}/{dest.name}"}
+
+
+def list_assets(pid: str) -> list[dict]:
+    d = project_dir(pid) / "assets"
+    out = []
+    for f in sorted(d.iterdir()) if d.is_dir() else []:
+        ext = f.suffix.lower()
+        kind = next((k for k, exts in CFG["uploads"].items() if ext in exts), None)
+        if kind and f.is_file():
+            out.append({"name": f.name, "kind": kind, "bytes": f.stat().st_size, "url": f"/motion/files/{pid}/{f.name}"})
+    return out
+
+
+# ---------------------------------------------------------------------------------------------------- fonts
+def _font_files(spec: dict) -> list:
+    return spec.get("files") or [[spec["file"], spec.get("weights", "400")]]
+
+
+def fonts_css(prefix: str = "/motion/fonts/") -> str:
+    rules = []
+    for fam, spec in CFG["fonts"].items():
+        for i, (path, weight) in enumerate(_font_files(spec)):
+            rules.append(f"@font-face {{ font-family: '{fam}'; src: url('{prefix}{fam}-{i}{Path(path).suffix}'); font-weight: {weight}; font-display: block; }}")
+    return "\n".join(rules)
+
+
+def font_file(name: str) -> Path:
+    m = re.fullmatch(r"([A-Za-z]+)-(\d+)(\.\w+)", name or "")
+    if not m or m.group(1) not in CFG["fonts"]:
+        raise Refusal("no such font", 404)
+    files = _font_files(CFG["fonts"][m.group(1)])
+    i = int(m.group(2))
+    if i >= len(files):
+        raise Refusal("no such font", 404)
+    path = Path(os.path.expanduser(files[i][0]))
+    return path if path.is_absolute() else REPO / path
+
+
+# ---------------------------------------------------------------------------------------------------- banks (music at 99.9, sound effects)
+def _bank():
+    sys.path.insert(0, str(MOTION))
+    import banks  # noqa: E402  (motion/banks.py)
+    return banks
+
+
+# ---------------------------------------------------------------------------------------------------- export
+EXPORT_PAGE = """<!doctype html>
+<!-- ZenRay Motion Design export page (15 October 2026): the motion runtime and the project, rendered by HyperFrames. -->
+<html lang="en"><head><meta charset="utf-8" />
+<meta name="viewport" content="width={w}, height={h}" />
+<link rel="stylesheet" href="zs-runtime.css" />
+<style>{fonts}
+html, body {{ margin: 0; padding: 0; background: #000; }}</style>
+<script src="gsap.min.js"></script>{scripts}
+</head><body><div id="root" data-composition-id="main" data-start="0" data-duration="{dur}" data-width="{w}" data-height="{h}" data-fps="{fps}"></div>
+<script>window.ZS_PROJECT = {project};
+window.ZS_BUILT = ZS.build(window.ZS_PROJECT, document.getElementById("root"), {{ assetBase: "assets/", refs: {refs} }});
+if (document.fonts) document.fonts.ready.then(() => ZS.refit(window.ZS_BUILT));</script>
+</body></html>
+"""
+RUNTIME_SCRIPTS = ["zs-core.js", "zs-post.js", "zs-templates.js", "zs-templates-extra.js", "zs-templates-app.js", "zs-illustrate.js", "zs-templates-kit.js"]
+
+
+def code_version() -> str:
+    """15 October 2026: a fingerprint of the page code (runtime and web files: name, size, time). An open page compares it to the one it
+    loaded with and reloads itself when it changed, so a new template is never "unknown" in a window opened before the change."""
+    h = hashlib.sha1()
+    for d in ("runtime", "web"):
+        for f in sorted((MOTION / d).glob("*")):
+            if f.is_file():
+                st = f.stat(); h.update(f"{f.name}:{st.st_size}:{st.st_mtime_ns};".encode())
+    return h.hexdigest()[:12]
+
+
+def cook(pid: str, out: Path) -> Path:
+    """The HyperFrames project of a motion project: the runtime files, the fonts, the media and one index.html."""
+    p = read_project(pid)
+    w, h = FORMATS[p["format"]]
+    if out.exists():
+        shutil.rmtree(out)
+    (out / "fonts").mkdir(parents=True)
+    scripts = [s for s in RUNTIME_SCRIPTS if (MOTION / "runtime" / s).is_file()]
+    for name in [*scripts, "zs-runtime.css", "gsap.min.js"]:
+        shutil.copy(MOTION / "runtime" / name, out / name)
+    for fam, spec in CFG["fonts"].items():
+        for i, (path, _w) in enumerate(_font_files(spec)):
+            src = font_file(f"{fam}-{i}{Path(path).suffix}")
+            if src.is_file():
+                shutil.copy(src, out / "fonts" / f"{fam}-{i}{Path(path).suffix}")
+    if (project_dir(pid) / "assets").is_dir():
+        shutil.copytree(project_dir(pid) / "assets", out / "assets")
+    # an excerpt of a reference video used by a scene (ref:<slug>) is copied too: the input stays a file, the motion stays code
+    refs = {s.get("params", {}).get("media", "") for s in p["scenes"]}
+    ref_urls = {}
+    for r in [x for x in refs if isinstance(x, str) and x.startswith("ref:")]:
+        src = _bank().reference_video(r[4:])
+        if src:
+            (out / "assets").mkdir(exist_ok=True)
+            shutil.copy(src, out / "assets" / f"ref-{r[4:]}{src.suffix}")
+            ref_urls[r[4:]] = f"assets/ref-{r[4:]}{src.suffix}"
+    (out / "hyperframes.json").write_text(json.dumps({"$schema": "https://hyperframes.heygen.com/schema/hyperframes.json", "paths": {"assets": "assets"}}, indent=2),
+                                          encoding="utf-8")
+    dur = sum(float(s["duration"]) for s in p["scenes"])
+    page = EXPORT_PAGE.format(w=w, h=h, dur=f"{dur:.6f}", fps=int(p.get("fps") or CFG["export"]["fps"]), fonts=fonts_css("fonts/"),
+                              scripts="".join(f'<script src="{s}"></script>' for s in scripts),
+                              project=json.dumps(p, ensure_ascii=False).replace("</", "<\\/"), refs=json.dumps(ref_urls))
+    (out / "index.html").write_text(page, encoding="utf-8")
+    return out
+
+
+def hyperframes(project: Path, *args: str, timeout: int) -> subprocess.CompletedProcess:
+    return subprocess.run(["node", str(MOTION / "bin" / "RunHyperframes.mjs"), *args], cwd=str(project), capture_output=True, text=True, timeout=timeout)
+
+
+def run_export(job: dict, pid: str, wav: bytes, draft: bool):
+    ex = CFG["export"]
+    try:
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        base = project_dir(pid) / "exports" / stamp
+        base.mkdir(parents=True, exist_ok=True)
+        job.update(state="cook", step="préparation de la page")
+        hf = cook(pid, base / "page")
+        (base / "mix.wav").write_bytes(wav)
+        job.update(state="render", step="rendu des images (HyperFrames)")
+        t0 = time.time()
+        silent = base / "video.mp4"
+        r = hyperframes(hf, "render", "-f", str(ex["fps"]), "-q", ex["draftQuality"] if draft else ex["quality"], "-w", str(ex["workers"]), "-o", str(silent),
+                        timeout=int(ex["timeoutS"]))
+        if r.returncode != 0 or not silent.exists():
+            raise RuntimeError(f"HyperFrames: {(r.stderr or r.stdout)[-800:]}")
+        job["renderSeconds"] = round(time.time() - t0, 1)
+        job.update(state="mux", step="assemblage image et son")
+        final = base / f"{pid}-{stamp}.mp4"
+        m = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(silent), "-i", str(base / "mix.wav"), "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
+                            "-af", f"loudnorm=I={ex['loudnessLufs']}:TP={ex['truePeakDb']}:LRA=11", "-ar", "48000",
+                            "-c:a", "aac", "-b:a", ex["audioBitrate"], "-shortest", "-movflags", "+faststart", str(final)], capture_output=True, text=True)
+        if m.returncode != 0 or not final.exists():
+            raise RuntimeError(f"ffmpeg: {m.stderr[-600:]}")
+        shutil.rmtree(base / "page", ignore_errors=True)
+        silent.unlink(missing_ok=True)
+        job.update(state="done", step="terminé", file=str(final), url=f"/motion/exports/{pid}/{stamp}/{final.name}", bytes=final.stat().st_size,
+                   seconds=round(time.time() - job["started"], 1))
+    except Exception as e:  # noqa: BLE001  a failed export says why, never silently
+        job.update(state="error", step="échec", error=f"{type(e).__name__}: {e}")
+
+
+def start_export(pid: str, wav: bytes, draft: bool) -> dict:
+    read_project(pid)
+    if not wav.startswith(b"RIFF"):
+        raise Refusal("the export needs the mix as a WAV body")
+    with LOCK:
+        if any(j["state"] in ("cook", "render", "mux") for j in JOBS.values()):
+            raise Refusal("an export is already running: one at a time", 409)
+        jid = uuid.uuid4().hex[:12]
+        JOBS[jid] = {"id": jid, "project": pid, "state": "cook", "step": "", "started": time.time(), "draft": draft}
+    threading.Thread(target=run_export, args=(JOBS[jid], pid, wav, draft), daemon=True).start()
+    return JOBS[jid]
+
+
+# ---------------------------------------------------------------------------------------------------- routing
+def handle(method: str, path: str, q: dict, read, length: int) -> dict:
+    """One request of the motion module: paths under /motion (page, runtime, fonts, media, exports, banks) and /api/motion (projects, versions,
+    media upload, export, banks). Returns {"json"|"file"|"bytes"}. Raises Refusal with its status."""
+    p = path
+    if method == "GET":
+        if p in ("/motion", "/motion/"):
+            return F(MOTION / "web" / "index.html", "text/html; charset=utf-8")
+        m = re.fullmatch(r"/motion/(web|runtime)/([A-Za-z0-9._-]+)", p)
+        if m:
+            return F(MOTION / m.group(1) / m.group(2))
+        if p == "/motion/fonts.css":
+            return B(fonts_css().encode(), "text/css; charset=utf-8")
+        if p.startswith("/motion/fonts/"):
+            return F(font_file(p[len("/motion/fonts/"):]))
+        m = re.fullmatch(r"/motion/files/([a-z0-9-]+)/(.+)", p)
+        if m:
+            return F(asset_path(m.group(1), m.group(2)))
+        m = re.fullmatch(r"/motion/exports/([a-z0-9-]+)/(\d{8}-\d{6})/([A-Za-z0-9._-]+\.mp4)", p)
+        if m:
+            return F(project_dir(m.group(1)) / "exports" / m.group(2) / m.group(3), "video/mp4")
+        # gallery pictures (15 October 2026): a frame of a reference video or of an imported video, the waveform of a reproduced music
+        m = re.fullmatch(r"/motion/gallery/ref/([A-Za-z0-9._-]+)\.jpg", p)
+        if m:
+            return F(_bank().reference_thumb(m.group(1)), "image/jpeg")
+        m = re.fullmatch(r"/motion/gallery/file/([a-z0-9-]+)/(.+)\.jpg", p)
+        if m:
+            return F(_bank().video_thumb(asset_path(m.group(1), m.group(2)), f"{m.group(1)}-{m.group(2)}"), "image/jpeg")
+        m = re.fullmatch(r"/motion/gallery/wave/([A-Za-z0-9._-]+)\.png", p)
+        if m:
+            return F(_bank().waveform(m.group(1)), "image/png")
+        m = re.fullmatch(r"/motion/bank/(music|sfx|synth|ref)/(.+)", p)
+        if m:
+            # ?from=&to= (seconds) returns only that excerpt of a music stem: a 30 s film never decodes a 3 min track in the browser
+            if m.group(1) == "music" and ("from" in q or "to" in q):
+                return B(_bank().excerpt(_bank().bank_file("music", m.group(2)), float(q.get("from", 0)), float(q.get("to", 0) or 0)), "audio/wav")
+            return F(_bank().bank_file(m.group(1), m.group(2)))
+        if p == "/api/motion/status":
+            return J({"ok": True, "module": "motion", "release": CFG["release"], "projects": len(list_projects()), "code": code_version(),
+                      "busy": any(j["state"] in ("cook", "render", "mux") for j in JOBS.values())})
+        if p == "/api/motion/projects":
+            return J({"ok": True, "projects": list_projects(), "presets": presets()})
+        if p == "/api/motion/banks/music":
+            return J({"ok": True, **_bank().music_bank()})
+        if p == "/api/motion/banks/sfx":
+            return J({"ok": True, **_bank().sfx_bank()})
+        if p == "/api/motion/banks/references":
+            return J({"ok": True, "references": _bank().references()})
+        m = re.fullmatch(r"/api/motion/projects/([a-z0-9-]+)", p)
+        if m:
+            return J({"ok": True, "project": read_project(m.group(1)), "assets": list_assets(m.group(1)), "versions": list_versions(m.group(1))})
+        m = re.fullmatch(r"/api/motion/jobs/([0-9a-f]{12})", p)
+        if m:
+            job = JOBS.get(m.group(1))
+            if not job:
+                raise Refusal("no such job", 404)
+            return J({"ok": True, "job": job})
+        raise Refusal("not found", 404)
+    if method == "PUT":
+        m = re.fullmatch(r"/api/motion/projects/([a-z0-9-]+)", p)
+        if not m:
+            raise Refusal("not found", 404)
+        if length > 32 << 20:
+            raise Refusal("body too large", 413)
+        try:
+            body = json.loads(read(length) or b"{}")
+        except ValueError:
+            raise Refusal("invalid JSON")
+        return J({"ok": True, "project": write_project(m.group(1), body)})
+    if method == "POST":
+        def body_json():
+            if length > 1 << 20:
+                raise Refusal("body too large", 413)
+            try:
+                return json.loads(read(length) or b"{}") if length else {}
+            except ValueError:
+                raise Refusal("invalid JSON")
+        if p == "/api/motion/projects":
+            b = body_json()
+            return J({"ok": True, "project": create_project(str(b.get("preset", "")), b.get("title"))})
+        m = re.fullmatch(r"/api/motion/projects/([a-z0-9-]+)/assets", p)
+        if m:
+            return J({"ok": True, "asset": save_upload(m.group(1), q.get("name", ""), read, length)})
+        m = re.fullmatch(r"/api/motion/projects/([a-z0-9-]+)/duplicate", p)
+        if m:
+            b = body_json()
+            return J({"ok": True, "project": duplicate(m.group(1), b.get("title") or (read_project(m.group(1)).get("title", "") + " copie"))})
+        m = re.fullmatch(r"/api/motion/projects/([a-z0-9-]+)/versions", p)
+        if m:
+            b = body_json()
+            return J({"ok": True, "version": save_version(m.group(1), str(b.get("note", ""))), "versions": list_versions(m.group(1))})
+        m = re.fullmatch(r"/api/motion/projects/([a-z0-9-]+)/versions/(V_\d{3})/restore", p)
+        if m:
+            return J({"ok": True, "project": restore_version(m.group(1), m.group(2)), "versions": list_versions(m.group(1))})
+        m = re.fullmatch(r"/api/motion/projects/([a-z0-9-]+)/export", p)
+        if m:
+            if length <= 0 or length > 512 << 20:
+                raise Refusal("the export needs the mix (WAV) as its body")
+            return J({"ok": True, "job": start_export(m.group(1), read(length), q.get("draft") == "1")})
+        raise Refusal("not found", 404)
+    raise Refusal("method not allowed", 405)
+
+
+# ---------------------------------------------------------------------------------------------------- standalone server (tests)
+class Handler(BaseHTTPRequestHandler):
+    server_version = "ZenRayMotion/1"
+
+    def log_message(self, fmt, *args):
+        pass
+
+    def _out(self, r: dict):
+        if "json" in r:
+            body, mime, status = json.dumps(r["json"], ensure_ascii=False, default=str).encode(), "application/json; charset=utf-8", r.get("status", 200)
+        elif "bytes" in r:
+            body, mime, status = r["bytes"], r["mime"], 200
+        else:
+            body, mime, status = Path(r["file"]).read_bytes(), r["mime"], 200
+        self.send_response(status)
+        self.send_header("Content-Type", mime)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _go(self, method):
+        try:
+            u = urlparse(self.path)
+            origin = self.headers.get("Origin")
+            if origin and origin not in {f"http://127.0.0.1:{self.server.server_port}", f"http://localhost:{self.server.server_port}"}:
+                raise Refusal("origin refused", 403)
+            if method != "GET" and self.headers.get(CFG["clientHeader"]) != CFG["clientValue"]:
+                raise Refusal("missing client header", 403)
+            self._out(handle(method, unquote(u.path), {k: v[0] for k, v in parse_qs(u.query).items()}, self.rfile.read,
+                             int(self.headers.get("Content-Length") or 0)))
+        except Refusal as e:
+            self._out(J({"ok": False, "error": str(e)}, e.status))
+        except Exception as e:  # noqa: BLE001
+            self._out(J({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500))
+
+    def do_GET(self):
+        self._go("GET")
+
+    def do_PUT(self):
+        self._go("PUT")
+
+    def do_POST(self):
+        self._go("POST")
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--port", type=int, default=3124)
+    a = ap.parse_args()
+    srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
+    print(json.dumps({"ok": True, "url": f"http://127.0.0.1:{srv.server_port}/motion/", "projects": str(projects_root())}), flush=True)
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

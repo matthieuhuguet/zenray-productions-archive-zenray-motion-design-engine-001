@@ -1,0 +1,58 @@
+// 15 October 2026: the runtime proven without a browser. Every template registers, keeps its interface within 4 essential, 8 advanced and
+// 16 expert values (HDA law), has a default for every value and a build function; every preset uses only known templates; resolve() bounds a
+// number and reads the theme for "@token" defaults. RED: a template above the limits is refused at registration.
+// FR : le runtime verifie sans navigateur, dans les deux sens.
+import { readFileSync, readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import vm from "node:vm";
+
+const here = dirname(fileURLToPath(import.meta.url)), studio = dirname(here);
+const ctx = { console };
+ctx.window = ctx;
+vm.createContext(ctx);
+for (const f of ["zs-core.js", "zs-post.js", "zs-templates.js", "zs-templates-extra.js", "zs-templates-app.js", "zs-illustrate.js", "zs-templates-kit.js", "zs-audio.js"]) vm.runInContext(readFileSync(join(studio, "runtime", f), "utf8"), ctx, { filename: f });
+const ZS = ctx.ZS, fails = [];
+const check = (name, ok, detail) => { console.log((ok ? "ok   " : "FAIL ") + name + (ok ? "" : "  " + (detail || ""))); if (!ok) fails.push(name); };
+
+const ids = Object.keys(ZS.templates);
+check("the templates are registered (at least the 14 of 15 October 2026)", ids.length >= 14, ids.join(","));
+for (const id of ids) {
+  const t = ZS.templates[id], tiers = { 1: 0, 2: 0, 3: 0 };
+  t.params.forEach((p) => { tiers[p.tier || 3] = (tiers[p.tier || 3] || 0) + 1; });
+  check(`${id}: at most 4 / 8 / 16 / 16 values`, tiers[1] <= 4 && tiers[2] <= 8 && tiers[3] <= 16 && (tiers[4] || 0) <= 16, JSON.stringify(tiers));
+  check(`${id}: every value has a label, a type and a default`, t.params.every((p) => p.label && p.type && p.default !== undefined));
+  check(`${id}: number values are bounded and their default is inside`, t.params.filter((p) => p.type === "number").every((p) => p.min <= p.default && p.default <= p.max));
+  check(`${id}: a label, a default duration and a build function`, !!t.label && t.duration > 0 && typeof t.build === "function");
+}
+for (const f of readdirSync(join(studio, "presets"))) {
+  const p = JSON.parse(readFileSync(join(studio, "presets", f), "utf8"));
+  check(`preset ${f}: every scene uses a known template`, p.scenes.every((s) => ZS.templates[s.template]), p.scenes.map((s) => s.template).join(","));
+  check(`preset ${f}: lasts 10 to 60 s`, p.scenes.reduce((a, s) => a + s.duration, 0) >= 10 && p.scenes.reduce((a, s) => a + s.duration, 0) <= 60);
+}
+const tpl = ZS.templates["title-card"], theme = ZS.theme({ theme: { accent: "#123456" } });
+const r = ZS.resolve(tpl, { titleSize: 9999, title: "" }, theme);
+check("resolve bounds a number to its maximum", r.titleSize === 260, r.titleSize);
+check("resolve reads the theme for an @token default", r.accent === "#123456", r.accent);
+check("an empty text falls back to its default", r.title === "ZenRay Motion", r.title);
+let refused = false;
+try { ZS.register({ id: "too-many", build() {}, params: Array.from({ length: 5 }, (_, i) => ({ key: "k" + i, tier: 1 })) }); } catch (e) { refused = /4\/8\/16/.test(e.message); }
+check("RED: a template with five essential values is refused", refused);
+check("music and effects interfaces stay within 4 + 8", ZS.audio.MUSIC_PARAMS.filter((p) => p.tier === 1).length <= 4 && ZS.audio.MUSIC_PARAMS.filter((p) => p.tier === 2).length <= 8
+  && ZS.audio.SFX_PARAMS.filter((p) => p.tier === 1).length <= 4 && ZS.audio.SFX_PARAMS.filter((p) => p.tier === 2).length <= 8);
+// banks (15 October 2026): the reproduced music interface within 4 + 8, the same cue always picks the same bank sample
+check("reproduced music interface stays within 4 + 8", ZS.audio.BANK_PARAMS.filter((p) => p.tier === 1).length <= 4 && ZS.audio.BANK_PARAMS.filter((p) => p.tier === 2).length <= 8);
+const idx = { whoosh: ["a", "b", "c"], impact: ["x"] }, cue = { type: "whoosh", t: 1.2 };
+check("a cue picks the same bank sample every time", ZS.audio.pickSfx(idx, cue, 3, 1) === ZS.audio.pickSfx(idx, cue, 3, 1) && idx.whoosh.includes(ZS.audio.pickSfx(idx, cue, 3, 1)));
+check("RED: a cue whose kinds are absent from the bank falls back to synthesis", ZS.audio.pickSfx(idx, { type: "pop", t: 0 }, 0, 1) === null);
+// post-process (15 October 2026): within 4 / 8 / 16, identity adds nothing, a look moves the colours, values are bounded
+const PP = ZS.post.PARAMS, pt = { 1: 0, 2: 0, 3: 0 }; PP.forEach((d) => pt[d.tier]++);
+check("post-process: at most 4 / 8 / 16 values", pt[1] <= 4 && pt[2] <= 8 && pt[3] <= 16, JSON.stringify(pt));
+check("post-process: a look at 0 % is no matrix", ZS.post.lookMatrix("Vivid", 0) === null);
+check("RED post-process: a look at 100 % changes the matrix", ZS.post.lookMatrix("Dramatic", 1) !== "1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 1 0");
+const tone0 = ZS.post.toneTable(ZS.post.values({}), 1).split(" ").map(Number);
+check("post-process: the neutral tone curve is the identity", tone0.every((v, i) => Math.abs(v - i / 32) < 1e-3), tone0.slice(0, 4).join(","));
+check("post-process: exposure +1 EV brightens the mid grey", Number(ZS.post.toneTable(ZS.post.values({ exposure: 1 }), 1).split(" ")[16]) > 0.9);
+check("post-process: values are bounded", ZS.post.values({ exposure: 99 }).exposure === 2 && ZS.post.values({ look: "x" }).look === "x");
+console.log(`${fails.length} failure(s)`);
+process.exit(fails.length ? 1 : 0);

@@ -1,0 +1,27 @@
+{
+  "doc": "Interface of motion/convert.py (15 October 2026): how a measured reference (bible.json) becomes an editable motion project, shot by shot. The rhythm (cuts, durations), the palette, the type size and colour are measured; the words are ZenRay 3D lines; a plate keeps an excerpt of the reference video until a 3D render replaces it. FR : comment une reference mesuree devient un projet Motion modifiable.",
+  "script": [
+    "Built in Houdini",
+    "Rendered in Unreal Engine 5",
+    "From node to frame",
+    "Every asset is a parameter",
+    "Louisiana Bayou",
+    "One artist, one world",
+    "Procedural by design",
+    "Change a value, not a scene",
+    "Made with ZenRay"
+  ],
+  "pills": ["Houdini", "Unreal", "Substance", "Copernicus"],
+  "words": ["Bayou", "Nodes", "Light", "Moss", "Wood", "Water"],
+  "endTitle": "ZenRay",
+  "endSubtitle": "procedural 3D worlds",
+  "endUrl": "matthieuhuguet.com",
+  "xHeightRatio": 0.53,
+  "minTextShot": 0.35,
+  "graphicCycle": ["color-slam", "orbit-word", "gradient-word"],
+  "musicVolume": -6,
+  "sfxVolume": -8,
+  "projectSuffix": "-motion",
+  "fallbackInk": ["#111111", "#ffffff"],
+  "fallbackAccent": "#e2552f"
+}

@@ -1,0 +1,153 @@
+{
+  "schema": "zrmd/motion-params@1",
+  "date": "15 October 2026",
+  "release": "motion-1.0.0",
+  "doc": "The single parameter interface of the MOTION module of ZenRay Motion Design (HDA law): where projects live, which fonts it serves, how it exports, where the banks are. The motion templates carry their own values (motion/runtime), the theme, post-process and sound are in each project. Nothing here is a measurement of a reference. FR : l'interface de parametres du module motion.",
+  "paths": {
+    "projects": "~/.claude/tmp/tmp-zenray-motion-design/motion-projects",
+    "bank": "~/.claude/tmp/tmp-zenray-motion-design/motion-bank"
+  },
+  "fonts": {
+    "InterVariable": {
+      "file": "motion/fonts/InterVariable.ttf",
+      "weights": "100 900"
+    },
+    "AnthropicSerif": {
+      "files": [
+        [
+          "~/Library/Fonts/AnthropicSerif-Regular.ttf",
+          400
+        ],
+        [
+          "~/Library/Fonts/AnthropicSerif-Medium.ttf",
+          500
+        ]
+      ]
+    },
+    "AnthropicSans": {
+      "files": [
+        [
+          "~/Library/Fonts/AnthropicSans-Regular.ttf",
+          400
+        ],
+        [
+          "~/Library/Fonts/AnthropicSans-Medium.ttf",
+          500
+        ]
+      ]
+    },
+    "AnthropicMono": {
+      "files": [
+        [
+          "~/Library/Fonts/AnthropicMono-Regular.ttf",
+          400
+        ]
+      ]
+    },
+    "Geist": {
+      "file": "motion/fonts/Geist.ttf",
+      "weights": "100 900"
+    },
+    "InstrumentSerif": {
+      "file": "motion/fonts/InstrumentSerif-Regular.ttf",
+      "weights": "400"
+    },
+    "SpaceGrotesk": {
+      "file": "motion/fonts/SpaceGrotesk.ttf",
+      "weights": "300 700"
+    },
+    "Fraunces": {
+      "file": "motion/fonts/Fraunces.ttf",
+      "weights": "100 900"
+    },
+    "Manrope": {
+      "file": "motion/fonts/Manrope.ttf",
+      "weights": "200 800"
+    },
+    "Syne": {
+      "file": "motion/fonts/Syne.ttf",
+      "weights": "400 800"
+    },
+    "Unbounded": {
+      "file": "motion/fonts/Unbounded.ttf",
+      "weights": "200 900"
+    },
+    "JetBrainsMono": {
+      "file": "motion/fonts/JetBrainsMono.ttf",
+      "weights": "100 800"
+    },
+    "PlayfairDisplay": {
+      "file": "motion/fonts/PlayfairDisplay.ttf",
+      "weights": "400 900"
+    },
+    "Sora": {
+      "file": "motion/fonts/Sora.ttf",
+      "weights": "100 800"
+    },
+    "VogunMedium": {
+      "files": [
+        [
+          "~/Library/Fonts/Vogun-Medium.ttf",
+          500
+        ]
+      ],
+      "note": "Vogun Medium by Yukita Creative, the display face of the yellow title (15 October 2026)"
+    },
+    "AnthropicSerifLight": {
+      "files": [
+        [
+          "~/Library/Fonts/AnthropicSerif-Light.ttf",
+          400
+        ]
+      ],
+      "note": "AnthropicSerif Light as its own family (15 October 2026): the title serif of motion-opus-5-5"
+    },
+    "AnthropicSansLight": {
+      "files": [
+        [
+          "~/Library/Fonts/AnthropicSans-Light.ttf",
+          400
+        ]
+      ],
+      "note": "AnthropicSans Light as its own family (15 October 2026)"
+    }
+  },
+  "uploads": {
+    "video": [
+      ".mp4",
+      ".mov",
+      ".webm",
+      ".m4v"
+    ],
+    "image": [
+      ".png",
+      ".jpg",
+      ".jpeg",
+      ".webp",
+      ".avif"
+    ],
+    "audio": [
+      ".mp3",
+      ".wav",
+      ".m4a",
+      ".aac",
+      ".flac",
+      ".ogg"
+    ]
+  },
+  "export": {
+    "fps": 30,
+    "quality": "looks",
+    "draftQuality": "draft",
+    "workers": 4,
+    "audioBitrate": "192k",
+    "loudnessLufs": -14,
+    "truePeakDb": -1,
+    "timeoutS": 1800,
+    "doc": "HyperFrames renders the same page the motion module plays (motion module/runtime), at fps; the browser renders the audio mix (OfflineAudioContext) and sends it; ffmpeg muxes both and brings the sound to loudnessLufs (social platforms play around -14 LUFS), true peak under truePeakDb. quality: draft (fast proof) or looks (CRF 16, the default of HyperFrames)."
+  },
+  "presets": "motion/presets",
+  "clientHeader": "x-zr-orchestrator-client",
+  "clientValue": "1",
+  "maxUploadBytes": 2147483648
+}

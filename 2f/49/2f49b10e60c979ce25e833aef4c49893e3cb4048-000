@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+# 15 October 2026: the house style and the illustrated shot, proven in both directions, without touching any project.
+# GREEN: a clean project reports no reference plate; a foreign font folds onto the trio; a too small title grows to the minimum;
+# "marche" is drawn as a person, not as a planet; a text-only shot is drawn as nothing. RED: a scene showing reference footage is reported.
+#   python3 motion/tests/test_house.py
+# FR : la passe de style maison et le plan illustre verifies dans les deux sens.
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent))
+sys.path.insert(0, str(HERE.parent / "reproductions"))
+import house  # noqa: E402
+import bases  # noqa: E402
+
+FAIL = []
+
+
+def check(name, ok):
+    print(("ok   " if ok else "FAIL ") + name)
+    if not ok:
+        FAIL.append(name)
+
+
+clean = {"scenes": [{"id": "a", "template": "illustrated-shot", "params": {"subject": "main"}}]}
+dirty = {"scenes": [{"id": "b", "template": "media-text", "params": {"media": "ref:memo", "text": "x"}}]}
+check("a drawn project has no reference plate", house.plates(clean) == [])
+check("RED a scene with reference footage is reported", house.plates(dirty) == ["b"])
+p = {"theme": {}, "scenes": [{"template": "title-card", "params": {"titleFont": "PlayfairDisplay", "titleSize": 44}}]}
+house.apply(p)
+check("a foreign font folds onto the trio", p["scenes"][0]["params"]["titleFont"] == "AnthropicSerif")
+check("a too small end title grows to the readable minimum", p["scenes"][0]["params"]["titleSize"] == house.HOUSE["minTextPx"]["title-card"]["titleSize"])
+shot = lambda d: {"description": d, "roles": {"background": "#101010"}, "palette": [{"hex": "#ee5e06", "chroma": 80}, {"hex": "#dddddd", "chroma": 0}], "start": 0}
+check("'marche' is drawn as a person, not a planet", bases.illustration(shot("Un homme de dos marche dans un atelier."))["subject"] == "personne")
+check("a word alone on black is drawn as nothing", bases.illustration(shot("Le mot orange géant seul sur fond noir."))["subject"] == "aucun")
+check("a bubble in the description adds the interface bubble", bases.illustration(shot("Une femme sur une plage, bulle d'interface."))["bubble"] is True)
+print(f"{len(FAIL)} failure(s)")
+sys.exit(1 if FAIL else 0)

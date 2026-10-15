@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+# 15 October 2026: ZenRay Studio proven in both directions, on a temporary projects folder (never the real one). GREEN: a project is created from
+# a preset, saved and read back, a media file is imported, the runtime page renders real frames (HyperFrames snapshot), and an export gives an MP4
+# of the right size and length with a sound track. RED: a wrong format, an unknown shape, a bad duration, a foreign origin, a POST without the
+# client header, a path that climbs out of the project and a file type that is not media are all refused before any work.
+#   python3 studio/tests/test_studio.py            (about 30 s: one snapshot and one short export)
+# FR : le studio verifie dans les deux sens, sur un dossier de projets temporaire.
+from __future__ import annotations
+
+import io
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import threading
+import urllib.error
+import urllib.request
+import wave
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+TMP = tempfile.mkdtemp(prefix="zs-test-")
+os.environ["ZS_PROJECTS"] = TMP
+sys.path.insert(0, str(HERE.parent))
+import server as SV  # noqa: E402
+
+FAIL = []
+
+
+def check(name, ok, detail=""):
+    print(("ok   " if ok else "FAIL ") + name + ("" if ok else f"  {detail}"))
+    if not ok:
+        FAIL.append(name)
+
+
+def call(port, path, method="GET", body=None, headers=None, raw=None):
+    data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
+    req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=data, method=method, headers=headers or {})
+    try:
+        with urllib.request.urlopen(req, timeout=600) as r:
+            return r.status, json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read() or b"{}")
+
+
+def silent_wav(seconds: float) -> bytes:
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(2); w.setsampwidth(2); w.setframerate(48000)
+        w.writeframes(b"\x00\x00" * 2 * int(48000 * seconds))
+    return buf.getvalue()
+
+
+def run() -> int:
+    srv = SV.ThreadingHTTPServer(("127.0.0.1", 0), SV.Handler)
+    port = srv.server_port
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    H = {"X-ZenRay-Studio": "1", "Content-Type": "application/json"}
+
+    st, j = call(port, "/api/projects", "POST", {"preset": "launch-30s", "title": "Test film"}, H)
+    check("a project is created from a preset", st == 200 and j["ok"] and len(j["project"]["scenes"]) == 10, j)
+    pid = j["project"]["id"]
+    p = j["project"]
+    p["scenes"][0]["params"]["title"] = "Hello"
+    st, j = call(port, f"/api/projects/{pid}", "PUT", p, H)
+    st, j = call(port, f"/api/projects/{pid}")
+    check("a saved value is read back", j["project"]["scenes"][0]["params"]["title"] == "Hello")
+    st, j = call(port, f"/api/projects/{pid}/assets?name=frame.png", "POST", headers={"X-ZenRay-Studio": "1"}, raw=b"\x89PNG\r\n\x1a\n" + b"0" * 64)
+    check("a media file is imported", st == 200 and j["asset"]["kind"] == "image", j)
+    with urllib.request.urlopen(f"http://127.0.0.1:{port}/fonts/InterVariable-0.ttf", timeout=30) as r:
+        check("the fonts are served", r.status == 200 and len(r.read()) > 100000)
+
+    bad = dict(p, format="21x9")
+    check("RED: a wrong format is refused", call(port, f"/api/projects/{pid}", "PUT", bad, H)[0] == 400)
+    check("RED: a project without scenes is refused", call(port, f"/api/projects/{pid}", "PUT", dict(p, scenes=[]), H)[0] == 400)
+    check("RED: a scene of 500 s is refused", call(port, f"/api/projects/{pid}", "PUT", dict(p, scenes=[dict(p["scenes"][0], duration=500)]), H)[0] == 400)
+    check("RED: a POST without the client header is refused", call(port, "/api/projects", "POST", {"preset": "launch-30s"}, {"Content-Type": "application/json"})[0] == 403)
+    check("RED: a foreign origin is refused", call(port, "/api/projects", headers={"Origin": "http://evil.example"})[0] == 403)
+    check("RED: a path that climbs out of the project is refused", call(port, f"/files/{pid}/..%2Fproject.json")[0] in (400, 404))
+    check("RED: a file that is not media is refused", call(port, f"/api/projects/{pid}/assets?name=x.exe", "POST", headers={"X-ZenRay-Studio": "1"}, raw=b"MZ")[0] == 400)
+    check("RED: an export without its sound is refused", call(port, f"/api/projects/{pid}/export", "POST", headers={"X-ZenRay-Studio": "1"}, raw=b"nope")[0] == 400)
+
+    # GREEN: the runtime page renders real frames (headless browser managed by HyperFrames, never a personal browser)
+    page = SV.cook(pid, Path(TMP) / "page")
+    out = Path(TMP) / "stills"
+    r = SV.hyperframes(page, "snapshot", ".", "--at", "2.5,12.0,28.5", "--no-end", "--describe", "false", "--timeout", "15000", "-o", str(out), timeout=120)
+    stills = sorted(out.glob("frame-*.png"))
+    check("the runtime renders three stills of the film", r.returncode == 0 and len(stills) == 3, (r.stdout[-300:], r.stderr[-300:]))
+    if stills:
+        from PIL import Image
+        im = Image.open(stills[0]).convert("RGB")
+        import numpy as np
+        colours = len(np.unique(np.asarray(im.resize((96, 54))).reshape(-1, 3), axis=0))
+        check("a still is the 16:9 frame with real content (not a blank page)", im.size == (1920, 1080) and colours > 20, (im.size, colours))
+
+    # GREEN: a short export (two scenes, 3 s) gives an MP4 of the right size and length with sound
+    short = dict(p, format="9x16", scenes=[dict(p["scenes"][0], duration=1.5), dict(p["scenes"][9], duration=1.5)])
+    call(port, f"/api/projects/{pid}", "PUT", short, H)
+    st, j = call(port, f"/api/projects/{pid}/export?draft=1", "POST", headers={"X-ZenRay-Studio": "1"}, raw=silent_wav(3.0))
+    check("an export starts", st == 200, j)
+    job = j.get("job", {})
+    import time
+    for _ in range(240):
+        if job.get("state") in ("done", "error"):
+            break
+        time.sleep(1)
+        job = call(port, f"/api/jobs/{job['id']}")[1]["job"]
+    check("the export finishes", job.get("state") == "done", job.get("error"))
+    if job.get("state") == "done":
+        probe = json.loads(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,width,height:format=duration", "-of", "json", job["file"]],
+                                          capture_output=True, text=True).stdout)
+        kinds = {s["codec_type"] for s in probe["streams"]}
+        v = next(s for s in probe["streams"] if s["codec_type"] == "video")
+        check("the MP4 is 1080 x 1920, 3 s, with video and audio", (v["width"], v["height"]) == (1080, 1920) and abs(float(probe["format"]["duration"]) - 3.0) < 0.1
+              and kinds == {"video", "audio"}, probe)
+    srv.shutdown()
+    print(f"{len(FAIL)} failure(s)")
+    return 1 if FAIL else 0
+
+
+def test_studio():
+    assert run() == 0
+
+
+if __name__ == "__main__":
+    sys.exit(run())

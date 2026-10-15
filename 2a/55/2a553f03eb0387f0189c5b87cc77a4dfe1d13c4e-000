@@ -1,0 +1,192 @@
+// ZenRay Motion Design, post-process (15 October 2026).
+// A photo-style grade over the live composition, in the spirit of ZenRay Edit (zr-photo-adjustments.js): looks, exposure, contrast,
+// saturation, temperature, vignette, grain, glow, chromatic aberration. Everything is an SVG filter or a CSS overlay, so it plays live
+// in the browser and HyperFrames renders the same pixels. The whole film carries project.post; a scene can override the colour part
+// with scene.post. Identity values add nothing to the page (no filter, no overlay).
+// FR : un etalonnage facon photo sur la composition vivante ; filtres SVG et calques CSS, identiques en direct et a l'export.
+(function () {
+  "use strict";
+  const ZS = window.ZS;
+  const LOOKS = ["Original", "Vivid", "Vivid Warm", "Vivid Cool", "Dramatic", "Dramatic Warm", "Dramatic Cool", "Mono", "Silvertone", "Noir", "Teal Orange", "Faded Film"];
+  const N = (key, label, def, min, max, step, tier, unit, scope) => ({ key, label, type: "number", default: def, min, max, step, tier, unit, scope: scope || "colour" });
+  // at most 4 essential, 8 advanced, 16 expert values (the HDA law); `scope: "film"` values act on the whole frame, not per scene
+  const PARAMS = [
+    { key: "look", label: "Look", type: "select", options: LOOKS, default: "Original", tier: 1, scope: "colour" },
+    N("lookAmount", "Force du look", 100, 0, 100, 1, 1, "%"),
+    N("exposure", "Exposition", 0, -2, 2, 0.05, 1, "EV"),
+    N("saturation", "Saturation", 0, -100, 100, 1, 1),
+    N("contrast", "Contraste", 0, -100, 100, 1, 2),
+    N("highlights", "Hautes lumières", 0, -100, 100, 1, 2),
+    N("shadows", "Ombres", 0, -100, 100, 1, 2),
+    N("temperature", "Température", 0, -100, 100, 1, 2),
+    N("tint", "Teinte vert / magenta", 0, -100, 100, 1, 2),
+    N("vibrance", "Vibrance", 0, -100, 100, 1, 2),
+    N("vignette", "Vignette", 0, 0, 100, 1, 2, "", "film"),
+    N("grain", "Grain", 0, 0, 100, 1, 2, "", "film"),
+    N("hue", "Rotation des couleurs", 0, -180, 180, 1, 3, "°"),
+    N("blackAndWhite", "Noir et blanc", 0, 0, 100, 1, 3, "%"),
+    N("fade", "Noirs délavés", 0, 0, 100, 1, 3),
+    N("whitePoint", "Point blanc", 100, 60, 100, 1, 3),
+    N("glow", "Lueur (bloom)", 0, 0, 100, 1, 3),
+    N("glowRadius", "Rayon de la lueur", 18, 2, 80, 1, 3, "px"),
+    N("chromatic", "Aberration chromatique", 0, 0, 20, 0.5, 3, "px"),
+    N("blur", "Flou", 0, 0, 30, 0.5, 3, "px"),
+    N("sharpen", "Netteté", 0, 0, 100, 1, 3),
+    N("vignetteSoftness", "Douceur de la vignette", 55, 10, 100, 1, 3, "", "film"),
+    N("grainSize", "Taille du grain", 1.6, 0.5, 4, 0.1, 3, "px", "film"),
+    N("grainSpeed", "Vitesse du grain", 12, 0, 30, 1, 3, "img/s", "film"),
+  ];
+  const DEF = Object.fromEntries(PARAMS.map((p) => [p.key, p.default]));
+  const values = (stored) => {
+    const out = { ...DEF };
+    Object.entries(stored || {}).forEach(([k, v]) => {
+      const d = PARAMS.find((p) => p.key === k);
+      if (!d || v === undefined || v === null || v === "") return;
+      out[k] = d.type === "number" ? Math.min(d.max, Math.max(d.min, Number(v))) : String(v);
+    });
+    return out;
+  };
+
+  // a look is an affine colour change: contrast around grey, an offset, a saturation; mono looks drop the colour
+  const LOOK = {
+    "Vivid": { c: 1.08, o: [0, 0, 0], s: 0.20 }, "Vivid Warm": { c: 1.07, o: [0.035, 0.012, -0.025], s: 0.18 },
+    "Vivid Cool": { c: 1.07, o: [-0.025, 0.005, 0.035], s: 0.18 }, "Dramatic": { c: 1.22, o: [0, 0, 0], s: -0.08 },
+    "Dramatic Warm": { c: 1.21, o: [0.045, 0.012, -0.035], s: -0.05 }, "Dramatic Cool": { c: 1.21, o: [-0.035, 0.004, 0.045], s: -0.05 },
+    "Mono": { c: 1, o: [0, 0, 0], s: -1 }, "Silvertone": { c: 1, o: [0.015, 0.01, 0], s: -1, g: [1.06, 1.02, 0.92] },
+    "Noir": { c: 1.6, o: [0, 0, 0], s: -1 }, "Teal Orange": { c: 1.1, o: [0.03, -0.005, -0.02], s: 0.12, split: true },
+    "Faded Film": { c: 0.86, o: [0.04, 0.035, 0.05], s: -0.18 },
+  };
+  const LR = 0.2126, LG = 0.7152, LB = 0.0722;
+  const satM = (s) => {             // 3x3 saturation matrix (s = 1 is identity)
+    const a = (1 - s);
+    return [[a * LR + s, a * LG, a * LB], [a * LR, a * LG + s, a * LB], [a * LR, a * LG, a * LB + s]];
+  };
+  const mul = (A, B) => A.map((r) => [0, 1, 2].map((j) => r[0] * B[0][j] + r[1] * B[1][j] + r[2] * B[2][j]));
+  const I3 = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  // the colour matrix of a look mixed with the original by `amount` (0 to 1), as the 20 numbers of an feColorMatrix
+  function lookMatrix(name, amount) {
+    const L = LOOK[name];
+    if (!L || amount <= 0) return null;
+    let M = mul(satM(1 + L.s), [[L.c, 0, 0], [0, L.c, 0], [0, 0, L.c]]);
+    if (L.g) M = M.map((r, i) => r.map((v) => v * L.g[i]));
+    if (L.split) M = mul([[1.04, 0, 0], [0, 1, 0.02], [0, 0.04, 0.96]], M);   // warm skin, cooler shadows
+    const off = [0, 1, 2].map((i) => 0.5 * (1 - L.c) * (L.g ? L.g[i] : 1) + L.o[i]);
+    const out = [];
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 3; j++) out.push(I3[i][j] + amount * (M[i][j] - I3[i][j]));
+      out.push(0, amount * off[i]);
+    }
+    out.push(0, 0, 0, 1, 0);
+    return out.map((v) => +v.toFixed(5)).join(" ");
+  }
+  // the tone curve (exposure, contrast, highlights, shadows, fade, white point) sampled for an feComponentTransfer table
+  function toneTable(v, gain) {
+    const pts = [];
+    for (let i = 0; i <= 32; i++) {
+      let x = i / 32;
+      x *= Math.pow(2, v.exposure) * gain;
+      x = (x - 0.5) * (1 + v.contrast / 100) + 0.5;
+      x += (v.shadows / 100) * 0.35 * Math.pow(Math.max(0, 1 - x), 2) * Math.min(1, Math.max(0, x) * 4);
+      x += (v.highlights / 100) * 0.3 * Math.pow(Math.max(0, x), 2) * Math.min(1, Math.max(0, 1 - x) * 4 + 0.2);
+      x = Math.min(1, Math.max(0, x));
+      x = v.fade / 100 * 0.18 + x * (v.whitePoint / 100 - v.fade / 100 * 0.18);
+      pts.push(+x.toFixed(4));
+    }
+    return pts.join(" ");
+  }
+  const isIdentityColour = (v) => v.look === "Original" && !v.exposure && !v.saturation && !v.contrast && !v.highlights && !v.shadows && !v.temperature
+    && !v.tint && !v.vibrance && !v.hue && !v.blackAndWhite && !v.fade && v.whitePoint === 100 && !v.glow && !v.chromatic && !v.blur && !v.sharpen;
+
+  const SVGNS = "http://www.w3.org/2000/svg";
+  const node = (tag, attrs, parent) => {
+    const n = document.createElementNS(SVGNS, tag);
+    Object.entries(attrs || {}).forEach(([k, val]) => n.setAttribute(k, String(val)));
+    if (parent) parent.appendChild(n);
+    return n;
+  };
+  // one SVG filter for a set of colour values; returns its id or null when nothing changes
+  function colourFilter(defs, id, v, u) {
+    if (isIdentityColour(v)) return null;
+    const f = node("filter", { id, x: "0", y: "0", width: "100%", height: "100%", "color-interpolation-filters": "sRGB" }, defs);
+    let last = "SourceGraphic", n = 0;
+    const step = (tag, attrs) => { const r = "r" + (n++); node(tag, { ...attrs, in: attrs.in || last, result: r }, f); last = r; return r; };
+    if (v.sharpen) {
+      const a = v.sharpen / 100 * 0.6;
+      step("feConvolveMatrix", { order: 3, kernelMatrix: `0 ${-a} 0 ${-a} ${1 + 4 * a} ${-a} 0 ${-a} 0`, preserveAlpha: "true" });
+    }
+    const t = v.temperature / 100, ti = v.tint / 100;
+    if (v.exposure || v.contrast || v.highlights || v.shadows || v.fade || v.whitePoint !== 100 || t || ti) {
+      const ct = node("feComponentTransfer", { in: last, result: "r" + n }, f); last = "r" + (n++);
+      node("feFuncR", { type: "table", tableValues: toneTable(v, 1 + t * 0.14) }, ct);
+      node("feFuncG", { type: "table", tableValues: toneTable(v, 1 + t * 0.02 - ti * 0.1) }, ct);
+      node("feFuncB", { type: "table", tableValues: toneTable(v, 1 - t * 0.16) }, ct);
+    }
+    // vibrance is approximated as a gentler saturation (an SVG filter cannot weight by the pixel's own saturation)
+    const sat = (1 + v.saturation / 100 + v.vibrance / 200) * (1 - v.blackAndWhite / 100);
+    if (Math.abs(sat - 1) > 1e-4) step("feColorMatrix", { type: "saturate", values: Math.max(0, sat).toFixed(4) });
+    const lm = lookMatrix(v.look, v.lookAmount / 100);
+    if (lm) step("feColorMatrix", { type: "matrix", values: lm });
+    if (v.hue) step("feColorMatrix", { type: "hueRotate", values: v.hue });
+    if (v.glow) {
+      const base = last;
+      step("feColorMatrix", { type: "matrix", values: "0.33 0.33 0.33 0 0 0.33 0.33 0.33 0 0 0.33 0.33 0.33 0 0 0 0 0 1 0", in: base });
+      const ctr = node("feComponentTransfer", { in: last, result: "r" + n }, f); last = "r" + (n++);
+      ["feFuncR", "feFuncG", "feFuncB"].forEach((c) => node(c, { type: "linear", slope: 2.2, intercept: -1.2 }, ctr));   // keep the bright parts
+      step("feGaussianBlur", { stdDeviation: (v.glowRadius * u).toFixed(2) });
+      const glowR = last;
+      step("feComposite", { in: base, in2: glowR, operator: "arithmetic", k1: 0, k2: 1, k3: (v.glow / 100 * 1.2).toFixed(3), k4: 0 });
+    }
+    if (v.chromatic) {
+      const base = last, d = v.chromatic * u;
+      const rOnly = step("feColorMatrix", { in: base, type: "matrix", values: "1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0" });
+      const rOff = step("feOffset", { in: rOnly, dx: d.toFixed(2), dy: 0 });
+      const gOnly = step("feColorMatrix", { in: base, type: "matrix", values: "0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0" });
+      const bOnly = step("feColorMatrix", { in: base, type: "matrix", values: "0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0" });
+      const bOff = step("feOffset", { in: bOnly, dx: (-d).toFixed(2), dy: 0 });
+      const rg = step("feComposite", { in: rOff, in2: gOnly, operator: "arithmetic", k1: 0, k2: 1, k3: 1, k4: 0 });
+      step("feComposite", { in: rg, in2: bOff, operator: "arithmetic", k1: 0, k2: 1, k3: 1, k4: 0 });
+    }
+    if (v.blur) step("feGaussianBlur", { stdDeviation: (v.blur * u).toFixed(2) });
+    return id;
+  }
+
+  // apply(build): grades every scene (film values, overridden by the scene's own) and lays the film overlays on top
+  function apply(b) {
+    const { root, project, tl, W, H, duration, sections } = b, u = Math.min(W, H) / 1080;
+    const film = values(project.post);
+    const svg = node("svg", { width: 0, height: 0, "aria-hidden": "true" });
+    svg.style.position = "absolute";
+    const defs = node("defs", {}, svg);
+    root.appendChild(svg);
+    let graded = 0;
+    sections.forEach(({ el, scene }, i) => {
+      const v = values({ ...(project.post || {}), ...(scene.post || {}) });
+      const id = colourFilter(defs, `zs-post-${i}`, v, u);
+      if (id) { el.style.filter = `url(#${id})`; graded++; }
+    });
+    if (film.vignette > 0) {
+      const a = film.vignette / 100 * 0.85, soft = film.vignetteSoftness / 100;
+      const vg = ZS.h.css(ZS.h.el("div", "zs-abs zs-post-vignette", root), { inset: "0", pointerEvents: "none", zIndex: 50,
+        background: `radial-gradient(ellipse at center, rgba(0,0,0,0) ${Math.round((1 - soft) * 70)}%, rgba(0,0,0,${a.toFixed(3)}) 100%)` });
+      vg.dataset.post = "vignette";
+    }
+    if (film.grain > 0) {
+      const f = node("filter", { id: "zs-post-grain", x: "0", y: "0", width: "100%", height: "100%" }, defs);
+      const turb = node("feTurbulence", { type: "fractalNoise", baseFrequency: (0.9 / (film.grainSize * u)).toFixed(3), numOctaves: 2, seed: 1, stitchTiles: "stitch" }, f);
+      node("feColorMatrix", { type: "saturate", values: 0 }, f);
+      const g = node("svg", { width: W, height: H }, null);
+      g.style.cssText = `position:absolute;left:0;top:0;pointer-events:none;z-index:51;mix-blend-mode:overlay;opacity:${(film.grain / 100 * 0.6).toFixed(3)}`;
+      node("rect", { width: "100%", height: "100%", filter: "url(#zs-post-grain)" }, g);
+      g.dataset.post = "grain";
+      root.appendChild(g);
+      // the grain moves at a fixed number of images per second, from the timeline: the same frame always has the same grain
+      if (film.grainSpeed > 0) {
+        const proxy = { f: 0 };
+        tl.fromTo(proxy, { f: 0 }, { f: duration * film.grainSpeed, duration, ease: "none",
+          onUpdate: () => turb.setAttribute("seed", String(1 + Math.floor(proxy.f))) }, 0);
+      }
+    }
+    return { graded, vignette: film.vignette > 0, grain: film.grain > 0 };
+  }
+  ZS.post = { PARAMS, LOOKS, values, apply, lookMatrix, toneTable };
+})();

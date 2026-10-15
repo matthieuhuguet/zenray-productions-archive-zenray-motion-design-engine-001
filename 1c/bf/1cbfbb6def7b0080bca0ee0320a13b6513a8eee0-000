@@ -1,0 +1,729 @@
+// 15 October 2026: ZenRay Motion Design, the motion editor. The project lives in this page: every change rebuilds the composition (DOM + GSAP timeline) in a few
+// milliseconds and the preview follows at once; the sound is generated live by Web Audio from the same project. The server only saves (PUT,
+// debounced) and exports. Undo and redo keep 60 states. FR : l'interface du studio ; chaque valeur change l'apercu immediatement.
+(function () {
+  const $ = (s, r) => (r || document).querySelector(s);
+  const HDR = { "x-zr-orchestrator-client": "1" };
+  const S = { projects: [], presets: [], project: null, assets: [], sel: 0, built: null, time: 0, playing: false, tab: "scene",
+              audio: { ctx: null, handle: null, buffers: {} }, undo: [], redo: [], saveTimer: 0, audioTimer: 0 };
+  const stage = $("#stage"), stageScale = $("#stageScale"), stageWrap = $("#stageWrap"), panel = $("#panel");
+
+  // ------------------------------------------------------------------------------------------------ server
+  async function api(method, path, body, raw) {
+    const opt = { method, headers: { ...HDR } };
+    if (raw) { opt.body = raw; } else if (body !== undefined) { opt.body = JSON.stringify(body); opt.headers["Content-Type"] = "application/json"; }
+    const r = await fetch(path, opt), j = await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }));
+    if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`);
+    return j;
+  }
+  function toast(msg, err) {
+    const t = $("#toast"); t.textContent = msg; t.className = "toast show" + (err ? " err" : "");
+    clearTimeout(toast.k); toast.k = setTimeout(() => (t.className = "toast"), err ? 6000 : 2600);
+  }
+  function save() {
+    clearTimeout(S.saveTimer);
+    $("#saveState").textContent = "…";
+    S.saveTimer = setTimeout(async () => {
+      try { await api("PUT", `/api/motion/projects/${S.project.id}`, S.project); $("#saveState").textContent = "enregistré"; }
+      catch (e) { $("#saveState").textContent = "non enregistré"; toast(e.message, true); }
+    }, 500);
+  }
+  // every change goes through here: it is undoable, saved, and rebuilt
+  function change(fn, opts) {
+    const now = Date.now();                                    // a slider drag is one undo step, not sixty
+    if (now - (S.lastChange || 0) > 400) { S.undo.push(JSON.stringify(S.project)); if (S.undo.length > 60) S.undo.shift(); }
+    S.lastChange = now; S.redo = [];
+    fn(S.project);
+    save();
+    rebuild();
+    if (!(opts && opts.keepPanel)) renderPanel();
+    renderScenes();
+    restartAudioSoon();
+  }
+  function undo(redo) {
+    const from = redo ? S.redo : S.undo, to = redo ? S.undo : S.redo;
+    if (!from.length) return;
+    to.push(JSON.stringify(S.project));
+    S.project = JSON.parse(from.pop());
+    S.sel = Math.min(S.sel, S.project.scenes.length - 1);
+    save(); rebuild(); renderAll(); restartAudioSoon();
+  }
+
+  // ------------------------------------------------------------------------------------------------ build and play
+  function rebuild() {
+    const keep = S.time;
+    S.built = ZS.build(S.project, stage, { preview: true, assetBase: `/motion/files/${S.project.id}/`, hideRefs: !!S.hideRefs });
+    // a face first used by this build (Vogun for example) loads now: fit the text again once it has arrived (15 October 2026)
+    { const b = S.built; if (document.fonts) document.fonts.ready.then(() => { if (S.built === b) ZS.refit(b); }); }
+    S.time = Math.min(keep, Math.max(0, S.built.duration - 0.001));
+    S.built.tl.seek(S.time, false);
+    fit();
+    renderTrack();
+    $("#totalDur").textContent = S.built.duration.toFixed(1) + " s";
+  }
+  function fit() {
+    if (!S.built) return;
+    // side by side with the reference: the motion takes the left half
+    const W = S.built.W, H = S.built.H, r = stageWrap.getBoundingClientRect(), half = S.compare ? 0.5 : 1;
+    const s = Math.min(r.width * half / W, r.height / H) * 0.94;
+    stageScale.style.left = S.compare ? "25%" : "50%";
+    stageScale.style.transform = `translate(${-W * s / 2}px, ${-H * s / 2}px) scale(${s})`;
+  }
+  // the reference video follows the playhead (reference time = project time + project.referenceOffset)
+  function syncRef() {
+    if (!S.compare) return;
+    const v = $("#refVideo"), want = S.time + (Number(S.project.referenceOffset) || 0);
+    if (S.playing) { if (v.paused) v.play().catch(() => {}); if (Math.abs(v.currentTime - want) > 0.15) v.currentTime = want; }
+    else { if (!v.paused) v.pause(); if (Math.abs(v.currentTime - want) > 0.02) v.currentTime = want; }
+  }
+  function setCompare(on) {
+    S.compare = !!on && !!S.project.reference;
+    $("#refPane").hidden = !S.compare; $("#motionLbl").hidden = !S.compare;
+    $("#compareBtn").classList.toggle("toggled", S.compare);
+    const v = $("#refVideo");
+    if (S.compare) { const src = `/motion/bank/ref/${encodeURIComponent(S.project.reference)}`; if (v.getAttribute("src") !== src) v.src = src; syncRef(); } else v.pause();
+    if (on && !S.project.reference) toast("Ce projet n'a pas de vidéo de référence.", true);
+    try { localStorage.setItem("zs-compare", S.compare ? "1" : ""); } catch (e) { /* private window */ }
+    fit();
+  }
+  function setHideRefs(on) {
+    S.hideRefs = !!on;
+    $("#hideRefBtn").classList.toggle("toggled", S.hideRefs);
+    $("#hideRefBtn").textContent = S.hideRefs ? "Référence masquée" : "Masquer la référence";
+    try { localStorage.setItem("zs-hide-refs", S.hideRefs ? "1" : ""); } catch (e) { /* private window */ }
+    rebuild();
+  }
+  window.addEventListener("resize", fit);
+  // a reproduced music: an excerpt of its four stems around the film (offset to offset + duration at the highest pitch), decoded once
+  async function bankBuffers() {
+    const m = S.project.music || {}, v = ZS.audio.values(ZS.audio.BANK_PARAMS, m.bank || {});
+    const track = ((S.bank && S.bank.music) || []).find((x) => x.id === v.track);
+    if (!track) return;
+    const a = Math.max(0, v.offset - 0.5), b = v.offset + S.built.duration * Math.pow(2, 4 / 12) + 1, key = `${track.id}@${a.toFixed(2)}-${b.toFixed(2)}`;
+    if (S.audio.bankKey === key) return;
+    const files = {}; Object.entries(track.stems).forEach(([st, url]) => { files[`bank:${track.id}:${st}`] = `${url}?from=${a}&to=${b}`; });
+    if (!Object.keys(files).length) files[`bank:${track.id}:mix`] = `${track.mix}?from=${a}&to=${b}`;
+    const got = await ZS.audio.decode(S.audio.ctx, files);
+    Object.values(got).forEach((buf) => { if (buf) buf.zsStart = a; });
+    Object.keys(S.audio.buffers).filter((k) => k.startsWith("bank:")).forEach((k) => delete S.audio.buffers[k]);
+    Object.assign(S.audio.buffers, got); S.audio.bankKey = key;
+  }
+  // effects from the bank: the index by kind once, then only the samples the cues of this film will play
+  async function sfxBuffers() {
+    const s = ZS.audio.values(ZS.audio.SFX_PARAMS, S.project.sfx || {});
+    const evs = ((S.project.sfx || {}).events || []);
+    const picks = Object.keys((S.project.sfx || {}).pick || {}).length;
+    if (!s.enabled || (s.source !== "banque" && !(s.refEvents && evs.length) && !picks)) return;
+    if (!S.sfxBank) S.sfxBank = await api("GET", "/api/motion/banks/sfx");
+    const index = {}, url = {};
+    S.sfxBank.sfx.filter((x) => x.kind !== "synth").forEach((x) => { (index[x.kind] = index[x.kind] || []).push(x.id); url[x.id] = x.url; });
+    S.audio.buffers.sfxIndex = index;
+    const need = {};
+    if (s.source === "banque" && s.sceneCues) (S.built.cues || []).forEach((c, i) => { const id = ZS.audio.pickSfx(index, c, i, s.bankSeed); if (id && S.audio.buffers[`sfx:${id}`] === undefined) need[`sfx:${id}`] = url[id]; });
+    if (s.refEvents) evs.forEach((e) => { if (url[e.id] && S.audio.buffers[`sfx:${e.id}`] === undefined) need[`sfx:${e.id}`] = url[e.id]; });
+    Object.values((S.project.sfx || {}).pick || {}).forEach((id) => { if (url[id] && S.audio.buffers[`sfx:${id}`] === undefined) need[`sfx:${id}`] = url[id]; });
+    if (Object.keys(need).length) Object.assign(S.audio.buffers, await ZS.audio.decode(S.audio.ctx, need));
+  }
+  async function audioBuffers() {
+    await sfxBuffers();
+    if ((S.project.music || {}).mode === "bank") { await bankBuffers(); return S.audio.buffers; }
+    const m = S.project.music || {}, f = m.mode === "file" && m.file && m.file.file;
+    if (!f || S.audio.buffers[f] !== undefined) return S.audio.buffers;
+    Object.assign(S.audio.buffers, await ZS.audio.decode(S.audio.ctx, { [f]: `/motion/files/${S.project.id}/${encodeURIComponent(f)}` }));
+    return S.audio.buffers;
+  }
+  async function play() {
+    if (!S.audio.ctx) S.audio.ctx = new AudioContext();
+    await S.audio.ctx.resume();
+    if (S.time >= S.built.duration - 0.05) S.time = 0;
+    await audioBuffers();
+    startAudio();
+    S.playing = true; ZS.videoTolerance = 0.3;
+    S.built.videos.forEach((v) => v.node.play().catch(() => {}));
+    $("#playBtn").textContent = "❚❚";
+    requestAnimationFrame(tick);
+  }
+  function startAudio() {
+    if (S.audio.handle) S.audio.handle.stop();
+    S.audio.handle = ZS.audio.schedule(S.audio.ctx, S.project, S.built.cues, S.time, S.built.duration, S.audio.buffers);
+  }
+  function restartAudioSoon() {
+    if (!S.playing) return;
+    clearTimeout(S.audioTimer);
+    S.audioTimer = setTimeout(async () => { if (!S.playing) return; S.time = S.audio.ctx.currentTime - S.audio.handle.T0; await audioBuffers(); startAudio(); }, 250);
+  }
+  function pause() {
+    S.playing = false; ZS.videoTolerance = 0.08;
+    if (S.compare) $("#refVideo").pause();
+    if (S.audio.handle) { S.audio.handle.stop(); S.audio.handle = null; }
+    if (S.built) S.built.videos.forEach((v) => v.node.pause());
+    $("#playBtn").textContent = "▶";
+  }
+  function tick() {
+    if (!S.playing) return;
+    const t = S.audio.ctx.currentTime - S.audio.handle.T0;
+    if (t >= S.built.duration) { S.time = S.built.duration; S.built.tl.seek(S.time, false); pause(); updateTime(); return; }
+    S.time = Math.max(0, t);
+    S.built.tl.seek(S.time, false);
+    updateTime();
+    requestAnimationFrame(tick);
+  }
+  function seek(t) {
+    S.time = Math.max(0, Math.min(S.built.duration, t));
+    S.built.tl.seek(S.time, false);
+    updateTime();
+    if (S.playing) startAudio();
+  }
+  // ---- the timeline in pixels: pps = pixels per second (null = the whole film fits the visible width)
+  const fmtT = (t) => { const m = Math.floor(t / 60), s2 = t - m * 60; return `${m}:${s2.toFixed(2).padStart(5, "0")}`; };
+  const parseT = (v) => { v = String(v).trim().replace(",", "."); const m = /^(\d+):(\d+(?:\.\d+)?)$/.exec(v); return m ? +m[1] * 60 + +m[2] : isFinite(+v) ? +v : NaN; };
+  const fps = () => Number(S.project.fps) || 30;
+  function pps() {
+    const vis = Math.max(100, $("#tlScroll").clientWidth - 2);
+    return S.pps || vis / Math.max(0.5, S.built.duration);
+  }
+  function updateTime() {
+    syncRef();
+    const k = pps();
+    if (document.activeElement !== $("#timeIn")) $("#timeIn").value = fmtT(S.time);
+    $("#timeTot").textContent = "/ " + fmtT(S.built.duration);
+    $("#playhead").style.left = S.time * k + "px";
+    const i = S.built.spans.findIndex((sp) => S.time >= sp.start && S.time < sp.end);
+    [...$("#segments").children].forEach((d, j) => d.classList.toggle("on", j === i));
+    // while playing (or stepping), the playhead stays in view
+    const sc = $("#tlScroll"), x = S.time * k;
+    if (x < sc.scrollLeft + 20 || x > sc.scrollLeft + sc.clientWidth - 40) sc.scrollLeft = Math.max(0, x - sc.clientWidth * 0.3);
+  }
+  $("#playBtn").onclick = () => (S.playing ? pause() : play());
+  // scrub: press anywhere in the timeline (except on a sub-scene block) and drag; the frame follows the pointer, snapped to the frame rate
+  const tAt = (e) => { const r = $("#track").getBoundingClientRect(); return Math.max(0, Math.min(S.built.duration, (e.clientX - r.left) / pps())); };
+  let scrubbing = false, scrubT = null, scrubRaf = 0;
+  const scrubTo = (t) => { scrubT = Math.round(t * fps()) / fps(); if (!scrubRaf) scrubRaf = requestAnimationFrame(() => { scrubRaf = 0; if (scrubT != null) seek(scrubT); }); };
+  $("#track").addEventListener("pointerdown", (e) => {
+    if (e.target.closest("#childLane div")) return;
+    scrubbing = true; try { $("#track").setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ }
+    if (S.playing) pause();
+    scrubTo(tAt(e));
+  });
+  $("#track").addEventListener("pointermove", (e) => {
+    const t = tAt(e), hl = $("#hoverLine");
+    hl.hidden = false; hl.style.left = t * pps() + "px"; hl.firstChild.textContent = fmtT(t);
+    if (scrubbing) scrubTo(t);
+  });
+  $("#track").addEventListener("pointerleave", () => { $("#hoverLine").hidden = true; });
+  const endScrub = () => {
+    if (!scrubbing) return;
+    scrubbing = false;
+    const i = S.built.spans.findIndex((sp) => S.time >= sp.start && S.time < sp.end);
+    if (i >= 0 && (i !== S.sel || S.child != null)) { S.sel = i; S.child = null; renderScenes(); if (S.tab === "scene") renderPanel(); renderTrack(); }
+  };
+  $("#track").addEventListener("pointerup", endScrub);
+  $("#track").addEventListener("pointercancel", endScrub);
+  // zoom: Cmd or Ctrl + wheel around the pointer, the buttons, or « Ajuster » for the whole film
+  const zoomTo = (k, anchorX) => {
+    const sc = $("#tlScroll"), old = pps(), ax = anchorX == null ? S.time * old - sc.scrollLeft : anchorX, tAnchor = (sc.scrollLeft + ax) / old;
+    const fitK = Math.max(100, sc.clientWidth - 2) / Math.max(0.5, S.built.duration);
+    S.pps = Math.max(fitK, Math.min(2000, k)); if (S.pps <= fitK * 1.001) S.pps = null;
+    renderTrack(); sc.scrollLeft = Math.max(0, tAnchor * pps() - ax);
+  };
+  $("#tlScroll").addEventListener("wheel", (e) => {
+    if (!(e.metaKey || e.ctrlKey)) return;
+    e.preventDefault();
+    const r = $("#tlScroll").getBoundingClientRect();
+    zoomTo(pps() * Math.exp(-e.deltaY * 0.004), e.clientX - r.left);
+  }, { passive: false });
+  $("#zinBtn").onclick = () => zoomTo(pps() * 1.6);
+  $("#zoutBtn").onclick = () => zoomTo(pps() / 1.6);
+  $("#zfitBtn").onclick = () => { S.pps = null; renderTrack(); $("#tlScroll").scrollLeft = 0; };
+  // precise time: type it, or step frame by frame
+  $("#timeIn").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { const t = parseT(e.target.value); if (isFinite(t)) seek(t); else toast("Instant non lu : écris 1:23.5 ou 83.5", true); e.target.blur(); }
+    if (e.key === "Escape") { e.target.value = fmtT(S.time); e.target.blur(); }
+  });
+  const step = (d) => { if (S.playing) pause(); seek(Math.round((S.time + d) * fps()) / fps()); };
+  $("#prevBtn").onclick = (e) => step(e.shiftKey ? -1 : -1 / fps());
+  $("#nextBtn").onclick = (e) => step(e.shiftKey ? 1 : 1 / fps());
+  window.addEventListener("resize", () => { if (S.built) renderTrack(); });
+  document.addEventListener("keydown", (e) => {
+    if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+    if (e.code === "Space") { e.preventDefault(); S.playing ? pause() : play(); }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") { e.preventDefault(); undo(e.shiftKey); }
+    if (e.key === "ArrowLeft" || e.key === ",") { e.preventDefault(); step(e.shiftKey ? -1 : -1 / fps()); }
+    if (e.key === "ArrowRight" || e.key === ".") { e.preventDefault(); step(e.shiftKey ? 1 : 1 / fps()); }
+    if (e.key === "Home") { e.preventDefault(); seek(0); }
+    if (e.key === "End") { e.preventDefault(); seek(S.built.duration); }
+  });
+
+  // ------------------------------------------------------------------------------------------------ scenes and track
+  function renderTrack() {
+    const D = Math.max(0.001, S.built.duration), k = pps(), pc = (t) => t * k + "px";
+    const width = Math.max($("#tlScroll").clientWidth - 2, Math.ceil(D * k));
+    $("#track").style.width = width + "px";
+    // ruler: a labelled tick at least every 70 px, minor ticks between
+    const STEPS = [0.04, 0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120];
+    const major = STEPS.find((x) => x * k >= 70) || 120, minor = major / (major >= 1 && major % 5 === 0 ? 5 : major >= 1 ? 4 : 5);
+    const ru = $("#ruler"); ru.innerHTML = "";
+    for (let t = 0, n = 0; t <= D + 1e-6 && n < 4000; t = Math.round((t + minor) * 1000) / 1000, n++) {
+      const isMajor = Math.abs(t / major - Math.round(t / major)) < 1e-6, sp = document.createElement("span");
+      sp.style.left = pc(t);
+      if (isMajor) sp.textContent = major < 1 ? fmtT(t).replace(/0$/, "") : fmtT(t).replace(/\.00$/, ""); else sp.className = "minor";
+      ru.appendChild(sp);
+    }
+    const seg = $("#segments"); seg.innerHTML = "";
+    S.built.spans.forEach((sp) => {
+      const d = document.createElement("div");
+      d.style.left = pc(sp.start); d.style.width = Math.max(1, (sp.end - sp.start) * k) + "px";
+      d.textContent = (ZS.templates[sp.template] || {}).label || sp.template;
+      d.title = `${d.textContent} · ${fmtT(sp.start)} → ${fmtT(sp.end)}`;
+      seg.appendChild(d);
+    });
+    // sub-scenes: their blocks at their absolute time
+    const cl = $("#childLane"); cl.innerHTML = "";
+    S.project.scenes.forEach((sc, i) => (sc.children || []).forEach((c, k) => {
+      const sp = S.built.spans[i]; if (!sp) return;
+      const d = document.createElement("div"), t = sp.start + (Number(c.start) || 0);
+      d.style.left = pc(t); d.style.width = pc(Math.max(0.05, Number(c.duration) || 1));
+      d.textContent = (ZS.templates[c.template] || {}).label || c.template;
+      if (i === S.sel && k === S.child) d.className = "on";
+      d.onclick = (e) => { e.stopPropagation(); S.sel = i; S.child = k; renderScenes(); setTab("scene"); seek(t + 0.4); renderTrack(); };
+      cl.appendChild(d);
+    }));
+    // music: the source and what plays
+    const ml = $("#musicLane"); ml.innerHTML = "";
+    const m = S.project.music || {}, md = document.createElement("div");
+    md.style.left = "0"; md.style.width = "100%";
+    md.textContent = m.mode === "bank" ? `Musique reproduite · ${(m.bank || {}).track || "(à choisir)"}${(m.bank || {}).variation ? " · " + m.bank.variation : ""}`
+      : m.mode === "file" ? `Fichier · ${(m.file || {}).file || "(à choisir)"}` : m.mode === "none" ? "Sans musique" : `Musique générée · ${((m.generate || {}).tempo) || 104} bpm`;
+    ml.appendChild(md);
+    // effects: the cues of the scenes, and the effects of the reference at their measured times
+    const sl = $("#sfxLane"); sl.innerHTML = "";
+    const sv = ZS.audio.values(ZS.audio.SFX_PARAMS, S.project.sfx || {});
+    if (sv.sceneCues) (S.built.cues || []).forEach((c) => { const i = document.createElement("i"); i.style.left = pc(c.t); i.title = c.type; sl.appendChild(i); });
+    if (sv.refEvents) ((S.project.sfx || {}).events || []).forEach((e) => { const i = document.createElement("i"); i.className = "ref"; i.style.left = pc(e.t); i.title = e.kind; sl.appendChild(i); });
+    updateTime();
+  }
+  function renderScenes() {
+    const ol = $("#sceneList"); ol.innerHTML = "";
+    const label = (x) => { const tpl = ZS.templates[x.template], pr = x.params || {}, word = pr.title || pr.word || pr.caption || pr.text || pr.prompt || pr.name;
+      return (tpl ? tpl.label : x.template) + (word ? " · " + word : ""); };
+    S.project.scenes.forEach((sc, i) => {
+      const li = document.createElement("li");
+      if (i === S.sel && S.child == null) li.className = "on";
+      li.innerHTML = `<span class="n">${i + 1}</span><span class="t"></span><span class="d">${Number(sc.duration).toFixed(1)} s</span>
+        <span class="tools"><button data-a="up" title="Monter">↑</button><button data-a="down" title="Descendre">↓</button><button data-a="dup">Dupliquer</button><button data-a="del">Supprimer</button></span>`;
+      li.querySelector(".t").textContent = label(sc);
+      li.onclick = (e) => {
+        const a = e.target.dataset && e.target.dataset.a;
+        if (a) { e.stopPropagation(); return sceneAction(a, i); }
+        S.sel = i; S.child = null; renderScenes(); setTab("scene"); renderTrack();
+        seek(S.built.spans[i].start + Math.min(1.2, (S.built.spans[i].end - S.built.spans[i].start) * 0.5));
+      };
+      ol.appendChild(li);
+      (sc.children || []).forEach((c, k) => {
+        const cli = document.createElement("li");
+        cli.className = "child" + (i === S.sel && k === S.child ? " on" : "");
+        cli.innerHTML = `<span class="n">${i + 1}.${k + 1}</span><span class="t"></span><span class="d">${Number(c.duration).toFixed(1)} s</span>`;
+        cli.querySelector(".t").textContent = label(c);
+        cli.onclick = () => { S.sel = i; S.child = k; renderScenes(); setTab("scene"); renderTrack(); seek((S.built.spans[i] || { start: 0 }).start + (Number(c.start) || 0) + 0.4); };
+        ol.appendChild(cli);
+      });
+    });
+  }
+  function sceneAction(a, i) {
+    S.child = null;
+    change((p) => {
+      const s = p.scenes;
+      if (a === "up" && i > 0) { [s[i - 1], s[i]] = [s[i], s[i - 1]]; S.sel = i - 1; }
+      if (a === "down" && i < s.length - 1) { [s[i + 1], s[i]] = [s[i], s[i + 1]]; S.sel = i + 1; }
+      if (a === "dup") { s.splice(i + 1, 0, { ...JSON.parse(JSON.stringify(s[i])), id: "s" + Date.now().toString(36) }); S.sel = i + 1; }
+      if (a === "del" && s.length > 1) { s.splice(i, 1); S.sel = Math.max(0, i - 1); }
+    });
+  }
+  function fillAdd() {
+    const sel = $("#addSel"), groups = {};
+    Object.values(ZS.templates).forEach((t) => { (groups[t.group || "Autres"] = groups[t.group || "Autres"] || []).push(t); });
+    sel.innerHTML = Object.entries(groups).map(([g, ts]) => `<optgroup label="${g}">${ts.map((t) => `<option value="${t.id}">${t.label}</option>`).join("")}</optgroup>`).join("");
+  }
+  $("#addBtn").onclick = () => {
+    const id = $("#addSel").value, tpl = ZS.templates[id];
+    change((p) => { p.scenes.splice(S.sel + 1, 0, { id: "s" + Date.now().toString(36), template: id, duration: tpl.duration || 3, params: {} }); S.sel = S.sel + 1; });
+    seek(S.built.spans[S.sel].start + 0.8);
+  };
+
+  // ------------------------------------------------------------------------------------------------ controls
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  // one field: `value` is what the scene stores (undefined = default), `shown` what the template uses
+  function field(def, value, shown, onSet, opts) {
+    const wrap = document.createElement("div"), set = value !== undefined && value !== null && value !== "";
+    wrap.className = "field" + (set ? " set" : "");
+    const themeRef = typeof def.default === "string" && def.default[0] === "@";
+    wrap.innerHTML = `<div class="lbl"><span>${esc(def.label)}${themeRef && !set ? ' <span class="hint">(thème)</span>' : ""}</span><button class="reset" title="Revenir à la valeur par défaut" type="button">↺</button></div>`;
+    wrap.querySelector(".reset").onclick = () => onSet(undefined, true);
+    const userSet = onSet;
+    onSet = (v, reset) => {                                     // the label shows at once that the scene now has its own value
+      if (!reset) { wrap.classList.add("set"); const th = wrap.querySelector(".lbl .hint"); if (th) th.remove(); }
+      userSet(v, reset);
+    };
+    const row = document.createElement("div"); row.className = "row"; wrap.appendChild(row);
+    const t = def.type;
+    if (t === "number") {
+      const r = document.createElement("input"); r.type = "range"; r.min = def.min; r.max = def.max; r.step = def.step || 0.01; r.value = shown;
+      const v = document.createElement("input"); v.type = "number"; v.className = "val"; v.step = def.step || 0.01; v.value = shown; v.style.width = "76px";
+      r.oninput = () => { v.value = r.value; onSet(Number(r.value)); };
+      v.onchange = () => { r.value = v.value; onSet(Number(v.value)); };
+      row.append(r, v);
+      if (def.unit) { const u = document.createElement("span"); u.className = "hint"; u.textContent = def.unit; row.append(u); }
+    } else if (t === "color") {
+      const c = document.createElement("input"); c.type = "color"; c.value = /^#[0-9a-f]{6}$/i.test(shown) ? shown : "#000000";
+      const x = document.createElement("input"); x.type = "text"; x.value = shown || "";
+      c.oninput = () => { x.value = c.value; onSet(c.value); };
+      x.onchange = () => { if (/^#[0-9a-f]{6}$/i.test(x.value)) { c.value = x.value; onSet(x.value); } };
+      row.append(c, x);
+    } else if (t === "font") {
+      const s = document.createElement("select");
+      s.innerHTML = ZS.FONTS.map((f) => `<option ${f === shown ? "selected" : ""} style="font-family:'${f}'">${f}</option>`).join("");
+      s.onchange = () => onSet(s.value);
+      row.append(s);
+    } else if (t === "select") {
+      const s = document.createElement("select");
+      s.innerHTML = def.options.map((o) => `<option ${String(o) === String(shown) ? "selected" : ""}>${esc(o)}</option>`).join("");
+      s.onchange = () => onSet(s.value);
+      row.append(s);
+    } else if (t === "bool") {
+      const b = document.createElement("input"); b.type = "checkbox"; b.checked = !!shown; b.onchange = () => onSet(b.checked); row.append(b);
+    } else if (t === "lines") {
+      const a = document.createElement("textarea"); a.value = Array.isArray(shown) ? shown.join("\n") : shown; a.oninput = () => onSet(a.value); row.append(a);
+    } else if (t === "bank") {
+      const s = document.createElement("select"), list = (S.bank && S.bank.music) || [];
+      s.innerHTML = `<option value="">(choisir)</option>` + list.map((m) => `<option value="${esc(m.id)}" ${m.id === shown ? "selected" : ""}>${esc(m.id)} · ${m.bpm} bpm · ${esc(m.key)}${m.fidelity ? " · " + m.fidelity + " %" : ""}</option>`).join("");
+      s.onchange = () => onSet(s.value);
+      row.append(s);
+      if (!list.length) { const n = document.createElement("span"); n.className = "hint"; n.textContent = "banque en chargement…"; row.append(n); }
+    } else if (t === "media") {
+      const s = document.createElement("select"), kinds = (opts && opts.kinds) || ["video", "image"];
+      const list = S.assets.filter((a) => kinds.includes(a.kind));
+      // a plate of the reference ("ref:<slug>") is offered too, so the field always shows what the scene really plays
+      const refOpt = S.project.reference ? `ref:${S.project.reference}` : "";
+      s.innerHTML = `<option value="">(aucun)</option>` + (refOpt ? `<option value="${esc(refOpt)}" ${refOpt === shown ? "selected" : ""}>Référence · ${esc(S.project.reference)}</option>` : "")
+        + (shown && String(shown).startsWith("ref:") && shown !== refOpt ? `<option value="${esc(shown)}" selected>${esc(shown)}</option>` : "")
+        + list.map((a) => `<option ${a.name === shown ? "selected" : ""}>${esc(a.name)}</option>`).join("");
+      s.onchange = () => onSet(s.value);
+      row.append(s);
+      if (!list.length) { const n = document.createElement("span"); n.className = "hint"; n.textContent = "importe un fichier dans Médias"; row.append(n); }
+    } else {
+      const i = document.createElement("input"); i.type = "text"; i.value = shown == null ? "" : shown; i.oninput = () => onSet(i.value); row.append(i);
+    }
+    return wrap;
+  }
+  const TIERS = [[1, "Essentiel", true], [2, "Avancé", false], [3, "Expert", false], [4, "Détail", false]];
+  function tiered(defs, stored, shownOf, setter, opts) {
+    const box = document.createDocumentFragment();
+    TIERS.forEach(([tier, label, open]) => {
+      const list = defs.filter((d) => (d.tier || 3) === tier);
+      if (!list.length) return;
+      const det = document.createElement("details"); det.open = open || S.openTiers[tier];
+      det.ontoggle = () => { S.openTiers[tier] = det.open; };
+      det.innerHTML = `<summary>${label} · ${list.length}</summary>`;
+      list.forEach((d) => det.appendChild(field(d, stored[d.key], shownOf(d), (v, reset) => setter(d, v, reset), opts)));
+      box.appendChild(det);
+    });
+    return box;
+  }
+  S.openTiers = {};
+
+  // ------------------------------------------------------------------------------------------------ panels
+  function setTab(t) { S.tab = t; [...$("#tabs").children].forEach((b) => b.classList.toggle("on", b.dataset.tab === t)); renderPanel(); }
+  $("#tabs").onclick = (e) => { if (e.target.dataset.tab) setTab(e.target.dataset.tab); };
+  function renderPanel() {
+    panel.innerHTML = "";
+    ({ scene: scenePanel, theme: themePanel, music: musicPanel, sfx: sfxPanel, media: mediaPanel, post: postPanel, versions: versionsPanel })[S.tab]();
+  }
+  function scenePanel() {
+    const sc = S.project.scenes[S.sel];
+    const kid = S.child != null && sc.children && sc.children[S.child] ? sc.children[S.child] : null, obj = kid || sc;
+    const tpl = ZS.templates[obj.template];
+    if (!tpl) { panel.innerHTML = `<p>Modèle inconnu : ${esc(obj.template)}. La page date d'avant ce modèle : recharge-la (Cmd+R).</p>`; return; }
+    const theme = ZS.theme(S.project), shown = ZS.resolve(tpl, obj.params || {}, theme);
+    const target = (p) => { const s0 = p.scenes[S.sel]; return kid ? s0.children[S.child] : s0; };
+    panel.insertAdjacentHTML("beforeend", `<h3>${esc(tpl.label)}${kid ? ' <span class="hint">· sous-scène ' + (S.sel + 1) + "." + (S.child + 1) + "</span>" : ""}</h3>`);
+    if (kid) {
+      panel.appendChild(field({ key: "start", label: "Début dans la scène", type: "number", min: 0, max: Math.max(1, sc.duration), step: 0.01, unit: "s", default: 0 },
+        kid.start, kid.start, (v) => change((p) => { target(p).start = v || 0; }, { keepPanel: true })));
+      panel.appendChild(field({ key: "template", label: "Modèle", type: "select", options: Object.keys(ZS.templates), default: kid.template }, kid.template, kid.template,
+        (v) => change((p) => { target(p).template = v; target(p).params = {}; })));
+    }
+    panel.appendChild(field({ key: "duration", label: kid ? "Durée de la sous-scène" : "Durée de la scène", type: "number", min: 0.02, max: 60, step: 0.01, unit: "s", default: tpl.duration },
+      obj.duration, obj.duration, (v, reset) => change((p) => { target(p).duration = reset ? tpl.duration : v; }, { keepPanel: !reset })));
+    panel.appendChild(tiered(tpl.params, obj.params || {}, (d) => shown[d.key], (d, v, reset) => change((p) => {
+      const ps = (target(p).params = target(p).params || {});
+      if (reset) delete ps[d.key]; else ps[d.key] = v;
+    }, { keepPanel: !reset })));
+    const row = document.createElement("div"); row.className = "row";
+    const b = document.createElement("button"); b.type = "button"; b.textContent = kid ? "Remettre la sous-scène par défaut" : "Remettre toute la scène par défaut";
+    b.onclick = () => change((p) => { target(p).params = {}; });
+    row.appendChild(b);
+    if (kid) {
+      const del = document.createElement("button"); del.type = "button"; del.textContent = "Supprimer la sous-scène";
+      del.onclick = () => change((p) => { p.scenes[S.sel].children.splice(S.child, 1); S.child = null; });
+      row.appendChild(del);
+    }
+    panel.appendChild(row);
+  }
+  const THEME_DEFS = [
+    { key: "accent", label: "Couleur d'accent", type: "color", tier: 1 }, { key: "bg", label: "Fond", type: "color", tier: 1 },
+    { key: "ink", label: "Texte", type: "color", tier: 1 }, { key: "fontTitle", label: "Police des titres", type: "font", tier: 1 },
+    { key: "fontBody", label: "Police du texte", type: "font", tier: 2 }, { key: "panel", label: "Cartes", type: "color", tier: 2 },
+    { key: "muted", label: "Texte secondaire", type: "color", tier: 2 }, { key: "accentInk", label: "Texte sur l'accent", type: "color", tier: 2 },
+    { key: "transition", label: "Passage entre scènes", type: "select", options: ["cut", "fade"], tier: 2 },
+    { key: "transitionDuration", label: "Durée du fondu", type: "number", min: 0.05, max: 1.5, step: 0.05, unit: "s", tier: 2 },
+  ];
+  function themePanel() {
+    panel.insertAdjacentHTML("beforeend", `<h3>Thème</h3><p class="hint">Une valeur du thème change toutes les scènes qui la suivent.</p>`);
+    const theme = ZS.theme(S.project);
+    panel.appendChild(tiered(THEME_DEFS.map((d) => ({ ...d, default: ZS.THEME_DEFAULT[d.key] })), S.project.theme || {}, (d) => theme[d.key],
+      (d, v, reset) => change((p) => { p.theme = p.theme || {}; if (reset) delete p.theme[d.key]; else p.theme[d.key] = v; }, { keepPanel: !reset })));
+  }
+  function musicPanel() {
+    const m = (S.project.music = S.project.music || { mode: "generate", generate: {}, file: {} });
+    panel.insertAdjacentHTML("beforeend", `<h3>Musique</h3><p class="hint">Générée en direct dans le navigateur : chaque valeur s'entend à la lecture suivante, sans calcul.</p>`);
+    panel.appendChild(field({ key: "mode", label: "Source", type: "select", options: ["bank", "generate", "file", "none"], default: "generate" }, m.mode, m.mode,
+      (v) => change((p) => { p.music.mode = v || "generate"; })));
+    if (m.mode === "none") return;
+    if (m.mode === "bank") { bankMusicPanel(m); return; }
+    const which = m.mode === "file" ? "file" : "generate";
+    const defs = which === "file" ? ZS.audio.FILE_PARAMS : ZS.audio.MUSIC_PARAMS, stored = (m[which] = m[which] || {}), vals = ZS.audio.values(defs, stored);
+    panel.appendChild(tiered(defs, stored, (d) => vals[d.key], (d, v, reset) => change((p) => {
+      const o = (p.music[which] = p.music[which] || {});
+      if (reset) delete o[d.key]; else o[d.key] = v;
+    }, { keepPanel: !reset }), { kinds: ["audio"] }));
+  }
+  // the 99.9 % bank (15 October 2026): pick a reproduced music, apply a variation the agent proposed, then adjust any value
+  async function loadBank() {
+    if (S.bank || S.bankLoading) return;
+    S.bankLoading = true;
+    try { S.bank = await api("GET", "/api/motion/banks/music"); } finally { S.bankLoading = false; }
+    if (S.tab === "music") renderPanel();
+  }
+  function bankMusicPanel(m) {
+    loadBank();
+    const stored = (m.bank = m.bank || {}), vals = ZS.audio.values(ZS.audio.BANK_PARAMS, stored);
+    const track = ((S.bank && S.bank.music) || []).find((x) => x.id === vals.track);
+    panel.insertAdjacentHTML("beforeend", `<p class="hint">Musiques reproduites à 99,9 % depuis les références (${S.bank ? S.bank.count : "…"}), mixées en direct piste par piste : batterie, basse, instruments, voix.</p>`);
+    panel.appendChild(tiered(ZS.audio.BANK_PARAMS, stored, (d) => vals[d.key], (d, v, reset) => change((p) => {
+      const o = (p.music.bank = p.music.bank || {});
+      if (reset) delete o[d.key]; else o[d.key] = v;
+      if (d.key !== "track") delete o.variation;
+    }, { keepPanel: !reset && d.key !== "track" })));
+    if (!track) return;
+    const box = document.createElement("div"); box.className = "variations";
+    box.innerHTML = `<div class="lbl"><span>Variations proposées</span></div>`;
+    [{ id: "", label: "Original", why: "le mix reproduit, tel quel", values: {} }].concat(track.variations || []).forEach((vr) => {
+      const b = document.createElement("button"); b.type = "button"; b.className = "chip" + ((stored.variation || "") === vr.id ? " on" : "");
+      b.textContent = vr.label; b.title = vr.why || "";
+      b.onclick = () => change((p) => {
+        const keep = ["track", "volume", "offset", "fadeOut"], o = (p.music.bank = p.music.bank || {});
+        Object.keys(o).forEach((k) => { if (!keep.includes(k)) delete o[k]; });
+        Object.assign(o, vr.values); if (vr.id) o.variation = vr.id;
+      });
+      box.appendChild(b);
+    });
+    panel.appendChild(box);
+    panel.insertAdjacentHTML("beforeend", `<p class="hint">${esc(track.reference)} · version ${esc(track.version)}${track.polished ? " polie" : ""} · ${track.bpm} bpm · ${esc(track.key)} · ${track.duration.toFixed(0)} s</p>`);
+  }
+  function sfxPanel() {
+    const stored = (S.project.sfx = S.project.sfx || {}), vals = ZS.audio.values(ZS.audio.SFX_PARAMS, stored);
+    const counts = {}; (S.built.cues || []).forEach((c) => { counts[c.type] = (counts[c.type] || 0) + 1; });
+    panel.insertAdjacentHTML("beforeend", `<h3>Effets sonores</h3><p class="hint">Les scènes placent leurs effets sur leurs mouvements (${(S.built.cues || []).length} au total : ${Object.entries(counts).map(([k, n]) => `${k} ${n}`).join(", ")}).</p>`);
+    panel.appendChild(tiered(ZS.audio.SFX_PARAMS, stored, (d) => vals[d.key], (d, v, reset) => change((p) => {
+      p.sfx = p.sfx || {}; if (reset) delete p.sfx[d.key]; else p.sfx[d.key] = v;
+    }, { keepPanel: !reset })));
+  }
+  // post-process (15 October 2026): the film's grade, then the selected scene's own colour values when "this scene only" is on
+  function postPanel() {
+    const sc = S.project.scenes[S.sel], own = !!S.postScene;
+    panel.insertAdjacentHTML("beforeend", `<h3>Post-process</h3><p class="hint">Un étalonnage façon photo sur tout le film, calculé en direct (filtres du navigateur) et identique à l'export.</p>`);
+    panel.appendChild(field({ key: "scope", label: "Appliquer à", type: "select", options: ["tout le film", "cette scène seulement"], default: "tout le film" },
+      own ? "cette scène seulement" : undefined, own ? "cette scène seulement" : "tout le film", (v) => { S.postScene = v === "cette scène seulement"; renderPanel(); }));
+    const defs = own ? ZS.post.PARAMS.filter((d) => d.scope !== "film") : ZS.post.PARAMS;
+    const stored = own ? (sc.post || {}) : (S.project.post || {});
+    const shown = ZS.post.values(own ? { ...(S.project.post || {}), ...(sc.post || {}) } : S.project.post);
+    if (own) panel.insertAdjacentHTML("beforeend", `<p class="hint">Scène ${S.sel + 1} : une valeur réglée ici remplace celle du film pour cette scène.</p>`);
+    panel.appendChild(tiered(defs, stored, (d) => shown[d.key], (d, v, reset) => change((p) => {
+      const o = own ? (p.scenes[S.sel].post = p.scenes[S.sel].post || {}) : (p.post = p.post || {});
+      if (reset) delete o[d.key]; else o[d.key] = v;
+    }, { keepPanel: !reset })));
+    const b = document.createElement("button"); b.type = "button"; b.textContent = own ? "Enlever l'étalonnage propre à la scène" : "Remettre le post-process par défaut";
+    b.onclick = () => change((p) => { if (own) delete p.scenes[S.sel].post; else delete p.post; });
+    panel.appendChild(b);
+  }
+  // versions (15 October 2026): a version is the project's CODE (versions/V_NNN.json), never an MP4; a restore first keeps the current state
+  async function flushSave() {
+    clearTimeout(S.saveTimer);
+    await api("PUT", `/api/motion/projects/${S.project.id}`, S.project);
+    $("#saveState").textContent = "enregistré";
+  }
+  async function versionsPanel() {
+    panel.insertAdjacentHTML("beforeend", `<h3>Versions</h3><p class="hint">Une version enregistre le code du projet (scènes, valeurs, musique, effets, post-process), jamais une vidéo. Revenir à une version garde d'abord l'état actuel.</p>
+      <div class="field"><div class="lbl"><span>Note de la version</span></div><div class="row"><input type="text" id="verNote" placeholder="ex. musique plus calme, titre Vogun"><button type="button" id="verSave">Enregistrer une version</button></div></div><div id="verList" class="assets"></div>`);
+    const list = $("#verList");
+    const draw = (vs) => {
+      list.innerHTML = vs.length ? "" : `<p class="hint">Aucune version pour l'instant.</p>`;
+      vs.slice().reverse().forEach((v) => {
+        const row = document.createElement("div"); row.className = "asset";
+        row.innerHTML = `<span><b>${esc(v.version)}</b> · ${esc(v.saved || "")} · ${v.scenes} scènes${v.note ? " · " + esc(v.note) : ""}</span>`;
+        const b = document.createElement("button"); b.type = "button"; b.textContent = "Revenir";
+        b.onclick = async () => {
+          await flushSave();
+          const j = await api("POST", `/api/motion/projects/${S.project.id}/versions/${v.version}/restore`);
+          S.undo.push(JSON.stringify(S.project)); S.project = j.project; S.sel = Math.min(S.sel, S.project.scenes.length - 1);
+          rebuild(); renderAll(); toast(`${v.version} rétablie (l'état précédent est gardé en version)`);
+        };
+        row.appendChild(b); list.appendChild(row);
+      });
+    };
+    $("#verSave").onclick = async () => {
+      await flushSave();
+      const j = await api("POST", `/api/motion/projects/${S.project.id}/versions`, { note: $("#verNote").value });
+      $("#verNote").value = ""; draw(j.versions); toast(`${j.version.version} enregistrée`);
+    };
+    draw((await api("GET", `/api/motion/projects/${S.project.id}`)).versions || []);
+  }
+  function mediaPanel() {
+    panel.insertAdjacentHTML("beforeend", `<h3>Médias</h3><div class="drop" id="drop">Dépose ici tes rendus 3D (vidéo, image) ou une musique<br><span class="hint">ou clique pour choisir</span></div><div class="assets" id="assetList"></div>`);
+    const drop = $("#drop"), input = document.createElement("input"); input.type = "file"; input.multiple = true;
+    input.accept = "video/*,image/*,audio/*";
+    drop.onclick = () => input.click();
+    input.onchange = () => upload([...input.files]);
+    drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("hot"); };
+    drop.ondragleave = () => drop.classList.remove("hot");
+    drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("hot"); upload([...e.dataTransfer.files]); };
+    $("#assetList").innerHTML = S.assets.length ? S.assets.map((a) => `<div class="asset"><span>${esc(a.name)}</span><span class="hint">${a.kind} · ${(a.bytes / 1048576).toFixed(1)} Mo</span></div>`).join("")
+      : `<p class="hint">Aucun fichier. Une scène « Rendu 3D en vitrine » montre une vidéo ou une image importée ici.</p>`;
+  }
+  async function upload(files) {
+    for (const f of files) {
+      toast(`Import de ${f.name}…`);
+      try { await api("POST", `/api/motion/projects/${S.project.id}/assets?name=${encodeURIComponent(f.name)}`, undefined, f); }
+      catch (e) { toast(`${f.name} : ${e.message}`, true); }
+    }
+    const j = await api("GET", `/api/motion/projects/${S.project.id}`);
+    S.assets = j.assets;
+    toast(`${files.length} fichier(s) importé(s)`);
+    renderPanel();
+  }
+
+  // ------------------------------------------------------------------------------------------------ export
+  $("#exportBtn").onclick = async () => {
+    const btn = $("#exportBtn"); btn.disabled = true; pause();
+    try {
+      btn.textContent = "Son…";
+      const m = S.project.music || {}, f = m.mode === "file" && m.file && m.file.file;
+      if (!S.audio.ctx) S.audio.ctx = new AudioContext();
+      await audioBuffers();
+      const wav = await ZS.audio.render(S.project, S.built.cues, S.built.duration, S.audio.buffers);
+      btn.textContent = "Images…";
+      const j = await api("POST", `/api/motion/projects/${S.project.id}/export?draft=${$("#draftChk").checked ? 1 : 0}`, undefined, wav);
+      let job = j.job;
+      while (["cook", "render", "mux"].includes(job.state)) {
+        await new Promise((r) => setTimeout(r, 1000));
+        job = (await api("GET", `/api/motion/jobs/${job.id}`)).job;
+        btn.textContent = `${job.step || job.state}… ${Math.round((Date.now() / 1000) - job.started)} s`;
+      }
+      if (job.state !== "done") throw new Error(job.error || "export échoué");
+      showExport(job);
+    } catch (e) { toast(e.message, true); }
+    btn.disabled = false; btn.textContent = "Exporter la vidéo";
+  };
+  function showExport(job) {
+    const d = $("#dlg");
+    d.innerHTML = `<h3 style="font-family:var(--f-serif);font-weight:400;margin:0 0 8px">Vidéo prête</h3>
+      <div class="exportBox"><video src="${job.url}" controls style="width:min(70vw,720px);max-height:60vh;background:#000;border-radius:8px"></video>
+      <span class="hint">${esc(job.file)}<br>${(job.bytes / 1048576).toFixed(1)} Mo · ${job.seconds} s d'export</span>
+      <div class="row"><a href="${job.url}" download>Télécharger</a><div class="grow"></div><button type="button" id="dlgClose">Fermer</button></div></div>`;
+    d.showModal();
+    $("#dlgClose").onclick = () => d.close();
+  }
+
+  // ------------------------------------------------------------------------------------------------ projects
+  async function loadList(open) {
+    const j = await api("GET", "/api/motion/projects");
+    S.projects = j.projects; S.presets = j.presets;
+    $("#projectSel").innerHTML = S.projects.map((p) => `<option value="${p.id}">${esc(p.title)} · ${p.duration} s</option>`).join("");
+    const id = open || localStorage.getItem("zs-project") || (S.projects[0] && S.projects[0].id);
+    if (id && S.projects.find((p) => p.id === id)) await openProject(id);
+    else if (S.presets.length) await createFrom(S.presets[0].id);
+  }
+  async function openProject(id) {
+    pause();
+    const j = await api("GET", `/api/motion/projects/${id}`);
+    S.project = j.project; S.assets = j.assets; S.sel = 0; S.child = null; S.time = 0; S.undo = []; S.redo = [];
+    try { localStorage.setItem("zs-project", id); } catch (e) { /* private window */ }
+    $("#projectSel").value = id;
+    $("#formatSel").value = S.project.format;
+    await document.fonts.ready;
+    rebuild(); renderAll();
+    let cmp = false; try { cmp = localStorage.getItem("zs-compare") === "1"; } catch (e) { /* private window */ }
+    setCompare(cmp && !!S.project.reference);
+    seek(Math.min(2.5, S.built.duration / 2));
+  }
+  async function createFrom(preset, title) {
+    const j = await api("POST", "/api/motion/projects", { preset, title });
+    await loadList(j.project.id);
+  }
+  function renderAll() { renderScenes(); renderPanel(); $("#formatSel").value = S.project.format; }
+  $("#projectSel").onchange = (e) => openProject(e.target.value);
+  $("#formatSel").onchange = (e) => change((p) => { p.format = e.target.value; });
+  $("#dupBtn").onclick = async () => {
+    const j = await api("POST", `/api/motion/projects/${S.project.id}/duplicate`, { title: S.project.title + " copie" });
+    await loadList(j.project.id); toast("Copie créée : l'original reste intact.");
+  };
+  $("#newBtn").onclick = () => {
+    const d = $("#dlg");
+    d.innerHTML = `<h3 style="font-family:var(--f-serif);font-weight:400;margin:0">Nouveau projet</h3><div class="choices">${S.presets.map((p) =>
+      `<button class="choice" data-p="${p.id}" type="button"><b>${esc(p.title)}</b><span class="hint">${esc(p.format)} · ${esc(p.doc || "")}</span></button>`).join("")}</div>
+      <div class="row"><input type="text" id="newTitle" placeholder="Titre (facultatif)"><button type="button" id="dlgClose">Annuler</button></div>`;
+    d.showModal();
+    d.querySelectorAll("[data-p]").forEach((b) => (b.onclick = async () => { d.close(); await createFrom(b.dataset.p, $("#newTitle").value || undefined); }));
+    $("#dlgClose").onclick = () => d.close();
+  };
+
+  fillAdd();
+  loadList().catch((e) => toast(e.message, true));
+  $("#hideRefBtn").onclick = () => setHideRefs(!S.hideRefs);
+  $("#compareBtn").onclick = () => setCompare(!S.compare);
+  try { S.hideRefs = localStorage.getItem("zs-hide-refs") === "1"; $("#hideRefBtn").classList.toggle("toggled", S.hideRefs); if (S.hideRefs) $("#hideRefBtn").textContent = "Référence masquée"; } catch (e) { /* private window */ }
+  // 15 October 2026: a window opened before the code changed reloads itself (after the pending save), so a new template never shows
+  // as "modèle inconnu". It asks the server for the code fingerprint every 4 s and when the window comes back to the front.
+  let codeSeen = null;
+  const checkCode = async () => {
+    try {
+      const j = await api("GET", "/api/motion/status");
+      if (codeSeen === null) { codeSeen = j.code; return; }
+      if (j.code && j.code !== codeSeen) {
+        if (S.saveTimer && $("#saveState").textContent === "…") return;   // wait for the save in flight
+        location.reload();
+      }
+    } catch (e) { /* server restarting: try again later */ }
+  };
+  checkCode(); setInterval(checkCode, 4000); window.addEventListener("focus", checkCode);
+  window.ZS_STUDIO = S;
+  // what the gallery (gallery.js) uses: the state and the editor's own actions, never a second copy of them
+  window.ZS_APP = { S, api, change, toast, esc, openProject, loadList, renderPanel, renderTrack, renderScenes, setTab, seek, play, pause, loadBank, rebuild, upload };
+  try { if (localStorage.getItem("zs-mode") === "gallery") setTimeout(() => window.ZS_MODE && window.ZS_MODE("gallery"), 0); } catch (e) { /* private window */ }
+})();
+
+// 15 October 2026: the mode switch (editor / gallery), undo and redo buttons, and what the gallery needs from the editor.
+(function () {
+  const $ = (q) => document.querySelector(q);
+  const setMode = (m) => {
+    [...$("#modeSeg").children].forEach((b) => b.classList.toggle("on", b.dataset.mode === m));
+    $("#editView").hidden = m !== "edit"; $("#galleryView").hidden = m !== "gallery";
+    if (m === "gallery" && window.ZSGallery) window.ZSGallery.render();
+    if (m === "edit") window.dispatchEvent(new Event("resize"));
+    try { localStorage.setItem("zs-mode", m); } catch (e) { /* private window */ }
+  };
+  $("#modeSeg").onclick = (e) => { if (e.target.dataset.mode) setMode(e.target.dataset.mode); };
+  $("#undoBtn").onclick = () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "z", metaKey: true }));
+  $("#redoBtn").onclick = () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "z", metaKey: true, shiftKey: true }));
+  window.ZS_MODE = setMode;
+})();

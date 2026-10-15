@@ -1,0 +1,468 @@
+// 15 October 2026: the motion TEMPLATES of ZenRay Motion Design. Each one is a definition (build) plus its parameter interface (at most 4 essential,
+// 8 advanced, 16 expert values, HDA law); a scene is an instance. Every visible value comes from a parameter or from the theme ("@token"),
+// so the result is changed by changing a value, never by retracing pixels. The first set follows the structure of a launch film (title card,
+// prompt and status, kinetic words, count, list, colour slam, orbit word, gradient word, logo merge, end card) plus a showcase for 3D renders.
+// FR : les modeles animes du studio ; chaque valeur visible est un parametre ou un jeton du theme.
+(function () {
+  const ZS = window.ZS, h = ZS.h;
+  const T = (key, label, def, tier, extra) => Object.assign({ key, label, type: "text", default: def, tier }, extra || {});
+  const N = (key, label, def, min, max, step, tier, unit) => ({ key, label, type: "number", default: def, min, max, step, tier, unit });
+  const C = (key, label, def, tier) => ({ key, label, type: "color", default: def, tier });
+  const F = (key, label, def, tier) => ({ key, label, type: "font", default: def, tier });
+  const S = (key, label, def, options, tier) => ({ key, label, type: "select", default: def, options, tier });
+  const B = (key, label, def, tier) => ({ key, label, type: "bool", default: def, tier });
+  const L = (key, label, def, tier) => ({ key, label, type: "lines", default: def, tier });
+  const EASES = ["smooth", "snappy", "soft", "bounce"];
+
+  // ------------------------------------------------------------------------------------------------ title-card
+  ZS.register({
+    id: "title-card", label: "Carte titre", group: "Texte", duration: 4,
+    params: [
+      T("title", "Titre", "ZenRay Motion", 1), T("subtitle", "Sous-titre", "for 3D shorts", 1),
+      S("align", "Alignement", "left", ["left", "center"], 1), B("mark", "Étoile", true, 1),
+      F("titleFont", "Police du titre", "@fontTitle", 2), F("bodyFont", "Police du sous-titre", "@fontBody", 2),
+      N("titleSize", "Taille du titre", 104, 30, 260, 1, 2, "px"), N("subtitleSize", "Taille du sous-titre", 70, 20, 200, 1, 2, "px"),
+      C("ink", "Couleur du texte", "@ink", 2), C("accent", "Couleur de l'étoile", "@accent", 2), C("bg", "Fond", "@bg", 2),
+      T("footnote", "Note en bas", "", 2),
+      N("markSize", "Taille de l'étoile", 150, 40, 400, 1, 3, "px"), N("tracking", "Interlettrage", 0, -0.08, 0.1, 0.002, 3, "em"),
+      N("thickness", "Épaisseur des branches", 7, 2, 24, 0.5, 3), S("ease", "Courbe d'entrée", "smooth", EASES, 3),
+      N("enter", "Durée d'entrée", 0.9, 0.2, 2.5, 0.05, 3, "s"), N("stagger", "Décalage entre mots", 0.07, 0, 0.3, 0.01, 3, "s"),
+      N("y", "Position verticale", 0.42, 0.15, 0.8, 0.005, 3), N("weight", "Graisse du sous-titre", 500, 300, 800, 50, 3),
+      N("x", "Marge gauche", 0.16, 0.04, 0.4, 0.001, 3), N("start", "Début du titre", 0.35, 0, 3, 0.01, 3, "s"),
+      N("gap", "Retard du sous-titre", 0.2, 0, 3, 0.01, 3, "s"), N("footAt", "Apparition de la note", 1.3, 0, 6, 0.05, 3, "s"),
+      N("markX", "Étoile, position horizontale", 0.8, 0, 1, 0.001, 3), N("markY", "Étoile, position verticale", 0.2, 0, 1, 0.001, 3),
+      N("irregular", "Étoile irrégulière", 0, 0, 1, 0.05, 3), B("footIcon", "Icône devant la note", false, 3),
+      N("lineGap", "Écart entre les deux lignes", 0, -60, 200, 1, 4, "px"), N("footGap", "Écart avant la note", 46, 0, 400, 1, 4, "px"),
+      N("footSize", "Taille de la note", 24, 10, 80, 0.5, 4, "px"), N("subtitleX", "Décalage horizontal du sous-titre", 0, -60, 60, 1, 4, "px"),
+      N("footX", "Décalage horizontal de la note", 0, -60, 60, 1, 4, "px"),
+    ],
+    build({ el, p, W, H, u, tl, t0, cue, safe, fit }) {
+      h.css(el, { background: p.bg });
+      const left = p.align === "left", x0 = left ? Math.max(safe.x, p.x * W) : safe.x;
+      const block = h.css(h.el("div", "zs-abs", el), { left: x0 + "px", width: (left ? W - x0 - safe.x : safe.w) + "px", top: (p.y * H) + "px",
+        transform: "translateY(-50%)", textAlign: left ? "left" : "center", color: p.ink });
+      fit(block, W - x0 - safe.x, safe.h);
+      const l1 = h.css(h.el("div", "", block), { fontFamily: h.font(p.titleFont, "serif"), fontSize: p.titleSize * u + "px", fontWeight: 400, lineHeight: 1.08, letterSpacing: (p.tracking - 0.01) + "em" });
+      const l2 = h.css(h.el("div", "", block), { marginTop: p.lineGap * u + "px", marginLeft: p.subtitleX * u + "px", fontFamily: h.font(p.bodyFont), fontSize: p.subtitleSize * u + "px", fontWeight: p.weight, lineHeight: 1.12, letterSpacing: (p.tracking - 0.02) + "em" });
+      const w1 = h.words(l1, p.title), w2 = h.words(l2, p.subtitle), e = h.ease(p.ease);
+      // each line rises from behind its own mask (the measured reveal of the reference: no fade, the line comes up from below)
+      tl.fromTo(w1, { yPercent: 115 }, { yPercent: 0, duration: p.enter, ease: e, stagger: p.stagger }, t0 + p.start);
+      tl.fromTo(w2, { yPercent: 115 }, { yPercent: 0, duration: p.enter, ease: e, stagger: p.stagger }, t0 + p.start + p.gap);
+      cue(Math.max(0, p.start - 0.03), "whoosh", { length: 0.7, brightness: 0.55 });
+      if (p.footnote) {
+        const fn = h.css(h.el("div", "", block), { marginTop: p.footGap * u + "px", marginLeft: p.footX * u + "px", fontSize: p.footSize * u + "px", fontWeight: 500, opacity: 0.85, display: "flex", alignItems: "center",
+          justifyContent: left ? "flex-start" : "center", gap: p.footSize * 0.42 * u + "px" });
+        if (p.footIcon) {   // the four-dot mark before the note
+          const ic = h.css(h.el("span", "", fn), { display: "inline-grid", gridTemplateColumns: "1fr 1fr", gap: p.footSize * 0.12 * u + "px", width: p.footSize * 0.62 * u + "px", height: p.footSize * 0.62 * u + "px" });
+          for (let i = 0; i < 4; i++) h.css(h.el("span", "", ic), { background: "currentColor", borderRadius: "50%" });
+        }
+        h.el("span", "", fn, p.footnote);
+        tl.fromTo(fn, { autoAlpha: 0 }, { autoAlpha: 0.85, duration: 0.35, ease: "power1.out" }, t0 + p.footAt);
+      }
+      if (p.mark) {
+        const m = h.css(h.el("div", "zs-abs", el), { left: p.markX * W - p.markSize * u / 2 + "px", top: p.markY * H - p.markSize * u / 2 + "px" });
+        h.asterisk(m, p.markSize * u, 12, p.thickness, p.accent, p.irregular > 0 ? { irregular: p.irregular, seed: 7, taper: 2, hub: p.thickness * 0.9 } : null);
+        if (p.irregular > 0) tl.fromTo(m, { scale: 0.94, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: 0.6, ease: "expo.out", immediateRender: true }, t0 + 0.03);
+        else {
+          tl.fromTo(m, { scale: 0, rotation: -120 }, { scale: 1, rotation: 0, duration: 1.1, ease: "expo.out" }, t0 + 0.05);
+          tl.to(m, { rotation: 45, duration: Math.max(0.5, p.enter + 3), ease: "none" }, t0 + 1.15);
+        }
+        cue(0.08, "shimmer", { length: 0.9 });
+      }
+    },
+  });
+
+  // ------------------------------------------------------------------------------------------------ prompt-status
+  ZS.register({
+    id: "prompt-status", label: "Demande et statut", group: "Interface", duration: 6,
+    params: [
+      T("prompt", "Demande tapée", "Create a launch video for my 3D scene.", 1),
+      L("steps", "Étapes (une par ligne)", "Designing your video…\nAdding sound…\nRendering your video…", 1),
+      T("product", "Nom de l'outil", "ZenRay", 1), C("accent", "Couleur d'accent", "@accent", 1),
+      N("cps", "Vitesse de frappe", 30, 6, 90, 1, 2, "car./s"), C("panel", "Couleur des cartes", "@panel", 2), C("ink", "Texte", "@ink", 2),
+      C("muted", "Texte secondaire", "@muted", 2), C("bg", "Fond", "@bg", 2), F("font", "Police", "@fontBody", 2),
+      N("scale", "Échelle de l'interface", 1.3, 0.5, 2.2, 0.05, 2), T("placeholder", "Texte du champ vide", "Reply…", 2),
+      N("radius", "Arrondi des cartes", 18, 0, 40, 1, 3, "px"), N("width", "Largeur des cartes", 0.56, 0.3, 0.9, 0.01, 3),
+    ],
+    build({ el, p, W, H, u, dur, tl, t0, cue }) {
+      // a tall frame gives the cards most of its width (0.56 of 1080 px would squeeze the text)
+      const k = u * p.scale, cw = Math.min(W * (H > W ? Math.max(p.width, 0.86) : p.width), 1100 * k), cx = (W - cw) / 2;
+      h.css(el, { background: p.bg, fontFamily: h.font(p.font), color: p.ink });
+      const comp = h.css(h.el("div", "zs-panel", el), { left: cx + "px", width: cw + "px", top: 0.66 * H + "px", height: 150 * k + "px",
+        background: "#ffffff", borderRadius: p.radius * k + "px", padding: 26 * k + "px", fontSize: 30 * k + "px" });
+      const field = h.css(h.el("div", "", comp), { minHeight: 44 * k + "px" });
+      const bar = h.css(h.el("div", "zs-abs", comp), { left: 26 * k + "px", right: 26 * k + "px", bottom: 22 * k + "px", display: "flex", alignItems: "center", gap: 10 * k + "px", fontSize: 20 * k + "px", color: p.muted });
+      h.css(h.el("span", "zs-chip", bar, "+"), { border: `1px solid ${p.line || "#ddd"}` });
+      h.css(h.el("span", "zs-chip", bar, "Chat"), { background: "#efefe8" });
+      h.css(h.el("span", "", bar, ""), { flex: "1" });
+      h.el("span", "", bar, p.product + " ⌄");
+      const send = h.css(h.el("span", "", bar, "↑"), { width: 40 * k + "px", height: 40 * k + "px", borderRadius: 10 * k + "px", background: p.accent, color: "#fff",
+        display: "grid", placeItems: "center", fontWeight: 700 });
+      tl.fromTo(comp, { y: 40 * k, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 0.5, ease: "power3.out" }, t0 + 0.05);
+      const typed = h.type(tl, field, p.prompt, t0 + 0.45, p.cps);
+      cue(0.45, "type", { length: typed, rate: Math.min(16, p.cps / 2) });
+      const tSend = 0.45 + typed + 0.25;
+      tl.fromTo(send, { scale: 1 }, { scale: 0.82, duration: 0.08, yoyo: true, repeat: 1, ease: "power1.inOut" }, t0 + tSend);
+      cue(tSend, "click", {});
+      // the prompt leaves the field and becomes the first message; the assistant card follows
+      const top = 0.16 * H;
+      const bubble = h.css(h.el("div", "zs-panel", el, p.prompt), { left: cx + "px", width: cw + "px", top: top + "px", padding: 18 * k + "px " + 24 * k + "px",
+        background: "#e7e6dd", borderRadius: p.radius * 0.7 * k + "px", fontSize: 26 * k + "px", boxShadow: "none" });
+      const card = h.css(h.el("div", "zs-panel", el), { left: cx + "px", width: cw + "px", top: top + 90 * k + "px", padding: 24 * k + "px",
+        background: p.panel, borderRadius: p.radius * k + "px", fontSize: 28 * k + "px" });
+      h.css(h.el("div", "", card, "▦  Using " + p.product), { fontSize: 20 * k + "px", color: p.muted, marginBottom: 14 * k + "px" });
+      const status = h.css(h.el("div", "", card), { minHeight: 40 * k + "px" });
+      const track = h.css(h.el("div", "", card), { marginTop: 22 * k + "px", height: 4 * k + "px", background: "#e4e3da", borderRadius: "4px", overflow: "hidden" });
+      const fill = h.css(h.el("div", "", track), { height: "100%", width: "100%", background: p.accent, transformOrigin: "0 50%" });
+      tl.fromTo(bubble, { autoAlpha: 0, y: 20 * k }, { autoAlpha: 1, y: 0, duration: 0.45, ease: "power3.out" }, t0 + tSend + 0.15);
+      tl.fromTo(card, { autoAlpha: 0, y: 24 * k }, { autoAlpha: 1, y: 0, duration: 0.5, ease: "power3.out" }, t0 + tSend + 0.45);
+      cue(tSend + 0.15, "pop", { pitch: 0.4 });
+      const steps = p.steps.length ? p.steps : ["…"], t1 = tSend + 0.55, span = Math.max(0.6, dur - t1 - 0.2), each = span / steps.length;
+      const proxy = { i: 0 };
+      tl.fromTo(proxy, { i: 0 }, { i: steps.length - 0.001, duration: span, ease: "none",
+        onUpdate: () => { status.textContent = steps[Math.min(steps.length - 1, Math.floor(proxy.i))]; } }, t0 + t1);
+      status.textContent = steps[0];
+      tl.fromTo(fill, { scaleX: 0 }, { scaleX: 1, duration: span, ease: "power1.inOut" }, t0 + t1);
+      steps.forEach((s, i) => { if (i) cue(t1 + i * each, "tick", {}); });
+      // the empty field shows its placeholder again once the prompt has been sent
+      const placeholder = h.css(h.el("div", "zs-abs", comp, p.placeholder), { left: 26 * k + "px", top: 26 * k + "px", color: p.muted });
+      tl.fromTo(placeholder, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.3 }, t0 + tSend + 0.12);
+      tl.fromTo(field, { autoAlpha: 1 }, { autoAlpha: 0, duration: 0.01 }, t0 + tSend + 0.1);
+    },
+  });
+
+  // ------------------------------------------------------------------------------------------------ kinetic-words
+  ZS.register({
+    id: "kinetic-words", label: "Mots en mouvement", group: "Texte", duration: 3,
+    params: [
+      T("sentence", "Phrase ({pill} = mot surligné)", "We now {pill} with over", 1),
+      L("pills", "Mots surlignés (un par ligne)", "connect\nrender\nshare", 1), B("badge", "Pastille + à la fin", true, 1), C("accent", "Couleur du surlignage", "@accent", 1),
+      F("font", "Police", "@fontBody", 2), N("size", "Taille", 104, 30, 260, 1, 2, "px"), N("weight", "Graisse", 500, 300, 800, 50, 2),
+      C("ink", "Texte", "@ink", 2), C("pillInk", "Texte surligné", "@accentInk", 2), C("bg", "Fond", "@bg", 2),
+      N("interval", "Écart entre mots", 0.16, 0.04, 0.6, 0.01, 2, "s"), N("swap", "Changement du mot surligné", 0.55, 0.15, 2, 0.05, 2, "s"),
+      S("ease", "Courbe", "bounce", EASES, 3), N("tracking", "Interlettrage", -0.02, -0.08, 0.1, 0.005, 3, "em"),
+    ],
+    build({ el, p, W, u, tl, t0, dur, cue, fit }) {
+      h.css(el, { background: p.bg });
+      const line = h.css(h.el("div", "zs-center", el), { whiteSpace: "nowrap", fontFamily: h.font(p.font), fontSize: p.size * u + "px", fontWeight: p.weight,
+        letterSpacing: p.tracking + "em", color: p.ink });
+      const parts = String(p.sentence).split(/\s+/).filter(Boolean), nodes = [];
+      let pill = null;
+      parts.forEach((w, i) => {
+        if (i) line.appendChild(document.createTextNode(" "));
+        if (w === "{pill}") {
+          pill = h.css(h.el("span", "zs-word zs-pill", line, p.pills[0] || ""), { background: p.accent, color: p.pillInk });
+          nodes.push(pill);
+        } else nodes.push(h.el("span", "zs-word", line, w));
+      });
+      if (p.badge) {
+        line.appendChild(document.createTextNode(" "));
+        nodes.push(h.css(h.el("span", "zs-word", line, "+"), { background: p.accent, color: p.pillInk, borderRadius: "50%", width: "0.9em", height: "0.9em",
+          display: "inline-grid", placeItems: "center", fontSize: "0.7em", verticalAlign: "0.12em" }));
+      }
+      // measured with the longest highlighted word, the one that needs the most room, then back to the first
+      const longest = p.pills.reduce((a, b) => (String(b).length > String(a).length ? b : a), p.pills[0] || "");
+      fit(line, undefined, undefined, pill ? { before: () => { pill.textContent = longest; }, after: () => { pill.textContent = p.pills[0] || ""; } } : null); void W;
+      const e = h.ease(p.ease);
+      nodes.forEach((n, i) => {
+        tl.fromTo(n, { autoAlpha: 0, scale: 0.6, y: 20 * u }, { autoAlpha: 1, scale: 1, y: 0, duration: 0.45, ease: e }, t0 + 0.15 + i * p.interval);
+        if (i < 8) cue(0.15 + i * p.interval, "pop", { pitch: 0.3 + 0.08 * i, gain: 0.5 });
+      });
+      if (pill && p.pills.length > 1) {
+        const start = 0.15 + nodes.length * p.interval + 0.3, proxy = { k: 0 }, n = Math.max(1, Math.floor((dur - start) / p.swap));
+        tl.fromTo(proxy, { k: 0 }, { k: n, duration: n * p.swap, ease: "none",
+          onUpdate: () => { pill.textContent = p.pills[Math.floor(proxy.k) % p.pills.length]; } }, t0 + start);
+        for (let i = 1; i < Math.min(n, 6); i++) cue(start + i * p.swap, "click", { gain: 0.5 });
+      }
+    },
+  });
+
+  // ------------------------------------------------------------------------------------------------ big-count
+  ZS.register({
+    id: "big-count", label: "Grand nombre", group: "Données", duration: 3,
+    params: [
+      N("value", "Nombre", 416, 0, 999999, 1, 1), T("label", "Mot à côté", "Tools", 1), N("count", "Durée du compteur", 1.2, 0, 4, 0.05, 1, "s"), C("accent", "Couleur d'accent", "@accent", 1),
+      F("font", "Police", "@fontBody", 2), N("size", "Taille", 200, 60, 420, 1, 2, "px"), C("ink", "Texte", "@ink", 2), C("bg", "Fond", "@bg", 2),
+      N("dots", "Nombre de pastilles", 22, 0, 60, 1, 2), N("radius", "Rayon de l'orbite", 0.42, 0.15, 0.8, 0.01, 2), N("dotSize", "Taille des pastilles", 46, 10, 120, 1, 2, "px"),
+      N("seed", "Graine de la disposition", 7, 1, 999, 1, 2),
+      N("weight", "Graisse", 500, 300, 800, 50, 3), N("drift", "Rotation lente", 12, 0, 90, 1, 3, "°"),
+    ],
+    build({ el, p, W, H, u, tl, t0, dur, cue, safe, fit }) {
+      h.css(el, { background: p.bg });
+      // the dots ride an arc whose centre sits below the frame, under the number (never across it)
+      const R = H * (0.35 + p.radius * 0.6), cx = W / 2, cy = H * 1.0 + R * 0.12, rnd = h.rand(p.seed);
+      const ring = h.css(h.el("div", "zs-abs", el), { left: "0", top: "0", width: W + "px", height: H + "px", transformOrigin: `${cx}px ${cy}px` });
+      const hues = [p.accent, p.accent, h.mix(p.accent, "#000000", 0.25), "#2f6fe4", "#22a35a", "#f2b705", "#7b5cf0", "#1b1b19"];
+      const dots = [];
+      for (let i = 0; i < p.dots; i++) {
+        const a = Math.PI * (1.1 + 0.8 * (i + rnd() * 0.6) / Math.max(1, p.dots)), r = R * (0.8 + rnd() * 0.4), s = p.dotSize * u * (0.6 + rnd() * 0.6);
+        const d = h.css(h.el("div", "zs-abs", ring), { left: cx + Math.cos(a) * r * Math.max(1, W / H * 0.9) - s / 2 + "px", top: cy + Math.sin(a) * r - s / 2 + "px", width: s + "px", height: s + "px",
+          borderRadius: rnd() > 0.4 ? "50%" : 22 * u + "%", background: hues[Math.floor(rnd() * hues.length)], boxShadow: "0 6px 18px -8px rgba(0,0,0,0.35)" });
+        dots.push(d);
+      }
+      tl.fromTo(dots, { scale: 0, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: 0.5, ease: "back.out(2)", stagger: { each: 0.03, from: "center" } }, t0 + 0.2);
+      tl.fromTo(ring, { rotation: -p.drift / 2 }, { rotation: p.drift / 2, duration: dur, ease: "none" }, t0);
+      const title = h.css(h.el("div", "zs-abs", el), { left: safe.x + "px", width: safe.w + "px", top: H * 0.16 + "px", textAlign: "center", fontFamily: h.font(p.font), fontSize: p.size * u + "px",
+        fontWeight: p.weight, letterSpacing: "-0.03em", color: p.ink, lineHeight: 1, whiteSpace: "nowrap" });
+      // the counter's widest value decides the size, so the line never grows past the frame while it counts
+      fit(title, safe.w, H * 0.5);
+      const num = h.el("span", "", title, "0");
+      h.css(h.el("span", "", title, " " + p.label), { color: p.accent });
+      num.textContent = Math.round(p.value).toLocaleString("en-US");
+      const proxy = { v: 0 };
+      tl.fromTo(proxy, { v: 0 }, { v: p.value, duration: Math.max(0.001, p.count), ease: "power2.out", onUpdate: () => { num.textContent = Math.round(proxy.v).toLocaleString("en-US"); } }, t0 + 0.1);
+      num.textContent = p.count > 0 ? "0" : String(p.value);
+      tl.fromTo(title, { autoAlpha: 0, y: 30 * u }, { autoAlpha: 1, y: 0, duration: 0.5, ease: "power3.out" }, t0);
+      cue(0.1, "riser", { length: Math.max(0.3, p.count) });
+      cue(0.1 + p.count, "pop", { pitch: 0.6 });
+    },
+  });
+
+  // ------------------------------------------------------------------------------------------------ list-focus
+  ZS.register({
+    id: "list-focus", label: "Liste en focus", group: "Texte", duration: 4,
+    params: [
+      L("lines", "Lignes", "Connect your scenes\nAdd sound to your renders\nBuild workflows\nAutomate exports\nShare your work", 1),
+      B("toggle", "Interrupteur sur la ligne active", true, 1), C("accent", "Couleur d'accent", "@accent", 1), N("step", "Temps par ligne", 0.6, 0.2, 2, 0.05, 1, "s"),
+      F("font", "Police", "@fontBody", 2), N("size", "Taille", 46, 18, 120, 1, 2, "px"), C("ink", "Ligne active", "@ink", 2), C("muted", "Autres lignes", "@muted", 2),
+      C("bg", "Fond", "@bg", 2), N("gap", "Interligne", 1.55, 1.1, 2.4, 0.05, 2), N("dim", "Opacité des autres lignes", 0.35, 0, 1, 0.05, 2),
+    ],
+    build({ el, p, W, H, u, tl, t0, cue, safe, fit }) {
+      h.css(el, { background: p.bg });
+      const box = h.css(h.el("div", "zs-center", el), { fontFamily: h.font(p.font), fontSize: p.size * u + "px", lineHeight: p.gap, textAlign: "center", color: p.muted });
+      const rows = p.lines.map((txt) => {
+        const row = h.css(h.el("div", "", box), { position: "relative", whiteSpace: "nowrap" });
+        const label = h.el("span", "", row, txt);
+        let sw = null;
+        if (p.toggle) {
+          sw = h.css(h.el("span", "", row), { position: "absolute", left: "100%", marginLeft: "0.6em", top: "50%", width: "1.7em", height: "0.95em", borderRadius: "1em",
+            background: p.accent, transform: "translateY(-50%)", opacity: 0 });
+        }
+        return { row, label, sw };
+      });
+      // the switch hangs right of the longest line: keep room for it on both sides so the centred list stays inside
+      fit(box, safe.w - (p.toggle ? 2 * 2.4 * p.size * u : 0), safe.h);
+      tl.fromTo(rows.map((r) => r.row), { autoAlpha: 0, y: 14 * u }, { autoAlpha: p.dim, y: 0, duration: 0.4, stagger: 0.06, ease: "power2.out" }, t0);
+      rows.forEach((r, i) => {
+        const at = t0 + 0.4 + i * p.step;
+        tl.to(r.row, { autoAlpha: 1, color: p.ink, duration: 0.25 }, at);
+        if (r.sw) tl.fromTo(r.sw, { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.25, ease: "back.out(2)" }, at);
+        if (i < rows.length - 1) {
+          tl.to(r.row, { autoAlpha: p.dim, color: p.muted, duration: 0.25 }, at + p.step);
+          if (r.sw) tl.to(r.sw, { opacity: 0, duration: 0.2 }, at + p.step);
+        }
+        cue(0.4 + i * p.step, "click", { gain: 0.6 });
+      });
+      void W; void H;
+    },
+  });
+
+  // ------------------------------------------------------------------------------------------------ color-slam
+  ZS.register({
+    id: "color-slam", label: "Aplat de couleur", group: "Transition", duration: 1.5,
+    params: [
+      T("text", "Texte", "And many more", 1), C("colour", "Couleur de l'aplat", "@accent", 1), C("textColour", "Couleur du texte", "@accentInk", 1), F("font", "Police", "@fontBody", 1),
+      N("size", "Taille", 110, 30, 300, 1, 2, "px"), N("radius", "Arrondi", 0, 0, 80, 1, 2, "px"), N("from", "Zoom de départ", 0.55, 0.1, 1, 0.01, 2),
+      N("cover", "Part de l'image couverte", 0.78, 0.3, 1, 0.01, 2), C("bg", "Fond", "@bg", 2), N("weight", "Graisse", 500, 300, 800, 50, 2),
+    ],
+    build({ el, p, W, H, u, tl, t0, dur, cue, fit }) {
+      h.css(el, { background: p.bg });
+      const cw = W * p.cover, ch = H * p.cover * (W > H ? 0.86 : 0.6);
+      const card = h.css(h.el("div", "zs-center", el), { width: cw + "px", height: ch + "px", background: p.colour,
+        borderRadius: p.radius * u + "px", display: "grid", placeItems: "center" });
+      const txt = h.css(h.el("div", "", card, p.text), { color: p.textColour, fontFamily: h.font(p.font), fontSize: p.size * u + "px", fontWeight: p.weight, letterSpacing: "-0.02em", whiteSpace: "nowrap" });
+      fit(txt, cw * 0.88, ch * 0.88);
+      tl.fromTo(card, { scale: p.from }, { scale: 1, duration: 0.55, ease: "expo.out" }, t0);
+      tl.to(card, { scale: 1.04, duration: Math.max(0.2, dur - 0.55), ease: "none" }, t0 + 0.55);
+      tl.fromTo(txt, { autoAlpha: 0, scale: 0.8 }, { autoAlpha: 1, scale: 1, duration: 0.4, ease: "back.out(2)" }, t0 + 0.12);
+      cue(0, "impact", { gain: 0.8 });
+    },
+  });
+
+  // ------------------------------------------------------------------------------------------------ orbit-word
+  ZS.register({
+    id: "orbit-word", label: "Mot en orbite", group: "Texte", duration: 2.5,
+    params: [
+      T("word", "Mot", "More", 1), C("colour", "Couleur du mot", "@accent", 1), N("tiles", "Nombre de tuiles", 18, 0, 48, 1, 1), F("font", "Police", "@fontBody", 1),
+      N("size", "Taille", 190, 40, 400, 1, 2, "px"), N("radius", "Rayon", 0.34, 0.15, 0.6, 0.01, 2), N("tileSize", "Taille des tuiles", 46, 12, 120, 1, 2, "px"),
+      N("spin", "Rotation", 40, 0, 360, 1, 2, "°"), N("seed", "Graine", 3, 1, 999, 1, 2), C("bg", "Fond", "@bg", 2), C("tile", "Couleur de base des tuiles", "#2f6fe4", 2),
+      N("weight", "Graisse", 500, 300, 800, 50, 2),
+    ],
+    build({ el, p, W, H, u, tl, t0, dur, cue, fit }) {
+      h.css(el, { background: p.bg });
+      const R = Math.min(W, H) * p.radius, rnd = h.rand(p.seed);
+      const ring = h.css(h.el("div", "zs-center", el), { width: 2 * R + "px", height: 2 * R + "px" });
+      const tiles = [];
+      for (let i = 0; i < p.tiles; i++) {
+        const a = (i / Math.max(1, p.tiles)) * Math.PI * 2, s = p.tileSize * u * (0.7 + rnd() * 0.5);
+        const col = [p.tile, p.colour, "#1b1b19", "#22a35a", "#f2b705", h.mix(p.tile, "#ffffff", 0.3)][Math.floor(rnd() * 6)];
+        tiles.push(h.css(h.el("div", "zs-abs", ring), { left: R + Math.cos(a) * R - s / 2 + "px", top: R + Math.sin(a) * R - s / 2 + "px", width: s + "px", height: s + "px",
+          borderRadius: rnd() > 0.5 ? "50%" : "28%", background: col }));
+      }
+      tl.fromTo(ring, { rotation: 0 }, { rotation: p.spin, duration: dur, ease: "none" }, t0);
+      tl.fromTo(tiles, { scale: 0 }, { scale: 1, duration: 0.45, ease: "back.out(2)", stagger: 0.025 }, t0 + 0.05);
+      const w = h.css(h.el("div", "zs-center", el, p.word), { fontFamily: h.font(p.font), fontSize: p.size * u + "px", fontWeight: p.weight, color: p.colour, letterSpacing: "-0.03em", whiteSpace: "nowrap" });
+      fit(w);
+      tl.fromTo(w, { scale: 0.7, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: 0.5, ease: "expo.out" }, t0 + 0.1);
+      cue(0.05, "whoosh", { length: 0.5, brightness: 0.7 });
+    },
+  });
+
+  // ------------------------------------------------------------------------------------------------ gradient-word
+  ZS.register({
+    id: "gradient-word", label: "Mot sur dégradé", group: "Texte", duration: 3,
+    params: [
+      T("word", "Mot sur le disque", "What", 1), T("phrase", "Phrase ({pill} = mot surligné)", "What are {pill}", 1), T("pill", "Mot surligné", "you", 1), C("colour", "Couleur", "@accent", 1),
+      F("font", "Police", "@fontBody", 2), N("size", "Taille du mot", 170, 40, 360, 1, 2, "px"), N("phraseSize", "Taille de la phrase", 92, 30, 220, 1, 2, "px"),
+      C("ink", "Texte", "@ink", 2), C("bg", "Fond", "@bg", 2), N("disc", "Taille du disque", 0.62, 0.2, 1.2, 0.01, 2), N("split", "Part du disque dans la scène", 0.5, 0.2, 0.9, 0.01, 2),
+      N("weight", "Graisse", 500, 300, 800, 50, 2),
+    ],
+    build({ el, p, W, H, u, tl, t0, dur, cue, fit }) {
+      h.css(el, { background: p.bg });
+      const D = Math.min(W, H) * p.disc;
+      const disc = h.css(h.el("div", "zs-center", el), { width: D + "px", height: D + "px", borderRadius: "50%",
+        background: `radial-gradient(circle at 30% 40%, ${p.colour} 0%, ${h.mix(p.colour, p.bg, 0.55)} 45%, ${p.bg} 72%)` });
+      const big = h.css(h.el("div", "zs-center", el, p.word), { fontFamily: h.font(p.font), fontSize: p.size * u + "px", fontWeight: p.weight, color: p.ink, letterSpacing: "-0.03em", whiteSpace: "nowrap" });
+      fit(big);
+      const t1 = dur * p.split;
+      tl.fromTo(disc, { scale: 0.4, rotation: -40, autoAlpha: 0 }, { scale: 1, rotation: 0, autoAlpha: 1, duration: 0.8, ease: "expo.out" }, t0);
+      tl.to(disc, { rotation: 30, duration: t1, ease: "none" }, t0 + 0.8);
+      tl.fromTo(big, { autoAlpha: 0, scale: 0.85 }, { autoAlpha: 1, scale: 1, duration: 0.5, ease: "power3.out" }, t0 + 0.15);
+      tl.to([disc, big], { autoAlpha: 0, scale: 0.9, duration: 0.3, ease: "power2.in" }, t0 + t1);
+      const line = h.css(h.el("div", "zs-center", el), { whiteSpace: "nowrap", fontFamily: h.font(p.font), fontSize: p.phraseSize * u + "px", fontWeight: p.weight, color: p.ink });
+      const nodes = [];
+      String(p.phrase).split(/\s+/).filter(Boolean).forEach((wd, i) => {
+        if (i) line.appendChild(document.createTextNode(" "));
+        nodes.push(wd === "{pill}" ? h.css(h.el("span", "zs-word zs-pill", line, p.pill), { background: p.colour, color: "#fff" }) : h.el("span", "zs-word", line, wd));
+      });
+      fit(line);
+      tl.fromTo(nodes, { autoAlpha: 0, y: 24 * u }, { autoAlpha: 1, y: 0, duration: 0.4, stagger: 0.12, ease: "back.out(1.8)" }, t0 + t1 + 0.2);
+      cue(0, "whoosh", { length: 0.8, brightness: 0.4 });
+      cue(t1 + 0.2 + 0.12 * (nodes.length - 1), "pop", { pitch: 0.7 });
+    },
+  });
+
+  // ------------------------------------------------------------------------------------------------ logo-merge
+  ZS.register({
+    id: "logo-merge", label: "Logo qui se forme", group: "Marque", duration: 3,
+    params: [
+      T("name", "Nom", "ZenRay", 1), C("colour", "Couleur du logo", "@accent", 1), S("shape", "Forme", "blocks", ["blocks", "dots", "diamond"], 1), F("font", "Police du nom", "@fontBody", 1),
+      N("size", "Taille du nom", 140, 40, 320, 1, 2, "px"), N("mark", "Taille du logo", 220, 60, 500, 1, 2, "px"), C("ink", "Nom", "@ink", 2), C("bg", "Fond", "@bg", 2),
+      N("merge", "Durée de la fusion", 0.9, 0.2, 2.5, 0.05, 2), N("weight", "Graisse", 600, 300, 800, 50, 2),
+    ],
+    build({ el, p, W, H, u, tl, t0, cue, safe, fit }) {
+      h.css(el, { background: p.bg });
+      const M = p.mark * u, holder = h.css(h.el("div", "zs-center", el), { width: M + "px", height: M + "px" });
+      const shapes = { blocks: [[0.08, 0.05, 0.55, 0.45, "22%"], [0.38, 0.32, 0.55, 0.38, "22%"], [0.05, 0.62, 0.34, 0.34, "50%"]],
+                       dots: [[0.05, 0.05, 0.45, 0.45, "50%"], [0.5, 0.25, 0.45, 0.45, "50%"], [0.2, 0.55, 0.42, 0.42, "50%"]],
+                       diamond: [[0.25, 0.0, 0.5, 0.5, "12%"], [0.0, 0.25, 0.5, 0.5, "12%"], [0.5, 0.25, 0.5, 0.5, "12%"]] }[p.shape] || [];
+      const parts = shapes.map(([x, y, w, hh, r]) => h.css(h.el("div", "zs-abs", holder), { left: x * M + "px", top: y * M + "px", width: w * M + "px", height: hh * M + "px",
+        borderRadius: r, background: p.colour, transform: p.shape === "diamond" ? "rotate(45deg)" : "" }));
+      const off = [[-1.6, -0.6], [1.5, 0.2], [-0.4, 1.4]];
+      parts.forEach((d, i) => tl.fromTo(d, { x: off[i][0] * M, y: off[i][1] * M, autoAlpha: 0 }, { x: 0, y: 0, autoAlpha: 1, duration: p.merge, ease: "expo.inOut" }, t0 + 0.05 * i));
+      const name = h.css(h.el("div", "zs-abs", el, p.name), { top: "50%", left: "50%", transform: "translate(0, -50%)", fontFamily: h.font(p.font), fontSize: p.size * u + "px",
+        fontWeight: p.weight, color: p.ink, letterSpacing: "-0.03em", whiteSpace: "nowrap", opacity: 0 });
+      // the logo shrinks to 0.55 and sits left of the name: the name gets the rest of the safe width
+      fit(name, safe.w - M * 0.8, safe.h);
+      // measured when the playhead reaches the move (after the fonts and the fit), never estimated from the letter count
+      const tMove = t0 + p.merge + 0.2, shift = () => -(name.offsetWidth + M * 0.5) / 2;
+      tl.to(holder, { x: () => shift() - M * 0.15, scale: 0.55, duration: 0.6, ease: "power3.inOut" }, tMove);
+      tl.fromTo(name, { autoAlpha: 0, x: () => shift() + M * 0.2 }, { autoAlpha: 1, x: () => shift() + M * 0.25, duration: 0.6, ease: "power3.out", immediateRender: false }, tMove + 0.15);
+      cue(0, "whoosh", { length: p.merge, brightness: 0.6 });
+      cue(p.merge, "impact", { gain: 0.6 });
+      void W; void H;
+    },
+  });
+
+  // ------------------------------------------------------------------------------------------------ end-card
+  ZS.register({
+    id: "end-card", label: "Carte de fin", group: "Marque", duration: 3,
+    params: [
+      T("title", "Titre", "ZenRay Motion", 1), T("subtitle", "Sous-titre", "for 3D shorts", 1), T("url", "Adresse", "matthieuhuguet.com", 1), B("mark", "Étoile", true, 1),
+      F("titleFont", "Police du titre", "@fontTitle", 2), F("bodyFont", "Police du texte", "@fontBody", 2), T("label", "Petit texte", "available at", 2),
+      C("ink", "Texte", "@ink", 2), C("accent", "Couleur de l'étoile", "@accent", 2), C("bg", "Fond", "@bg", 2), N("titleSize", "Taille du titre", 88, 30, 220, 1, 2, "px"),
+      N("urlSize", "Taille de l'adresse", 92, 20, 220, 1, 2, "px"),
+      N("markSize", "Taille de l'étoile", 160, 40, 400, 1, 3, "px"), N("spokes", "Branches", 12, 5, 24, 1, 3), N("thickness", "Épaisseur", 7, 2, 16, 0.5, 3),
+    ],
+    build({ el, p, W, H, u, tl, t0, cue, safe, fit }) {
+      h.css(el, { background: p.bg, color: p.ink });
+      // the star sits right of the text in a landscape frame and above it in a tall one; the text keeps the rest
+      const tall = H > W, x0 = Math.max(safe.x, 0.16 * W), room = (p.mark && !tall ? 0.78 * W - p.markSize * u / 2 - 24 * u : W - safe.x) - x0;
+      const block = h.css(h.el("div", "zs-abs", el), { left: x0 + "px", width: room + "px", top: tall && p.mark ? "58%" : "50%", transform: "translateY(-50%)" });
+      const t = h.css(h.el("div", "", block), { fontFamily: h.font(p.titleFont, "serif"), fontSize: p.titleSize * u + "px", lineHeight: 1.1 });
+      const s = h.css(h.el("div", "", block), { fontFamily: h.font(p.bodyFont), fontSize: p.titleSize * 0.5 * u + "px", fontWeight: 500, marginTop: 6 * u + "px" });
+      const l = h.css(h.el("div", "", block, p.label), { fontFamily: h.font(p.bodyFont), fontSize: 22 * u + "px", opacity: 0.6, marginTop: 34 * u + "px" });
+      const url = h.css(h.el("div", "", block), { fontFamily: h.font(p.bodyFont), fontSize: p.urlSize * u + "px", fontWeight: 500, letterSpacing: "-0.02em", lineHeight: 1.1 });
+      const w1 = h.words(t, p.title), w2 = h.words(s, p.subtitle), w3 = h.words(url, p.url);
+      fit(block, room, tall && p.mark ? H * 0.42 - safe.y : safe.h);
+      tl.fromTo(w1, { yPercent: 115 }, { yPercent: 0, duration: 0.8, ease: "power3.out", stagger: 0.06 }, t0 + 0.1);
+      tl.fromTo(w2, { yPercent: 115 }, { yPercent: 0, duration: 0.8, ease: "power3.out", stagger: 0.06 }, t0 + 0.25);
+      tl.fromTo(l, { autoAlpha: 0 }, { autoAlpha: 0.6, duration: 0.5 }, t0 + 0.5);
+      tl.fromTo(w3, { yPercent: 115 }, { yPercent: 0, duration: 0.8, ease: "power3.out", stagger: 0.06 }, t0 + 0.6);
+      cue(0.6, "whoosh", { length: 0.6, brightness: 0.5 });
+      if (p.mark) {
+        const m = h.css(h.el("div", "zs-abs", el), { left: (tall ? 0.5 : 0.78) * W - p.markSize * u / 2 + "px", top: (tall ? 0.24 : 0.5) * H - p.markSize * u / 2 + "px" });
+        h.asterisk(m, p.markSize * u, p.spokes, p.thickness, p.accent);
+        tl.fromTo(m, { scale: 0, rotation: -90 }, { scale: 1, rotation: 0, duration: 1, ease: "expo.out" }, t0 + 0.2);
+        cue(0.2, "shimmer", { length: 1 });
+      }
+    },
+  });
+
+  // ------------------------------------------------------------------------------------------------ media-showcase
+  ZS.register({
+    id: "media-showcase", label: "Rendu 3D en vitrine", group: "Média", duration: 5,
+    params: [
+      T("media", "Fichier (vidéo ou image importée)", "", 1, { type: "media" }), T("caption", "Légende", "Louisiana Bayou", 1), T("sub", "Sous-légende", "Houdini · Unreal Engine 5", 1),
+      N("zoom", "Poussée de caméra", 1.08, 1, 1.4, 0.01, 1, "x"),
+      S("frame", "Cadre", "framed", ["framed", "full"], 2), N("radius", "Arrondi", 26, 0, 80, 1, 2, "px"), S("fit", "Remplissage", "cover", ["cover", "contain"], 2),
+      N("mediaStart", "Début dans le fichier", 0, 0, 3600, 0.1, 2, "s"), C("ink", "Texte", "@ink", 2), C("bg", "Fond", "@bg", 2), F("captionFont", "Police de la légende", "@fontTitle", 2),
+      N("captionSize", "Taille de la légende", 64, 20, 180, 1, 2, "px"),
+      N("panX", "Glissement horizontal", 0, -0.2, 0.2, 0.01, 3), N("panY", "Glissement vertical", 0, -0.2, 0.2, 0.01, 3), B("shadow", "Ombre", true, 3), N("rate", "Vitesse de la vidéo", 1, 0.25, 2, 0.05, 3, "x"),
+      S("entrance", "Entrée du plan", "glisse", ["glisse", "coupe"], 3), B("showCaption", "Afficher la légende", true, 3),
+    ],
+    build({ el, p, W, H, u, dur, seam, tl, t0, cue, asset, videos, preview, safe, fit }) {
+      h.css(el, { background: p.bg, color: p.ink });
+      const full = p.frame === "full", vertical = H > W;
+      // a vertical frame never pushes its caption out of the picture: it leaves the caption's room under it (4:5 included, 15 October 2026)
+      const room = p.showCaption && (p.caption || p.sub) ? (p.captionSize * 1.75 + 44) * u + safe.y : safe.y;
+      const fw = full ? W : W * (vertical ? 0.86 : 0.7), fh = full ? H : (vertical ? Math.min(fw * 1.25, H * 0.88 - room) : fw * 9 / 16);
+      const fx = (W - fw) / 2, fy = full ? 0 : (vertical ? H * 0.12 : (H - fh) / 2 - 40 * u);
+      const frame = h.css(h.el("div", "zs-abs", el), { left: fx + "px", top: fy + "px", width: fw + "px", height: fh + "px", overflow: "hidden",
+        borderRadius: full ? "0" : p.radius * u + "px", background: "#101010", boxShadow: p.shadow && !full ? "0 40px 90px -30px rgba(0,0,0,0.45)" : "none" });
+      const inner = h.css(h.el("div", "zs-abs", frame), { inset: "0" });
+      const src = p.media ? asset(p.media) : "";
+      if (src && ZS.isVideo(p.media)) {
+        const v = h.el("video", "zs-media clip", inner);
+        v.src = src; v.muted = true; v.playsInline = true; v.preload = "auto";
+        v.setAttribute("muted", ""); v.setAttribute("playsinline", "");
+        v.dataset.start = t0.toFixed(6); v.dataset.duration = (dur + (seam || 0)).toFixed(6); v.dataset.mediaStart = Number(p.mediaStart).toFixed(6); v.dataset.trackIndex = "5";
+        if (p.rate !== 1) v.dataset.playbackRate = String(p.rate);
+        h.css(v, { objectFit: p.fit });
+        videos.push({ node: v, start: t0, dur, mediaStart: Number(p.mediaStart), rate: p.rate });
+        void preview;
+      } else if (src) {
+        h.css(h.el("img", "zs-media", inner), { objectFit: p.fit }).src = src;
+      } else {
+        h.css(inner, { background: `radial-gradient(circle at 30% 30%, #3a4a5a, #101418 70%)`, display: "grid", placeItems: "center", color: "#cfd6dd",
+          fontSize: 34 * u + "px", fontFamily: h.font("InterVariable") });
+        inner.textContent = p.media && String(p.media).startsWith("ref:") ? "plan de la référence (masqué)" : "Importe un rendu 3D (onglet Médias)";
+      }
+      tl.fromTo(inner, { scale: 1, xPercent: 0, yPercent: 0 }, { scale: p.zoom, xPercent: p.panX * 100, yPercent: p.panY * 100, duration: dur, ease: "none" }, t0);
+      // "coupe": a hard cut, as in a measured reference (no fade, no slide); "glisse": the frame arrives
+      if (p.entrance !== "coupe") tl.fromTo(frame, { autoAlpha: 0, y: full ? 0 : 50 * u, scale: full ? 1.02 : 0.96 }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.8, ease: "expo.out" }, t0);
+      if (p.showCaption && (p.caption || p.sub)) {
+        const cap = h.css(h.el("div", "zs-abs", el), full ? { left: 0.07 * W + "px", bottom: 0.08 * H + "px", color: "#ffffff", textShadow: "0 2px 20px rgba(0,0,0,0.5)" }
+          : { left: fx + "px", top: fy + fh + 36 * u + "px", color: p.ink });
+        const c1 = h.css(h.el("div", "", cap), { fontFamily: h.font(p.captionFont, "serif"), fontSize: p.captionSize * u + "px", lineHeight: 1.1 });
+        const c2 = h.css(h.el("div", "", cap, p.sub), { fontSize: p.captionSize * 0.42 * u + "px", opacity: 0.7, marginTop: 8 * u + "px", fontWeight: 500 });
+        const ws = h.words(c1, p.caption);
+        h.css(cap, { width: (full ? W - 0.07 * W - safe.x : fw) + "px" });
+        fit(cap, full ? W - 0.07 * W - safe.x : fw, full ? H * 0.4 : Math.max(60 * u, H - (fy + fh + 36 * u) - safe.y * 0.5));
+        tl.fromTo(ws, { yPercent: 115 }, { yPercent: 0, duration: 0.8, ease: "power3.out", stagger: 0.06 }, t0 + 0.4);
+        tl.fromTo(c2, { autoAlpha: 0 }, { autoAlpha: 0.7, duration: 0.6 }, t0 + 0.7);
+      }
+      if (p.entrance !== "coupe") cue(0, "whoosh", { length: 0.8, brightness: 0.35 });
+    },
+  });
+})();

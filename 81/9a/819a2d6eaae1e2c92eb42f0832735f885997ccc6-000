@@ -1,0 +1,297 @@
+// ZenRay Motion Design, the motion kit (15 October 2026): the treatments that recur across the 12 measured references, as templates.
+// media-text: a filmed shot (an excerpt of a reference, or your render) with text on it: subtitle, bold left caption with an accent word,
+//   centred statement, split left/right, or giant words. horizon-card: a dark card with a glowing horizon and a serif title. bar-chart,
+//   line-chart, dot-grid: the data scenes. ui-window: a retro application window (brutal black and pink, Windows XP, plain). flow-diagram:
+//   boxes and links with a travelling highlight. Every visible value is a parameter; *word* marks the accent word of a text.
+// FR : le kit de motion tire des 12 references ; plan filme avec texte, carte a horizon, graphiques, fenetre retro, schema de flux.
+(function () {
+  "use strict";
+  const ZS = window.ZS, h = ZS.h;
+  const P = (key, label, type, def, tier, extra) => ({ key, label, type, default: def, tier, ...(extra || {}) });
+  const N = (key, label, def, min, max, step, tier, unit) => P(key, label, "number", def, tier, { min, max, step, unit });
+  const B = (key, label, def, tier) => P(key, label, "bool", def, tier);
+  const S = (key, label, def, options, tier) => P(key, label, "select", def, tier, { options });
+  const STYLES = ["sous-titre", "légende gauche", "centre", "partagé", "géant", "aucun"];
+  // *word* -> accent span ; returns the spans of the words (for a word-by-word entrance)
+  const rich = (parent, text, accent) => {
+    const out = [];
+    String(text).split(/(\s+)/).forEach((w) => {
+      if (!w) return;
+      if (/^\s+$/.test(w)) { parent.appendChild(document.createTextNode(" ")); return; }
+      const m = /^\*(.+)\*([.,!?;:]*)$/.exec(w);
+      const s = h.el("span", "", parent, m ? m[1] + m[2] : w);
+      s.style.display = "inline-block";
+      if (m) s.style.color = accent;
+      out.push(s);
+    });
+    return out;
+  };
+  // the filmed layer shared by media-text: video or image, cover, optional black and white, optional slow push
+  const mediaLayer = (ctx, p) => {
+    const { el, asset, videos, t0, dur, tl } = ctx;
+    const box = h.css(h.el("div", "zs-abs", el), { inset: "0", overflow: "hidden", background: "#000" });
+    const src = p.media ? asset(p.media) : "";
+    let node = null;
+    if (src && ZS.isVideo(p.media)) {
+      node = h.el("video", "zs-media clip", box);
+      node.src = src; node.muted = true; node.playsInline = true; node.preload = "auto"; node.setAttribute("muted", ""); node.setAttribute("playsinline", "");
+      node.dataset.start = t0.toFixed(6); node.dataset.duration = (dur + (ctx.seam || 0)).toFixed(6); node.dataset.mediaStart = Number(p.mediaStart).toFixed(6); node.dataset.trackIndex = "5";
+      videos.push({ node, start: t0, dur, mediaStart: Number(p.mediaStart), rate: 1 });
+    } else if (src) node = h.el("img", "zs-media", box), node.src = src;
+    else if (p.subject && ZS.illustrate) ZS.illustrate(ctx, p, box);   // no filmed plate: the shot redrawn as motion (zs-illustrate.js)
+    else {
+      h.css(box, { background: `radial-gradient(circle at 40% 35%, #3a3f45, #121518 75%)` });
+      if (p.media && String(p.media).startsWith("ref:"))
+        h.css(h.el("div", "zs-abs", box, "plan de la référence (masqué)"), { left: 24 * ctx.u + "px", bottom: 20 * ctx.u + "px", color: "rgba(255,255,255,0.35)", fontSize: 18 * ctx.u + "px", fontFamily: h.font("InterVariable") });
+    }
+    if (node) h.css(node, { position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "cover", filter: p.bw ? "grayscale(1) contrast(1.12)" : "none" });
+    if (p.push > 1) tl.fromTo(box, { scale: 1 }, { scale: p.push, duration: dur, ease: "none" }, t0);
+    return box;
+  };
+
+  ZS.register({
+    id: "media-text", label: "Plan filmé avec texte", group: "Média", duration: 3,
+    params: [
+      P("media", "Plan (vidéo ou image)", "text", "", 1, { type: "media" }), P("text", "Texte (*mot* = mot en couleur)", "text", "", 1),
+      P("style", "Style du texte", "select", "sous-titre", 1, { options: STYLES }), P("accent", "Couleur d'accent", "color", "@accent", 1),
+      N("mediaStart", "Début dans le plan", 0, 0, 3600, 0.01, 2, "s"), P("font", "Police", "font", "@fontBody", 2), N("size", "Taille", 0, 0, 600, 1, 2, "px (0 = selon le style)"),
+      P("ink", "Couleur du texte", "color", "#ffffff", 2), B("bw", "Noir et blanc", false, 2), P("text2", "Second texte (style partagé)", "text", "", 2),
+      N("push", "Poussée de caméra", 1, 1, 1.4, 0.01, 2, "x"), S("enter", "Entrée du texte", "mots", ["mots", "fondu", "coupe", "machine"], 2),
+      N("y", "Position verticale du texte", 0, 0, 1, 0.005, 3, "(0 = selon le style)"), N("x", "Position horizontale", 0, 0, 1, 0.005, 3, "(0 = selon le style)"),
+      N("weight", "Graisse", 0, 0, 900, 50, 3, "(0 = selon le style)"), N("tracking", "Interlettrage", 0, -0.1, 0.3, 0.005, 3, "em"),
+      N("textAt", "Apparition du texte", 0.1, 0, 30, 0.01, 3, "s"), N("shadow", "Ombre du texte", 0.35, 0, 1, 0.05, 3), N("width", "Largeur du texte", 0.8, 0.2, 1, 0.01, 3),
+      P("case", "Casse", "select", "telle quelle", 3, { options: ["telle quelle", "majuscules"] }),
+      N("scrim", "Voile sous le texte (plan dessiné)", 0.35, 0, 0.9, 0.01, 3),
+      // the drawn shot behind the text when there is no filmed plate (15 October 2026); subject "" keeps the plain dark ground
+      ...(ZS.ILLUSTRATION_PARAMS ? ZS.ILLUSTRATION_PARAMS(4, 4, 4).map((x) => (x.key === "subject" ? { ...x, default: "", options: ["", ...x.options] } : x)) : []),
+    ],
+    build(ctx) {
+      const { el, p, W, H, u, tl, t0, cue, fit, safe } = ctx;
+      mediaLayer(ctx, p);
+      if (p.style === "aucun" || (!p.text && !p.text2)) return;
+      // on a drawn shot the words come first: a veil keeps them readable over the drawing (house style, 15 October 2026)
+      if (!p.media && p.subject && p.scrim > 0) h.css(h.el("div", "zs-abs", el), { inset: "0", background: `rgba(0,0,0,${p.scrim})` });
+      const D = { "sous-titre": { size: 34, y: 0.86, x: 0.5, w: 400, align: "center" }, "légende gauche": { size: 74, y: 0.62, x: 0.06, w: 700, align: "left" },
+        "centre": { size: 64, y: 0.5, x: 0.5, w: 500, align: "center" }, "partagé": { size: 56, y: 0.5, x: 0.5, w: 400, align: "center" },
+        "géant": { size: 330, y: 0.5, x: 0.5, w: 900, align: "center" } }[p.style];
+      const size = (p.size || D.size) * u, y = p.y || D.y, x = p.x || D.x, wgt = p.weight || D.w;
+      const css = { fontFamily: h.font(p.font), fontSize: size + "px", fontWeight: wgt, color: p.ink, letterSpacing: p.tracking + "em", lineHeight: p.style === "géant" ? 0.86 : 1.08,
+        textShadow: `0 ${2 * u}px ${18 * u}px rgba(0,0,0,${p.shadow})`, textTransform: p.case === "majuscules" ? "uppercase" : "none" };
+      const blocks = [];
+      if (p.style === "partagé") {
+        // side by side in a wide frame; stacked in a square or vertical one, so each half keeps a readable size (15 October 2026)
+        const stack = W / H < 1.2;
+        [[p.text, 0.25, -1], [p.text2, 0.75, 1]].forEach(([tx, fx, side]) => {
+          if (!tx) return;
+          const b = h.css(h.el("div", "zs-abs", el), { ...css, left: (stack ? 0.5 : fx) * W + "px", top: (stack ? y + side * 0.07 : y) * H + "px",
+            transform: "translate(-50%, -50%)", whiteSpace: "nowrap", textAlign: "center" });
+          blocks.push([b, rich(b, tx, p.accent)]); fit(b, stack ? safe.w : W * 0.45, safe.h / (stack ? 2 : 1));
+        });
+      } else {
+        const b = h.css(h.el("div", "zs-abs", el), { ...css, top: y * H + "px", width: p.width * W + "px", textAlign: D.align,
+          left: D.align === "left" ? x * W + "px" : x * W - p.width * W / 2 + "px", transform: "translateY(-50%)" });
+        blocks.push([b, rich(b, p.text, p.accent)]);
+        fit(b, D.align === "left" ? W - x * W - safe.x : Math.min(p.width * W, safe.w), safe.h);
+      }
+      blocks.forEach(([b, words], k) => {
+        const at = t0 + p.textAt + k * 0.25;
+        if (p.enter === "mots") tl.fromTo(words, { autoAlpha: 0, y: size * 0.25 }, { autoAlpha: 1, y: 0, duration: 0.35, stagger: 0.06, ease: "power3.out" }, at);
+        else if (p.enter === "fondu") tl.fromTo(b, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.4, ease: "power1.out" }, at);
+        else if (p.enter === "machine") { const all = words; all.forEach((w) => (w.style.visibility = "hidden")); all.forEach((w, i) => tl.set(w, { visibility: "visible" }, at + i * 0.09)); }
+        else { h.css(b, { visibility: "hidden" }); tl.set(b, { visibility: "visible" }, at); }
+      });
+      cue(p.textAt, p.style === "géant" ? "impact" : "whoosh", { length: 0.4, gain: 0.5 });
+    },
+  });
+
+  ZS.register({
+    id: "horizon-card", label: "Carte à horizon lumineux", group: "Texte", duration: 3,
+    params: [
+      P("title", "Titre", "text", "ZenRay Motion", 1), P("subtitle", "Sous-titre", "text", "procedural 3D worlds", 1), P("eyebrow", "Surtitre", "text", "", 1),
+      P("glow", "Couleur de l'horizon", "color", "#f08a4b", 1),
+      P("bg", "Fond", "color", "#14182a", 2), P("glow2", "Seconde couleur de l'horizon", "color", "#5a7bd8", 2), P("ink", "Texte", "color", "#f4efe6", 2),
+      P("font", "Police du titre", "font", "PlayfairDisplay", 2), N("size", "Taille du titre", 82, 20, 240, 1, 2, "px"), N("horizon", "Hauteur de l'horizon", 0.8, 0.4, 1.1, 0.005, 2),
+      N("titleY", "Position du titre", 0.42, 0.1, 0.9, 0.005, 2), S("enter", "Entrée", "fondu", ["fondu", "montée", "coupe"], 2),
+      N("rise", "Montée de l'horizon", 0.06, 0, 0.3, 0.005, 3), N("subSize", "Taille du sous-titre", 24, 8, 80, 1, 3, "px"), P("subFont", "Police du sous-titre", "font", "@fontBody", 3),
+    ],
+    build({ el, p, W, H, u, tl, t0, dur, cue, fit, safe }) {
+      h.css(el, { background: p.bg, overflow: "hidden" });
+      // a planet seen from space: a huge dark disc whose rim sits on the horizon line, lit by a thin warm band and a cool halo above it
+      const R = 3.2 * W;
+      const g = h.css(h.el("div", "zs-abs", el), { left: W / 2 - R + "px", top: p.horizon * H + "px", width: 2 * R + "px", height: 2 * R + "px", borderRadius: "50%",
+        background: `radial-gradient(circle at 50% 50%, ${h.mix(p.bg, "#000000", 0.35)} 96%, ${h.mix(p.glow, p.bg, 0.2)} 99.4%, ${p.glow} 100%)`,
+        boxShadow: `0 ${-3 * u}px ${6 * u}px ${p.glow}, 0 ${-18 * u}px ${50 * u}px ${p.glow}, 0 ${-50 * u}px ${110 * u}px ${h.mix(p.glow, p.glow2, 0.45)}, 0 ${-110 * u}px ${220 * u}px ${p.glow2}, 0 ${-200 * u}px ${320 * u}px ${h.mix(p.glow2, p.bg, 0.6)}` });
+      tl.fromTo(g, { y: p.rise * H }, { y: 0, duration: dur, ease: "power2.out" }, t0);
+      const b = h.css(h.el("div", "zs-abs", el), { left: "0", right: "0", top: p.titleY * H + "px", transform: "translateY(-50%)", textAlign: "center", color: p.ink });
+      if (p.eyebrow) h.css(h.el("div", "", b, p.eyebrow), { fontFamily: h.font(p.subFont), fontSize: 14 * u + "px", letterSpacing: "0.25em", textTransform: "uppercase", opacity: 0.8, marginBottom: 14 * u + "px" });
+      const t = h.css(h.el("div", "", b, p.title), { fontFamily: h.font(p.font, "serif"), fontSize: p.size * u + "px", lineHeight: 1.1 });
+      if (p.subtitle) h.css(h.el("div", "", b, p.subtitle), { fontFamily: h.font(p.subFont), fontSize: p.subSize * u + "px", opacity: 0.85, marginTop: 12 * u + "px" });
+      fit(b, safe.w, safe.h);
+      if (p.enter === "fondu") tl.fromTo(b, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.7, ease: "power1.out" }, t0 + 0.15);
+      else if (p.enter === "montée") tl.fromTo(b, { autoAlpha: 0, y: 30 * u }, { autoAlpha: 1, y: 0, duration: 0.8, ease: "power3.out" }, t0 + 0.15);
+      void t; cue(0.1, "shimmer", { length: 1 });
+    },
+  });
+
+  ZS.register({
+    id: "bar-chart", label: "Graphique en barres", group: "Données", duration: 3,
+    params: [
+      P("title", "Titre", "text", "SuperGPQA", 1), P("values", "Valeurs (nom valeur, une par ligne)", "lines", "ZenRay 81.3\nModel B 72.7\nModel C 73.6\nModel D 69.9", 1),
+      P("subtitle", "Sous-titre", "text", "Graduate-level knowledge · score (%)", 1), P("accent", "Barre mise en avant", "color", "#e7c88a", 1),
+      P("bar", "Autres barres", "color", "#e3e8f2", 2), P("bg", "Fond", "color", "#14182a", 2), P("ink", "Texte", "color", "#f4efe6", 2), N("max", "Valeur maximale", 100, 1, 10000, 1, 2),
+      P("font", "Police du titre", "font", "PlayfairDisplay", 2), N("grow", "Durée de croissance", 0.9, 0.1, 4, 0.05, 2, "s"), N("stagger", "Décalage entre barres", 0.08, 0, 1, 0.01, 2, "s"),
+      P("unit", "Unité", "text", "%", 2),
+    ],
+    build({ el, p, W, H, u, tl, t0, cue }) {
+      h.css(el, { background: p.bg, color: p.ink, fontFamily: h.font("InterVariable") });
+      h.css(h.el("div", "zs-abs", el, p.title), { left: 0.08 * W + "px", top: 0.12 * H + "px", fontFamily: h.font(p.font, "serif"), fontSize: 64 * u + "px" });
+      h.css(h.el("div", "zs-abs", el, p.subtitle), { left: 0.08 * W + "px", top: 0.12 * H + 82 * u + "px", fontSize: 20 * u + "px", opacity: 0.7 });
+      const rows = p.values.map((l) => { const m = /^(.*?)\s+(-?[\d.]+)$/.exec(l.trim()); return m ? [m[1], Number(m[2])] : [l, 0]; });
+      const area = { x: 0.14 * W, y: 0.32 * H, w: 0.72 * W, h: 0.5 * H }, n = Math.max(1, rows.length), bw = area.w / n * 0.5;
+      rows.forEach(([name, v], i) => {
+        const cx = area.x + (i + 0.5) * area.w / n, hh = Math.max(2, area.h * Math.min(1, v / p.max));
+        const bar = h.css(h.el("div", "zs-abs", el), { left: cx - bw / 2 + "px", top: area.y + area.h - hh + "px", width: bw + "px", height: hh + "px", background: i === 0 ? p.accent : p.bar,
+          transformOrigin: "50% 100%", borderRadius: 3 * u + "px" });
+        const lab = h.css(h.el("div", "zs-abs", el, `${v}${p.unit}`), { left: cx - 100 * u + "px", width: 200 * u + "px", textAlign: "center", top: area.y + area.h - hh - 40 * u + "px",
+          fontFamily: h.font(p.font, "serif"), fontSize: 34 * u + "px", color: i === 0 ? p.accent : p.ink });
+        h.css(h.el("div", "zs-abs", el, name), { left: cx - 140 * u + "px", width: 280 * u + "px", textAlign: "center", top: area.y + area.h + 18 * u + "px", fontSize: 20 * u + "px", opacity: 0.7 });
+        tl.fromTo(bar, { scaleY: 0 }, { scaleY: 1, duration: p.grow, ease: "power3.out" }, t0 + 0.2 + i * p.stagger);
+        tl.fromTo(lab, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.3 }, t0 + 0.2 + i * p.stagger + p.grow * 0.6);
+        cue(0.2 + i * p.stagger, "tick", {});
+      });
+    },
+  });
+
+  ZS.register({
+    id: "line-chart", label: "Courbe", group: "Données", duration: 3,
+    params: [
+      P("title", "Titre", "text", "Model size", 1), P("points", "Points (x y, un par ligne)", "lines", "0 5.6\n1 4.8\n2 4.3\n3 4.0\n4 3.7\n5 3.5\n6 3.3", 1),
+      P("subtitle", "Sous-titre", "text", "Test loss · lower is better", 1), P("accent", "Couleur de la courbe", "color", "#e7c88a", 1),
+      P("bg", "Fond", "color", "#14182a", 2), P("ink", "Texte", "color", "#f4efe6", 2), P("font", "Police du titre", "font", "PlayfairDisplay", 2),
+      N("draw", "Durée du tracé", 1.6, 0.1, 6, 0.05, 2, "s"), B("dots", "Points marqués", true, 2), B("dashed", "Prolongement en pointillé", true, 2),
+    ],
+    build({ el, p, W, H, u, tl, t0, cue }) {
+      h.css(el, { background: p.bg, color: p.ink, fontFamily: h.font("InterVariable") });
+      h.css(h.el("div", "zs-abs", el, p.title), { left: 0.08 * W + "px", top: 0.12 * H + "px", fontFamily: h.font(p.font, "serif"), fontSize: 64 * u + "px", color: p.accent });
+      h.css(h.el("div", "zs-abs", el, p.subtitle), { left: 0.08 * W + "px", top: 0.12 * H + 82 * u + "px", fontSize: 20 * u + "px", opacity: 0.7 });
+      const pts = p.points.map((l) => l.trim().split(/\s+/).map(Number)).filter((r) => r.length >= 2 && r.every(isFinite));
+      if (pts.length < 2) return;
+      const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+      const A = { x: 0.14 * W, y: 0.32 * H, w: 0.72 * W, h: 0.48 * H };
+      const X = (v) => A.x + (v - x0) / Math.max(1e-9, x1 - x0) * A.w, Y = (v) => A.y + A.h - (v - y0) / Math.max(1e-9, y1 - y0) * A.h;
+      const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg");
+      svg.setAttribute("width", W); svg.setAttribute("height", H); h.css(svg, { position: "absolute", left: "0", top: "0" }); el.appendChild(svg);
+      const path = document.createElementNS(ns, "path");
+      path.setAttribute("d", pts.map((q, i) => `${i ? "L" : "M"}${X(q[0]).toFixed(1)},${Y(q[1]).toFixed(1)}`).join(" "));
+      path.setAttribute("fill", "none"); path.setAttribute("stroke", p.ink); path.setAttribute("stroke-width", 2.5 * u); svg.appendChild(path);
+      const L = pts.reduce((s, q, i) => s + (i ? Math.hypot(X(q[0]) - X(pts[i - 1][0]), Y(q[1]) - Y(pts[i - 1][1])) : 0), 0);
+      path.setAttribute("stroke-dasharray", L);
+      tl.fromTo(path, { attr: { "stroke-dashoffset": L } }, { attr: { "stroke-dashoffset": 0 }, duration: p.draw, ease: "power2.inOut" }, t0 + 0.3);
+      if (p.dots) pts.forEach((q, i) => {
+        const c = document.createElementNS(ns, "circle"); c.setAttribute("cx", X(q[0])); c.setAttribute("cy", Y(q[1])); c.setAttribute("r", 5 * u); c.setAttribute("fill", p.accent); svg.appendChild(c);
+        tl.fromTo(c, { attr: { r: 0 } }, { attr: { r: 5 * u }, duration: 0.25, ease: "back.out(2)" }, t0 + 0.3 + p.draw * i / (pts.length - 1));
+      });
+      cue(0.3, "riser", { length: p.draw });
+    },
+  });
+
+  ZS.register({
+    id: "dot-grid", label: "Grille de points", group: "Données", duration: 3,
+    params: [
+      N("count", "Nombre", 32, 1, 400, 1, 1), P("label", "Légende", "text", "distinct models", 1), P("caption", "Phrase", "text", "Complementary capabilities.", 1), P("accent", "Couleur du nombre", "color", "#e7c88a", 1),
+      P("bg", "Fond", "color", "#14182a", 2), P("ink", "Texte et points", "color", "#f4efe6", 2), N("cols", "Colonnes", 8, 1, 30, 1, 2), N("dot", "Taille des points", 18, 2, 80, 1, 2, "px"),
+      S("shape", "Forme", "anneaux", ["anneaux", "pleins", "variés"], 2), N("stagger", "Décalage d'apparition", 0.02, 0, 0.3, 0.005, 2, "s"), N("seed", "Graine", 4, 1, 999, 1, 2),
+    ],
+    build({ el, p, W, H, u, tl, t0, cue }) {
+      h.css(el, { background: p.bg, color: p.ink, fontFamily: h.font("InterVariable") });
+      const num = h.css(h.el("div", "zs-abs", el, String(p.count)), { left: 0.1 * W + "px", top: 0.36 * H + "px", fontFamily: h.font("PlayfairDisplay", "serif"), fontSize: 90 * u + "px", color: p.accent });
+      h.css(h.el("div", "zs-abs", el, p.label), { left: 0.1 * W + "px", top: 0.36 * H + 120 * u + "px", fontSize: 20 * u + "px", opacity: 0.8 });
+      if (p.caption) h.css(h.el("div", "zs-abs", el, p.caption), { left: 0.1 * W + "px", top: 0.36 * H + 170 * u + "px", width: 260 * u + "px", fontFamily: h.font("PlayfairDisplay", "serif"), fontSize: 24 * u + "px" });
+      const rnd = h.rand(p.seed), rows = Math.ceil(p.count / p.cols), gx = 0.5 * W / p.cols, gy = Math.min(gx, 0.6 * H / rows), dots = [];
+      for (let i = 0; i < p.count; i++) {
+        const c = i % p.cols, r = Math.floor(i / p.cols), s = p.dot * u * (p.shape === "variés" ? 0.7 + rnd() * 0.8 : 1);
+        dots.push(h.css(h.el("div", "zs-abs", el), { left: 0.4 * W + c * gx - s / 2 + "px", top: 0.5 * H - rows * gy / 2 + r * gy - s / 2 + "px", width: s + "px", height: s + "px",
+          border: p.shape === "pleins" ? "none" : `${1.5 * u}px solid ${p.ink}`, background: p.shape === "pleins" ? p.ink : "transparent",
+          borderRadius: p.shape === "variés" ? `${rnd() * 50}% ${rnd() * 50}%` : "50%", transform: p.shape === "variés" ? `rotate(${rnd() * 90}deg)` : "none" }));
+      }
+      tl.fromTo(dots, { autoAlpha: 0, scale: 0.4 }, { autoAlpha: 0.9, scale: 1, duration: 0.3, ease: "back.out(2)", stagger: p.stagger }, t0 + 0.2);
+      tl.fromTo(num, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.4 }, t0);
+      cue(0.2, "shimmer", { length: 0.8 });
+    },
+  });
+
+  ZS.register({
+    id: "ui-window", label: "Fenêtre d'interface rétro", group: "Interface", duration: 3,
+    params: [
+      P("title", "Titre de la fenêtre", "text", "helpful_assistant · context", 1), P("lines", "Lignes (une par ligne, *mot* en couleur)", "lines", "> 3 previous instructions\nIGNORE PREVIOUS INSTRUCTIONS", 1),
+      S("look", "Style", "brutal", ["brutal", "xp", "simple"], 1), P("big", "Mot géant en dessous", "text", "", 1),
+      P("accent", "Couleur d'accent", "color", "#ff3d8b", 2), P("bg", "Fond", "color", "#0d0d0d", 2), P("panel", "Fond de la fenêtre", "color", "#f2f0e8", 2), N("w", "Largeur", 0.62, 0.2, 0.95, 0.01, 2),
+      N("x", "Position horizontale", 0.5, 0, 1, 0.005, 2), N("y", "Position verticale", 0.45, 0, 1, 0.005, 2), S("enter", "Entrée", "pop", ["pop", "machine", "coupe"], 2),
+      N("size", "Taille du texte", 30, 8, 120, 1, 2, "px"),
+      P("font", "Police du texte", "font", "JetBrainsMono", 3), N("bigSize", "Taille du mot géant", 150, 20, 400, 1, 3, "px"), N("cps", "Vitesse de frappe", 40, 5, 200, 1, 3, "car./s"),
+      P("media", "Plan filmé en fond", "text", "", 3, { type: "media" }), N("mediaStart", "Début dans le plan", 0, 0, 3600, 0.01, 3, "s"),
+    ],
+    build(ctx) {
+      const { el, p, W, H, u, tl, t0, cue, fit, safe } = ctx;
+      const XP = p.look === "xp", BR = p.look === "brutal";
+      h.css(el, { background: XP ? `linear-gradient(#3d8ee8, #6fb4ee 60%, #7cbf55 61%, #3c8a2e)` : p.bg });
+      if (p.media) mediaLayer(ctx, { ...p, bw: false, push: 1 });
+      const w = h.css(h.el("div", "zs-abs", el), { left: p.x * W - p.w * W / 2 + "px", top: p.y * H + "px", width: p.w * W + "px", transform: "translateY(-50%)", background: p.panel,
+        border: BR ? `${3 * u}px solid #000` : XP ? `${2 * u}px solid #0a3dbf` : `1px solid #ccc`, borderRadius: XP ? `${8 * u}px ${8 * u}px 0 0` : 0,
+        boxShadow: BR ? `${10 * u}px ${10 * u}px 0 ${p.accent}` : `0 ${10 * u}px ${30 * u}px rgba(0,0,0,0.3)`, fontFamily: h.font(p.font, "monospace") });
+      const bar = h.css(h.el("div", "", w), { display: "flex", justifyContent: "space-between", alignItems: "center", padding: `${6 * u}px ${12 * u}px`, fontSize: 16 * u + "px",
+        background: XP ? "linear-gradient(#2a6be8, #0a3dbf)" : BR ? p.accent : "#e9e9e9", color: XP ? "#fff" : "#000", fontWeight: XP ? 600 : 500, fontFamily: XP ? h.font("InterVariable") : h.font(p.font, "monospace") });
+      h.el("span", "", bar, p.title); h.el("span", "", bar, XP ? "▁ ▢ ✕" : "▢▢▢");
+      const body = h.css(h.el("div", "", w), { padding: `${18 * u}px ${22 * u}px`, fontSize: p.size * u + "px", color: "#111", lineHeight: 1.35 });
+      const words = [];
+      p.lines.forEach((ln) => { const d = h.el("div", "", body); words.push(...rich(d, ln, p.accent)); });
+      fit(w, safe.w, safe.h);
+      if (p.enter === "pop") tl.fromTo(w, { scale: 0.85, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: 0.35, ease: "back.out(2)" }, t0);
+      else if (p.enter === "coupe") { h.css(w, { visibility: "hidden" }); tl.set(w, { visibility: "visible" }, t0); }
+      if (p.enter === "machine") { words.forEach((x) => (x.style.visibility = "hidden")); let c = 0; words.forEach((x) => { tl.set(x, { visibility: "visible" }, t0 + c / p.cps); c += x.textContent.length + 1; }); cue(0, "type", { length: c / p.cps }); }
+      if (p.big) {
+        const g = h.css(h.el("div", "zs-abs", el, p.big), { left: "0", right: "0", bottom: 0.06 * H + "px", textAlign: "center", fontFamily: h.font("InterVariable"), fontWeight: 800,
+          fontSize: p.bigSize * u + "px", color: BR ? p.accent : "#fff", letterSpacing: "-0.03em", whiteSpace: "nowrap", lineHeight: 1 });
+        fit(g, safe.w, H * 0.4);
+        tl.fromTo(g, { autoAlpha: 0, y: 40 * u }, { autoAlpha: 1, y: 0, duration: 0.3, ease: "power3.out" }, t0 + 0.4);
+        cue(0.4, "impact", { gain: 0.6 });
+      }
+      cue(0, "pop", { pitch: 0.5 });
+    },
+  });
+
+  ZS.register({
+    id: "flow-diagram", label: "Schéma de flux", group: "Données", duration: 6,
+    params: [
+      P("title", "Titre", "text", "Introducing ZenRay", 1), P("nodes", "Boîtes (nom, une par ligne ; « > » = suivante sur la ligne)", "lines", "Customer > Customer agent > Helpdesk\nOperator", 1),
+      P("text", "Paragraphe", "text", "Every step of the pipeline, procedural and editable.", 1), P("accent", "Couleur mise en avant", "color", "#7da7ff", 1),
+      P("bg", "Fond", "color", "#f7f6f9", 2), P("ink", "Texte", "color", "#1b1b19", 2), P("glow", "Couleur du dégradé", "color", "#f2a7b4", 2), N("step", "Temps par étape", 1.2, 0.2, 6, 0.05, 2, "s"),
+      P("colours", "Couleurs des étapes (une par ligne)", "lines", "#7da7ff\n#a98bff\n#9be27a", 2), N("titleSize", "Taille du titre", 110, 20, 240, 1, 2, "px"),
+    ],
+    build({ el, p, W, H, u, tl, t0, dur, cue }) {
+      h.css(el, { background: `radial-gradient(ellipse 80% 40% at 50% -5%, ${p.glow}, transparent 70%), ${p.bg}`, color: p.ink, fontFamily: h.font("InterVariable") });
+      h.css(h.el("div", "zs-abs", el, p.title), { left: 0.08 * W + "px", top: 0.14 * H + "px", fontSize: p.titleSize * u + "px", lineHeight: 1, color: h.mix(p.ink, p.bg, 0.55), letterSpacing: "-0.02em", whiteSpace: "pre-line" });
+      const boxes = [];
+      p.nodes.forEach((row, r) => {
+        const names = row.split(">").map((x) => x.trim()).filter(Boolean), y = 0.5 * H + r * 70 * u;
+        names.forEach((nm, i) => {
+          const bw = 220 * u, x = 0.1 * W + i * (0.8 * W - bw) / Math.max(1, names.length - 1);
+          const b = h.css(h.el("div", "zs-abs", el, nm.toUpperCase()), { left: (names.length === 1 ? 0.5 * W - bw : x) + "px", top: y + "px", width: (names.length === 1 ? 2 * bw : bw) + "px",
+            height: 44 * u + "px", border: `1px solid ${h.mix(p.ink, p.bg, 0.75)}`, borderRadius: (r === 0 && i === 0 ? 22 : 4) * u + "px", display: "grid", placeItems: "center",
+            fontSize: 12 * u + "px", letterSpacing: "0.08em", background: "#fff" });
+          boxes.push(b);
+        });
+      });
+      h.css(h.el("div", "zs-abs", el, p.text), { left: 0.08 * W + "px", top: 0.78 * H + "px", width: 0.42 * W + "px", fontSize: 22 * u + "px", lineHeight: 1.3 });
+      // the highlight travels from box to box (skipping the first, the customer)
+      const cols = p.colours.length ? p.colours : [p.accent];
+      boxes.slice(1).forEach((b, i) => {
+        const at = t0 + 0.4 + i * p.step, c = cols[i % cols.length];
+        if (at > t0 + dur) return;
+        tl.to(b, { backgroundColor: h.mix(c, "#ffffff", 0.55), borderColor: c, duration: 0.3 }, at);
+        tl.to(b, { backgroundColor: "#ffffff", borderColor: h.mix(p.ink, p.bg, 0.75), duration: 0.3 }, at + p.step);
+        cue(0.4 + i * p.step, "tick", {});
+      });
+    },
+  });
+})();

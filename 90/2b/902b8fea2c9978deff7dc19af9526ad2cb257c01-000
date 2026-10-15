@@ -1,0 +1,74 @@
+"""The house style pass (15 October 2026): makes every motion animation coherent with the others and readable on its own.
+
+Reads params/house.json; folds every font onto the ZenRay trio (and Vogun), raises text below the readable minimum, and reports any
+reference plate left (a scene that still shows reference footage is not finished, rule of 15 October 2026).
+FR : la passe de style maison, polices du trio, taille lisible minimale, aucun plan de reference restant.
+Usage: python3 motion/house.py [project-id ...]   (every project when none; writes a version before changing a project)
+"""
+import json
+import sys
+from pathlib import Path
+
+MOTION = Path(__file__).resolve().parent
+sys.path.insert(0, str(MOTION))
+import server  # noqa: E402
+
+HOUSE = json.loads((MOTION / "params" / "house.json").read_text())
+
+
+def plates(project: dict) -> list:
+    """Scenes that still show reference footage (media starting with ref:), children included."""
+    out = []
+    for sc in project.get("scenes", []):
+        for s in [sc, *(sc.get("children") or [])]:
+            m = (s.get("params") or {}).get("media", "")
+            if isinstance(m, str) and m.startswith("ref:"):
+                out.append(s.get("id"))
+    return out
+
+
+def clean_params(tpl: str, p: dict) -> int:
+    n = 0
+    for k in HOUSE["fontKeys"]:
+        f = p.get(k)
+        if isinstance(f, str) and f in HOUSE["fonts"]:
+            p[k] = HOUSE["fonts"][f]; n += 1
+    for key, low in (HOUSE["minTextPx"].get(tpl) or {}).items():
+        if isinstance(p.get(key), (int, float)) and 0 < p[key] < low:
+            p[key] = low; n += 1
+    if tpl == "media-text" and p.get("subject") and p.get("text") and float(p.get("shadow", 0.35)) < HOUSE["textShadowOnDrawing"]:
+        p["shadow"] = HOUSE["textShadowOnDrawing"]; n += 1
+    return n
+
+
+def apply(project: dict) -> int:
+    """Changes the project in place; returns the number of values changed."""
+    n = 0
+    theme = project.setdefault("theme", {})
+    for k, v in HOUSE["theme"].items():
+        cur = theme.get(k)
+        if cur not in HOUSE["keepFonts"]:
+            theme[k] = v; n += 1
+    for sc in project.get("scenes", []):
+        for s in [sc, *(sc.get("children") or [])]:
+            n += clean_params(s.get("template", ""), s.setdefault("params", {}))
+    return n
+
+
+def main(ids):
+    ids = ids or sorted(d.name for d in server.projects_root().iterdir() if (d / "project.json").is_file())
+    bad = 0
+    for pid in ids:
+        p = server.read_project(pid)
+        n = apply(p)
+        if n:
+            server.save_version(pid, "avant la passe de style maison du 15 octobre")
+            server.write_project(pid, p)
+        left = plates(p)
+        bad += bool(left)
+        print(json.dumps({"id": pid, "changed": n, "plates left": len(left)}))
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

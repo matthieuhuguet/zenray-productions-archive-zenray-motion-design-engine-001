@@ -1,0 +1,39 @@
+"""The Vogun electric title as a motion project (15 October 2026), so it shows in the Animations gallery like the other animations.
+
+Reads the variants of the validated template (zenray-edit, templates/vogun-yellow-title/Animation.both-variants.json): one scene per
+variant, its colour, lines, timings and cut settings; the background is the template's. Usage: python3 motion/reproductions/vogun_titles.py
+FR : le titre Vogun devient un projet motion, une scene par variante du gabarit valide (jaune, blanc).
+"""
+import json
+import sys
+from pathlib import Path
+
+MOTION = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(MOTION))
+import server  # noqa: E402
+
+SOURCE = Path.home() / ".claude/skills/zenray-edit/templates/vogun-yellow-title/Animation.both-variants.json"
+PID = "vogun-titles-motion"
+
+
+def build() -> dict:
+    src = json.loads(SOURCE.read_text())
+    dur = round(float(src["appear"]) + float(src["hold"]) + float(src["disappear"]), 3)
+    scenes = []
+    for k, v in enumerate(src["variants"]):
+        white = v["foreground"].upper() == "#FFFFFF"
+        scenes.append({"id": f"s{k + 1:02d}", "template": "vogun-title", "duration": dur, "label": v["name"], "params": {
+            "lines": "\n".join(src["lines"]), "colour": v["foreground"], "appear": src["appear"], "disappear": src["disappear"],
+            # a white title needs a dark ground to be read on its own (rule of 15 October 2026: each animation visible alone)
+            "bg": "#111214" if white else src["background"], "widthRatio": src["widthRatio"], "lineGap": src["lineGap"],
+            "amplitude": v["amplitude"], "frequency": v["frequency"]}})
+    return {"schema": "zrmd/motion-project@1", "title": "Titres Vogun électriques", "format": "16x9", "fps": 30,
+            "doc": "15 October 2026: the validated Vogun title (Vegetation Collection 01), yellow and white variants, from its template.",
+            "theme": {}, "scenes": scenes}
+
+
+if __name__ == "__main__":
+    if (server.project_dir(PID) / "project.json").is_file():
+        server.save_version(PID, "avant la regeneration du 15 octobre")
+    server.write_project(PID, build())
+    print(PID, "written")

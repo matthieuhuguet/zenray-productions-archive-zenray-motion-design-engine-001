@@ -1,0 +1,103 @@
+<!doctype html>
+<!-- 15 October 2026: ZenRay Motion Design, the motion editor page. Everything moves in the browser; the server only stores and exports. -->
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ZenRay Motion Design · Motion</title>
+  <link rel="stylesheet" href="/motion/fonts.css" />
+  <link rel="stylesheet" href="/motion/runtime/zs-runtime.css" />
+  <link rel="stylesheet" href="/motion/web/app.css" />
+  <script src="/motion/runtime/gsap.min.js"></script>
+  <script src="/motion/runtime/zs-core.js"></script>
+  <script src="/motion/runtime/zs-post.js"></script>
+  <script src="/motion/runtime/zs-templates.js"></script>
+  <script src="/motion/runtime/zs-templates-extra.js"></script>
+  <script src="/motion/runtime/zs-templates-app.js"></script>
+  <script src="/motion/runtime/zs-illustrate.js"></script>
+  <script src="/motion/runtime/zs-templates-kit.js"></script>
+  <script src="/motion/runtime/zs-audio.js"></script>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/#/">ZenRay Motion Design</a>
+    <nav class="appnav"><a href="/#/">Projets</a><a href="/#/music">Musique</a><a href="/#/montage">Montage</a><a class="on" href="/motion/">Motion</a></nav>
+    <div class="seg" id="modeSeg"><button data-mode="edit" class="on" type="button">Éditeur</button><button data-mode="gallery" type="button">Galerie</button></div>
+    <select id="projectSel" title="Projet"></select>
+    <button id="newBtn" class="ghost" type="button">Nouveau</button>
+    <button id="dupBtn" class="ghost" type="button" title="Copier le projet pour essayer sans toucher l'original">Dupliquer</button>
+    <div class="grow"></div>
+    <button id="undoBtn" class="ghost icon" type="button" title="Annuler (Cmd+Z)">↶</button>
+    <button id="redoBtn" class="ghost icon" type="button" title="Rétablir (Cmd+Maj+Z)">↷</button>
+    <label class="inline">Format <select id="formatSel"><option value="16x9">16:9</option><option value="9x16">9:16</option><option value="1x1">1:1</option><option value="4x5">4:5</option></select></label>
+    <label class="inline" title="Export rapide en qualité brouillon"><input type="checkbox" id="draftChk" /> brouillon</label>
+    <button id="exportBtn" class="primary" type="button">Exporter la vidéo</button>
+    <span id="saveState" class="hint"></span>
+  </header>
+  <main class="grid" id="editView">
+    <aside class="left">
+      <div class="head"><h2>Scènes</h2><span id="totalDur" class="num"></span></div>
+      <p class="hint pad">Une scène peut contenir des sous-scènes (par exemple l'aperçu d'une application) : elles s'affichent en retrait et se règlent comme les autres.</p>
+      <ol id="sceneList" class="scenes"></ol>
+      <div class="addRow">
+        <select id="addSel"></select>
+        <button id="addBtn" type="button">Ajouter</button>
+      </div>
+    </aside>
+    <section class="center">
+      <div id="stageWrap" class="stageWrap"><div id="stageScale" class="stageScale"><div id="stage"></div></div>
+        <div id="refPane" class="refPane" hidden><video id="refVideo" muted playsinline preload="auto"></video><span class="refLbl">Référence</span></div>
+        <span id="motionLbl" class="motionLbl" hidden>Motion</span></div>
+      <div class="transport">
+        <button id="playBtn" type="button" class="round" title="Lecture / pause (barre d'espace)">▶</button>
+        <button id="prevBtn" class="ghost icon" type="button" title="Image précédente (←), une seconde avec Maj">⏮︎</button>
+        <input id="timeIn" class="timeIn num" type="text" value="0:00.00" title="Tape un instant (1:23.5 ou 83.5) puis Entrée" />
+        <span id="timeTot" class="hint num">/ 0:00.00</span>
+        <button id="nextBtn" class="ghost icon" type="button" title="Image suivante (→), une seconde avec Maj">⏭︎</button>
+        <span id="timeLbl" hidden></span>
+        <span class="zoomBox"><button id="zoutBtn" class="ghost icon" type="button" title="Dézoomer la piste (Cmd + molette)">−</button><button id="zfitBtn" class="ghost" type="button" title="Toute la vidéo dans la piste">Ajuster</button><button id="zinBtn" class="ghost icon" type="button" title="Zoomer la piste (Cmd + molette)">+</button></span>
+        <button id="hideRefBtn" class="ghost" type="button" title="Remplace les plans de la vidéo d'origine par un fond neutre : on ne voit que le motion reproduit">Masquer la référence</button>
+        <button id="compareBtn" class="ghost" type="button" title="Affiche la vidéo d'origine à côté, synchronisée">Comparer</button>
+        <span class="grow"></span>
+        <span class="hint keys" title="Espace : lecture · glisser dans la piste : parcourir · ← → : une image · Maj + ← → : une seconde · Cmd + molette : zoom · Début / Fin">Raccourcis ⓘ</span>
+      </div>
+      <div class="timeline">
+        <div class="labels"><span>Temps</span><span>Scènes</span><span>Sous-scènes</span><span>Musique</span><span>Effets</span></div>
+        <div id="tlScroll" class="tlScroll"><div id="track" class="track">
+          <div id="ruler" class="lane ruler"></div>
+          <div id="segments" class="lane segments"></div><div id="childLane" class="lane"></div><div id="musicLane" class="lane"></div><div id="sfxLane" class="lane"></div>
+          <div id="playhead" class="playhead"><i></i></div><div id="hoverLine" class="hoverLine" hidden><b></b></div>
+        </div></div>
+      </div>
+    </section>
+    <aside class="right">
+      <nav class="tabs" id="tabs">
+        <button data-tab="scene" class="on" type="button">Scène</button>
+        <button data-tab="theme" type="button">Thème</button>
+        <button data-tab="music" type="button">Musique</button>
+        <button data-tab="sfx" type="button">Effets</button>
+        <button data-tab="post" type="button">Post</button>
+        <button data-tab="media" type="button">Médias</button>
+        <button data-tab="versions" type="button">Versions</button>
+      </nav>
+      <div id="panel" class="panel"></div>
+    </aside>
+  </main>
+  <main class="gallery" id="galleryView" hidden>
+    <nav class="gnav" id="gnav">
+      <button data-g="anim" class="on" type="button">Animations</button>
+      <button data-g="models" type="button">Modèles</button>
+      <button data-g="projects" type="button">Projets</button>
+      <button data-g="refs" type="button">Vidéos de référence</button>
+      <button data-g="media" type="button">Médias du projet</button>
+      <button data-g="music" type="button">Musiques reproduites</button>
+      <button data-g="sfx" type="button">Effets sonores</button>
+    </nav>
+    <section class="gbody" id="gbody"></section>
+  </main>
+  <dialog id="dlg"></dialog>
+  <div id="toast" class="toast"></div>
+  <script src="/motion/web/app.js"></script>
+  <script src="/motion/web/gallery.js"></script>
+</body>
+</html>

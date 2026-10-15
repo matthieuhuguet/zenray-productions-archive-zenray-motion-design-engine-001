@@ -1,0 +1,6385 @@
+{
+ "date": "15 October 2026",
+ "proposedBy": "the agent, from the measured level of each stem (Scripts/ProposeMusicVariations.py)",
+ "silentDb": -42.0,
+ "20syl-ode-to-odd-m1": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2,
+    "vocals": -6
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "voice",
+   "label": "Voix en avant",
+   "why": "la voix devant, le reste en retrait",
+   "values": {
+    "vocals": 3,
+    "other": -4,
+    "drums": -4
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "+1 demi-ton, batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 1,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "20syl-ode-to-odd-m2": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2,
+    "vocals": -6
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "voice",
+   "label": "Voix en avant",
+   "why": "la voix devant, le reste en retrait",
+   "values": {
+    "vocals": 3,
+    "other": -4,
+    "drums": -4
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "+1 demi-ton, batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 1,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "20syl-ode-to-odd-m3": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2,
+    "vocals": -6
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "voice",
+   "label": "Voix en avant",
+   "why": "la voix devant, le reste en retrait",
+   "values": {
+    "vocals": 3,
+    "other": -4,
+    "drums": -4
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "+1 demi-ton, batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 1,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "arkadata-music-02-m1": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "+1 demi-ton, batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 1,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "arkadata-music-02-m2": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "+1 demi-ton, batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 1,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "arkadata-music-02-m3": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "+1 demi-ton, batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 1,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "claude-opus-5-5": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2,
+    "vocals": -6
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "voice",
+   "label": "Voix en avant",
+   "why": "la voix devant, le reste en retrait",
+   "values": {
+    "vocals": 3,
+    "other": -4,
+    "drums": -4
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 0,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "flora-agents-on-canvas-m1": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2,
+    "vocals": -6
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "voice",
+   "label": "Voix en avant",
+   "why": "la voix devant, le reste en retrait",
+   "values": {
+    "vocals": 3,
+    "other": -4,
+    "drums": -4
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "+1 demi-ton, batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 1,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "grandbrothers-bloodflow-edit-m1": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "+1 demi-ton, batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 1,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "grandbrothers-bloodflow-edit-m2": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 0,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "grandbrothers-bloodflow-edit-m3": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "+1 demi-ton, batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 1,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "grandbrothers-sonic-riots-m1": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "+1 demi-ton, batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 1,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "grandbrothers-sonic-riots-m2": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "+1 demi-ton, batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 1,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "grandbrothers-sonic-riots-m3": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 0,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "interface-m1": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2,
+    "vocals": -6
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "voice",
+   "label": "Voix en avant",
+   "why": "la voix devant, le reste en retrait",
+   "values": {
+    "vocals": 3,
+    "other": -4,
+    "drums": -4
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 0,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "interface-m2": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2,
+    "vocals": -6
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "voice",
+   "label": "Voix en avant",
+   "why": "la voix devant, le reste en retrait",
+   "values": {
+    "vocals": 3,
+    "other": -4,
+    "drums": -4
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 0,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "kardashev-0-7-m1": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2,
+    "vocals": -6
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "voice",
+   "label": "Voix en avant",
+   "why": "la voix devant, le reste en retrait",
+   "values": {
+    "vocals": 3,
+    "other": -4,
+    "drums": -4
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "+1 demi-ton, batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 1,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "kiasmos-blurred-m1": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "+1 demi-ton, batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 1,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "kiasmos-blurred-m2": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "+1 demi-ton, batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 1,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "kiasmos-blurred-m3": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "+1 demi-ton, batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 1,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "memo-m1": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2,
+    "vocals": -6
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "voice",
+   "label": "Voix en avant",
+   "why": "la voix devant, le reste en retrait",
+   "values": {
+    "vocals": 3,
+    "other": -4,
+    "drums": -4
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "+1 demi-ton, batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 1,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "motion-opus-5-5-m1": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "+1 demi-ton, batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 1,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "onekey-pro-2": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "+1 demi-ton, batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 1,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "paper-mono-code-m1": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2,
+    "vocals": -6
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "voice",
+   "label": "Voix en avant",
+   "why": "la voix devant, le reste en retrait",
+   "values": {
+    "vocals": 3,
+    "other": -4,
+    "drums": -4
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "+1 demi-ton, batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 1,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "x-anabology-2105325733312884869-m1": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2,
+    "vocals": -6
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "voice",
+   "label": "Voix en avant",
+   "why": "la voix devant, le reste en retrait",
+   "values": {
+    "vocals": 3,
+    "other": -4,
+    "drums": -4
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 0,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "x-anabology-2105325733312884869-m2": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2,
+    "vocals": -6
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "voice",
+   "label": "Voix en avant",
+   "why": "la voix devant, le reste en retrait",
+   "values": {
+    "vocals": 3,
+    "other": -4,
+    "drums": -4
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 0,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "x-anabology-2105325733312884869-m3": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2,
+    "vocals": -6
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "voice",
+   "label": "Voix en avant",
+   "why": "la voix devant, le reste en retrait",
+   "values": {
+    "vocals": 3,
+    "other": -4,
+    "drums": -4
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 0,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "x-anabology-2106157622986748377-m1": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2,
+    "vocals": -6
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "voice",
+   "label": "Voix en avant",
+   "why": "la voix devant, le reste en retrait",
+   "values": {
+    "vocals": 3,
+    "other": -4,
+    "drums": -4
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 0,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "x-anabology-2106157622986748377-m2": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2,
+    "vocals": -6
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "voice",
+   "label": "Voix en avant",
+   "why": "la voix devant, le reste en retrait",
+   "values": {
+    "vocals": 3,
+    "other": -4,
+    "drums": -4
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 0,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "x-anabology-2106157622986748377-m3": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2,
+    "vocals": -6
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "voice",
+   "label": "Voix en avant",
+   "why": "la voix devant, le reste en retrait",
+   "values": {
+    "vocals": 3,
+    "other": -4,
+    "drums": -4
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 0,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "yt-4Q-o_ylnVnc-m1": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2,
+    "vocals": -6
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "voice",
+   "label": "Voix en avant",
+   "why": "la voix devant, le reste en retrait",
+   "values": {
+    "vocals": 3,
+    "other": -4,
+    "drums": -4
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 0,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "yt-4Q-o_ylnVnc-m2": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2,
+    "vocals": -6
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "voice",
+   "label": "Voix en avant",
+   "why": "la voix devant, le reste en retrait",
+   "values": {
+    "vocals": 3,
+    "other": -4,
+    "drums": -4
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 0,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ],
+ "yt-4Q-o_ylnVnc-m3": [
+  {
+   "id": "bed",
+   "label": "Nappe sans batterie",
+   "why": "sous une voix off ou un texte long",
+   "values": {
+    "drums": -60,
+    "bass": -4,
+    "other": 1,
+    "tilt": -2,
+    "vocals": -6
+   }
+  },
+  {
+   "id": "pulse",
+   "label": "Pulsation",
+   "why": "batterie et basse seules, pour un montage rythmé",
+   "values": {
+    "drums": 1,
+    "bass": 2,
+    "other": -12,
+    "vocals": -60,
+    "tilt": 1
+   }
+  },
+  {
+   "id": "drums",
+   "label": "Batterie seule",
+   "why": "le squelette rythmique, pour caler un montage",
+   "values": {
+    "bass": -60,
+    "other": -60,
+    "vocals": -60,
+    "drums": 2
+   }
+  },
+  {
+   "id": "nobass",
+   "label": "Sans basse",
+   "why": "plus léger, laisse la place à un sound design grave",
+   "values": {
+    "bass": -60,
+    "tilt": 0.5
+   }
+  },
+  {
+   "id": "keys",
+   "label": "Instruments seuls",
+   "why": "mélodie et harmonie, sans rythme",
+   "values": {
+    "drums": -60,
+    "bass": -60,
+    "vocals": -60,
+    "other": 3
+   }
+  },
+  {
+   "id": "voice",
+   "label": "Voix en avant",
+   "why": "la voix devant, le reste en retrait",
+   "values": {
+    "vocals": 3,
+    "other": -4,
+    "drums": -4
+   }
+  },
+  {
+   "id": "energy",
+   "label": "Plus d'énergie",
+   "why": "batterie et aigus en avant, plus large",
+   "values": {
+    "semitones": 0,
+    "drums": 2,
+    "tilt": 2.5,
+    "width": 1.25
+   }
+  },
+  {
+   "id": "calm",
+   "label": "Version calme",
+   "why": "-1 demi-ton, batterie en retrait, plus sombre",
+   "values": {
+    "semitones": -1,
+    "drums": -10,
+    "tilt": -3,
+    "width": 0.9,
+    "fadeIn": 1.5
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "why": "bande étroite et saturée, comme un vieux poste",
+   "values": {
+    "lowCut": 450,
+    "highCut": 3800,
+    "drive": 0.35,
+    "width": 0.2,
+    "volume": -5
+   }
+  },
+  {
+   "id": "underwater",
+   "label": "Sous l'eau",
+   "why": "coupe-haut fort et réverbération, pour une transition",
+   "values": {
+    "highCut": 700,
+    "reverb": 0.45,
+    "tilt": -4
+   }
+  },
+  {
+   "id": "hall",
+   "label": "Cathédrale",
+   "why": "grande réverbération, très large",
+   "values": {
+    "reverb": 0.7,
+    "width": 1.45,
+    "drums": -6,
+    "fadeIn": 2
+   }
+  },
+  {
+   "id": "rise",
+   "label": "Montée",
+   "why": "+2 demi-tons, plus brillant : une fin qui décolle",
+   "values": {
+    "semitones": 2,
+    "tilt": 3,
+    "width": 1.2
+   }
+  },
+  {
+   "id": "deep",
+   "label": "Grave",
+   "why": "-2 demi-tons, basse appuyée",
+   "values": {
+    "semitones": -2,
+    "bass": 3,
+    "tilt": -2.5
+   }
+  },
+  {
+   "id": "minimal",
+   "label": "Minimal",
+   "why": "tout en retrait sauf la basse, aigus adoucis",
+   "values": {
+    "drums": -8,
+    "other": -8,
+    "vocals": -12,
+    "highCut": 8000
+   }
+  },
+  {
+   "id": "lofi",
+   "label": "Lo-fi",
+   "why": "étroit, adouci et légèrement saturé",
+   "values": {
+    "semitones": -1,
+    "highCut": 2600,
+    "drive": 0.25,
+    "width": 0.6,
+    "tilt": -1
+   }
+  },
+  {
+   "id": "intro",
+   "label": "Intro douce",
+   "why": "longue entrée progressive",
+   "values": {
+    "fadeIn": 4,
+    "tilt": -2,
+    "reverb": 0.2
+   }
+  },
+  {
+   "id": "punch",
+   "label": "Percutant",
+   "why": "batterie +4 dB, saturation légère, coupe-bas à 60 Hz",
+   "values": {
+    "drums": 4,
+    "drive": 0.15,
+    "lowCut": 60,
+    "tilt": 1.5
+   }
+  },
+  {
+   "id": "airy",
+   "label": "Aérien",
+   "why": "coupe-bas haut, réverbération, très large",
+   "values": {
+    "lowCut": 300,
+    "reverb": 0.35,
+    "width": 1.5,
+    "tilt": 2
+   }
+  }
+ ]
+}

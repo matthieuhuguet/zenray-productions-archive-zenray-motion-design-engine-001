@@ -1,0 +1,351 @@
+{
+  "doc": "15 October 2026: how a measured shot is redrawn as motion. The first rule whose words appear in the shot description gives the drawn subject; flags add the interface bubble, black and white and archive grain. Words are lowercase, accents kept. FR : la premiere regle dont un mot apparait dans la description du plan donne le sujet dessine. textOnly applies only when no subject word matched (15 October 2026).",
+  "rules": [
+    [
+      "logo",
+      [
+        "logotype",
+        "logo",
+        "sigle"
+      ]
+    ],
+    [
+      "fusée",
+      [
+        "fusée",
+        "lanceur",
+        "pas de tir",
+        "rentrée atmosphérique"
+      ]
+    ],
+    [
+      "véhicule",
+      [
+        "monoplace",
+        "voiture",
+        "vélo",
+        "train qui défile",
+        "avion",
+        "chasseurs",
+        "hélicoptère",
+        "navire",
+        "bulldozer",
+        "engin de chantier",
+        "engins de chantier",
+        "camion",
+        "cockpit"
+      ]
+    ],
+    [
+      "téléphone",
+      [
+        "téléphone",
+        "smartphone"
+      ]
+    ],
+    [
+      "écran",
+      [
+        "capture d'écran",
+        "écran",
+        "interface",
+        "fenêtre",
+        "ordinateur",
+        "clavier",
+        "canevas",
+        "code",
+        "terminal",
+        "bureau ",
+        "application",
+        "conversation",
+        "graphique",
+        "grille de vignettes"
+      ]
+    ],
+    [
+      "visage",
+      [
+        "visage",
+        "œil",
+        "yeux",
+        "nez",
+        "joue",
+        "face caméra",
+        "regard"
+      ]
+    ],
+    [
+      "main",
+      [
+        "main",
+        "mains",
+        "doigt",
+        "bague",
+        "poignée de main"
+      ]
+    ],
+    [
+      "foule",
+      [
+        "foule",
+        "salle de concert",
+        "plusieurs personnes",
+        "rangées",
+        "ouvriers",
+        "opératrices",
+        "personnes en costume",
+        "soldats",
+        "pompiers",
+        "marins",
+        "copies alignées"
+      ]
+    ],
+    [
+      "duo",
+      [
+        "duo",
+        "deux personnes",
+        "deux étudiantes",
+        "deux silhouettes",
+        "couple",
+        "un homme et la femme"
+      ]
+    ],
+    [
+      "animal",
+      [
+        "chien",
+        "chevaux",
+        "cheval",
+        "chat"
+      ]
+    ],
+    [
+      "planète",
+      [
+        "planète",
+        "horizon",
+        "arc",
+        "courbe",
+        "crête",
+        "sphère",
+        "dôme",
+        "lunaire",
+        "astronaute",
+        "bord"
+      ]
+    ],
+    [
+      "machine",
+      [
+        "machine",
+        "hublot",
+        "lave",
+        "pupitres",
+        "salle de contrôle"
+      ]
+    ],
+    [
+      "livres",
+      [
+        "livre",
+        "bibliothèque",
+        "rayonnages",
+        "papiers",
+        "document"
+      ]
+    ],
+    [
+      "plante",
+      [
+        "feuille",
+        "feuillage",
+        "plante",
+        "fleurs",
+        "jardin",
+        "branche",
+        "cellules végétales",
+        "tulipe"
+      ]
+    ],
+    [
+      "eau",
+      [
+        "douche",
+        "jet d'eau",
+        "arroseur",
+        "pluie",
+        "torrent",
+        "l'eau",
+        "tourbillonne"
+      ]
+    ],
+    [
+      "mer",
+      [
+        "mer",
+        "plage",
+        "coucher de soleil",
+        "océan",
+        "vagues",
+        "falaise",
+        "île"
+      ]
+    ],
+    [
+      "paysage",
+      [
+        "montagne",
+        "pierrier",
+        "colline",
+        "parc",
+        "pelouse",
+        "ciel",
+        "nuages",
+        "pont"
+      ]
+    ],
+    [
+      "ville",
+      [
+        "rue",
+        "façades",
+        "immeubles",
+        "gare",
+        "trottoir",
+        "ville",
+        "métro",
+        "rame",
+        "wagon",
+        "chantier",
+        "échafaudages",
+        "structure d'acier",
+        "structure métallique",
+        "quartier",
+        "territoire",
+        "structure"
+      ]
+    ],
+    [
+      "personne",
+      [
+        "homme",
+        "femme",
+        "personne",
+        "silhouette",
+        "enfant",
+        "livreur",
+        "randonneur",
+        "artisan",
+        "jeune",
+        "pilote",
+        "soldat",
+        "ouvrier",
+        "pompier",
+        "figurine",
+        "plongeur",
+        "personnage",
+        "pictogramme"
+      ]
+    ],
+    [
+      "intérieur",
+      [
+        "table",
+        "café",
+        "cuisine",
+        "restaurant",
+        "atelier",
+        "chambre",
+        "lit",
+        "canapé",
+        "salle",
+        "comptoir",
+        "tiroir",
+        "établi",
+        "hall",
+        "laverie",
+        "salle de bains",
+        "miroir"
+      ]
+    ],
+    [
+      "objet",
+      [
+        "objet",
+        "appareil",
+        "produit",
+        "boîtier",
+        "carte",
+        "céramique",
+        "perles",
+        "bocaux",
+        "bouchon",
+        "nœud de corde",
+        "casque",
+        "puce",
+        "drapeau"
+      ]
+    ],
+    [
+      "matière",
+      [
+        "matière",
+        "surface",
+        "texture",
+        "tissu",
+        "fourrure",
+        "dentelle",
+        "strates",
+        "motifs",
+        "traits",
+        "gravure",
+        "illustration",
+        "collage",
+        "bandes",
+        "lamelles",
+        "formes",
+        "fumée",
+        "flammes",
+        "étincelles",
+        "métal fondu",
+        "flou",
+        "négatif",
+        "panache"
+      ]
+    ]
+  ],
+  "default": "matière",
+  "textOnly": [
+    "seul sur fond",
+    "mot orange géant",
+    "sur fond noir",
+    "sur le noir",
+    "fond presque noir",
+    "noir presque total",
+    "noir, deux images",
+    "phrase",
+    "point lumineux sur fond noir",
+    "carte de fin"
+  ],
+  "flags": {
+    "bubble": [
+      "bulle"
+    ],
+    "bw": [
+      "noir et blanc",
+      "noir-et-blanc"
+    ],
+    "grain": [
+      "archive",
+      "granuleu",
+      "sépia"
+    ]
+  },
+  "camera": {
+    "maxShift": 6,
+    "zoomMin": -15,
+    "zoomMax": 25,
+    "maxRoll": 6
+  }
+}

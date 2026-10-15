@@ -1,0 +1,204 @@
+// ZenRay Motion Design, extra templates (15 October 2026).
+// vogun-title: the yellow Vogun title validated by Matthieu on 6 October 2026 (Vegetation Collection 01), ported from
+// ~/.claude/skills/zenray-edit/templates/vogun-yellow-title/Animation.html into a procedural scene: every letter is cut into horizontal
+// bands that arrive with electrical cuts, hold, then leave in a left-right ping-pong. Same law as the original (virtual time 0 to 1 for
+// the entry, 4 to 5 for the exit), now driven by the scene's timeline so it plays live and renders in the export.
+// FR : le titre Vogun jaune valide le 6 octobre, devenu une scene procedurale (entree electrique, tenue, sortie en ping-pong).
+(function () {
+  "use strict";
+  const ZS = window.ZS, h = ZS.h;
+  const P = (key, label, type, def, tier, extra) => ({ key, label, type, default: def, tier, ...(extra || {}) });
+  const N = (key, label, def, min, max, step, tier, unit) => P(key, label, "number", def, tier, { min, max, step, unit });
+  const smooth = (x) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
+
+  ZS.register({
+    id: "vogun-title", label: "Titre Vogun électrique", group: "Texte", duration: 5,
+    params: [
+      P("lines", "Lignes (une par ligne)", "lines", "ZenRay Vegetation Collection 01\nFLEUR DE LYS", 1),
+      P("colour", "Couleur du titre", "color", "#FFFF00", 1),
+      N("appear", "Durée d'entrée", 1.5, 0.3, 4, 0.05, 1, "s"),
+      N("disappear", "Durée de sortie", 1.5, 0.3, 4, 0.05, 1, "s"),
+      P("bg", "Fond", "color", "#f6f4ee", 2),
+      P("font", "Police", "font", "VogunMedium", 2),
+      N("widthRatio", "Largeur occupée", 0.92, 0.3, 0.98, 0.01, 2),
+      N("lineGap", "Écart entre lignes", 110, 0, 400, 1, 2, "px 4K"),
+      N("shadow", "Opacité de l'ombre", 0.55, 0, 1, 0.01, 2),
+      N("shadowBlur", "Flou de l'ombre", 16, 0, 80, 1, 2, "px 4K"),
+      N("amplitude", "Amplitude des coupures", 90, 0, 300, 1, 2, "px 4K"),
+      P("style", "Style d'entrée", "select", "bandes", 2, { options: ["impulsions", "bandes", "glitch"] }),
+      N("frequency", "Fréquence des coupures", 120, 10, 400, 1, 3, "/s virt."),
+      N("slices", "Bandes par lettre", 4, 1, 8, 1, 3),
+      N("rowDelay", "Retard de la ligne suivante", 0.5, 0, 0.9, 0.01, 3),
+      N("spread", "Étalement des lettres", 0.3, 0, 0.8, 0.01, 3),
+      N("settle", "Durée par lettre", 0.17, 0.05, 0.6, 0.01, 3),
+      N("pingPongCycles", "Allers-retours de sortie", 2, 0, 6, 1, 3),
+      N("pingPongAmplitude", "Amplitude du ping-pong", 28, 0, 200, 1, 3, "px 4K"),
+      N("flicker", "Coupures pendant la sortie", 0.12, 0, 1, 0.01, 3),
+    ],
+    build({ el, p, W, H, dur, tl, t0, cue, safe, fit }) {
+      h.css(el, { background: p.bg });
+      const s = W / 3840, motion = { impulsions: 1, bandes: 2, glitch: 3 }[p.style] || 2, slices = Math.round(p.slices);
+      const lines = (Array.isArray(p.lines) ? p.lines : String(p.lines).split("\n")).filter((x) => x.trim());
+      if (document.fonts && document.fonts.load) document.fonts.load(`500 100px '${p.font}'`).catch(() => {});
+      const box = h.css(h.el("div", "zs-abs", el), { left: "0", right: "0", top: "50%", transform: "translateY(-50%)", display: "flex", flexDirection: "column",
+        alignItems: "center", color: p.colour, fontFamily: h.font(p.font), fontWeight: 500, lineHeight: 1,
+        textShadow: `0 0 ${p.shadowBlur * s}px rgba(0,0,0,${p.shadow})` });
+      const glyphs = [];
+      lines.forEach((text, row) => {
+        // a big nominal size, then fit() brings every line to the same width (widthRatio of the frame) and never past the safe area
+        // the original spaces the lines by their ink (cap height to baseline), not by their line boxes: pull the next line up by 0.1 em (measured against Preview-yellow-045.png)
+        const line = h.css(h.el("div", "", box), { whiteSpace: "pre", fontSize: H * 0.5 + "px", marginTop: row ? `calc(${p.lineGap * s}px - 0.1em)` : "0" });
+        const letters = Array.from(text);
+        letters.forEach((letter, i) => {
+          if (letter === " ") { line.appendChild(document.createTextNode(" ")); return; }
+          const g = h.css(h.el("span", "", line), { position: "relative", display: "inline-block" });
+          const whole = h.css(h.el("span", "", g, letter), { opacity: 0 });
+          const pieces = [];
+          for (let k = 0; k < slices; k++) {
+            // the outer bands reach past the box so ascenders and descenders (g, y, accents) are never clipped
+            const top = k === 0 ? -40 : (100 / slices) * k, bottom = k === slices - 1 ? -40 : 100 - (100 / slices) * (k + 1);
+            pieces.push(h.css(h.el("span", "", g, letter), { position: "absolute", left: "0", top: "0", clipPath: `inset(${top}% 0 ${bottom}% 0)`, opacity: 0 }));
+          }
+          glyphs.push({ whole, pieces, index: i, row, count: Math.max(2, letters.length) });
+        });
+        fit(line, Math.min(W * p.widthRatio, safe.w), Math.max(20, (safe.h - p.lineGap * s * (lines.length - 1)) / Math.max(1, lines.length)));
+      });
+      // the original law, in virtual time: 0 to 1 is the entry, 1 the hold, 4 to 5 the exit
+      const render = (v) => {
+        for (const g of glyphs) {
+          const u = g.index / (g.count - 1), start = 0.015 + g.row * p.rowDelay + u * p.spread;
+          const pr = Math.max(0, Math.min(1, (v - start) / p.settle)), exitStart = 4 + g.row * p.rowDelay + u * p.spread;
+          const fade = 1 - smooth((v - exitStart) / p.settle), exitP = Math.max(0, Math.min(1, (v - exitStart) / p.settle));
+          g.whole.style.opacity = pr >= 1 ? fade : 0;
+          for (let k = 0; k < slices; k++) {
+            let op = 0, dx = 0, dy = 0;
+            if (pr > 0 && pr < 1) {
+              const tick = Math.floor((v - start) * p.frequency), stage = Math.floor(pr * 5), pol = ((tick + k) % 2) * 2 - 1, env = (1 - pr) ** 1.2;
+              if (motion === 1) { op = [0.25, 1, 0.08, 1, 1][stage]; dx = pol * p.amplitude * env * (k % 3 === 0 ? 1 : 0.18); dy = (tick % 3 - 1) * 8 * env; }
+              if (motion === 2) { op = ((tick + k) % 4 === 0) ? 0.03 : 1; dx = (k % 2 ? 1 : -1) * p.amplitude * env * (stage < 3 ? 1 : 0.2); dy = (k % 3 - 1) * 15 * env; }
+              if (motion === 3) { op = [0.12, 1, 0, 1, 1][stage]; dx = ((tick * 7 + k * 3) % 5 - 2) * p.amplitude * env * 0.5; dy = (tick % 2 ? 1 : -1) * 18 * env; }
+              op *= smooth(Math.max(0, Math.min(1, pr * 3 - k / (slices * 2))) * 2);
+            }
+            if (exitP > 0 && exitP < 1) {
+              g.whole.style.opacity = 0;
+              const envl = Math.sin(Math.PI * exitP), tick = Math.floor((v - exitStart) * p.frequency);
+              dx = Math.sin(exitP * Math.PI * 2 * p.pingPongCycles) * p.pingPongAmplitude * envl + (k % 2 ? 1 : -1) * p.amplitude * 0.18 * envl;
+              dy = (k % 3 - 1) * 5 * envl; op = ((tick + k) % 4 === 0) ? p.flicker : 1;
+            }
+            const piece = g.pieces[k];
+            piece.style.transform = `translate(${Math.round(dx * s)}px,${Math.round(dy * s)}px)`;
+            piece.style.opacity = op * fade;
+          }
+        }
+      };
+      // the scene's length sets the hold: entry, hold until the exit, exit ending with the scene
+      const hold = Math.max(0, dur - p.appear - p.disappear);
+      const virt = (t) => (t < p.appear ? t / p.appear : t <= p.appear + hold ? 1 : 4 + (t - p.appear - hold) / p.disappear);
+      const proxy = { t: 0 };
+      tl.fromTo(proxy, { t: 0 }, { t: dur, duration: dur, ease: "none", onUpdate: () => render(virt(proxy.t)) }, t0);
+      render(0);
+      cue(0.02, "riser", { length: Math.min(1.2, p.appear) });
+      cue(p.appear * 0.55, "shimmer", { length: 0.9 });
+      cue(p.appear + hold, "whoosh", { length: p.disappear * 0.8, brightness: 0.75 });
+    },
+  });
+})();
+
+// sentence-build (15 October 2026): a sentence assembled token by token, as in the preview of motion-opus-5-5: an optional first word typed
+// very large, the view stepping back, then each token arriving at its own instant (words fade, [pills] and (icons) pop with a rebound),
+// the line sliding to keep its anchor token where it was measured, and an optional zoom into the last token. Tokens, one per line:
+// "word", "[pill]", "(link)", "(+)". FR : une phrase qui se construit mot a mot, avec pastilles, icones, glissement et zoom final.
+(function () {
+  "use strict";
+  const ZS = window.ZS, h = ZS.h;
+  const P = (key, label, type, def, tier, extra) => ({ key, label, type, default: def, tier, ...(extra || {}) });
+  const N = (key, label, def, min, max, step, tier, unit) => P(key, label, "number", def, tier, { min, max, step, unit });
+  const keys = (v, n) => (Array.isArray(v) ? v : String(v || "").split("\n")).map((l) => String(l).trim().split(/\s+/).map(Number))
+    .filter((r) => r.length >= n && r.every(isFinite)).sort((a, b) => a[0] - b[0]);
+  const at = (ks, t) => {
+    if (!ks.length) return null;
+    if (t <= ks[0][0]) return ks[0].slice(1);
+    for (let i = 1; i < ks.length; i++) if (t <= ks[i][0]) { const a = ks[i - 1], b = ks[i], u = (t - a[0]) / Math.max(1e-9, b[0] - a[0]); return a.slice(1).map((v, j) => v + (b[j + 1] - v) * u); }
+    return ks[ks.length - 1].slice(1);
+  };
+  const LINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9.5 14.5l5-5"/><path d="M11 6.5l1.2-1.2a3.6 3.6 0 0 1 5.1 5.1L16 11.6"/><path d="M13 17.5l-1.2 1.2a3.6 3.6 0 0 1-5.1-5.1L8 12.4"/></svg>';
+  ZS.register({
+    id: "sentence-build", label: "Phrase qui se construit", group: "Texte", duration: 2.4,
+    params: [
+      P("tokens", "Éléments (un par ligne : mot, [pastille], (link), (+))", "lines", "We now\n[connect]\n(link)\n[with]\nover\n(+)", 1),
+      P("times", "Arrivée de chaque élément (s)", "lines", "0\n0.5\n1.02\n1.1\n1.4\n1.47", 1),
+      P("accent", "Couleur des pastilles", "color", "#e62c02", 1), P("ink", "Texte", "color", "@ink", 1),
+      P("font", "Police", "font", "InterVariable", 2), N("size", "Taille du texte", 105, 20, 300, 1, 2, "px"),
+      P("pillInk", "Texte des pastilles", "color", "#ffffff", 2), P("bg", "Fond", "color", "#f3f5e9", 2),
+      N("introScale", "Échelle du premier mot tapé", 2.55, 1, 6, 0.01, 2), N("introUntil", "Fin du premier mot en grand", 0.47, 0, 5, 0.01, 2, "s"),
+      N("y", "Position verticale", 0.5, 0, 1, 0.001, 2), N("pop", "Rebond des pastilles", 2.2, 0, 5, 0.1, 2),
+      P("slide", "Glissement (t x de l'élément repère, une clé par ligne)", "lines", "", 3), N("anchor", "Élément repère du glissement", 1, 0, 20, 1, 3),
+      P("outro", "Zoom final (t échelle, une clé par ligne)", "lines", "", 3), N("outroX", "Zoom final, centre horizontal", 1253, 0, 1920, 1, 3, "px"),
+      N("outroY", "Zoom final, centre vertical", 540, 0, 1080, 1, 3, "px"), N("gap", "Espace entre éléments", 0.16, 0, 1, 0.01, 3, "em"),
+      N("pillH", "Hauteur des pastilles", 1.48, 1, 3, 0.01, 3, "em"), N("radius", "Arrondi des pastilles", 0.22, 0, 0.8, 0.01, 3, "em"),
+      N("enter", "Durée d'arrivée d'un élément", 0.3, 0.05, 1.5, 0.01, 3, "s"), N("weight", "Graisse", 400, 300, 700, 10, 3),
+    ],
+    build({ el, p, W, H, tl, t0, dur, cue }) {
+      h.css(el, { background: p.bg });
+      // the slide keys are measured in pixels of a 1920-wide frame: a narrower format plays the same 1920 x 1080 stage, scaled to its
+      // width and centred, so the word being written always fits (15 October 2026)
+      if (W < 1920 * H / 1080 - 1) el = ZS.stage1920(el, W, H), W = 1920, H = 1080;
+      const row = h.css(h.el("div", "zs-abs", el), { left: "0", top: p.y * H + "px", display: "flex", alignItems: "center", gap: p.gap + "em", whiteSpace: "nowrap",
+        fontFamily: h.font(p.font), fontSize: p.size + "px", fontWeight: p.weight, color: p.ink, transformOrigin: "0 0", lineHeight: 1 });
+      const times = p.times.map(Number), nodes = [];
+      p.tokens.forEach((tok, i) => {
+        let n;
+        const m = /^\[(.*)\]$/.exec(tok), ic = /^\((.*)\)$/.exec(tok);
+        if (m) n = h.css(h.el("span", "", row, m[1]), { background: p.accent, color: p.pillInk, height: p.pillH + "em", display: "inline-flex", alignItems: "center",
+          padding: "0 0.42em", borderRadius: p.radius + "em", boxShadow: "0 0.08em 0.2em rgba(120,30,0,0.18)" });
+        else if (ic) {
+          n = h.css(h.el("span", "", row), { background: p.accent, color: p.pillInk, width: p.pillH * 0.84 + "em", height: p.pillH * 0.84 + "em", borderRadius: "50%",
+            display: "inline-grid", placeItems: "center", fontSize: "1em" });
+          if (ic[1] === "link") { n.innerHTML = LINK; h.css(n.firstChild, { width: "0.62em", height: "0.62em" }); } else { n.textContent = ic[1]; h.css(n, { fontSize: "1.05em" }); }
+        } else n = h.el("span", "", row, tok);
+        n.dataset.kind = m ? "pill" : ic ? "icon" : "word";
+        nodes.push(n);
+      });
+      // the row is placed so that its anchor token's left edge follows the measured slide; the vertical centre is p.y
+      const first = nodes[0], text0 = p.tokens[0];
+      const state = (tt) => {
+        nodes.forEach((n, i) => {
+          const s = times[i] || 0, k = n.dataset.kind;
+          if (i === 0 && p.introUntil > 0) {   // the first word is typed
+            const c = Math.max(0, Math.min(text0.length, Math.floor((tt - s) / Math.max(0.01, p.introUntil * 0.85) * text0.length + 1)));
+            n.textContent = tt < s ? "" : text0.slice(0, c);
+            n.style.opacity = tt < s ? 0 : 1;
+            return;
+          }
+          const u = Math.max(0, Math.min(1, (tt - s) / p.enter));
+          if (k === "word") { n.style.opacity = u; n.style.transform = "none"; return; }
+          const e = u <= 0 ? 0 : u >= 1 ? 1 : 1 + (p.pop + 1) * Math.pow(u - 1, 3) + p.pop * Math.pow(u - 1, 2);   // back.out
+          n.style.opacity = u > 0 ? 1 : 0;
+          n.style.transform = `scale(${Math.max(0, e)})`;
+          n.style.visibility = u > 0 ? "visible" : "hidden";
+        });
+        // layout is measured untransformed: offsets are in row units
+        const sc = tt < p.introUntil ? p.introScale : tt < p.introUntil + 0.07 ? p.introScale + (1 - p.introScale) * ((tt - p.introUntil) / 0.07) : 1;
+        const anchorNode = nodes[Math.min(nodes.length - 1, p.anchor)];
+        const sl = keys(p.slide, 2), sx = at(sl, tt);
+        let x = sx ? sx[0] - anchorNode.offsetLeft : (W - row.scrollWidth) / 2;
+        if (sc !== 1) x = (W - first.offsetWidth * sc) / 2;   // the typed first word is centred alone
+        const oy = -row.offsetHeight / 2;
+        let tf = `translate(${x}px, ${oy}px) scale(${sc})`;
+        const ok = keys(p.outro, 2), z = at(ok, tt);
+        if (z && z[0] !== 1) {
+          // zoom about the last token: its centre moves to (outroX, outroY) as the scale grows
+          const last = nodes[nodes.length - 1], cx = x + last.offsetLeft + last.offsetWidth / 2, cy = p.y * H + oy + last.offsetTop + last.offsetHeight / 2;
+          const f = Math.min(1, (z[0] - 1) / Math.max(1e-6, (ok[ok.length - 1][1] - 1)));
+          const tx = cx + (p.outroX - cx) * f, ty = cy + (p.outroY - cy) * f;
+          tf = `translate(${tx - (cx - x) * z[0]}px, ${ty - p.y * H - (cy - p.y * H - oy) * z[0]}px) scale(${z[0]})`;
+        }
+        row.style.transform = tf;
+      };
+      state(0);
+      const clock = { t: 0 };
+      tl.fromTo(clock, { t: 0 }, { t: dur, duration: dur, ease: "none", immediateRender: false, onUpdate: () => state(clock.t) }, t0);
+      times.forEach((s, i) => { if (i) cue(s, nodes[i].dataset.kind === "word" ? "click" : "pop", { pitch: 0.4 + 0.06 * i, gain: 0.5 }); });
+    },
+  });
+})();

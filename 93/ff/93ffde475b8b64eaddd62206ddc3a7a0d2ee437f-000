@@ -1,0 +1,187 @@
+// ZenRay Motion Design, the application template (15 October 2026).
+// app-preview: a desktop application filmed by a moving camera, as in motion-opus-5-5 (4 to 27 s): a conversation (a prompt typed then
+// sent, a status card with a progress bar, a second prompt) and a preview panel whose window plays CHILD SCENES (any template, see
+// ZS.buildChildren). Everything lives on one canvas (1920 x 1080 units = the frame of the reference where the preview window is at scale 1);
+// the camera is a list of keys "t z cx cy" (zoom, canvas point at the centre of the frame), measured on the reference by
+// Scripts/TrackCamera.py + Scripts/TrackAnchor.py + Scripts/BuildCameraTrack.py. The conversation is drawn in its own units (the frame at
+// 9 s of the reference, placed on the canvas by `chatFrame`). Every word, colour and instant is a value.
+// FR : une application filmee par une camera mobile ; conversation, carte de statut, panneau d'apercu qui joue des sous-scenes.
+(function () {
+  "use strict";
+  const ZS = window.ZS, h = ZS.h;
+  const P = (key, label, type, def, tier, extra) => ({ key, label, type, default: def, tier, ...(extra || {}) });
+  const N = (key, label, def, min, max, step, tier, unit) => P(key, label, "number", def, tier, { min, max, step, unit });
+  const keys = (lines, n) => (Array.isArray(lines) ? lines : String(lines || "").split("\n")).map((l) => l.trim().split(/\s+/).map(Number))
+    .filter((r) => r.length >= n && r.every((x) => isFinite(x))).sort((a, b) => a[0] - b[0]);
+  // linear interpolation in a key list [[t, a, b, ...], ...]
+  const at = (ks, t) => {
+    if (!ks.length) return null;
+    if (t <= ks[0][0]) return ks[0].slice(1);
+    for (let i = 1; i < ks.length; i++) {
+      if (t <= ks[i][0]) {
+        const a = ks[i - 1], b = ks[i], u = (t - a[0]) / Math.max(1e-9, b[0] - a[0]);
+        return a.slice(1).map((v, j) => v + (b[j + 1] - v) * u);
+      }
+    }
+    return ks[ks.length - 1].slice(1);
+  };
+  const ARROW = '<svg viewBox="0 0 26 40" xmlns="http://www.w3.org/2000/svg"><path d="M2 2 L2 31 L9 24.5 L14 36 L19 33.8 L14 22.6 L23.5 22.6 Z" fill="#000" stroke="#fff" stroke-width="2.4" stroke-linejoin="round"/></svg>';
+
+  ZS.register({
+    id: "app-preview", label: "Application et aperçu", group: "Interface", duration: 23,
+    params: [
+      P("prompt", "Première demande", "text", "Create a launch video for Replit.", 1),
+      P("prompt2", "Seconde demande", "text", "Change that.", 1),
+      P("product", "Outil (ligne « Using … »)", "text", "Motion", 1),
+      P("accent", "Couleur d'accent", "color", "#cc6f58", 1),
+      P("steps", "Étapes du statut (une par ligne)", "lines", "Designing your launch video...\nAdding sound...\nRendering your launch video...", 2),
+      P("step2", "Statut après la seconde demande", "text", "Refining your launch video...", 2),
+      P("model", "Modèle affiché", "text", "Opus 5.5", 2),
+      P("placeholder", "Texte du champ vide", "text", "Reply to Claude...", 2),
+      P("windowTitle", "Titre de la fenêtre", "text", "Your launch video", 2),
+      P("caption", "Légende sous l'aperçu", "text", "Replit launch video", 2),
+      P("appTitle", "Titre de l'application", "text", "Replit launch video", 2),
+      P("badge", "Badge de version", "text", "v1 Preview", 2),
+      P("badge2", "Badge après la seconde demande", "text", "v2 Updated", 3),
+      N("badge2At", "Changement de badge", 16.97, 0, 60, 0.01, 3, "s"),
+      N("typeAt", "Début de la frappe", 0.037, 0, 60, 0.01, 3, "s"), N("cps", "Vitesse de frappe", 36, 5, 120, 1, 3, "car./s"),
+      N("sendAt", "Envoi de la demande", 1.767, 0, 60, 0.01, 3, "s"), N("statusAt", "Apparition du statut", 1.967, 0, 60, 0.01, 3, "s"),
+      P("stepTimes", "Temps des étapes (s, un par ligne)", "lines", "1.967\n3.85\n4.95", 3),
+      N("resetAt", "Nouvelle conversation", 12.717, 0, 60, 0.01, 3, "s"),
+      N("send2At", "Envoi de la seconde demande", 14.717, 0, 60, 0.01, 3, "s"), N("step2At", "Statut de la seconde demande", 14.917, 0, 60, 0.01, 3, "s"),
+      P("bg", "Fond", "color", "#eff2e7", 3), P("panelBg", "Fond du panneau", "color", "#f6f7f5", 3),
+      P("ink", "Texte", "color", "#1b1b19", 3), P("muted", "Texte secondaire", "color", "#8b8b84", 3),
+      P("bubbleBg", "Bulle de la demande", "color", "#e4e2d2", 3), N("windowAt", "Apparition de la fenêtre d'aperçu", 6.3, 0, 60, 0.01, 3, "s"),
+      P("camera", "Caméra (t zoom cx cy, une clé par ligne)", "lines", "0 1 960 540", 4),
+      P("cursor", "Curseur (t x y, en points de la conversation ; t - pour le cacher)", "lines", "", 4),
+      P("clicks", "Clics du curseur (s, un par ligne)", "lines", "1.667\n14.717", 4),
+      P("progress", "Barre de progression (t part, une clé par ligne)", "lines", "2.017 0.02\n3.837 0.335\n4.867 0.666\n4.967 0.722\n6.067 0.969\n6.267 1", 4),
+      P("chatFrame", "Place de la conversation sur la toile (zoom cx cy)", "text", "1.2016 -20.9 864.1", 4),
+      P("uiFont", "Police de l'interface", "font", "AnthropicSans", 4), P("serifFont", "Police des statuts", "font", "AnthropicSerif", 4),
+      N("uiSize", "Taille du texte de l'interface", 30, 10, 60, 0.5, 4, "px"), N("statusSize", "Taille du statut", 38, 10, 80, 0.5, 4, "px"),
+      N("titleSize", "Taille du titre de la fenêtre", 32, 10, 80, 0.5, 4, "px"), N("captionSize", "Taille de la légende", 19, 8, 40, 0.5, 4, "px"),
+      N("cursorSize", "Taille du curseur", 65, 20, 140, 1, 4, "px"),
+    ],
+    build(ctx) {
+      const { el, p, W, H, tl, t0, dur, cue } = ctx;
+      const u = Math.min(W / 1920, H / 1080);
+      h.css(el, { background: p.bg, overflow: "hidden" });
+      const ui = (size, extra) => ({ fontFamily: h.font(p.uiFont), fontSize: size + "px", lineHeight: 1.15, color: p.ink, ...(extra || {}) });
+      const world = h.css(h.el("div", "zs-abs", el), { left: "0", top: "0", width: "1920px", height: "1080px", transformOrigin: "0 0" });
+      // ---------------------------------------------------------------- the panel (canvas units)
+      const panel = h.css(h.el("div", "zs-abs", world), { left: "440px", top: "-2px", width: "1106px", height: "1248px", background: p.panelBg,
+        borderLeft: "2px solid #e0e1dd", boxShadow: "6px 0 12px -6px rgba(40,40,30,0.18)" });
+      const head = h.css(h.el("div", "zs-abs", panel), { left: "0", top: "0", right: "0", height: "44px", background: "#f4f5f3", borderBottom: "2px solid #eceeea",
+        display: "flex", alignItems: "center", padding: "0 22px", boxSizing: "border-box" });
+      h.css(h.el("span", "", head, "← " + p.appTitle), ui(15, { flex: "1" }));
+      h.css(h.el("span", "", head, "⟳"), ui(16, { color: p.muted, marginRight: "10px" }));
+      const tog = h.css(h.el("span", "", head), { display: "inline-flex", background: "#ecece6", borderRadius: "999px", padding: "3px", marginRight: "14px" });
+      h.css(h.el("span", "", tog, "Preview"), ui(12, { background: "#fff", borderRadius: "999px", padding: "3px 12px", fontWeight: 500 }));
+      h.css(h.el("span", "", tog, "Code"), ui(12, { color: p.muted, padding: "3px 12px" }));
+      h.css(h.el("span", "", head, "×"), ui(20, { color: p.muted }));
+      const dots = (parent, size, colour) => {
+        const g = h.css(h.el("span", "", parent), { display: "inline-grid", gridTemplateColumns: "1fr 1fr", gap: size * 0.14 + "px", width: size + "px", height: size + "px" });
+        for (let i = 0; i < 4; i++) h.css(h.el("span", "", g), { background: colour, borderRadius: "50%" });
+        return g;
+      };
+      const trow = h.css(h.el("div", "zs-abs", panel), { left: "45px", top: "166px", right: "41px", height: "32px", display: "flex", alignItems: "center", gap: "15px" });
+      dots(trow, 28, p.ink);
+      h.css(h.el("span", "", trow, p.windowTitle), { fontFamily: h.font(p.serifFont, "serif"), fontSize: p.titleSize + "px", color: p.ink, flex: "1", whiteSpace: "nowrap" });
+      const badge = h.css(h.el("span", "", trow, p.badge), ui(18, { background: "#ebeae2", borderRadius: "8px", padding: "7px 14px", color: "#55554f" }));
+      const content = h.css(h.el("div", "zs-abs", panel), { left: "44px", top: "244px", width: "1020px", height: "574px", overflow: "hidden", borderRadius: "6px",
+        background: "#f4f4ea" });
+      const host = h.css(h.el("div", "zs-abs", content), { left: "0", top: "0", width: "1920px", height: "1080px", transform: `scale(${1020 / 1920})`, transformOrigin: "0 0" });
+      h.css(h.el("div", "zs-abs zs-caption", panel, p.caption), ui(p.captionSize, { left: "46px", top: "868px", color: p.muted }));
+      h.css(h.el("div", "zs-abs", panel, "← Version 1"), ui(13, { left: "24px", top: "1218px", color: p.muted }));
+      ctx.buildChildren(host, 1920, 1080);
+      // the preview window (title, content, caption) exists only once the first render is ready
+      const win = [trow, content, panel.querySelector(".zs-caption")].filter(Boolean);
+      win.forEach((n) => h.css(n, { opacity: 0, visibility: "hidden" }));
+      tl.fromTo(win, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.3, ease: "power1.out", immediateRender: false }, t0 + p.windowAt);
+      // ---------------------------------------------------------------- the conversation (units of the reference frame at 9 s)
+      const [zA, cxA, cyA] = String(p.chatFrame).split(/\s+/).map(Number);
+      const chat = h.css(h.el("div", "zs-abs", world), { left: cxA - 960 / zA + "px", top: cyA - 540 / zA + "px", width: "1920px", height: "1080px",
+        transform: `scale(${1 / zA})`, transformOrigin: "0 0" });
+      const card = (x, y, w, hh, bg, border) => h.css(h.el("div", "zs-abs", chat), { left: x + "px", top: y + "px", width: w + "px", height: hh + "px", boxSizing: "border-box",
+        background: bg, borderRadius: "16px", border: border ? "1.5px solid " + border : "none" });
+      // thread 1: the prompt bubble, then the status card
+      const bubble = card(456, 162, 1002, 120, p.bubbleBg);
+      h.css(h.el("div", "zs-abs", bubble, p.prompt), ui(p.uiSize, { left: "34px", top: "50%", transform: "translateY(-50%)", whiteSpace: "nowrap" }));
+      const status = card(456, 342, 1002, 276, "#f6f7f3", "#e3e4dc");
+      const using = h.css(h.el("div", "zs-abs", status), { left: "36px", top: "36px", display: "flex", alignItems: "center", gap: "14px" });
+      dots(using, 28, p.ink);
+      h.css(h.el("span", "", using, "Using " + p.product), ui(p.uiSize * 0.87, { color: "#6b6b65" }));
+      const stepEl = h.css(h.el("div", "zs-abs", status, p.steps[0] || ""), { left: "37px", top: "106px", fontFamily: h.font(p.serifFont, "serif"), fontSize: p.statusSize + "px",
+        color: p.ink, whiteSpace: "nowrap" });
+      const track = h.css(h.el("div", "zs-abs", status), { left: "37px", top: "224px", width: "931px", height: "8px", borderRadius: "4px", background: "#e6e5dc", overflow: "hidden" });
+      const fill = h.css(h.el("div", "", track), { width: "100%", height: "100%", background: p.accent, borderRadius: "4px", transformOrigin: "0 50%", transform: "scaleX(0)" });
+      // thread 2: after the reset, the second prompt and its status line
+      const bubble2 = card(456, 162, 1002, 120, p.bubbleBg);
+      h.css(h.el("div", "zs-abs", bubble2, p.prompt2), ui(p.uiSize, { left: "34px", top: "50%", transform: "translateY(-50%)", whiteSpace: "nowrap" }));
+      const refine = h.css(h.el("div", "zs-abs", chat), { left: "492px", top: "378px", display: "flex", alignItems: "center", gap: "16px" });
+      dots(refine, 28, p.ink);
+      h.css(h.el("span", "", refine, p.step2), { fontFamily: h.font(p.serifFont, "serif"), fontSize: p.statusSize * 0.85 + "px", color: p.ink });
+      [bubble, status, bubble2, refine].forEach((n) => h.css(n, { opacity: 0, visibility: "hidden" }));
+      // the composer
+      const comp = card(425, 732, 1027, 222, "#f6f7f3", "#d9d9cf");
+      h.css(comp, { boxShadow: "0 22px 44px -26px rgba(60,60,40,0.35)" });
+      const field = h.css(h.el("div", "zs-abs", comp), ui(p.uiSize, { left: "34px", top: "36px", whiteSpace: "pre", color: p.muted }));
+      field.textContent = p.placeholder;
+      const rowB = h.css(h.el("div", "zs-abs", comp), { left: "36px", right: "22px", top: "132px", height: "54px", display: "flex", alignItems: "center", gap: "14px" });
+      h.css(h.el("span", "", rowB, "+"), ui(30, { color: "#55554f", width: "30px", textAlign: "center" }));
+      const seg = h.css(h.el("span", "", rowB), { display: "inline-flex", background: "#ecebe4", borderRadius: "999px", padding: "4px" });
+      h.css(h.el("span", "", seg, "Chat"), ui(19, { background: "#fbfbf8", borderRadius: "999px", padding: "6px 16px", boxShadow: "0 1px 2px rgba(0,0,0,0.08)" }));
+      h.css(h.el("span", "", seg, "Cowork"), ui(19, { color: "#6b6b65", padding: "6px 16px" }));
+      h.css(h.el("span", "", rowB), { flex: "1" });
+      h.css(h.el("span", "", rowB, p.model + "  ⌄"), ui(22, { color: "#3b3b37", whiteSpace: "pre" }));
+      const send = h.css(h.el("span", "", rowB, "↑"), ui(26, { width: "54px", height: "54px", borderRadius: "10px", background: p.accent, color: "#fff",
+        display: "grid", placeItems: "center", fontWeight: 600 }));
+      // entrances and exits of the cards (GSAP, deterministic)
+      const show = (n, when, d) => tl.fromTo(n, { autoAlpha: 0, y: 10 }, { autoAlpha: 1, y: 0, duration: d || 0.2, ease: "power2.out", immediateRender: false }, t0 + when);
+      const hide = (n, when) => tl.set(n, { autoAlpha: 0 }, t0 + when);
+      show(bubble, p.sendAt); show(status, p.statusAt, 0.25);
+      hide(bubble, p.resetAt); hide(status, p.resetAt);
+      show(bubble2, p.send2At); show(refine, p.step2At, 0.25);
+      // the cursor element
+      const cur = h.css(h.el("div", "zs-abs", chat), { left: "0", top: "0", width: p.cursorSize * 26 / 40 + "px", height: p.cursorSize + "px", transformOrigin: "10% 6%", zIndex: 9 });
+      cur.innerHTML = ARROW; h.css(cur.firstChild, { width: "100%", height: "100%", display: "block" });
+      const ck = (Array.isArray(p.cursor) ? p.cursor : String(p.cursor || "").split("\n")).map((l) => l.trim().split(/\s+/)).filter((r) => r.length >= 2 && isFinite(+r[0]));
+      const curKeys = ck.filter((r) => r.length >= 3 && r[1] !== "-").map((r) => r.map(Number)), hides = ck.filter((r) => r[1] === "-").map((r) => +r[0]);
+      const clicks = p.clicks.map(Number), times = p.stepTimes.map(Number), prog = keys(p.progress, 2), cam = keys(p.camera, 4);
+      // ONE state function: everything that is not a tween is a pure function of the time in the scene, so a frame is the same whether the
+      // film plays, jumps or renders (no event that a seek could skip)
+      const typed = (text, start, end, tt) => {
+        if (tt < start || tt >= end) return null;
+        const n = Math.min(String(text).length, Math.floor((tt - start) * p.cps));
+        return String(text).slice(0, n) + (Math.floor((tt - start) * 2) % 2 === 0 || n < String(text).length ? "|" : "");
+      };
+      const state = (tt) => {
+        const f = typed(p.prompt, p.typeAt, p.sendAt, tt) ?? typed(p.prompt2, p.resetAt, p.send2At, tt);
+        if (f !== null) { field.textContent = f; field.style.color = p.ink; } else { field.textContent = p.placeholder; field.style.color = p.muted; }
+        let k = 0; times.forEach((x, i) => { if (tt >= x && i < p.steps.length) k = i; });
+        stepEl.textContent = p.steps[k] || "";
+        badge.textContent = p.badge2 && tt >= p.badge2At ? p.badge2 : p.badge;
+        const pv = at(prog, tt); fill.style.transform = `scaleX(${Math.max(0, Math.min(1, pv ? pv[0] : 0))})`;
+        const cv = curKeys.length ? at(curKeys, tt) : null;
+        const lastKey = curKeys.filter((r) => r[0] <= tt + 1e-6).pop(), lastHide = hides.filter((x) => x <= tt + 1e-6).pop();
+        const on = !!cv && !!lastKey && (lastHide === undefined || lastKey[0] > lastHide);
+        const press = clicks.some((c) => tt >= c && tt < c + 0.1) ? 0.87 : 1;
+        cur.style.visibility = on ? "visible" : "hidden";
+        if (cv) cur.style.transform = `translate(${cv[0]}px, ${cv[1]}px) scale(${press})`;
+        const v = at(cam, tt) || [1, 960, 540];
+        // the measured camera frames a 16:9 view; a narrower format keeps the same framed width, so the framing fits whole (15 October 2026)
+        world.style.transform = `translate(${W / 2}px, ${H / 2}px) scale(${v[0] * Math.min(u, W / 1920)}) translate(${-v[1]}px, ${-v[2]}px)`;
+      };
+      state(0);
+      const clock = { t: 0 };
+      tl.fromTo(clock, { t: 0 }, { t: dur, duration: dur, ease: "none", immediateRender: false, onUpdate: () => state(clock.t) }, t0);
+      // sound: typing, the two sends, the clicks, the steps
+      cue(p.typeAt, "type", { length: String(p.prompt).length / p.cps, rate: Math.min(16, p.cps / 2) });
+      cue(p.resetAt, "type", { length: String(p.prompt2).length / p.cps, rate: Math.min(16, p.cps / 2) });
+      cue(p.sendAt, "pop", { pitch: 0.4 }); cue(p.send2At, "pop", { pitch: 0.45 });
+      clicks.forEach((c) => cue(c, "click", {}));
+      times.slice(1).forEach((x) => cue(x, "tick", {}));
+      void send;
+    },
+  });
+})();

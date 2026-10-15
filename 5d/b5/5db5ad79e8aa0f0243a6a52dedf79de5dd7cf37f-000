@@ -1,0 +1,78 @@
+"""Stage the latest export of each motion project for the site's publisher (15 October 2026).
+
+The ZenRayProgress publisher (scripts/Motion/PublishMotions.mjs) reads <workshop>/motions/<id>/V_NNN/render.mp4 and motion.json.
+This copies the newest export of each motion project there as the next version, with its canvas, its note and the rights decision
+(Matthieu validated publishing everything on 15 October 2026). A version already staged with the same bytes is not staged again.
+FR : range le dernier export de chaque projet motion la ou le publieur du site le lit, comme nouvelle version.
+Usage: python3 motion/publish_stage.py [project-id ...]   prints one JSON line per project
+"""
+import hashlib
+import json
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+MOTION = Path(__file__).resolve().parent
+sys.path.insert(0, str(MOTION))
+import server  # noqa: E402
+
+WORKSHOP = Path.home() / ".claude/tmp/tmp-zenray-motion-design/motions"
+RIGHTS = {"cleared": True, "by": "Matthieu", "date": "15 October 2026",
+          "note": "publication de toutes les animations validée par Matthieu, textes, marques et musiques reproduites compris"}
+
+
+def sha(f: Path) -> str:
+    h = hashlib.sha256()
+    with f.open("rb") as fh:
+        for b in iter(lambda: fh.read(1 << 20), b""):
+            h.update(b)
+    return h.hexdigest()
+
+
+def latest_export(pid: str):
+    files = sorted(server.project_dir(pid).glob("exports/*/*.mp4"), key=lambda f: f.parent.name)
+    return files[-1] if files else None
+
+
+def probe(f: Path) -> dict:
+    out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,r_frame_rate:format=duration",
+                          "-of", "json", str(f)], capture_output=True, text=True).stdout
+    j = json.loads(out)
+    s, num = j["streams"][0], j["streams"][0]["r_frame_rate"].split("/")
+    return {"width": s["width"], "height": s["height"], "fps": round(int(num[0]) / int(num[1]), 3), "duration": float(j["format"]["duration"])}
+
+
+def stage(pid: str) -> dict:
+    mp4 = latest_export(pid)
+    if not mp4:
+        return {"id": pid, "staged": False, "reason": "aucun export"}
+    p = server.read_project(pid)
+    folder = WORKSHOP / pid
+    folder.mkdir(parents=True, exist_ok=True)
+    mf = folder / "motion.json"
+    motion = json.loads(mf.read_text()) if mf.is_file() else {"id": pid, "versions": []}
+    digest = sha(mp4)
+    for v in motion.get("versions", []):
+        vf = folder / v / "render.mp4"
+        if vf.is_file() and sha(vf) == digest:
+            return {"id": pid, "staged": False, "reason": f"déjà rangé en {v}", "version": v}
+    version = f"V_{len(motion.get('versions', [])) + 1:03d}"
+    vd = folder / version
+    vd.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(mp4, vd / "render.mp4")
+    info = probe(vd / "render.mp4")
+    (vd / "params.json").write_text(json.dumps({"canvas": {k: info[k] for k in ("width", "height", "fps")}, "project": pid}, indent=2) + "\n")
+    (vd / "version.json").write_text(json.dumps({"created": "15 October 2026", "note": f"export du projet motion {pid} ({mp4.parent.name})"}, indent=2) + "\n")
+    ref = p.get("reference")
+    motion.update({"id": pid, "title": p.get("title") or pid, "latest": version, "versions": [*motion.get("versions", []), version],
+                   "updated": "15 October 2026", "recipe": "motion-project", "rights": RIGHTS,
+                   "tags": [t for t in ("motion", ref, p.get("format")) if t]})
+    mf.write_text(json.dumps(motion, ensure_ascii=False, indent=2) + "\n")
+    return {"id": pid, "staged": True, "version": version, "duration": round(info["duration"], 2), "size": f'{info["width"]}x{info["height"]}'}
+
+
+if __name__ == "__main__":
+    ids = sys.argv[1:] or sorted(d.name for d in server.projects_root().iterdir() if (d / "project.json").is_file())
+    for pid in ids:
+        print(json.dumps(stage(pid), ensure_ascii=False))

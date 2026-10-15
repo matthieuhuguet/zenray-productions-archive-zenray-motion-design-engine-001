@@ -1,0 +1,184 @@
+"""ZenRay Motion Design, a measured video becomes an editable motion project (15 October 2026).
+
+convert(slug) reads {workshop}/references/<slug>/bible.json (the shot list measured by the labs pipeline: cuts, families,
+palette roles, typography measures, camera eases) and writes a motion project with ONE SCENE PER SHOT, the same durations,
+so the rhythm of the reference is kept to the frame. What each shot becomes:
+
+  plate / montage   -> media-showcase, full frame, an excerpt of the reference video ("ref:<slug>", mediaStart = shot start):
+                       the slot of a 3D render, replace it in the Médias tab
+  textcard          -> title-card (or kinetic-words for a short shot), words from the ZenRay 3D script, the measured colours,
+                       the measured type size (x-height), the measured font when the app has it
+  graphic           -> kinetic-words when the shot carries type, otherwise a cycle of colour-slam, orbit-word and
+                       gradient-word in the shot's palette
+  last non-plate    -> end-card
+
+The music is the reference's music reproduced at 99.9 % (bank, stems mixed live); the sound effects are the effects isolated
+from the reference, at their measured times. Everything is a value of the project: nothing is rendered, nothing is copied
+except the reference video excerpt that a plate shows. Interface: motion/params/convert.json.
+FR : une video mesuree devient un projet Motion modifiable, un plan = une scene, au rythme exact de la reference.
+Usage: python3 motion/convert.py <slug> | --all    [--force]
+"""
+from __future__ import annotations
+
+import json
+import re
+import sys
+from pathlib import Path
+
+MOTION = Path(__file__).resolve().parent
+sys.path.insert(0, str(MOTION))
+import banks  # noqa: E402
+
+CONV = json.loads((MOTION / "params" / "convert.json").read_text(encoding="utf-8"))
+FONTS = {"InterVariable", "AnthropicSerif", "AnthropicSans", "AnthropicMono", "Geist", "InstrumentSerif", "SpaceGrotesk", "Fraunces",
+         "Manrope", "Syne", "Unbounded", "JetBrainsMono", "PlayfairDisplay", "Sora"}
+
+
+def _lum(hexc: str) -> float:
+    try:
+        r, g, b = (int(hexc[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    except (ValueError, TypeError, IndexError):
+        return 0.5
+    f = lambda c: c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4  # noqa: E731
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+
+
+def _contrast(a: str, b: str) -> float:
+    la, lb = sorted([_lum(a), _lum(b)], reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+def colours(shot: dict) -> dict:
+    """Background, ink and accent of a shot from its measured roles; the ink is replaced when it would be unreadable (contrast < 3)."""
+    roles = shot.get("roles") or {}
+    pal = [p.get("hex") for p in shot.get("palette") or [] if p.get("hex")]
+    bg = roles.get("background") or (pal[0] if pal else "#ecece2")
+    ink = roles.get("text") or next((h for h in pal[1:] if _contrast(h, bg) >= 3), None)
+    if not ink or _contrast(ink, bg) < 3:
+        ink = CONV["fallbackInk"][0] if _lum(bg) > 0.35 else CONV["fallbackInk"][1]
+    accent = roles.get("accent") or next((p.get("hex") for p in shot.get("palette") or [] if p.get("role") == "accent"), None) or CONV["fallbackAccent"]
+    return {"bg": bg, "ink": ink, "accent": accent}
+
+
+def type_size(shot: dict, default: float) -> float:
+    """The font size (px at 1080) from the measured x-height of the largest line of type, when the shot has one."""
+    xs = [t.get("x_height_px1080") for t in shot.get("text_lines") or [] if isinstance(t.get("x_height_px1080"), (int, float))]
+    x = max(xs) if xs else 0
+    return round(x / CONV["xHeightRatio"], 1) if x >= 12 else default
+
+
+def first_ease(shot: dict) -> str:
+    for ch in ("y", "x", "zoom"):
+        for mv in ((shot.get("camera") or {}).get("channels", {}).get(ch, {}) or {}).get("moves") or []:
+            if mv.get("confidence") == "high" and mv.get("ease"):
+                return mv["ease"]
+    return ""
+
+
+def scene_for(shot: dict, slug: str, k: dict, font: str) -> dict:
+    fam, dur = shot.get("family"), round(float(shot.get("duration") or 0.5), 4)
+    col = colours(shot)
+    ref = {"shot": shot.get("id"), "family": fam, "start": shot.get("start"), "description": shot.get("description", "")}
+    base = {"id": shot.get("id", f"s{k['i']}").lower(), "duration": max(0.02, dur), "ref": ref}
+    script, words = CONV["script"], CONV["words"]
+    if fam in ("plate", "montage") or (fam == "textcard" and dur < CONV["minTextShot"]):
+        return {**base, "template": "media-showcase", "params": {"media": f"ref:{slug}", "mediaStart": round(float(shot.get("start") or 0), 4),
+                "frame": "full", "fit": "cover", "zoom": 1, "entrance": "coupe", "showCaption": False, "bg": "#000000"}}
+    line = script[k["t"] % len(script)]
+    k["t"] += 1
+    if fam == "textcard":
+        if dur < 1.5:
+            return {**base, "template": "kinetic-words", "params": {"sentence": line, "badge": False, "font": font, "ink": col["ink"], "bg": col["bg"],
+                    "accent": col["accent"], "size": min(260, type_size(shot, 104))}}
+        title, _, sub = line.partition(" ") if len(line) > 18 else (line, "", "")
+        return {**base, "template": "title-card", "params": {"title": title, "subtitle": sub, "align": "center", "mark": False, "bg": col["bg"],
+                "ink": col["ink"], "accent": col["accent"], "titleFont": "AnthropicSerif", "bodyFont": font, "titleSize": min(260, type_size(shot, 120))}}
+    if shot.get("text_lines"):
+        return {**base, "template": "kinetic-words", "params": {"sentence": line.replace(line.split()[-1], "{pill}", 1) if len(line.split()) > 2 else line,
+                "pills": CONV["pills"], "badge": False, "font": font, "ink": col["ink"], "bg": col["bg"], "accent": col["accent"],
+                "size": min(260, type_size(shot, 96))}}
+    kind = CONV["graphicCycle"][k["g"] % len(CONV["graphicCycle"])]
+    k["g"] += 1
+    word = words[k["w"] % len(words)]
+    k["w"] += 1
+    if kind == "color-slam":
+        return {**base, "template": "color-slam", "params": {"text": word, "colour": col["accent"], "textColour": "#ffffff" if _lum(col["accent"]) < 0.5 else "#111111",
+                "bg": col["bg"], "font": font}}
+    if kind == "orbit-word":
+        return {**base, "template": "orbit-word", "params": {"word": word, "colour": col["accent"], "bg": col["bg"], "font": font, "seed": k["i"] + 1}}
+    return {**base, "template": "gradient-word", "params": {"word": word, "phrase": f"Made in {{pill}}", "pill": CONV["pills"][k["i"] % len(CONV["pills"])],
+            "colour": col["accent"], "ink": col["ink"], "bg": col["bg"], "font": font}}
+
+
+def convert(slug: str) -> dict:
+    bible = banks._json(banks.REFERENCES / slug / "bible.json")
+    if not bible or not bible.get("shots"):
+        raise FileNotFoundError(f"no measured shots for {slug} (references/{slug}/bible.json)")
+    rank = ((bible.get("font_match") or {}).get("ranking") or [{}])
+    font = next((r["family"] for r in rank if r.get("family") in FONTS), "InterVariable")
+    k = {"i": 0, "t": 0, "g": 0, "w": 0}
+    scenes = []
+    for k["i"], shot in enumerate(bible["shots"]):
+        scenes.append(scene_for(shot, slug, k, font))
+    # the last generated scene closes on the ZenRay end card, at the same length
+    last = next((i for i in range(len(scenes) - 1, -1, -1) if scenes[i]["template"] != "media-showcase"), None)
+    if last is not None and last >= len(scenes) - 2:
+        sc = scenes[last]
+        p = sc["params"]
+        sc["template"], sc["params"] = "end-card", {"title": CONV["endTitle"], "subtitle": CONV["endSubtitle"], "url": CONV["endUrl"],
+                                                    "bg": p.get("bg", "#ecece2"), "ink": p.get("ink", "#111111"), "accent": p.get("accent", p.get("colour", "#e2552f"))}
+    musics = [m for m in banks.music_bank()["music"] if m["reference"] == slug]
+    musics.sort(key=lambda m: (m["id"] != slug, m["id"]))
+    music = {"mode": "bank", "bank": {"track": musics[0]["id"], "volume": CONV["musicVolume"]}} if musics else {"mode": "none"}
+    member = musics[0]["id"] if musics else slug
+    events = []
+    sfx = banks.sfx_bank()
+    for it in sfx["sfx"]:
+        if it["id"].startswith(member + ":"):
+            events.append({"id": it["id"], "kind": it["kind"]})
+    times = {}
+    vs = sorted((banks.SOUND / member).glob("V_*"), key=banks._vkey)
+    for v in reversed(vs):
+        ev = banks._json(v / "events.json")
+        if ev:
+            for e in (ev.get("events") if isinstance(ev, dict) else ev) or []:
+                times[f"{member}:{e.get('id')}"] = float(e.get("windowStart", e.get("t", 0)))
+            break
+    events = [{**e, "t": round(times[e["id"]], 4)} for e in events if e["id"] in times]
+    dur = sum(s["duration"] for s in scenes)
+    return {
+        "schema": "zrmd/motion-project@1", "title": f"{slug} en motion", "format": "16x9", "fps": 30,
+        "doc": f"15 October 2026: {len(scenes)} shots of the reference {slug} ({dur:.1f} s), one scene per shot at the measured durations; "
+               f"plates show an excerpt of the reference until a 3D render replaces them; words are ZenRay 3D lines; music and effects come from the 99.9 % banks.",
+        "reference": slug, "theme": {"fontBody": font},
+        "music": music,
+        "sfx": {"source": "banque", "volume": CONV["sfxVolume"], "sceneCues": False, "refEvents": True, "events": events},
+        "scenes": scenes,
+    }
+
+
+def project_id(slug: str) -> str:
+    return re.sub(r"[^a-z0-9-]+", "-", slug.lower()).strip("-")[:70] + CONV["projectSuffix"]
+
+
+def write(slug: str, force: bool = False) -> dict:
+    import server  # noqa: E402  (the app's own writer: validation, folder, atomic write)
+    pid = project_id(slug)
+    if (server.project_dir(pid) / "project.json").is_file() and not force:
+        return {"id": pid, "skipped": "exists (use --force; a version of the current one is saved first)"}
+    if (server.project_dir(pid) / "project.json").is_file():
+        server.save_version(pid, "avant une nouvelle conversion")
+    p = convert(slug)
+    server.write_project(pid, p)
+    fam = {}
+    for s in p["scenes"]:
+        fam[s["template"]] = fam.get(s["template"], 0) + 1
+    return {"id": pid, "scenes": len(p["scenes"]), "duration": round(sum(s["duration"] for s in p["scenes"]), 2), "templates": fam,
+            "music": p["music"].get("bank", {}).get("track"), "sfxEvents": len(p["sfx"]["events"])}
+
+
+if __name__ == "__main__":
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    slugs = [r["slug"] for r in banks.references()] if "--all" in sys.argv else args
+    for s in slugs:
+        print(json.dumps({"slug": s, **write(s, "--force" in sys.argv)}, ensure_ascii=False))

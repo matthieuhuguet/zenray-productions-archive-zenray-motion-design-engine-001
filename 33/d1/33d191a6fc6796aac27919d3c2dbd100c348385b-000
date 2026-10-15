@@ -1,0 +1,308 @@
+// 15 October 2026: ZenRay Motion Design motion runtime. A project (zrmd/motion-project@1) is a list of scenes, each a TEMPLATE with its parameters, plus
+// a theme (global tokens), music and sound effects. build() turns it into DOM and ONE paused GSAP timeline (window.__timelines.main), the
+// HyperFrames contract: the same file plays live in the studio (seek and play in real time, GPU-composited by the browser) and renders to MP4.
+// Nothing here measures or reproduces pixels: every visible value is a parameter a person can change.
+// FR : le runtime du studio ; un projet = des scenes (modeles + parametres), un theme, une musique, des effets ; une seule timeline GSAP.
+(function () {
+  const ZS = (window.ZS = window.ZS || {});
+  ZS.version = "studio-1.0.0";
+  ZS.templates = ZS.templates || {};
+  ZS.FORMATS = { "16x9": [1920, 1080], "9x16": [1080, 1920], "1x1": [1080, 1080], "4x5": [1080, 1350] };
+  ZS.THEME_DEFAULT = {
+    bg: "#ecece2", panel: "#f7f7f2", ink: "#1b1b19", muted: "#8e8c84", line: "#d8d7cd", accent: "#e2552f", accentInk: "#ffffff",
+    fontTitle: "AnthropicSerif", fontBody: "InterVariable", fontMono: "AnthropicMono", transition: "cut", transitionDuration: 0.35,
+  };
+  // the families the studio serves (studio/params/studio.json maps each to its file); a font parameter offers exactly these
+  ZS.FONTS = ["InterVariable", "AnthropicSerif", "AnthropicSans", "AnthropicMono", "Geist", "InstrumentSerif", "SpaceGrotesk", "Fraunces",
+              "Manrope", "Syne", "Unbounded", "JetBrainsMono", "PlayfairDisplay", "Sora", "VogunMedium", "AnthropicSerifLight", "AnthropicSansLight"];
+
+  ZS.register = function (tpl) {
+    if (!tpl.id || !tpl.build || !tpl.params) throw new Error("template needs id, params and build");
+    const counts = { 1: 0, 2: 0, 3: 0, 4: 0 };
+    tpl.params.forEach((p) => { counts[p.tier || 3]++; });
+    // tier 4 « Détail » (15 October 2026): the precision values of a reproduction (gaps, small sizes), folded by default, 16 at most
+    if (counts[1] > 4 || counts[2] > 8 || counts[3] > 16 || (counts[4] || 0) > 16) throw new Error(`template ${tpl.id}: tiers above 4/8/16/16 (${JSON.stringify(counts)})`);
+    ZS.templates[tpl.id] = tpl;
+  };
+
+  // ---------------------------------------------------------------------------------------------------------- params
+  // a default "@accent" reads the theme token: a scene follows the theme until a person sets its own value
+  ZS.theme = (project) => Object.assign({}, ZS.THEME_DEFAULT, (project && project.theme) || {});
+  ZS.resolve = function (tpl, values, theme) {
+    const out = {};
+    tpl.params.forEach((p) => {
+      let v = values && values[p.key] !== undefined && values[p.key] !== null && values[p.key] !== "" ? values[p.key] : p.default;
+      if (typeof v === "string" && v[0] === "@" && theme[v.slice(1)] !== undefined) v = theme[v.slice(1)];
+      if (p.type === "number") {
+        v = Number(v);
+        if (!isFinite(v)) v = Number(p.default);
+        if (p.min !== undefined) v = Math.max(p.min, v);
+        if (p.max !== undefined) v = Math.min(p.max, v);
+      }
+      if (p.type === "bool") v = v === true || v === "true";
+      if (p.type === "lines") v = Array.isArray(v) ? v : String(v || "").split("\n").map((s) => s.trim()).filter(Boolean);
+      out[p.key] = v;
+    });
+    return out;
+  };
+
+  // ---------------------------------------------------------------------------------------------------------- helpers
+  const H = (ZS.h = {});
+  H.el = (tag, cls, parent, text) => {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    if (parent) parent.appendChild(e);
+    return e;
+  };
+  H.css = (e, o) => { Object.assign(e.style, o); return e; };
+  H.font = (family, fallback) => `'${family}', ${fallback || "sans-serif"}`;
+  H.ease = (name) => ({ smooth: "power3.out", snappy: "expo.out", soft: "sine.out", bounce: "back.out(1.6)", linear: "none" }[name] || name || "power3.out");
+  // words of a line as spans inside a mask (reveal from below)
+  H.words = (parent, text, cls) => {
+    const out = [];
+    String(text).split(/(\s+)/).forEach((w) => {
+      if (/^\s+$/.test(w)) { parent.appendChild(document.createTextNode(" ")); return; }
+      const mask = H.el("span", "zs-mask", parent);
+      out.push(H.el("span", "zs-word " + (cls || ""), mask, w));
+    });
+    return out;
+  };
+  // deterministic typing: the text is a pure function of the timeline time (seek-safe, render-safe)
+  H.type = (tl, el, text, at, cps) => {
+    const proxy = { n: 0 }, d = Math.max(0.05, text.length / Math.max(1, cps));
+    el.textContent = "";
+    tl.to(proxy, { n: text.length, duration: d, ease: "none", onUpdate: () => { el.textContent = text.slice(0, Math.round(proxy.n)); } }, at);
+    return d;
+  };
+  // the procedural asterisk: N rounded spokes
+  // the star mark. o.irregular (0 to 1) jitters the angles and lengths of the spokes from o.seed; o.taper > 1 widens a spoke toward its
+  // tip (a flared spark, measured on motion-opus-5-5: tip about twice the base); o.hub fills the centre. Defaults: the round-capped star.
+  H.asterisk = (parent, size, spokes, thick, colour, o) => {
+    o = o || {};
+    const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", "-50 -50 100 100");
+    svg.setAttribute("width", size); svg.setAttribute("height", size);
+    const irr = Math.max(0, Math.min(1, o.irregular || 0)), rnd = H.rand(o.seed || 7), taper = o.taper || 1;
+    if (!irr && taper === 1 && !o.hub) {
+      for (let i = 0; i < spokes; i++) {
+        const a = (i / spokes) * Math.PI * 2, line = document.createElementNS(ns, "line");
+        line.setAttribute("x1", (Math.cos(a) * 9).toFixed(2)); line.setAttribute("y1", (Math.sin(a) * 9).toFixed(2));
+        line.setAttribute("x2", (Math.cos(a) * 46).toFixed(2)); line.setAttribute("y2", (Math.sin(a) * 46).toFixed(2));
+        line.setAttribute("stroke", colour); line.setAttribute("stroke-width", thick); line.setAttribute("stroke-linecap", "round");
+        svg.appendChild(line);
+      }
+    } else {
+      for (let i = 0; i < spokes; i++) {
+        const a = ((i + (rnd() - 0.5) * 0.7 * irr) / spokes) * Math.PI * 2, L = 49 * (1 - irr * 0.16 * rnd());
+        const w0 = thick / taper / 2, w1 = thick / 2, c = Math.min(w1 * 0.9, 3);       // half widths at the base and the tip, chamfer
+        const ux = Math.cos(a), uy = Math.sin(a), px = -uy, py = ux;
+        const pt = (r, w) => `${(ux * r + px * w).toFixed(2)},${(uy * r + py * w).toFixed(2)}`;
+        const poly = document.createElementNS(ns, "polygon");
+        poly.setAttribute("points", [pt(0, w0), pt(L - c, w1), pt(L, w1 - c), pt(L, -w1 + c), pt(L - c, -w1), pt(0, -w0)].join(" "));
+        poly.setAttribute("fill", colour);
+        svg.appendChild(poly);
+      }
+      if (o.hub) { const ci = document.createElementNS(ns, "circle"); ci.setAttribute("r", o.hub); ci.setAttribute("fill", colour); svg.appendChild(ci); }
+    }
+    parent.appendChild(svg);
+    return svg;
+  };
+  // NEVER CROP (15 October 2026): a block is measured once laid out and its type is scaled down until it fits the box it is allowed (the safe
+  // area of the frame). Every font size inside the block keeps its ratio. Transforms do not change the measure, so a block measures the same
+  // before and after its entrance animation. FR : jamais rogne ; le bloc est mesure puis sa typographie reduite pour tenir dans la zone sure.
+  H.fit = (el, maxW, maxH) => {
+    if (!el || !el.isConnected) return 1;
+    const nodes = [el, ...el.querySelectorAll("*")];
+    // a refit starts again from the sizes the template asked for (a font that loads later can need less reduction)
+    nodes.forEach((n) => {
+      if (n.dataset.zsFs !== undefined) n.style.fontSize = n.dataset.zsFs;
+      if (n.dataset.zsMt !== undefined) n.style.marginTop = n.dataset.zsMt;
+    });
+    const w = el.scrollWidth, hh = el.scrollHeight;
+    let k = 1;
+    if (maxW > 0 && w > maxW) k = Math.min(k, maxW / w);
+    if (maxH > 0 && hh > maxH) k = Math.min(k, maxH / hh);
+    if (k < 1) {
+      k *= 0.98;
+      if (!el.style.fontSize) { el.dataset.zsFs = ""; el.style.fontSize = parseFloat(getComputedStyle(el).fontSize) + "px"; }
+      nodes.forEach((n) => {
+        if (n.style.fontSize.endsWith("px")) {
+          if (n.dataset.zsFs === undefined) n.dataset.zsFs = n.style.fontSize;
+          n.style.fontSize = parseFloat(n.style.fontSize) * k + "px";
+        }
+        if (n.style.marginTop.endsWith("px")) {
+          if (n.dataset.zsMt === undefined) n.dataset.zsMt = n.style.marginTop;
+          n.style.marginTop = parseFloat(n.style.marginTop) * k + "px";
+        }
+      });
+    }
+    el.dataset.zsFit = k.toFixed(4);
+    return k;
+  };
+  // the safe area of a frame: what no text may leave (a margin of the shorter side)
+  H.safe = (W, H_, m) => { const g = Math.min(W, H_) * (m === undefined ? 0.06 : m); return { x: g, y: g, w: W - 2 * g, h: H_ - 2 * g }; };
+  // a seeded random generator: the same seed gives the same layout in the studio and in the render
+  H.rand = (seed) => { let s = (seed >>> 0) || 1; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); };
+  H.mix = (a, b, t) => {
+    const p = (c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+    const x = p(a), y = p(b);
+    return "#" + x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, "0")).join("");
+  };
+
+  // ---------------------------------------------------------------------------------------------------------- build
+  ZS.size = (project) => ZS.FORMATS[project.format] || ZS.FORMATS["16x9"];
+  // a measured shot can last one frame (1/30 s): the floor stays below it, so a converted reference keeps its exact length (15 October 2026)
+  ZS.minScene = 0.02;
+  ZS.seam = 1 / 60;   // half a frame at 30 fps
+  ZS.duration = (project) => (project.scenes || []).reduce((s, sc) => s + Math.max(ZS.minScene, Number(sc.duration) || 0), 0);
+
+  // build(project, root, {preview}) -> {tl, cues, duration, spans}. `cues` are the sound effects the scenes ask for, in seconds.
+  ZS.build = function (project, root, opts) {
+    opts = opts || {};
+    const [W, H_] = ZS.size(project), theme = ZS.theme(project), u = Math.min(W, H_) / 1080;
+    root.innerHTML = "";
+    H.css(root, { position: "relative", width: W + "px", height: H_ + "px", overflow: "hidden", background: theme.bg,
+                  fontFamily: H.font(theme.fontBody), color: theme.ink });
+    root.dataset.compositionId = "main"; root.dataset.start = "0"; root.dataset.width = W; root.dataset.height = H_;
+    root.dataset.fps = project.fps || 30;
+    const tl = gsap.timeline({ paused: true }), cues = [], spans = [], videos = [];
+    const fits = [], safe = H.safe(W, H_, ZS.safeMargin), sections = [];
+    let t = 0;
+    const trans = theme.transition === "fade" ? Math.max(0, Number(theme.transitionDuration) || 0) : 0;
+    (project.scenes || []).forEach((sc, i) => {
+      const tpl = ZS.templates[sc.template];
+      const dur = Math.max(ZS.minScene, Number(sc.duration) || (tpl && tpl.duration) || 3);
+      const el = H.el("section", "clip zs-scene", root);
+      el.id = "scene-" + (sc.id || i);
+      // a scene overlaps the next one by ZS.seam (under it, the next scene is drawn above): at the exact frame of a cut, a rounding of
+      // the two boundaries can never leave the frame empty (measured on 15 October 2026: two blank frames at 4.0 s and 13.0 s)
+      const seam = i < (project.scenes || []).length - 1 ? ZS.seam : 0;
+      el.dataset.start = t.toFixed(6); el.dataset.duration = (dur + seam).toFixed(6); el.dataset.trackIndex = String(1 + (i % 2));
+      sections.push({ el, scene: sc });
+      // a later scene is always drawn above an earlier one (the seam overlap must show the NEW scene), whatever its track
+      H.css(el, { position: "absolute", inset: "0", visibility: "hidden", opacity: "0", zIndex: String(i + 1) });
+      if (!tpl) {
+        H.css(H.el("div", "", el, `modèle inconnu : ${sc.template} (page plus ancienne que ce modèle : recharger avec Cmd+R)`), { position: "absolute", inset: "40px", color: "#c00", fontSize: 32 * u + "px" });
+      } else {
+        const p = ZS.resolve(tpl, sc.params || {}, theme);
+        const ctx = { el, p, theme, W, H: H_, u, dur, seam, tl, t0: t, project, cue: (at, type, params) => cues.push({ t: t + at, type, params: params || {}, scene: sc.id }),
+                      asset: (name) => ZS.assetUrl(name, opts), videos, preview: !!opts.preview, safe,
+                      fit: (node, mw, mh, hooks) => fits.push([node, mw === undefined ? safe.w : mw, mh === undefined ? safe.h : mh, hooks]), scene: sc };
+        ctx.buildChildren = (container, W2, H2) => ZS.buildChildren(ctx, sc.children || [], container, W2, H2);
+        try { tpl.build(ctx); } catch (e) {
+          H.css(H.el("div", "", el, `${sc.template} : ${e.message}`), { position: "absolute", inset: "40px", color: "#c00", fontSize: 28 * u + "px" });
+        }
+      }
+      const fadeIn = i > 0 ? trans : 0;
+      // the first scene is visible from frame 0 (a fade from nothing would leave the first frame empty)
+      if (i === 0) tl.set(el, { autoAlpha: 1 }, 0);
+      else tl.fromTo(el, { autoAlpha: 0 }, { autoAlpha: 1, duration: Math.max(0.001, fadeIn), ease: "none", immediateRender: false }, t);
+      if (i < project.scenes.length - 1) tl.to(el, { autoAlpha: 0, duration: Math.max(0.001, trans), ease: "none" }, t + dur);
+      spans.push({ id: sc.id, template: sc.template, start: t, end: t + dur });
+      t += dur;
+    });
+    fits.forEach((f) => ZS.fitOne(f));   // never crop: every text block fits its box once laid out
+    tl.to({}, { duration: 0.001 }, Math.max(0, t - 0.001));   // the timeline is exactly the composition long
+    root.dataset.duration = t.toFixed(6);
+    // post-process (zs-post.js): the photo-style grade of the film and of each scene, live and in the export
+    const post = ZS.post ? ZS.post.apply({ root, project, tl, W, H: H_, duration: t, sections }) : null;
+    // live preview: a <video> follows the timeline (HyperFrames syncs its own videos at render time). A converted reference can hold
+    // 160 excerpts of one file: a video gets its source only near the playhead and drops it far from it, so the page stays light.
+    if (opts.preview && videos.length) {
+      const near = ZS.videoWindow || 2;
+      videos.forEach((v) => { if (v.node.src) { v.node.dataset.src = v.node.getAttribute("src"); v.node.removeAttribute("src"); } });
+      tl.eventCallback("onUpdate", () => {
+        const now = tl.time();
+        videos.forEach((v) => {
+          const local = now - v.start, inside = local >= 0 && local <= v.dur, close = local >= -near && local <= v.dur + near / 2;
+          if (close && !v.node.getAttribute("src") && v.node.dataset.src) {
+            v.node.src = v.node.dataset.src; v.node.preload = "auto";
+            // a source that has just arrived shows the frame of the playhead, not its first frame
+            v.node.addEventListener("loadedmetadata", () => {
+              const l = tl.time() - v.start;
+              try { v.node.currentTime = v.mediaStart + Math.max(0, Math.min(v.dur, l)) * v.rate; } catch (e) { /* not seekable yet */ }
+            }, { once: true });
+          }
+          else if (!close && v.node.getAttribute("src")) { v.node.pause(); v.node.removeAttribute("src"); v.node.load(); }
+          if (!inside) return;
+          const want = v.mediaStart + local * v.rate;
+          if (Math.abs(v.node.currentTime - want) > (ZS.videoTolerance || 0.08)) { try { v.node.currentTime = want; } catch (e) { /* not loaded yet */ } }
+        });
+      });
+    }
+    window.__timelines = window.__timelines || {};
+    window.__timelines.main = tl;
+    return { tl, cues, duration: t, spans, W, H: H_, videos, fits, post };
+  };
+  // the URL of a media of a scene: an imported file of the project, or "ref:<slug>", the video of a measured reference
+  // (served by the bank in the app; copied next to the page by the export, which passes opts.refs)
+  ZS.assetUrl = (name, opts) => {
+    opts = opts || {};
+    if (typeof name === "string" && name.startsWith("ref:")) {
+      if (opts.hideRefs) return "";      // the editor can hide the reference footage, to see the reproduced motion alone
+      const slug = name.slice(4);
+      return (opts.refs && opts.refs[slug]) || `/motion/bank/ref/${encodeURIComponent(slug)}`;
+    }
+    return (opts.assetBase || "") + name;
+  };
+  ZS.isVideo = (name) => typeof name === "string" && (name.startsWith("ref:") || /\.(mp4|mov|webm|m4v)$/i.test(name));
+  // SUB-SCENES (15 October 2026): a scene can hold child scenes (scene.children: [{template, start, duration, params}]) played inside one
+  // of its elements, e.g. the preview window of an application. A child is built at a size of its own (W2 x H2, usually 1920 x 1080)
+  // in a container the parent scales; its times are relative to the parent scene. Every template can be a child.
+  ZS.buildChildren = function (ctx, kids, container, W2, H2) {
+    const out = [];
+    kids.forEach((c, i) => {
+      const tpl = ZS.templates[c.template];
+      if (!tpl) return;
+      const el = H.css(H.el("div", "zs-child", container), { position: "absolute", left: "0", top: "0", width: W2 + "px", height: H2 + "px", overflow: "hidden",
+        visibility: "hidden", opacity: "0", zIndex: String(i + 1) });
+      const start = Number(c.start) || 0, dur = Math.max(ZS.minScene, Number(c.duration) || tpl.duration || 2);
+      const p = ZS.resolve(tpl, c.params || {}, ctx.theme), u2 = Math.min(W2, H2) / 1080, safe2 = H.safe(W2, H2, ZS.safeMargin);
+      const sub = Object.assign({}, ctx, { el, p, W: W2, H: H2, u: u2, dur, t0: ctx.t0 + start, safe: safe2, scene: c, seam: 0,
+        fit: (n, mw, mh, hk) => ctx.fit(n, mw === undefined ? safe2.w : mw, mh === undefined ? safe2.h : mh, hk),
+        cue: (at, type, q) => ctx.cue(start + at, type, q) });
+      sub.buildChildren = (cont, w3, h3) => ZS.buildChildren(sub, c.children || [], cont, w3, h3);
+      try { tpl.build(sub); } catch (e) { H.css(H.el("div", "", el, `${c.template} : ${e.message}`), { position: "absolute", inset: "20px", color: "#c00" }); }
+      ctx.tl.set(el, { autoAlpha: 1 }, ctx.t0 + start);
+      if (i < kids.length - 1 || c.hideAtEnd) ctx.tl.set(el, { autoAlpha: 0 }, ctx.t0 + start + dur + (i < kids.length - 1 ? 1 / 60 : 0));
+      out.push(el);
+    });
+    return out;
+  };
+  // fit again once the web fonts have loaded (the export builds before they arrive)
+  // hooks.before() puts the widest state in place (the longest word a text will show), hooks.after() restores the first one
+  ZS.fitOne = ([n, mw, mh, hooks]) => { if (hooks && hooks.before) hooks.before(); H.fit(n, mw, mh); if (hooks && hooks.after) hooks.after(); };
+  ZS.refit = (built) => { (built && built.fits || []).forEach((f) => ZS.fitOne(f)); };
+  ZS.safeMargin = 0.06;
+  // 15 October 2026: a 1920 x 1080 stage scaled to the frame's width and centred, for a template whose values are measured in pixels of a
+  // 16:9 frame (sentence-build); the scene's own background still covers the whole frame
+  ZS.stage1920 = (el, W, H_) => {
+    const k = W / 1920;
+    return H.css(H.el("div", "zs-abs", el), { left: "0", top: (H_ - 1080 * k) / 2 + "px", width: "1920px", height: "1080px", transform: `scale(${k})`, transformOrigin: "0 0" });
+  };
+  // cropCheck(project, format) -> the text that leaves the frame at the end of each scene (when all of it is shown).
+  // Built off screen at full size, so the measure is in composition pixels. An empty list is the proof of "never crop".
+  ZS.cropCheck = function (project, format, tolerance) {
+    const host = H.css(H.el("div", "", document.body), { position: "fixed", left: "-100000px", top: "0" });
+    const proj = JSON.parse(JSON.stringify(project)); if (format) proj.format = format;
+    const keep = window.__timelines && window.__timelines.main;
+    const b = ZS.build(proj, host, {}), tol = tolerance === undefined ? 1 : tolerance, out = [];
+    const root = host.getBoundingClientRect();
+    b.spans.forEach((sp, i) => {
+      b.tl.seek(Math.max(sp.start, sp.end - 0.04), false);
+      const scene = host.children[i];
+      scene.querySelectorAll("*").forEach((n) => {
+        const own = [...n.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim());
+        if (!own || getComputedStyle(n).visibility === "hidden" || Number(getComputedStyle(n).opacity) === 0) return;
+        const r = n.getBoundingClientRect(), x0 = r.left - root.left, y0 = r.top - root.top;
+        if (r.width === 0 || r.height === 0) return;
+        if (x0 < -tol || y0 < -tol || x0 + r.width > b.W + tol || y0 + r.height > b.H + tol)
+          out.push({ scene: sp.id, template: sp.template, text: n.textContent.trim().slice(0, 40), box: [x0, y0, r.width, r.height].map(Math.round) });
+      });
+    });
+    host.remove();
+    if (keep) window.__timelines.main = keep;
+    return out;
+  };
+})();

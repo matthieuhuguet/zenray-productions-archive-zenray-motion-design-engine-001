@@ -1,0 +1,11 @@
+#!/bin/zsh
+# 15 October 2026: double-click to start ZenRay Studio, then open http://127.0.0.1:3104/ in your browser.
+# FR : double-clic pour lancer le studio, puis ouvrir http://127.0.0.1:3104/ dans ton navigateur.
+cd "$(dirname "$0")/.."
+PY=/Users/zenray/.venvs/zenray-motion/bin/python
+[ -x "$PY" ] || PY=python3
+if curl -s http://127.0.0.1:3104/api/status | grep -q zenray-studio; then echo "ZenRay Studio tourne déjà : http://127.0.0.1:3104/"; open "http://127.0.0.1:3104/"; exit 0; fi
+"$PY" -I studio/server.py &
+sleep 1.5
+open "http://127.0.0.1:3104/"
+wait

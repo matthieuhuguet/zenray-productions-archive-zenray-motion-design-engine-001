@@ -1,0 +1,50 @@
+{
+  "doc": "15 October 2026: the house style that makes every motion animation coherent with the others and readable on its own (rule of the project, Rules.md). Fonts fold onto the ZenRay trio (Inter for words, AnthropicSerif for titles and numbers, AnthropicMono for code) plus Vogun for the electric title; text never smaller than the readable minimum; no reference plate left. FR : le style maison qui rend toutes les animations coherentes et lisibles seules. minTextPx: per template, per size key, in px at 1920 wide.",
+  "fonts": {
+    "PlayfairDisplay": "AnthropicSerif",
+    "InstrumentSerif": "AnthropicSerif",
+    "Fraunces": "AnthropicSerif",
+    "AnthropicSerifLight": "AnthropicSerif",
+    "JetBrainsMono": "AnthropicMono",
+    "Geist": "InterVariable",
+    "SpaceGrotesk": "InterVariable",
+    "AnthropicSans": "InterVariable",
+    "AnthropicSansLight": "InterVariable"
+  },
+  "keepFonts": [
+    "InterVariable",
+    "AnthropicSerif",
+    "AnthropicMono",
+    "VogunMedium"
+  ],
+  "fontKeys": [
+    "font",
+    "titleFont",
+    "bodyFont",
+    "subFont",
+    "fontBody",
+    "fontTitle",
+    "fontMono"
+  ],
+  "minTextPx": {
+    "media-text": {
+      "size": 30
+    },
+    "ui-window": {
+      "size": 26
+    },
+    "horizon-card": {
+      "size": 40
+    },
+    "title-card": {
+      "titleSize": 64,
+      "subtitleSize": 40
+    }
+  },
+  "textShadowOnDrawing": 0.35,
+  "theme": {
+    "fontTitle": "AnthropicSerif",
+    "fontBody": "InterVariable",
+    "fontMono": "AnthropicMono"
+  }
+}

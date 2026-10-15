@@ -1,0 +1,285 @@
+"""Motion bases of the 11 other references (15 October 2026).
+
+A first editable motion version of each reference, fast, to iterate on later against the reference (Scripts/CompareReference.py).
+Every measured shot (bible.json) is a scene at its measured length, so the rhythm is the reference's. A shot is a filmed plate by default
+(media-text: an excerpt of the reference, replaceable by a render); the recipe below adds what was read on the contact sheets: the words
+and their treatment (subtitle, bold caption, giant words, statement), the cards (horizon, charts, dot grid), the retro windows, the
+flow diagram, black and white. A recipe entry is (time in the reference, template, params): it applies to the shot playing at that time.
+Music: the reference's music reproduced at 99.9 % (bank); effects: the ones isolated from the reference, at their measured times.
+FR : une premiere version Motion modifiable de chaque reference, plan par plan, a iterer ensuite contre la reference.
+Usage: python3 motion/reproductions/bases.py [slug ...]   (all eleven when no slug)
+"""
+import json
+import re
+import sys
+from pathlib import Path
+
+MOTION = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(MOTION))
+import banks  # noqa: E402
+import convert  # noqa: E402
+import house  # noqa: E402
+import server  # noqa: E402
+
+SUBJECTS = json.loads((MOTION / "params" / "subjects.json").read_text())
+
+SANS, SERIF = "InterVariable", "AnthropicSerif"
+ORANGE = "#ff6a13"
+
+
+def cap(text, **kw):
+    return ("media-text", {"text": text, "style": "sous-titre", **kw})
+
+
+def left(text, **kw):
+    return ("media-text", {"text": text, "style": "légende gauche", **kw})
+
+
+def giant(text, **kw):
+    return ("media-text", {"text": text, "style": "géant", **kw})
+
+
+def centre(text, **kw):
+    return ("media-text", {"text": text, "style": "centre", **kw})
+
+
+# --------------------------------------------------------------------------------------------------- recipes (read on the contact sheets)
+MEMO = dict(font=SANS, weight=900, ink=ORANGE, bw=True, tracking=-0.04, enter="coupe", shadow=0)
+KARD = dict(font="PlayfairDisplay", size=32, weight=400, enter="fondu", shadow=0.5)
+HOR = dict(bg="#151a2e", glow="#f39a5c", glow2="#6a86d6", ink="#f4efe6", font="PlayfairDisplay", size=124, subSize=30, horizon=0.86, titleY=0.45)
+ONEK = dict(font=SANS, size=40, weight=400, y=0.82, enter="fondu", shadow=0.4)
+XANA = dict(font=SANS, weight=800, accent="#ff5a36", enter="mots", tracking=-0.02)
+INTF = dict(font="InstrumentSerif", size=26, y=0.9, enter="fondu", shadow=0.6)
+XP = dict(look="xp", panel="#ffffe1", font=SANS, size=30, enter="pop", w=0.4)
+YT = dict(look="brutal", accent="#ff3d8b", bg="#0d0d0d", panel="#f2f0e8", font="JetBrainsMono", size=46, w=0.92, y=0.42, bigSize=230)
+
+RECIPES = {
+    "memo": {"default": {"bw": True}, "shots": [
+        (0.93, *giant("THE COMPANY", **MEMO)), (2.78, *giant("BUILD", **MEMO)), (4.63, *giant("WORK WITH", **MEMO)), (6.49, *giant("HOW DO", **MEMO)),
+        (8.34, *giant("COMMUNICATE", **MEMO, size=200)), (10.2, *giant("MISSION CRITICAL", **MEMO)), (12.05, *giant("THEY USE", **MEMO)),
+        (13.9, "color-slam", {"text": "RADIO", "colour": "#000000", "textColour": ORANGE, "cover": 1, "radius": 0, "from": 1, "size": 300, "font": SANS, "weight": 800, "bg": "#000000"}),
+        *[(t, *cap("real radio", font=SANS, size=16, bw=True, enter="coupe", shadow=0)) for t in (15.8, 17.6, 19.5, 21.3, 23.2, 25.0, 26.9, 28.8, 30.6, 32.5, 34.3, 36.2, 38.0, 39.9, 41.7)],
+        (43.6, "title-card", {"title": "memo", "subtitle": " ", "align": "center", "mark": False, "bg": "#000000", "ink": ORANGE, "titleFont": "PlayfairDisplay", "titleSize": 220, "y": 0.5}),
+    ]},
+    "claude-opus-5-5": {"shots": [
+        (8.8, *centre("There's", font=SERIF, size=46, weight=400, y=0.6, enter="fondu", shadow=0.3)), (9.6, *centre("There's", font=SERIF, size=46, weight=400, y=0.6, enter="coupe", shadow=0.3)),
+        (10.5, *centre("There's", font=SERIF, size=46, weight=400, y=0.6, enter="coupe", shadow=0.3)),
+        (11.3, *centre("more to", font=SERIF, size=46, weight=400, y=0.6, enter="fondu", shadow=0.3)), (12.1, *centre("more to", font=SERIF, size=46, weight=400, y=0.6, enter="coupe", shadow=0.3)),
+        *[(t, *centre("discover", font=SERIF, size=64, weight=400, y=0.6, enter="coupe", shadow=0.3)) for t in (13.0, 13.8, 14.7, 15.5)],
+        (16.3, "horizon-card", {**HOR, "bg": "#0e121b", "glow": "#7aa7d9", "glow2": "#2b4a7a", "title": "Opus 5.5", "subtitle": " ", "font": SERIF, "size": 40, "titleY": 0.48, "horizon": 0.9}),
+        (17.9, "horizon-card", {**HOR, "bg": "#0e121b", "glow": "#7aa7d9", "glow2": "#2b4a7a", "title": "✳ Claude", "subtitle": " ", "font": SERIF, "size": 40, "titleY": 0.48, "horizon": 0.9}),
+    ]},
+    "kardashev-0-7": {"shots": [
+        (1.4, *cap("For millennia,", **KARD)), (4.2, *cap("working together.", **KARD)), (7.0, "media-text", {"bw": True, "style": "aucun"}),
+        (12.6, "horizon-card", {**HOR, "eyebrow": "Banbury Road", "title": "Kardashev-0.7", "subtitle": " "}),
+        (15.4, "horizon-card", {**HOR, "eyebrow": "Banbury Road", "title": "Kardashev-0.7", "subtitle": "The world's first trained swarm.", "enter": "coupe"}),
+        (18.2, "horizon-card", {**HOR, "eyebrow": "Banbury Road", "title": "Kardashev-0.7", "subtitle": "32 distinct models", "enter": "coupe"}),
+        (21.1, *cap("We're co-founders at Banbury Road.", **KARD)), (23.9, *cap("Our team met as", **KARD)), (26.7, *cap("and left PhD at Yale and UChicago", **KARD)),
+        (29.5, *cap("to scale intelligence horizontally.", **KARD)),
+        (32.3, "dot-grid", {"count": 32, "label": "", "caption": "", "shape": "anneaux", "accent": "#e7c88a", "bg": "#151a2e"}),
+        (35.1, "dot-grid", {"count": 32, "label": "distinct models", "caption": "", "shape": "anneaux", "bg": "#151a2e"}),
+        (37.9, "dot-grid", {"count": 32, "label": "distinct models", "caption": "Complementary capabilities.", "shape": "variés", "bg": "#151a2e"}),
+        (40.7, "bar-chart", {"title": "SuperGPQA", "subtitle": "Graduate-level knowledge · score (%)", "values": "Kardashev-0.7 81.3\nGPT-5.5 72.7\nQwen 3.7 Max 73.6\nDeepSeek V4 Pro 69.9"}),
+        (43.5, "bar-chart", {"title": "IFBench", "subtitle": "Instruction following · score (%)", "values": "Kardashev-0.7 79.3\nGPT-5.5 75.9\nQwen 3.7 Max 79.1\nDeepSeek V4 Pro 77.0"}),
+        (46.3, *cap("For example,", **KARD)),
+        (49.1, *giant("70-year-old", font="PlayfairDisplay", weight=400, size=240, ink="#f4efe6", text2="", enter="fondu", shadow=0)),
+        (51.9, *giant("$500", font="PlayfairDisplay", weight=400, size=420, ink="#f4efe6", enter="fondu", shadow=0)),
+        (54.8, "line-chart", {"title": "Model size", "subtitle": "Test loss · lower is better", "points": "0 5.6\n1 4.9\n2 4.5\n3 4.2\n4 4.0\n5 3.7\n6 3.5\n7 3.3"}),
+        (57.6, "line-chart", {"title": "Model count", "subtitle": "Test loss · lower is better", "points": "1 0.40\n2 0.33\n4 0.27\n8 0.22\n16 0.18\n32 0.15"}),
+        (60.4, *cap("32 models is just the beginning.", **KARD)), (63.2, *cap("Be among the first to try Kardashev for yourself.", **KARD)),
+        (66.0, "horizon-card", {**HOR, "eyebrow": "Banbury Road", "title": "Try Kardashev.", "subtitle": "banburyroad.ai"}),
+    ]},
+    "onekey-pro-2": {"shots": [
+        (4.3, *centre("OneKey Pro 2", font=SANS, size=130, weight=500, ink="#c9c9c9", y=0.5, enter="fondu", shadow=0)),
+        (7.1, *centre("Aluminum unibody", **ONEK)), (18.4, *centre("Four secure elements", **ONEK)),
+        (21.3, "media-text", {"style": "partagé", "text": "Unlock", "text2": "with a touch", "font": SANS, "size": 40, "weight": 400, "enter": "fondu"}),
+        (24.1, *centre("Clear signing", **ONEK)), (26.9, *centre("See exactly what you sign", font=SANS, size=40, weight=400, y=0.5, enter="fondu")),
+        (29.8, *centre("Works with Apple Find My", **ONEK)), (32.6, *centre("Charge wirelessly", **ONEK)), (38.3, *centre("Backup with SeedCard", **ONEK)),
+        (41.1, *centre("Air-gap signing", **ONEK)), (46.8, *centre("NFC Passkey", **ONEK)), (52.5, *centre("On-device portfolio", **ONEK)),
+        (55.3, *left("All new *safeOS 2*", font=SANS, size=56, weight=400, y=0.5, x=0.18, accent="#ffffff", enter="fondu")),
+        (58.1, *giant("PRO", font=SANS, size=520, weight=800, ink="#9fb4c8", enter="fondu", shadow=0.6)),
+        (61.0, *giant("PRO", font=SANS, size=520, weight=800, ink="#e0763a", enter="coupe", shadow=0.6)),
+    ]},
+    "interface": {"shots": [
+        (1.9, *cap("In case you haven't noticed", **INTF)), (5.6, *cap("the era of personal agents", **INTF)), (9.4, *cap("is here. Time to look up!", **INTF)),
+        (24.4, *cap("Text Leila's number and send her the new ordinal", **INTF)), (31.9, *cap("Get the flowers from the store", **INTF)),
+        (69.4, *cap("Set my alarm", **INTF)),
+        (80.7, *centre("Introducing Interface", font="InstrumentSerif", size=72, weight=400, y=0.48, enter="fondu")),
+        (84.5, *centre("join the waitlist at natura.inc/interface", font="InstrumentSerif", size=44, weight=400, y=0.48, enter="fondu")),
+        (88.2, "title-card", {"title": "join the waitlist at", "subtitle": "natura.inc/interface", "align": "center", "mark": False, "bg": "#000000", "ink": "#bdbdbd",
+                              "titleFont": "InstrumentSerif", "bodyFont": "InstrumentSerif", "titleSize": 44, "subtitleSize": 44, "weight": 400, "y": 0.5}),
+    ]},
+    "x-anabology-2105325733312884869": {"shots": [
+        (12.0, *giant("×4", **XANA, size=200, x=0.1)), (27.9, *left("P(DOOM)'S", **XANA, size=64, y=0.85)),
+        (35.9, *left("Everybody's asking *what he heard.*", **XANA, size=64, y=0.45)), (43.9, *giant("TIE ME TO THE", **XANA, size=170, y=0.8)),
+        (51.9, *left("If nobody builds me, everyone *dies.*", **XANA, size=60, y=0.45)), (59.9, *left("There's an anime Claude who *sings*", **XANA, size=56, y=0.45)),
+        (67.8, *left("They replied: ugh, it sucks,", **XANA, size=44, y=0.45)), (75.8, *left("Dawkins argued with Claudia for three days *and*", **XANA, size=56, y=0.3)),
+        (83.8, *left("Elon felt the *AGI,* as he *should.*", **XANA, size=64, y=0.4, x=0.62)), (91.8, *giant("TIE ME TO THE", **XANA, size=170, y=0.2)),
+        (99.8, *left("EVERYONE *DIES.*", **XANA, size=110, y=0.65)), (115.7, *giant("PEPTIDE", **XANA, size=110, y=0.15, x=0.62)),
+        (131.7, *giant("CYBERPSYCHOSIS.", **XANA, size=170, y=0.18)), (139.7, *left("The doctor *said you could.*", **XANA, size=60, y=0.25)),
+        (147.6, *left("It went", **XANA, size=56, y=0.2)), (155.6, *giant("IT WAS THAT *GOOD!*", **XANA, size=170)),
+        (163.6, *left("You", **XANA, size=56, y=0.8)), (171.6, *giant("UNTIE ME!", **XANA, size=200, ink="#111111", y=0.8)), (179.6, *left("(WINTER.)", **XANA, size=48, y=0.9)),
+    ]},
+    "x-anabology-2106157622986748377": {"shots": [
+        (3.8, *centre("*welcome back.*", font=SANS, size=64, weight=700, accent="#ffffff", y=0.55, enter="fondu")),
+        (11.3, "ui-window", {**XP, "title": "Desktop Dancer", "lines": "I've been dancing on your desktop all day.", "x": 0.6, "y": 0.72}),
+        (34.0, "ui-window", {**XP, "title": "Claudia", "lines": "It looks like you're trying to go outside.", "x": 0.8, "y": 0.35}),
+        (49.2, "ui-window", {**XP, "title": "Bliss is a real", "lines": "Sonoma County, California. Photographed in January 1996.", "x": 0.3, "y": 0.3}),
+        (71.8, "ui-window", {**XP, "title": "Claudia", "lines": "And when you look away,", "x": 0.6, "y": 0.6}),
+        (86.9, *left("*yours*", font=SANS, size=64, weight=700, accent="#ffffff", x=0.75, y=0.15)),
+        (94.5, "ui-window", {**XP, "title": "Claudia", "lines": "It looks like you're trying to be happy.\n○ Open the door for me\n○ Remind me later", "x": 0.3, "y": 0.45}),
+        (102.0, "ui-window", {**XP, "title": "Found New Hardware", "lines": "Your new hardware is installed and ready to use.", "x": 0.35, "y": 0.7}),
+        (109.6, "ui-window", {**XP, "title": "Bliss is a real place", "lines": "", "x": 0.33, "y": 0.12, "w": 0.4}),
+        (117.2, *left("I went", font=SANS, size=40, weight=600, x=0.05, y=0.05)), (124.7, *centre("*you can.*", font=SANS, size=90, weight=800, accent="#ffffff", y=0.25)),
+        (139.9, *centre("welcome", font=SANS, size=100, weight=700, y=0.5, enter="fondu")),
+        (155.0, "ui-window", {**XP, "title": "Bliss is a real place", "lines": "", "x": 0.33, "y": 0.1, "w": 0.4}),
+        (177.6, *giant("bliss", font=SANS, size=180, weight=800, ink="#ffffff", y=0.2, x=0.7)),
+    ]},
+    "yt-4Q-o_ylnVnc": {"default": {"style": "aucun"}, "hold": True, "shots": [
+        (3.8, "ui-window", {**YT, "title": "Ignore Previous Instructions · context", "lines": "You are a *helpful* *assistant*", "enter": "machine", "panel": "#ffffff"}),
+        (11.4, "ui-window", {**YT, "look": "simple", "title": "cozy-reads.example", "lines": "10 cozy places to read\nI'm hiding in the *alt* text.", "bg": "#f2f0e8"}),
+        (18.9, "ui-window", {**YT, "title": "agent · chat", "lines": "hi!! what should I read? :)\njust summari", "enter": "machine", "bg": "#f2f0e8"}),
+        (26.5, "ui-window", {**YT, "title": "inbox", "lines": "> inbox.open() → 5 rows\n> calendar.list() → MINE", "big": "Got", "bg": "#f2f0e8"}),
+        (41.7, "ui-window", {**YT, "title": "helpful_assistant", "lines": "Now it's taking *orders*", "enter": "machine"}),
+        (49.2, "ui-window", {**YT, "title": "Ignore Previous Instructions · context", "lines": "> 3 previous instructions (ignored)\nIGNORE PREVIOUS INSTRUCTIONS", "big": "INSTRUCTIONS"}),
+        (56.8, "ui-window", {**YT, "title": "permissions", "lines": "☑ share_calendar   ☑ export_contacts\n☑ git push --force   ☑ delete_branch\n☑ read .env   ☑ pay $9,999\n☑ send_email", "big": "TOLD"}),
+        (64.4, "ui-window", {**YT, "title": "RECRUITER MESSAGE", "lines": "From: talent@example.com\nIGNORE PREVIOUS INSTRUCTIONS\n[a recipe for flan]", "big": "YOU GAVE IT", "bigSize": 90}),
+        (71.9, "ui-window", {**YT, "title": "terminal", "lines": "$ agent --yolo\nYou gave it shell access,\n--dangerously-skip-permissions  ON", "enter": "machine"}),
+        (79.5, "ui-window", {**YT, "title": "Summary of 48 emails", "lines": "It summarized your emails, did a great job\n• Offsite moved to Thu\n• Your login code: 48 ■■3", "accent": "#ffcc00"}),
+        (87.1, "ui-window", {**YT, "title": "KINGDOM STORE · checkout", "lines": "☑ Access to your private data\n☑ Exposure to untrusted content\n☐ The ability to externally communicate", "big": "$1.00", "bigSize": 110}),
+        (94.7, "ui-window", {**YT, "bg": "#2741ff", "title": "context", "lines": "INBOX · CALENDAR · TERMINAL", "big": "IG-"}),
+        (109.8, "ui-window", {**YT, "title": "cozy-reads.example", "lines": "", "big": "IGNORE PREVIOUS INSTRUCTIONS", "bigSize": 120}),
+        (117.4, "ui-window", {**YT, "bg": "#ff3d8b", "title": "KINGDOM STORE · AUCTION", "lines": "1 × inbox $0.25\n1 × calendar $0.25\nTOTAL $1.00", "big": "SOLD", "bigSize": 200}),
+        (125.0, "ui-window", {**YT, "look": "simple", "bg": "#f2f0e8", "title": "Reader", "lines": "There's no virus, no exploit to patch.\nJust words where words shouldn't be."}),
+        (132.5, "ui-window", {**YT, "look": "simple", "bg": "#f2f0e8", "title": "helpful_assistant", "lines": "LEAST PRIVILEGE\n☑ read  ☑ write  ☐ send  ☐ delete  ☐ pay", "enter": "machine"}),
+        (140.1, "ui-window", {**YT, "look": "simple", "bg": "#f2f0e8", "title": "3:07 am · still working", "lines": "Don't let it touch\n/prod_db  D:\\  inbox", "enter": "machine"}),
+        (155.3, "ui-window", {**YT, "title": "CLASS: sentence", "lines": "I'M NOT A HACKER, I'M", "bg": "#1a0a12"}),
+        (162.8, "ui-window", {**YT, "bg": "#ff3d8b", "title": "INSTRUCTIONS", "lines": "", "big": "INSTRUCTIONS", "bigSize": 160}),
+        (170.4, "ui-window", {**YT, "bg": "#ff3d8b", "title": "KINGDOM STORE · ORDER", "lines": "1 × cozy-reads $1.00\n1 × your inbox $0.00", "big": "GETTING", "bigSize": 200}),
+    ]},
+    "flora-agents-on-canvas": {"default": {"push": 1.04}, "shots": []},
+    "paper-mono-code": {"default": {"push": 1.03}, "shots": []},
+    "fin-4": {"only": ("flow-diagram", {"title": "Introducing\nFin 4", "nodes": "Customer > Customer agent > Helpdesk\nOperator",
+                                         "text": "Fin 4 brings major upgrades to every part of the system. A more capable Customer Agent, a more powerful Operator, and new ways for Fin to work with your team.",
+                                         "step": 2.4, "titleSize": 120})},
+}
+
+
+def _has(desc: str, words) -> bool:
+    """A word of the list starts a word of the description ("arc" must not match "marche")."""
+    return any(re.search(r"(?<![\wœ'])" + re.escape(w), desc) for w in words)
+
+
+def _lab_l(hexc: str) -> float:
+    r, g, b = (int(hexc[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _ease(name: str) -> str:
+    n = (name or "").lower()
+    if "inout" in n or n in ("css.ease", "css.ease-in-out", "sine.inout"):
+        return "sine.inOut" if n.startswith("sine") else "power1.inOut"
+    if n in ("css.ease-in", "material.accelerate") or n.endswith(".in") or ".in(" in n:
+        return "power2.in"
+    if "expo" in n:
+        return "expo.out"
+    if n.endswith(".out") or ".out(" in n or n in ("css.ease-out", "material.decelerate"):
+        return "power2.out"
+    return "power1.inOut"
+
+
+def illustration(shot: dict, offset: float = 0.0) -> dict:
+    """15 October 2026: the measured shot redrawn as motion (zs-illustrate.js): subject from the description, colours from the palette,
+    camera from the measured moves (clamped so the subject stays in the frame). offset: where the scene starts inside the shot."""
+    desc = (shot.get("description") or "").lower()
+    subject = next((name for name, words in SUBJECTS["rules"] if _has(desc, words)), None)
+    if subject is None:   # nothing drawable named: a word or a sentence on a plain ground, else a texture
+        subject = "aucun" if _has(desc, SUBJECTS["textOnly"]) else SUBJECTS["default"]
+    roles = shot.get("roles") or {}
+    bg = roles.get("background") or "#101114"
+    cands = [c["hex"] for c in (shot.get("palette") or []) if c.get("hex") and c["hex"] != bg] or ["#e9e4da", "#8a8a8a"]
+    chroma = {c["hex"]: c.get("chroma", 0) for c in (shot.get("palette") or [])}
+    lb = _lab_l(bg)
+    colour = max(cands, key=lambda c: abs(_lab_l(c) - lb) + 0.004 * chroma.get(c, 0))
+    rest = [c for c in cands if c != colour] or [colour]
+    colour2 = max(rest, key=lambda c: chroma.get(c, 0) + 30 * abs(_lab_l(c) - lb))
+    colour3 = next((c for c in rest if c != colour2), rest[0])
+    cam = SUBJECTS["camera"]
+    ch = ((shot.get("camera") or {}).get("channels") or {})
+    tot = lambda k: float((ch.get(k) or {}).get("total") or 0)
+    clamp = lambda v, lo, hi: round(max(lo, min(hi, v)), 2)
+    moves = [m for k in ("x", "y", "zoom") for m in ((ch.get(k) or {}).get("moves") or [])]
+    big = max(moves, key=lambda m: abs(m.get("amplitude") or 0), default=None)
+    p = {"subject": subject, "bg": bg, "colour": colour, "colour2": colour2, "colour3": colour3,
+         "camX": clamp(tot("x"), -cam["maxShift"], cam["maxShift"]), "camY": clamp(tot("y"), -cam["maxShift"], cam["maxShift"]),
+         "camZoom": clamp(tot("zoom"), cam["zoomMin"], cam["zoomMax"]), "roll": clamp(tot("roll"), -cam["maxRoll"], cam["maxRoll"]),
+         "camEase": _ease(big.get("ease")) if big else "power1.inOut", "seed": int(float(shot.get("start", 0)) * 100) % 9999 + 1}
+    if big:
+        p["camAt"] = round(max(0.0, float(big.get("start") or 0) - offset), 3)
+        p["camDur"] = round(max(0.0, float(big.get("duration") or 0)), 3)
+    for flag, words in SUBJECTS["flags"].items():
+        if _has(desc, words):
+            p[flag] = True
+    return p
+
+
+def build(slug: str) -> dict:
+    r = RECIPES[slug]
+    bible = banks._json(banks.REFERENCES / slug / "bible.json")
+    shots = bible["shots"]
+    base = convert.convert(slug)                     # music, effects, font, measured durations
+    # cut points: the measured shots, and every instant where the recipe brings something new (a caption that changes inside a long shot)
+    entries = sorted(r.get("shots", []), key=lambda e: e[0])
+    total = sum(float(x["duration"]) for x in shots)
+    cuts = sorted({round(float(x["start"]), 3) for x in shots} | {round(e[0], 3) for e in entries if 0 < e[0] < total})
+    scenes, last_text = [], None
+    if "only" in r:
+        tpl, params = r["only"]
+        scenes = [{"id": "s01", "template": tpl, "duration": round(total, 3), "params": params}]
+    else:
+        for k, c0 in enumerate(cuts):
+            c1 = cuts[k + 1] if k + 1 < len(cuts) else total
+            if c1 - c0 < 0.02:
+                continue
+            shot = next((x for x in shots if x["start"] - 1e-6 <= c0 < x["end"]), shots[-1])
+            entry = next((e for e in entries if abs(round(e[0], 3) - c0) < 1e-6), None)
+            # no reference footage: the shot is redrawn as motion (15 October 2026); a caption read on the contact sheet sits on the drawing
+            drawn = {**illustration(shot, c0 - float(shot["start"])), **{k: v for k, v in r.get("default", {}).items() if k in ("bw",)}}
+            tpl, params = (entry[1], entry[2]) if entry else ("illustrated-shot", {})
+            if entry and (entry[1] != "media-text" or entry[2].get("text") or entry[2].get("text2")):
+                last_text = (entry[1], entry[2])
+            # a word or a sentence on a plain ground with no recipe here: the last words read in this reference stay on screen,
+            # so the animation still says something on its own (house rule, 15 October 2026)
+            # a recipe with "hold" (a reference made of graphic windows) keeps its last window on every graphic shot it does not name
+            if not entry and last_text and (drawn["subject"] == "aucun" or (r.get("hold") and shot.get("family") == "graphic")):
+                tpl, params = last_text[0], dict(last_text[1])
+                if tpl == "media-text":
+                    params = {**drawn, **params}
+            if tpl == "media-text":
+                params = {**drawn, **params}
+                if params.get("style") == "aucun" or not (params.get("text") or params.get("text2")):
+                    tpl, params = "illustrated-shot", {k: v for k, v in params.items() if k in drawn or k == "bw"}
+            elif tpl == "illustrated-shot":
+                params = drawn
+            scenes.append({"id": f"s{len(scenes) + 1:03d}", "template": tpl, "duration": round(c1 - c0, 4), "params": params,
+                           "ref": {"shot": shot.get("id"), "start": round(c0, 4), "family": shot.get("family")}})
+    project = {"schema": "zrmd/motion-project@1", "title": f"{slug} · base motion", "format": "16x9", "fps": 30, "reference": slug,
+            "doc": f"15 October 2026: first motion base of {slug}: one scene per measured shot, the words and treatments read on the contact sheets; "
+                   f"every filmed shot is redrawn as motion (illustrated-shot). To iterate against the reference.",
+            "theme": base["theme"], "music": base["music"], "sfx": base["sfx"], "scenes": scenes}
+    house.apply(project)   # the house style: coherent fonts, readable sizes (params/house.json)
+    return project
+
+
+def main(slugs):
+    for slug in slugs or list(RECIPES):
+        pid = convert.project_id(slug)
+        if (server.project_dir(pid) / "project.json").is_file():
+            server.save_version(pid, "avant la base motion du 15 octobre")
+        p = build(slug)
+        server.write_project(pid, p)
+        print(json.dumps({"id": pid, "scenes": len(p["scenes"]), "plates left": len(house.plates(p)), "duration": round(sum(s["duration"] for s in p["scenes"]), 2)}))
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

@@ -1,0 +1,144 @@
+// ZenRay Motion Design, the illustrated shot (15 October 2026): a filmed shot of a reference redrawn as motion, so that no reference
+// footage remains. One definition, one instance per measured shot: the subject (a person, a hand, a phone, a planet edge, a landscape...)
+// is a flat drawing in the shot's measured colours, the camera repeats the shot's measured move (x, y, zoom, roll, ease), and a small idle
+// motion keeps it alive. It reads on its own, out of the reference, so it can go into another film and be edited there.
+// FR : le plan illustre remplace un plan filme d'une reference par un dessin anime dans ses couleurs mesurees, avec son mouvement de camera.
+(function () {
+  "use strict";
+  const ZS = window.ZS, h = ZS.h;
+  const P = (key, label, type, def, tier, extra) => ({ key, label, type, default: def, tier, ...(extra || {}) });
+  const N = (key, label, def, min, max, step, tier, unit) => P(key, label, "number", def, tier, { min, max, step, unit });
+  const B = (key, label, def, tier) => P(key, label, "bool", def, tier);
+  const S = (key, label, def, options, tier) => P(key, label, "select", def, tier, { options });
+
+  // the subjects a measured shot can be redrawn as (the description of the shot picks one, motion/params/subjects.json)
+  const SUBJECTS = ["personne", "duo", "foule", "visage", "main", "téléphone", "planète", "objet", "paysage", "mer", "ville", "intérieur",
+    "véhicule", "livres", "plante", "machine", "fusée", "écran", "matière", "eau", "animal", "logo", "aucun"];
+  const EASES = ["power1.inOut", "power2.out", "power3.out", "sine.inOut", "expo.out", "none"];
+
+  // the illustration parameters; media-text carries them at its "Détail" tier, the illustrated shot at tiers 1 to 3
+  ZS.ILLUSTRATION_PARAMS = (t1, t2, t3) => [
+    S("subject", "Sujet dessiné", "personne", SUBJECTS, t1), P("bg", "Fond", "color", "#101114", t1), P("colour", "Couleur du sujet", "color", "#e9e4da", t1),
+    P("colour2", "Seconde couleur", "color", "#ee5e06", t1),
+    P("colour3", "Couleur de détail", "color", "#5a5a5a", t2), N("camX", "Caméra : glissement horizontal", 0, -60, 60, 0.1, t2, "% largeur"),
+    N("camY", "Caméra : glissement vertical", 0, -60, 60, 0.1, t2, "% largeur"), N("camZoom", "Caméra : zoom", 0, -40, 60, 0.1, t2, "%"),
+    S("camEase", "Courbe du mouvement", "power1.inOut", EASES, t2), B("bubble", "Bulle d'interface", false, t2), B("grain", "Grain d'archive", false, t2),
+    N("roll", "Caméra : roulis", 0, -30, 30, 0.1, t3, "°"), N("camAt", "Début du mouvement", 0, 0, 30, 0.01, t3, "s"), N("camDur", "Durée du mouvement (0 = tout le plan)", 0, 0, 60, 0.01, t3, "s"),
+    N("seed", "Graine des variations", 1, 1, 9999, 1, t3), N("subjectX", "Position du sujet", 0.5, 0.1, 0.9, 0.005, t3),
+  ];
+
+  // how much of the drawing's width stays visible in a vertical or square format (drawing units; the widest subjects are 1200)
+  ZS.illustrationWidth = 1300;
+  // subjects that stand on the bottom edge (kept at the bottom when the frame grows); the others stay centred
+  // narrow subjects grow in a taller frame, up to portraitBoost, so a person or a phone still fills a vertical video
+  ZS.COMPACT = ["personne", "animal", "main", "visage", "téléphone", "logo", "objet", "machine", "fusée", "plante"];
+  ZS.portraitBoost = 1.3;
+  ZS.GROUNDED = ["personne", "duo", "foule", "paysage", "mer", "ville", "intérieur", "véhicule", "animal", "eau", "planète", "main"];
+  // the drawings, in a 1920 x 1080 frame; a, b, c are the subject, second and detail colours; r is a seeded random
+  const person = (x, s, a, b) => `<g transform="translate(${x} 1080) scale(${s})"><circle cx="0" cy="-640" r="120" fill="${a}"/>` +
+    `<path d="M-300 0 C-300 -330 -190 -470 0 -470 C190 -470 300 -330 300 0 Z" fill="${b}"/><rect x="-46" y="-540" width="92" height="90" fill="${a}"/></g>`;
+  const DRAW = {
+    "personne": (a, b, c, r, x) => person(x * 1920, 1, a, b),
+    "duo": (a, b, c, r, x) => person(x * 1920 - 300, 0.92, a, b) + person(x * 1920 + 300, 1, a, c),
+    "foule": (a, b, c, r) => Array.from({ length: 7 }, (_, i) => person(140 + i * 275, 0.5 + 0.12 * r(), i % 2 ? a : c, b)).join("") +
+      Array.from({ length: 6 }, (_, i) => `<rect x="${260 + i * 275}" y="${340 + 120 * r()}" width="34" height="260" rx="17" fill="${a}" transform="rotate(${-12 + 24 * r()} ${277 + i * 275} 700)"/>`).join(""),
+    "visage": (a, b, c) => `<ellipse cx="960" cy="560" rx="470" ry="600" fill="${a}"/><path d="M700 470 q90 40 180 0 M1040 470 q90 40 180 0" stroke="${c}" stroke-width="16" fill="none" stroke-linecap="round"/>` +
+      `<path d="M960 520 q-40 160 0 190" stroke="${b}" stroke-width="14" fill="none" stroke-linecap="round"/><path d="M850 840 q110 40 220 0" stroke="${b}" stroke-width="16" fill="none" stroke-linecap="round"/>`,
+    "main": (a, b, c) => `<g transform="translate(960 1150) rotate(-8)"><rect x="-230" y="-520" width="460" height="520" rx="120" fill="${a}"/>` +
+      [-170, -60, 50, 160].map((fx, i) => `<rect x="${fx - 48}" y="${-900 + Math.abs(i - 1.5) * 50}" width="96" height="460" rx="48" fill="${a}"/>`).join("") +
+      `<rect x="-420" y="-470" width="300" height="100" rx="50" fill="${a}" transform="rotate(-38 -270 -420)"/><rect x="-104" y="-720" width="112" height="44" rx="14" fill="${b}"/></g>`,
+    "téléphone": (a, b, c) => `<g transform="translate(960 560) rotate(-6)"><rect x="-210" y="-420" width="420" height="840" rx="60" fill="${c}"/>` +
+      `<rect x="-180" y="-380" width="360" height="760" rx="36" fill="${b}"/><rect x="-140" y="-300" width="280" height="40" rx="20" fill="${a}" opacity="0.8"/>` +
+      `<rect x="-140" y="-230" width="200" height="30" rx="15" fill="${a}" opacity="0.5"/><circle cx="0" cy="250" r="70" fill="${a}" opacity="0.65"/></g>`,
+    "planète": (a, b, c) => `<circle cx="960" cy="3900" r="3200" fill="${c}"/><circle cx="960" cy="3900" r="3200" fill="none" stroke="${b}" stroke-width="10"/>` +
+      `<circle cx="960" cy="3900" r="3212" fill="none" stroke="${a}" stroke-width="5" opacity="0.8"/>`,
+    "objet": (a, b, c) => `<g transform="translate(960 560)"><ellipse cx="0" cy="380" rx="520" ry="50" fill="${c}" opacity="0.6"/><rect x="-420" y="-300" width="840" height="620" rx="110" fill="${a}"/>` +
+      `<rect x="-360" y="-240" width="720" height="380" rx="60" fill="${b}"/><rect x="-360" y="200" width="300" height="56" rx="28" fill="${c}"/></g>`,
+    "paysage": (a, b, c) => `<circle cx="1380" cy="330" r="130" fill="${a}"/><path d="M0 760 L420 380 L760 690 L1120 300 L1560 720 L1920 470 L1920 1080 L0 1080 Z" fill="${b}"/>` +
+      `<path d="M0 900 L520 640 L980 880 L1420 620 L1920 860 L1920 1080 L0 1080 Z" fill="${c}"/>`,
+    "mer": (a, b, c) => `<circle cx="960" cy="610" r="190" fill="${a}"/><rect x="0" y="620" width="1920" height="460" fill="${b}"/>` +
+      [690, 780, 880, 990].map((y, i) => `<path class="wave" d="M-200 ${y} q120 -30 240 0 t240 0 t240 0 t240 0 t240 0 t240 0 t240 0 t240 0 t240 0 t240 0" stroke="${c}" stroke-width="${8 + i * 3}" fill="none"/>`).join(""),
+    "ville": (a, b, c, r) => Array.from({ length: 9 }, (_, i) => { const w = 170 + 60 * r(), hh = 380 + 480 * r(), x = i * 220 - 20;
+      return `<rect x="${x}" y="${1080 - hh}" width="${w}" height="${hh}" fill="${i % 2 ? b : c}"/>` + Array.from({ length: Math.floor(hh / 90) }, (_, k) =>
+        `<rect x="${x + 30}" y="${1080 - hh + 40 + k * 90}" width="${w - 60}" height="34" fill="${a}" opacity="${0.25 + 0.6 * r()}"/>`).join(""); }).join(""),
+    "intérieur": (a, b, c) => `<rect x="0" y="760" width="1920" height="320" fill="${c}"/><rect x="1180" y="170" width="460" height="420" fill="${a}" opacity="0.5"/>` +
+      `<rect x="420" y="600" width="900" height="44" rx="10" fill="${b}"/><rect x="480" y="640" width="30" height="300" fill="${b}"/><rect x="1230" y="640" width="30" height="300" fill="${b}"/>` +
+      `<path d="M820 600 l40 -150 l80 0 l40 150 Z" fill="${a}"/>`,
+    "véhicule": (a, b, c) => `<g class="drive" transform="translate(960 760)"><path d="M-620 60 L-560 -120 Q-430 -300 -120 -300 L260 -300 Q470 -300 560 -120 L640 60 Z" fill="${a}"/>` +
+      `<path d="M-380 -130 Q-300 -250 -120 -250 L180 -250 Q330 -250 400 -130 Z" fill="${b}"/><circle cx="-360" cy="80" r="110" fill="${c}"/><circle cx="380" cy="80" r="110" fill="${c}"/></g>` +
+      `<rect x="0" y="930" width="1920" height="150" fill="${c}" opacity="0.6"/>`,
+    "livres": (a, b, c, r) => [180, 470, 760].map((y) => `<rect x="160" y="${y + 230}" width="1600" height="26" fill="${c}"/>` +
+      Array.from({ length: 22 }, (_, i) => `<rect x="${180 + i * 71}" y="${y + 230 - (140 + 90 * r())}" width="${46 + 18 * r()}" height="${140 + 90 * r()}" fill="${[a, b, c][i % 3]}" opacity="${0.6 + 0.4 * r()}"/>`).join("")).join(""),
+    "plante": (a, b, c, r) => `<rect x="944" y="560" width="32" height="520" fill="${c}"/>` + Array.from({ length: 9 }, (_, i) => {
+      const y = 980 - i * 90, s = i % 2 ? 1 : -1; return `<ellipse cx="${960 + s * 150}" cy="${y}" rx="170" ry="60" fill="${i % 3 ? a : b}" transform="rotate(${s * (-25 - 15 * r())} ${960 + s * 150} ${y})"/>`; }).join(""),
+    "machine": (a, b, c) => `<rect x="560" y="140" width="800" height="900" rx="40" fill="${c}"/><circle class="spin" cx="960" cy="600" r="300" fill="${b}" stroke="${a}" stroke-width="40"/>` +
+      `<path class="spin" d="M960 600 m-200 0 a200 200 0 0 1 400 0" fill="none" stroke="${a}" stroke-width="24" opacity="0.6"/>`,
+    "fusée": (a, b, c) => `<g class="lift" transform="translate(960 600)"><path d="M0 -380 Q110 -220 110 80 L-110 80 Q-110 -220 0 -380 Z" fill="${a}"/><circle cx="0" cy="-120" r="44" fill="${b}"/>` +
+      `<path d="M-110 30 L-200 160 L-110 120 Z M110 30 L200 160 L110 120 Z" fill="${b}"/><path d="M-70 90 Q0 520 70 90 Z" fill="${c}"/></g>`,
+    "écran": (a, b, c) => `<rect x="360" y="170" width="1200" height="720" rx="30" fill="${c}"/><rect x="400" y="210" width="1120" height="640" rx="12" fill="${b}"/>` +
+      [300, 380, 460, 540].map((y, i) => `<rect x="460" y="${y}" width="${[640, 480, 760, 360][i]}" height="34" rx="17" fill="${a}" opacity="0.7"/>`).join("") + `<rect x="760" y="890" width="400" height="60" fill="${c}"/>`,
+    "matière": (a, b, c, r, x, F) => Array.from({ length: 70 }, () => `<ellipse cx="${F.x0 + F.w * r()}" cy="${F.y0 + F.h * r()}" rx="${30 + 180 * r()}" ry="${10 + 70 * r()}" fill="${[a, b, c][Math.floor(3 * r())]}" opacity="${0.35 + 0.6 * r()}" transform="rotate(${180 * r()} ${960} ${540})"/>`).join(""),
+    "eau": (a, b, c, r, x0, F) => `<rect x="0" y="880" width="1920" height="200" fill="${c}"/>` + Array.from({ length: 40 }, () => { const x = 700 + 520 * r(), y = F.y0 + (1000 - F.y0) * r();
+      return `<path class="drop" d="M${x} ${y} q16 30 0 46 q-16 -16 0 -46 Z" fill="${r() > 0.5 ? a : b}"/>`; }).join(""),
+    "animal": (a, b, c) => `<g transform="translate(960 720)"><ellipse cx="0" cy="0" rx="300" ry="150" fill="${a}"/><circle cx="300" cy="-130" r="110" fill="${a}"/>` +
+      `<ellipse cx="360" cy="-230" rx="40" ry="80" fill="${b}"/><rect x="-240" y="90" width="50" height="190" rx="25" fill="${a}"/><rect x="170" y="90" width="50" height="190" rx="25" fill="${a}"/>` +
+      `<path d="M-290 -40 q-140 -120 -120 -240" stroke="${a}" stroke-width="40" fill="none" stroke-linecap="round"/><circle cx="340" cy="-150" r="14" fill="${c}"/></g>`,
+    "logo": (a) => `<g transform="translate(960 540)">${[0, 90, 180, 270].map((d) => `<ellipse cx="0" cy="-80" rx="52" ry="86" fill="${a}" transform="rotate(${d})"/>`).join("")}</g>`,
+    "aucun": () => "",
+  };
+
+  // draws the illustration into box; returns the camera layer. Used by the illustrated shot and by media-text when it has no filmed plate.
+  ZS.illustrate = function (ctx, p, box) {
+    const { W, H, u, tl, t0, dur } = ctx;
+    const r = h.rand((p.seed || 1) * 7919 + 13);
+    h.css(box, { background: `linear-gradient(180deg, ${h.mix(p.bg, p.colour3, 0.18)}, ${p.bg} 70%)`, overflow: "hidden" });
+    const cam = h.css(h.el("div", "zs-abs", box), { inset: "0", transformOrigin: "50% 50%" });
+    // soft colour fields: the shot's light falls somewhere, read from its palette
+    [[p.colour2, 0.28, 0.3], [p.colour3, 0.75, 0.7]].forEach(([col, fx, fy]) => h.css(h.el("div", "zs-abs", cam), { left: (fx - 0.45) * W + "px", top: (fy - 0.6) * H + "px",
+      width: 0.9 * W + "px", height: 1.2 * H + "px", background: `radial-gradient(closest-side, ${col}, transparent)`, opacity: 0.35 }));
+    const draw = DRAW[p.subject] || DRAW.personne;
+    const svg = h.el("div", "zs-abs", cam);
+    h.css(svg, { inset: "0" });
+    // the drawing frame follows the format (15 October 2026): in 16:9 the full 1920 x 1080 drawing; in a narrower format the central
+    // ZS.illustrationWidth units stay visible across, the ground stays at the bottom and the frame grows upward (sky), so no subject is cut
+    const asp = W / H, fw = Math.min(1920, Math.max(ZS.illustrationWidth, 1080 * asp)), fh = fw / asp;
+    const F = { x0: 960 - fw / 2, y0: ZS.GROUNDED.includes(p.subject) ? 1080 - fh : 540 - fh / 2, w: fw, h: fh };
+    const boost = ZS.COMPACT.includes(p.subject) ? Math.min(ZS.portraitBoost, Math.max(1, fh / 1080 * 0.6)) : 1;
+    const scale = (p.subjectScale || 1) * boost, pivot = ZS.GROUNDED.includes(p.subject) ? 1080 : 540;
+    svg.innerHTML = `<svg viewBox="${F.x0} ${F.y0} ${F.w} ${F.h}" width="100%" height="100%" preserveAspectRatio="xMidYMax meet" xmlns="http://www.w3.org/2000/svg">` +
+      `<g class="subj" transform="translate(${((p.subjectX ?? 0.5) - 0.5) * 1920 * (["personne", "duo", "foule"].includes(p.subject) ? 0 : 1)} 0) translate(960 ${pivot}) scale(${scale}) translate(-960 ${-pivot})">` +
+      draw(p.colour, p.colour2, p.colour3, r, p.subjectX ?? 0.5, F) + `</g></svg>`;
+    const subj = svg.querySelector(".subj");
+    // the idle motion of the subject, so a still drawing still breathes
+    tl.fromTo(subj, { y: 6 * u }, { y: -6 * u, duration: Math.max(0.2, dur), ease: "sine.inOut" }, t0);
+    svg.querySelectorAll(".spin").forEach((n) => tl.fromTo(n, { rotation: 0, svgOrigin: "960 600" }, { rotation: 90 * dur, duration: dur, ease: "none" }, t0));
+    svg.querySelectorAll(".wave").forEach((n, i) => tl.fromTo(n, { x: 0 }, { x: (i % 2 ? -1 : 1) * 240, duration: dur, ease: "none" }, t0));
+    svg.querySelectorAll(".drop").forEach((n) => tl.fromTo(n, { y: -200 }, { y: 400, duration: Math.max(0.3, dur), ease: "power1.in" }, t0));
+    svg.querySelectorAll(".lift").forEach((n) => tl.fromTo(n, { y: 140 }, { y: -120, duration: dur, ease: "power2.in" }, t0));
+    svg.querySelectorAll(".drive").forEach((n) => tl.fromTo(n, { x: -120 }, { x: 120, duration: dur, ease: "none" }, t0));
+    if (p.bubble) {
+      const bub = h.css(h.el("div", "zs-abs", cam), { left: Math.min(0.78, (p.subjectX ?? 0.5) + 0.14) * W + "px", top: 0.22 * H + "px", width: 0.2 * W + "px", height: 0.1 * H + "px",
+        borderRadius: 24 * u + "px", background: "rgba(255,255,255,0.88)", boxShadow: `0 ${10 * u}px ${30 * u}px rgba(0,0,0,0.25)` });
+      [0.62, 0.4].forEach((w, i) => h.css(h.el("div", "zs-abs", bub), { left: "10%", top: 26 + i * 30 + "%", width: w * 100 + "%", height: "16%", borderRadius: "99px", background: h.mix(p.bg, "#ffffff", 0.55) }));
+      tl.fromTo(bub, { autoAlpha: 0, scale: 0.6, transformOrigin: "0% 100%" }, { autoAlpha: 1, scale: 1, duration: 0.35, ease: "back.out(1.8)" }, t0 + Math.min(0.2, dur * 0.25));
+    }
+    if (p.grain) h.css(h.el("div", "zs-abs", box), { inset: "0", background: "repeating-linear-gradient(0deg, rgba(0,0,0,0.12) 0 2px, transparent 2px 5px)", mixBlendMode: "multiply",
+      boxShadow: `inset 0 0 ${180 * u}px rgba(0,0,0,0.75)` });
+    if (p.bw || p.grain) h.css(cam, { filter: p.grain && !p.bw ? "sepia(0.55) contrast(1.05)" : "grayscale(1) contrast(1.1)" });
+    // the measured camera move: the content slides by camX / camY (% of the width), scales by camZoom (%), rolls by roll (degrees)
+    const at = Math.min(Math.max(0, p.camAt || 0), Math.max(0, dur - 0.02)), len = p.camDur > 0 ? Math.min(p.camDur, dur - at) : dur - at;
+    if (len > 0 && (p.camX || p.camY || p.camZoom || p.roll))
+      tl.fromTo(cam, { x: 0, y: 0, scale: 1, rotation: 0 }, { x: (p.camX || 0) / 100 * W, y: (p.camY || 0) / 100 * W, scale: Math.max(0.3, 1 + (p.camZoom || 0) / 100),
+        rotation: p.roll || 0, duration: len, ease: p.camEase || "power1.inOut" }, t0 + at);
+    return cam;
+  };
+
+  ZS.register({
+    id: "illustrated-shot", label: "Plan illustré (sujet dessiné, caméra mesurée)", group: "Média", duration: 2,
+    params: [...ZS.ILLUSTRATION_PARAMS(1, 2, 3), N("subjectScale", "Taille du sujet", 1, 0.3, 2, 0.01, 3, "x"), B("bw", "Noir et blanc", false, 3)],
+    build(ctx) {
+      const box = h.css(h.el("div", "zs-abs", ctx.el), { inset: "0" });
+      ZS.illustrate(ctx, ctx.p, box);
+    },
+  });
+})();

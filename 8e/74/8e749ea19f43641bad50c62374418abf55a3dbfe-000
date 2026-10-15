@@ -1,0 +1,135 @@
+"""Reproduction of the reference motion-opus-5-5 (30 s) as an editable motion project (15 October 2026).
+
+Watched at 2 images per second (contact sheets), the reference is one continuous launch film: title card, a prompt typed then
+sent, a status card (designing, adding sound, rendering), the preview with kinetic words, a tool count, a list, a second prompt
+("Change that."), a focus list, a colour slam, an orbit word, a gradient word, a logo, the end card. Each beat becomes a scene at
+the instants read on the sheets; every word and colour of the reference is a default value, editable in the Motion page.
+The music is the reproduction at 99.9 % (bank), the effects are the ones isolated from the reference at their measured times.
+FR : la reproduction de motion-opus-5-5, chaque temps fort devenu une scene calee sur les instants mesures, textes modifiables.
+Usage: python3 motion/reproductions/motion_opus_5_5.py
+"""
+import json
+import sys
+from pathlib import Path
+
+MOTION = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(MOTION))
+import convert  # noqa: E402
+import server  # noqa: E402
+
+BG, INK, ACCENT = "#ecece2", "#1b1b19", "#e2552f"
+# (start, template, params): start instants read on the contact sheets of the reference (seconds)
+DATA = Path(__file__).resolve().parent / "data"
+APP_START, APP_END = 4.0333, 27.0333
+C = (960.0, 540.0)
+CHAT = (1.2016, -20.9, 864.1)          # the conversation's own frame on the canvas (zoom, cx, cy): the reference frame at 9 s
+
+
+def cam_at(keys, t):
+    """Camera (z, cx, cy) at scene time t from the measured keys."""
+    ks = [list(map(float, k.split())) for k in keys]
+    if t <= ks[0][0]:
+        return ks[0][1:]
+    for a, b in zip(ks, ks[1:]):
+        if t <= b[0]:
+            u = (t - a[0]) / max(1e-9, b[0] - a[0])
+            return [a[i] + (b[i] - a[i]) * u for i in (1, 2, 3)]
+    return ks[-1][1:]
+
+
+def cursor_lines(keys):
+    """The detected cursor (screen) in conversation units: screen -> canvas (camera at that instant) -> conversation."""
+    d = json.loads((DATA / "motion-opus-5-5-cursor.json").read_text())
+    zA, cxA, cyA = CHAT
+    out = []
+    for t, x, y in d["samples"]:
+        rt = t - APP_START
+        z, cx, cy = cam_at(keys, rt)
+        X, Y = (x - C[0]) / z + cx, (y - C[1]) / z + cy
+        out.append(f"{rt:.3f} {(X - cxA) * zA + C[0] - 4.5:.1f} {(Y - cyA) * zA + C[1] - 4.5:.1f}")
+    out += [f"{h - APP_START:.3f} -" for h in d["hide"]]
+    return "\n".join(out)
+
+
+PREVIEW_START = 10.6   # the first child scene of the preview window (absolute time in the reference)
+
+
+def preview_children() -> list:
+    """The child scenes of the preview window, times relative to the application scene. One source for the film and the work project."""
+    r = lambda t: round(t - APP_START, 3)  # noqa: E731
+    return [
+        # the sentence measured on the rectified preview: tokens at their arrival, the 'connect' pill left edge over time, the zoom into '+'
+        {"template": "sentence-build", "start": r(10.6), "duration": round(13.017 - 10.6, 3),
+         "params": {"tokens": "We now\n[connect]\n(link)\n[with]\nover\n(+)", "times": "0\n0.5\n1.02\n1.1\n1.4\n1.47",
+                    "slide": "0.5 1062\n0.9 1026\n1.0 993\n1.067 952\n1.133 900\n1.2 798\n1.267 742\n1.333 705\n1.4 676\n1.467 674\n1.533 658\n1.6 635\n1.667 563\n1.733 492\n1.8 470\n1.867 436\n1.933 391\n2.0 369\n2.067 365\n2.133 358",
+                    "outro": "2.15 1\n2.267 1.6\n2.333 6.3\n2.417 9.1", "ink": "#1b1b19"}},
+        {"template": "big-count", "start": r(13.017), "duration": round(16.017 - 13.017, 3), "params": {"value": 450, "label": "Tools", "count": 1.6, "bg": "#f4f4ea"}},
+        {"template": "list-focus", "start": r(16.017), "duration": round(21.0333 - 16.017, 3),
+         "params": {"lines": "Import designs with Figma\nConnect with your docs\nAdd SMS, voice calls\nCollect payments\nConnect to customer data\nAdd audio to your apps\nConnect to your content\nBuild workflows\nAutomate workflows\nBuild customer dashboards", "step": 0.55, "bg": "#f4f4ea"}},
+        {"template": "color-slam", "start": r(21.0333), "duration": round(22.0 - 21.0333, 3), "params": {"text": "And many", "colour": "#e8360b", "bg": "#f4f4ea"}},
+        {"template": "orbit-word", "start": r(22.0), "duration": 1.0, "params": {"word": "More", "colour": "#1b1b19", "bg": "#f4f4ea"}},
+        {"template": "gradient-word", "start": r(23.0), "duration": 1.5, "params": {"word": "What", "phrase": "What are {pill}", "pill": "you", "colour": "#e8360b", "bg": "#f4f4ea"}},
+        {"template": "kinetic-words", "start": r(24.5), "duration": 1.0, "params": {"sentence": "going to {pill}", "pills": "build?", "badge": False, "bg": "#f4f4ea"}},
+        {"template": "logo-merge", "start": r(25.5), "duration": round(APP_END - 25.5, 3), "params": {"name": "Replit", "colour": "#e8360b", "bg": "#f4f4ea"}},
+    ]
+
+
+def preview_project() -> dict:
+    """The work project of the preview window alone: its child scenes as scenes, compared with the rectified preview video."""
+    kids = preview_children()
+    scenes = []
+    for i, c in enumerate(kids):
+        nxt = kids[i + 1]["start"] if i + 1 < len(kids) else round(APP_END - APP_START, 3)
+        scenes.append({"id": f"p{i + 1:02d}", "template": c["template"], "duration": round(nxt - c["start"], 4), "params": c["params"]})
+    return {"schema": "zrmd/motion-project@1", "title": "motion-opus-5-5, fenêtre d'aperçu", "format": "16x9", "fps": 30, "reference": "motion-opus-5-5",
+            "doc": "15 October 2026: the child scenes of the preview window alone, compared with references/motion-opus-5-5/children/preview.mp4.",
+            "theme": {"bg": "#f4f4ea", "ink": INK, "accent": ACCENT}, "music": {"mode": "none"}, "sfx": {"enabled": False}, "scenes": scenes}
+
+
+def app_scene() -> dict:
+    keys = json.loads((DATA / "motion-opus-5-5-camera.json").read_text())["keys"]
+    r = lambda t: round(t - APP_START, 3)  # noqa: E731
+    children = preview_children()
+    return {"id": "b02", "template": "app-preview", "duration": round(APP_END - APP_START, 4), "children": children,
+            "params": {"camera": "\n".join(keys), "cursor": cursor_lines(keys), "cursorSize": 90},
+            "ref": {"start": APP_START, "note": "one measured shot of the reference: conversation, preview panel, camera tracked"}}
+
+
+BEATS = [
+    # measured on the 4K frames: serif title 882 px wide from 0.52 s, sans line 1085 px from 1.12 s, both rising behind a mask in an
+    # exponential ease of 0.85 s; note faded in at 2.45 s; star (#cc7058, 12 irregular flared spokes) at (0.815, 0.227), 199 px, grows 94 -> 100 %
+    (0.00, "title-card", {"title": "Claude Opus 5.5", "subtitle": "for launch videos", "footnote": "Powered by Motion", "footIcon": True, "align": "left",
+                          "mark": True, "titleFont": "AnthropicSerifLight", "bodyFont": "AnthropicSans", "weight": 500, "titleSize": 127, "subtitleSize": 148.1,
+                          "tracking": -0.025, "x": 0.1245, "y": 0.5523, "lineGap": 23, "footGap": 133, "footSize": 35, "subtitleX": -9, "footX": 6, "start": 0.50, "gap": 0.6, "enter": 0.85, "ease": "snappy", "stagger": 0,
+                          "footAt": 2.45, "markSize": 216, "markX": 0.8153, "markY": 0.2228, "thickness": 9.6, "irregular": 0.6, "accent": "#cc7058"}),
+    (APP_START, "app-preview", None),          # the whole application shot, see app_scene()
+    (27.03, "end-card", {"title": "Claude Opus 5.5", "subtitle": "for launch videos", "label": "available at", "url": "motion.so", "mark": True}),
+]
+END = 29.9
+
+
+def project() -> dict:
+    scenes = []
+    for i, (t, tpl, params) in enumerate(BEATS):
+        nxt = BEATS[i + 1][0] if i + 1 < len(BEATS) else END
+        if tpl == "app-preview":
+            scenes.append(app_scene())
+            continue
+        scenes.append({"id": f"b{i + 1:02d}", "template": tpl, "duration": round(nxt - t, 4), "params": params,
+                       "ref": {"start": t, "note": "instant measured on the reference"}})
+    base = convert.convert("motion-opus-5-5")          # music (bank) and isolated effects of the reference, measured
+    return {"schema": "zrmd/motion-project@1", "title": "motion-opus-5-5 reproduit", "format": "16x9", "fps": 30, "reference": "motion-opus-5-5",
+            "doc": "15 October 2026: reproduction of motion-opus-5-5: title card, the application shot (conversation, preview panel, measured camera, "
+                   "child scenes in the preview window), end card; every text and colour is a value.",
+            "theme": {"bg": BG, "ink": INK, "accent": ACCENT, "fontTitle": "AnthropicSerif", "fontBody": "InterVariable"},
+            "music": base["music"], "sfx": {**base["sfx"], "sceneCues": True}, "scenes": scenes}
+
+
+if __name__ == "__main__":
+    pid = "motion-opus-5-5-motion"
+    if (server.project_dir(pid) / "project.json").is_file():
+        server.save_version(pid, "avant une nouvelle passe de reproduction")
+    p = project()
+    server.write_project(pid, p)
+    server.write_project("motion-opus-5-5-preview", preview_project())
+    print(json.dumps({"id": pid, "scenes": len(p["scenes"]), "duration": round(sum(s["duration"] for s in p["scenes"]), 2)}))

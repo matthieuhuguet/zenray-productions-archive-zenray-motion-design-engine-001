@@ -1,0 +1,407 @@
+// 15 October 2026: the sound of the ZenRay Motion Design motion editor, generated in the browser (Web Audio), in REAL TIME. Music is either GENERATED from a few values
+// (tempo, key, mode, progression, energy, brightness, levels, seed: chords, pad, bass, drums, arpeggio, reverb, bus compressor) or an imported
+// file (gain, fades, start, speed). Sound effects are synthesised from the cues the scenes emit (whoosh, pop, click, typing, riser, impact,
+// shimmer, tick), each with its own values. The same schedule() plays live from any playhead and renders the export offline (OfflineAudioContext),
+// so what is heard is what is exported. Nothing is analysed, nothing waits for a server.
+// FR : le son du studio genere dans le navigateur, en temps reel ; la meme fonction sert l'ecoute et l'export.
+(function () {
+  const ZS = (window.ZS = window.ZS || {});
+  const A = (ZS.audio = {});
+  const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  const SCALES = { major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10] };
+  // progressions as scale degrees (0 = I)
+  const PROGRESSIONS = {
+    major: { "I V vi IV": [0, 4, 5, 3], "vi IV I V": [5, 3, 0, 4], "I IV vi V": [0, 3, 5, 4], "I vi IV V": [0, 5, 3, 4] },
+    minor: { "i VI III VII": [0, 5, 2, 6], "i iv VI V": [0, 3, 5, 4], "i VII VI VII": [0, 6, 5, 6], "i v VI iv": [0, 4, 5, 3] },
+  };
+  A.NOTES = NOTES;
+  A.PROGRESSIONS = PROGRESSIONS;
+  // the music values: 4 essential, 8 advanced (HDA law); defaults are a calm, bright launch-film bed
+  A.MUSIC_PARAMS = [
+    { key: "tempo", label: "Tempo", type: "number", default: 104, min: 60, max: 160, step: 1, tier: 1, unit: "bpm" },
+    { key: "mode", label: "Couleur", type: "select", default: "major", options: ["major", "minor"], tier: 1 },
+    { key: "energy", label: "Énergie (batterie)", type: "number", default: 0.6, min: 0, max: 1, step: 0.05, tier: 1 },
+    { key: "volume", label: "Volume de la musique", type: "number", default: -14, min: -40, max: 0, step: 0.5, tier: 1, unit: "dB" },
+    { key: "key", label: "Tonalité", type: "select", default: "A", options: NOTES, tier: 2 },
+    { key: "progression", label: "Accords", type: "select", default: "auto", options: ["auto"].concat(Object.keys(PROGRESSIONS.major), Object.keys(PROGRESSIONS.minor)), tier: 2 },
+    { key: "brightness", label: "Brillance", type: "number", default: 0.55, min: 0, max: 1, step: 0.05, tier: 2 },
+    { key: "pad", label: "Nappe", type: "number", default: 0.7, min: 0, max: 1, step: 0.05, tier: 2 },
+    { key: "bass", label: "Basse", type: "number", default: 0.7, min: 0, max: 1, step: 0.05, tier: 2 },
+    { key: "arp", label: "Arpège", type: "number", default: 0.35, min: 0, max: 1, step: 0.05, tier: 2 },
+    { key: "reverb", label: "Réverbération", type: "number", default: 0.3, min: 0, max: 1, step: 0.05, tier: 2 },
+    { key: "seed", label: "Variante", type: "number", default: 1, min: 1, max: 99, step: 1, tier: 2 },
+  ];
+  A.FILE_PARAMS = [
+    { key: "file", label: "Fichier audio importé", type: "media", default: "", tier: 1 },
+    { key: "volume", label: "Volume", type: "number", default: -8, min: -40, max: 6, step: 0.5, tier: 1, unit: "dB" },
+    { key: "fadeIn", label: "Fondu d'entrée", type: "number", default: 0.5, min: 0, max: 8, step: 0.1, tier: 1, unit: "s" },
+    { key: "fadeOut", label: "Fondu de sortie", type: "number", default: 2, min: 0, max: 10, step: 0.1, tier: 1, unit: "s" },
+    { key: "offset", label: "Début dans le fichier", type: "number", default: 0, min: 0, max: 600, step: 0.1, tier: 2, unit: "s" },
+    { key: "rate", label: "Vitesse", type: "number", default: 1, min: 0.5, max: 2, step: 0.01, tier: 2, unit: "x" },
+  ];
+  // a reproduced reference music (the 99.9 % bank, 15 October 2026): its four stems mixed live. A variation the agent proposed writes
+  // its values here (stems, pitch, tilt); every value stays editable. Pitch moves by semitones (tape-style: the tempo follows).
+  A.BANK_STEMS = ["drums", "bass", "other", "vocals"];
+  A.BANK_PARAMS = [
+    { key: "track", label: "Musique reproduite", type: "bank", default: "", tier: 1 },
+    { key: "volume", label: "Volume", type: "number", default: -8, min: -40, max: 6, step: 0.5, tier: 1, unit: "dB" },
+    { key: "fadeOut", label: "Fondu de sortie", type: "number", default: 2, min: 0, max: 10, step: 0.1, tier: 1, unit: "s" },
+    { key: "offset", label: "Début dans la musique", type: "number", default: 0, min: 0, max: 600, step: 0.1, tier: 1, unit: "s" },
+    { key: "drums", label: "Batterie", type: "number", default: 0, min: -60, max: 6, step: 0.5, tier: 2, unit: "dB" },
+    { key: "bass", label: "Basse", type: "number", default: 0, min: -60, max: 6, step: 0.5, tier: 2, unit: "dB" },
+    { key: "other", label: "Instruments", type: "number", default: 0, min: -60, max: 6, step: 0.5, tier: 2, unit: "dB" },
+    { key: "vocals", label: "Voix", type: "number", default: 0, min: -60, max: 6, step: 0.5, tier: 2, unit: "dB" },
+    { key: "semitones", label: "Hauteur et tempo", type: "number", default: 0, min: -4, max: 4, step: 1, tier: 2, unit: "demi-tons" },
+    { key: "tilt", label: "Brillance (aigus contre graves)", type: "number", default: 0, min: -9, max: 9, step: 0.5, tier: 2, unit: "dB" },
+    { key: "fadeIn", label: "Fondu d'entrée", type: "number", default: 0.3, min: 0, max: 8, step: 0.1, tier: 2, unit: "s" },
+    { key: "width", label: "Largeur stéréo", type: "number", default: 1, min: 0, max: 1.5, step: 0.05, tier: 2 },
+    { key: "lowCut", label: "Coupe-bas", type: "number", default: 20, min: 20, max: 2000, step: 10, tier: 3, unit: "Hz" },
+    { key: "highCut", label: "Coupe-haut", type: "number", default: 20000, min: 500, max: 20000, step: 100, tier: 3, unit: "Hz" },
+    { key: "reverb", label: "Réverbération", type: "number", default: 0, min: 0, max: 1, step: 0.05, tier: 3 },
+    { key: "drive", label: "Saturation", type: "number", default: 0, min: 0, max: 1, step: 0.05, tier: 3 },
+  ];
+  A.SFX_PARAMS = [
+    { key: "enabled", label: "Effets sonores", type: "bool", default: true, tier: 1 },
+    { key: "volume", label: "Volume des effets", type: "number", default: -10, min: -40, max: 0, step: 0.5, tier: 1, unit: "dB" },
+    { key: "brightness", label: "Brillance", type: "number", default: 0.5, min: 0, max: 1, step: 0.05, tier: 1 },
+    { key: "source", label: "Source des effets", type: "select", default: "synthèse", options: ["synthèse", "banque"], tier: 1 },
+    { key: "whoosh", label: "Souffles", type: "number", default: 1, min: 0, max: 2, step: 0.05, tier: 2 },
+    { key: "pop", label: "Pops", type: "number", default: 1, min: 0, max: 2, step: 0.05, tier: 2 },
+    { key: "click", label: "Clics", type: "number", default: 1, min: 0, max: 2, step: 0.05, tier: 2 },
+    { key: "type", label: "Frappe", type: "number", default: 1, min: 0, max: 2, step: 0.05, tier: 2 },
+    { key: "impact", label: "Impacts", type: "number", default: 1, min: 0, max: 2, step: 0.05, tier: 2 },
+    { key: "shimmer", label: "Scintillements", type: "number", default: 1, min: 0, max: 2, step: 0.05, tier: 2 },
+    { key: "riser", label: "Montées", type: "number", default: 1, min: 0, max: 2, step: 0.05, tier: 2 },
+    { key: "bankSeed", label: "Tirage dans la banque", type: "number", default: 1, min: 1, max: 99, step: 1, tier: 2 },
+    { key: "sceneCues", label: "Effets posés par les scènes", type: "bool", default: true, tier: 3 },
+    { key: "refEvents", label: "Effets de la référence (aux temps mesurés)", type: "bool", default: true, tier: 3 },
+    { key: "refGain", label: "Niveau des effets de la référence", type: "number", default: 1, min: 0, max: 2, step: 0.05, tier: 3 },
+  ];
+  // the kinds of the isolated effects (sound/<member>/V_*/events.json) that can play each cue of a scene, best first (15 October 2026)
+  A.SFX_BANK_KINDS = { whoosh: ["whoosh", "swoosh", "swipe"], pop: ["ding", "trigger", "click"], click: ["click", "keyboard", "trigger"],
+    type: ["keyboard", "click"], tick: ["click", "trigger", "keyboard"], riser: ["swoosh", "whoosh"], impact: ["impact", "subdrop"], shimmer: ["ding", "glitch"] };
+  // the sample of the bank a cue plays: deterministic (cue position and seed), so the same project always sounds the same
+  A.pickSfx = function (index, cue, i, seed) {
+    for (const k of A.SFX_BANK_KINDS[cue.type] || []) {
+      const list = index && index[k];
+      if (list && list.length) return list[(i * 7 + (seed || 1) * 13 + Math.round(cue.t * 10)) % list.length];
+    }
+    return null;
+  };
+  A.values = (defs, v) => { const o = {}; defs.forEach((d) => { o[d.key] = v && v[d.key] !== undefined && v[d.key] !== null && v[d.key] !== "" ? v[d.key] : d.default; }); return o; };
+  const db = (x) => Math.pow(10, x / 20);
+  const at = (ctx, t) => Math.max(ctx.currentTime + 0.005, t);   // never schedule in the past (a playhead in the middle of a fade)
+  const midi = (m) => 440 * Math.pow(2, (m - 69) / 12);
+
+  function noiseBuffer(ctx) {
+    if (ctx.__zsNoise) return ctx.__zsNoise;
+    const len = ctx.sampleRate * 2, b = ctx.createBuffer(1, len, ctx.sampleRate), d = b.getChannelData(0);
+    let s = 12345;
+    for (let i = 0; i < len; i++) { s = (s * 1664525 + 1013904223) >>> 0; d[i] = (s / 4294967296) * 2 - 1; }
+    ctx.__zsNoise = b;
+    return b;
+  }
+  function impulse(ctx, seconds) {
+    const len = Math.floor(ctx.sampleRate * seconds), b = ctx.createBuffer(2, len, ctx.sampleRate);
+    let s = 777;
+    for (let c = 0; c < 2; c++) {
+      const d = b.getChannelData(c);
+      for (let i = 0; i < len; i++) { s = (s * 1664525 + 1013904223) >>> 0; d[i] = ((s / 4294967296) * 2 - 1) * Math.pow(1 - i / len, 3); }
+    }
+    return b;
+  }
+  function env(g, t, a, peak, d, sustainEnd) {
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(peak, t + a);
+    if (sustainEnd) g.gain.setValueAtTime(peak, sustainEnd);
+    g.gain.exponentialRampToValueAtTime(0.0001, (sustainEnd || t + a) + d);
+  }
+  function noise(ctx, out, t, dur) {
+    const n = ctx.createBufferSource();
+    n.buffer = noiseBuffer(ctx);
+    n.connect(out);
+    n.start(t, (t * 7.13) % 1.5);       // a deterministic offset: the same mix in the preview and in the export
+    n.stop(t + dur + 0.05);
+    return n;
+  }
+
+  // ---------------------------------------------------------------------------------------------- generated music
+  function musicGenerated(ctx, dest, v, T0, from, to) {
+    const scale = SCALES[v.mode] || SCALES.major, root = 45 + NOTES.indexOf(v.key || "A");   // A2 = 45
+    const progs = PROGRESSIONS[v.mode] || PROGRESSIONS.major;
+    const names = Object.keys(progs);
+    const prog = progs[v.progression] || progs[names[(Number(v.seed) - 1) % names.length]];
+    const beat = 60 / v.tempo, bar = beat * 4, total = to;
+    const out = ctx.createGain(); out.gain.value = db(v.volume) * 2.2;
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -18; comp.ratio.value = 3; comp.attack.value = 0.01; comp.release.value = 0.2;
+    out.connect(comp); comp.connect(dest);
+    const rev = ctx.createConvolver(); rev.buffer = impulse(ctx, 2.2);
+    const revGain = ctx.createGain(); revGain.gain.value = v.reverb * 0.6;
+    rev.connect(revGain); revGain.connect(out);
+    const now = ctx.currentTime + 0.005, at = (t) => Math.max(now, T0 + t);   // a note already sounding at the playhead starts now, never in the past
+    const deg = (d, oct) => root + 12 * oct + scale[((d % 7) + 7) % 7] + 12 * Math.floor(d / 7);
+    // the master fade so a cut composition never ends on a chopped note
+    const fade = ctx.createGain(); fade.connect(out);
+    const end = Math.max(0.5, total - from);
+    fade.gain.setValueAtTime(1, at(from));
+    fade.gain.setValueAtTime(1, at(from) + Math.max(0, end - 1.6));
+    fade.gain.linearRampToValueAtTime(0.0001, at(from) + end);
+    const bus = fade;
+    const send = (node, amt) => { const s = ctx.createGain(); s.gain.value = amt; node.connect(s); s.connect(rev); };
+    const lp = (f) => { const x = ctx.createBiquadFilter(); x.type = "lowpass"; x.frequency.value = f; x.Q.value = 0.4; return x; };
+    const bars = Math.ceil(total / bar) + 1;
+    let rs = (Number(v.seed) * 97) >>> 0;
+    const rnd = () => ((rs = (rs * 1664525 + 1013904223) >>> 0) / 4294967296);
+    for (let b = 0; b < bars; b++) {
+      const t = b * bar;
+      if (t + bar < from || t > total) continue;
+      const chord = prog[b % prog.length], tones = [deg(chord, 1), deg(chord + 2, 1), deg(chord + 4, 1), deg(chord + 6, 1)];
+      // pad: detuned saws through a low-pass, slow attack
+      if (v.pad > 0) {
+        const g = ctx.createGain(), f = lp(500 + 3500 * v.brightness);
+        f.connect(g); g.connect(bus); send(g, 0.9);
+        env(g, at(t), 0.6, 0.05 * v.pad, 0.9, at(t + bar - 0.2));
+        tones.slice(0, 3).forEach((m, i) => [-7, 7].forEach((det) => {
+          const o = ctx.createOscillator(); o.type = "sawtooth"; o.frequency.value = midi(m + 12); o.detune.value = det + i;
+          o.connect(f); o.start(at(t)); o.stop(at(t + bar + 1));
+        }));
+      }
+      // bass: root on 1 and 3 (and 8ths with energy)
+      if (v.bass > 0 && b > 0) {
+        const steps = v.energy > 0.55 ? [0, 1, 2, 3, 4, 5, 6, 7] : [0, 4];
+        steps.forEach((s) => {
+          const tt = t + s * beat / 2;
+          if (tt < from - 0.05 || tt > total - 0.3) return;
+          const g = ctx.createGain(), f = lp(220 + 600 * v.brightness);
+          f.connect(g); g.connect(bus);
+          env(g, at(tt), 0.008, 0.22 * v.bass * (s % 4 === 0 ? 1 : 0.7), 0.28);
+          const o = ctx.createOscillator(); o.type = "triangle"; o.frequency.value = midi(deg(chord, 0)); o.connect(f);
+          const o2 = ctx.createOscillator(); o2.type = "sine"; o2.frequency.value = midi(deg(chord, -1)); o2.connect(f);
+          o.start(at(tt)); o.stop(at(tt + 0.5)); o2.start(at(tt)); o2.stop(at(tt + 0.5));
+        });
+      }
+      // drums from the second bar, density from energy
+      if (v.energy > 0.05 && b > 0 && t < total - bar * 0.5) {
+        for (let s = 0; s < 16; s++) {
+          const swing = s % 2 ? 0.08 * beat * v.energy : 0, tt = t + s * beat / 4 + swing;
+          if (tt < from - 0.01 || tt > total - 0.5) continue;
+          if (s % 8 === 0 || (v.energy > 0.75 && s === 10)) kick(ctx, bus, at(tt), 0.5 + 0.4 * v.energy);
+          if (s % 8 === 4) snare(ctx, bus, at(tt), 0.25 + 0.25 * v.energy, v.brightness);
+          if ((v.energy > 0.3 && s % 2 === 0) || (v.energy > 0.8 && s % 2 === 1)) hat(ctx, bus, at(tt), 0.05 + 0.06 * v.energy * (s % 4 === 2 ? 1.4 : 1), v.brightness);
+        }
+      }
+      // arpeggio: 8th notes over the chord tones, one octave up
+      if (v.arp > 0 && b > 0) {
+        for (let s = 0; s < 8; s++) {
+          const tt = t + s * beat / 2;
+          if (tt < from - 0.01 || tt > total - 0.3) continue;
+          const m = tones[(s + Math.floor(rnd() * 2)) % 4] + 12, g = ctx.createGain(), f = lp(1200 + 4000 * v.brightness);
+          f.connect(g); g.connect(bus); send(g, 0.5);
+          env(g, at(tt), 0.005, 0.05 * v.arp, 0.35);
+          const o = ctx.createOscillator(); o.type = "triangle"; o.frequency.value = midi(m); o.connect(f); o.start(at(tt)); o.stop(at(tt + 0.5));
+        }
+      }
+    }
+  }
+  function kick(ctx, out, t, amp) {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.setValueAtTime(130, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.14);
+    env(g, t, 0.003, 0.9 * amp, 0.32);
+    o.connect(g); g.connect(out); o.start(t); o.stop(t + 0.45);
+  }
+  function snare(ctx, out, t, amp, bright) {
+    const g = ctx.createGain(), f = ctx.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = 1500 + 1500 * bright; f.Q.value = 0.8;
+    f.connect(g); g.connect(out); env(g, t, 0.002, 0.5 * amp, 0.16); noise(ctx, f, t, 0.25);
+    const o = ctx.createOscillator(), g2 = ctx.createGain(); o.frequency.value = 185; o.connect(g2); g2.connect(out); env(g2, t, 0.002, 0.25 * amp, 0.08); o.start(t); o.stop(t + 0.15);
+  }
+  function hat(ctx, out, t, amp, bright) {
+    const g = ctx.createGain(), f = ctx.createBiquadFilter(); f.type = "highpass"; f.frequency.value = 6000 + 3000 * bright;
+    f.connect(g); g.connect(out); env(g, t, 0.001, amp, 0.04); noise(ctx, f, t, 0.08);
+  }
+
+  // ---------------------------------------------------------------------------------------------- imported music file
+  function musicFile(ctx, dest, v, buffer, T0, from, to) {
+    if (!buffer) return;
+    const src = ctx.createBufferSource(), g = ctx.createGain();
+    src.buffer = buffer; src.playbackRate.value = v.rate;
+    src.connect(g); g.connect(dest);
+    const vol = db(v.volume), len = to;
+    const gainAt = (t) => vol * Math.min(1, v.fadeIn > 0 ? t / v.fadeIn : 1, v.fadeOut > 0 ? Math.max(0, (len - t) / v.fadeOut) : 1);
+    g.gain.setValueAtTime(Math.max(0.0001, gainAt(from)), T0 + from);
+    if (v.fadeIn > 0 && from < v.fadeIn) g.gain.linearRampToValueAtTime(vol, T0 + v.fadeIn);
+    if (v.fadeOut > 0) { g.gain.setValueAtTime(Math.max(0.0001, gainAt(Math.max(from, len - v.fadeOut))), T0 + Math.max(from, len - v.fadeOut)); g.gain.linearRampToValueAtTime(0.0001, T0 + len); }
+    src.start(T0 + from, v.offset + from * v.rate);
+    src.stop(T0 + len + 0.05);
+  }
+
+  // ---------------------------------------------------------------------------------------------- reproduced music (bank)
+  // buffers["bank:<track>:<stem>"] hold an excerpt of each stem; buffer.zsStart says where in the music it begins
+  function musicBank(ctx, dest, v, buffers, T0, from, to) {
+    if (!v.track) return;
+    const rate = Math.pow(2, v.semitones / 12), vol = db(v.volume), len = to;
+    const g = ctx.createGain(), lo = ctx.createBiquadFilter(), hi = ctx.createBiquadFilter();
+    lo.type = "lowshelf"; lo.frequency.value = 250; lo.gain.value = -v.tilt / 2;
+    hi.type = "highshelf"; hi.frequency.value = 3000; hi.gain.value = v.tilt;
+    // colour of the variation (15 October 2026): low cut, high cut, saturation, then a reverb send; identity values add nothing
+    let last = hi;
+    if (v.lowCut > 20) { const f = ctx.createBiquadFilter(); f.type = "highpass"; f.frequency.value = v.lowCut; f.Q.value = 0.7; last.connect(f); last = f; }
+    if (v.highCut < 20000) { const f = ctx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = v.highCut; f.Q.value = 0.7; last.connect(f); last = f; }
+    if (v.drive > 0) {
+      const ws = ctx.createWaveShaper(), n = 1024, k = 1 + v.drive * 20, curve = new Float32Array(n);
+      for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1; curve[i] = Math.tanh(k * x) / Math.tanh(k); }
+      ws.curve = curve; ws.oversample = "2x"; last.connect(ws); last = ws;
+    }
+    lo.connect(hi); last.connect(g); g.connect(dest);
+    if (v.reverb > 0) {
+      const conv = ctx.createConvolver(), rg = ctx.createGain(), len = Math.floor(ctx.sampleRate * 2.6), ir = ctx.createBuffer(2, len, ctx.sampleRate);
+      for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); let r = 12345 + c * 777; for (let i = 0; i < len; i++) { r = (r * 1664525 + 1013904223) >>> 0; d[i] = ((r / 4294967296) * 2 - 1) * Math.pow(1 - i / len, 3); } }
+      conv.buffer = ir; rg.gain.value = v.reverb * 0.6; last.connect(conv); conv.connect(rg); rg.connect(g);
+    }
+    // stereo width: mid/side by a splitter (1 = as reproduced, 0 = mono)
+    const bus = ctx.createGain(), split = ctx.createChannelSplitter(2), merge = ctx.createChannelMerger(2);
+    const w = Math.max(0, v.width), a = (1 + w) / 2, b = (1 - w) / 2;
+    const ll = ctx.createGain(), lr = ctx.createGain(), rl = ctx.createGain(), rr = ctx.createGain();
+    ll.gain.value = a; rr.gain.value = a; lr.gain.value = b; rl.gain.value = b;
+    bus.connect(split); split.connect(ll, 0); split.connect(lr, 0); split.connect(rl, 1); split.connect(rr, 1);
+    ll.connect(merge, 0, 0); rl.connect(merge, 0, 0); lr.connect(merge, 0, 1); rr.connect(merge, 0, 1); merge.connect(lo);
+    const gainAt = (t) => vol * Math.min(1, v.fadeIn > 0 ? t / v.fadeIn : 1, v.fadeOut > 0 ? Math.max(0, (len - t) / v.fadeOut) : 1);
+    g.gain.setValueAtTime(Math.max(0.0001, gainAt(from)), at(ctx, T0 + from));
+    if (v.fadeIn > 0 && from < v.fadeIn) g.gain.linearRampToValueAtTime(vol, at(ctx, T0 + v.fadeIn));
+    if (v.fadeOut > 0) { g.gain.setValueAtTime(Math.max(0.0001, gainAt(Math.max(from, len - v.fadeOut))), at(ctx, T0 + Math.max(from, len - v.fadeOut))); g.gain.linearRampToValueAtTime(0.0001, at(ctx, T0 + len)); }
+    const play = (buf, level) => {
+      if (!buf || level <= -59) return;
+      const src = ctx.createBufferSource(), sg = ctx.createGain();
+      src.buffer = buf; src.playbackRate.value = rate; sg.gain.value = db(level);
+      src.connect(sg); sg.connect(bus);
+      const where = v.offset - (buf.zsStart || 0) + from * rate;
+      if (where >= buf.duration) return;
+      src.start(at(ctx, T0 + from), Math.max(0, where)); src.stop(at(ctx, T0 + len + 0.05));
+    };
+    const stems = A.BANK_STEMS.filter((st) => buffers && buffers[`bank:${v.track}:${st}`]);
+    if (stems.length) stems.forEach((st) => play(buffers[`bank:${v.track}:${st}`], v[st]));
+    else play(buffers && buffers[`bank:${v.track}:mix`], 0);
+  }
+
+  // ---------------------------------------------------------------------------------------------- sound effects
+  const SFX = {
+    whoosh(ctx, out, t, q, s) {
+      const L = q.length || 0.6, f = ctx.createBiquadFilter(), g = ctx.createGain(); f.type = "bandpass"; f.Q.value = 1.2;
+      const lo = 300 + 600 * s.brightness, hi = 2500 + 5000 * (q.brightness !== undefined ? q.brightness : s.brightness);
+      f.frequency.setValueAtTime(lo, t); f.frequency.exponentialRampToValueAtTime(hi, t + L * 0.7); f.frequency.exponentialRampToValueAtTime(lo * 1.5, t + L);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.35, t + L * 0.6); g.gain.exponentialRampToValueAtTime(0.0001, t + L);
+      f.connect(g); g.connect(out); noise(ctx, f, t, L);
+    },
+    pop(ctx, out, t, q) {
+      const o = ctx.createOscillator(), g = ctx.createGain(), p = 380 + 700 * (q.pitch !== undefined ? q.pitch : 0.5);
+      o.frequency.setValueAtTime(p * 1.6, t); o.frequency.exponentialRampToValueAtTime(p, t + 0.05);
+      env(g, t, 0.002, 0.3, 0.09); o.connect(g); g.connect(out); o.start(t); o.stop(t + 0.15);
+    },
+    click(ctx, out, t, q, s) {
+      const g = ctx.createGain(), f = ctx.createBiquadFilter(); f.type = "highpass"; f.frequency.value = 2500 + 3000 * s.brightness;
+      f.connect(g); g.connect(out); env(g, t, 0.001, 0.35, 0.025); noise(ctx, f, t, 0.04);
+      const o = ctx.createOscillator(), g2 = ctx.createGain(); o.frequency.value = 2200; o.connect(g2); g2.connect(out); env(g2, t, 0.001, 0.08, 0.03); o.start(t); o.stop(t + 0.05);
+      void q;
+    },
+    type(ctx, out, t, q, s) {
+      const L = q.length || 1, rate = q.rate || 12;
+      let r = 4242;
+      for (let x = 0; x < L; x += 1 / rate) {
+        r = (r * 1664525 + 1013904223) >>> 0;
+        const jitter = (r / 4294967296 - 0.5) * 0.4 / rate;
+        SFX.click(ctx, out, t + x + jitter, {}, { brightness: s.brightness * 0.7 });
+      }
+    },
+    tick(ctx, out, t) {
+      const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = 1600; env(g, t, 0.001, 0.12, 0.05); o.connect(g); g.connect(out); o.start(t); o.stop(t + 0.08);
+    },
+    riser(ctx, out, t, q, s) {
+      const L = q.length || 1, f = ctx.createBiquadFilter(), g = ctx.createGain(); f.type = "highpass";
+      f.frequency.setValueAtTime(400, t); f.frequency.exponentialRampToValueAtTime(5000 + 4000 * s.brightness, t + L);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.2, t + L); g.gain.exponentialRampToValueAtTime(0.0001, t + L + 0.08);
+      f.connect(g); g.connect(out); noise(ctx, f, t, L + 0.1);
+    },
+    impact(ctx, out, t, q) {
+      kick(ctx, out, t, 1.1 * (q.gain || 1));
+      const g = ctx.createGain(), f = ctx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 900;
+      f.connect(g); g.connect(out); env(g, t, 0.002, 0.25, 0.45); noise(ctx, f, t, 0.5);
+    },
+    shimmer(ctx, out, t, q, s) {
+      const L = q.length || 1;
+      [0, 4, 7, 12, 16].forEach((st, i) => {
+        const o = ctx.createOscillator(), g = ctx.createGain(); o.type = "sine"; o.frequency.value = midi(84 + st + Math.round(s.brightness * 5));
+        env(g, t + i * 0.035, 0.01, 0.05, L); o.connect(g); g.connect(out); o.start(t + i * 0.035); o.stop(t + i * 0.035 + L + 0.1);
+      });
+    },
+  };
+  A.SFX_TYPES = Object.keys(SFX);
+
+  // ---------------------------------------------------------------------------------------------- schedule
+  // schedule everything at or after `from` (seconds in the composition) on `ctx`, the composition time 0 being ctx time T0
+  A.schedule = function (ctx, project, cues, from, duration, buffers) {
+    const T0 = ctx.currentTime + 0.06 - from;
+    const master = ctx.createGain(); master.gain.value = 1;
+    const limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.value = -2; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = 0.002; limiter.release.value = 0.1;
+    master.connect(limiter); limiter.connect(ctx.destination);
+    const music = project.music || { mode: "generate" };
+    if (music.mode === "bank") musicBank(ctx, master, A.values(A.BANK_PARAMS, music.bank || {}), buffers, T0, from, duration);
+    else if (music.mode === "file") musicFile(ctx, master, A.values(A.FILE_PARAMS, music.file || {}), buffers && buffers[(music.file || {}).file], T0, from, duration);
+    else if (music.mode !== "none") musicGenerated(ctx, master, A.values(A.MUSIC_PARAMS, music.generate || {}), T0, from, duration);
+    const s = A.values(A.SFX_PARAMS, project.sfx || {});
+    if (s.enabled) {
+      const bus = ctx.createGain(); bus.gain.value = db(s.volume) * 2.5; bus.connect(master);
+      const bank = s.source === "banque" && buffers && buffers.sfxIndex;
+      // the effects isolated from a converted reference, at their measured times (project.sfx.events: [{t, id}])
+      if (s.refEvents && s.refGain > 0) ((project.sfx && project.sfx.events) || []).forEach((e) => {
+        const smp = buffers && buffers[`sfx:${e.id}`];
+        if (!smp || e.t < from - 0.01 || e.t > duration) return;
+        const src = ctx.createBufferSource(), g = ctx.createGain(); src.buffer = smp; g.gain.value = s.refGain;
+        src.connect(g); g.connect(bus); src.start(at(ctx, T0 + e.t));
+      });
+      if (s.sceneCues) (cues || []).forEach((c, i) => {
+        if (c.t < from - 0.01 || c.t > duration || !SFX[c.type]) return;
+        const k = Number(s[c.type] !== undefined ? s[c.type] : 1) * (c.params && c.params.gain !== undefined ? c.params.gain : 1);
+        if (k <= 0) return;
+        const g = ctx.createGain(); g.gain.value = k; g.connect(bus);
+        // an effect chosen in the gallery for this kind of cue (project.sfx.pick) wins over the deterministic draw
+        const pick = (project.sfx && project.sfx.pick) || {}, id = pick[c.type] || (bank ? A.pickSfx(bank, c, i, s.bankSeed) : null), smp = id && buffers && buffers[`sfx:${id}`];
+        if (smp) {   // a real effect isolated from a reference, at its own level (the bus volume still applies)
+          const src = ctx.createBufferSource(); src.buffer = smp; src.connect(g); g.gain.value = k * 0.6;
+          src.start(at(ctx, T0 + c.t)); return;
+        }
+        SFX[c.type](ctx, g, T0 + c.t, c.params || {}, s);
+      });
+    }
+    return { stop: () => { try { master.disconnect(); } catch (e) { /* already stopped */ } }, T0 };
+  };
+
+  // the export: the whole mix rendered offline, as a 16-bit WAV
+  A.render = async function (project, cues, duration, buffers) {
+    const sr = 48000, ctx = new OfflineAudioContext(2, Math.ceil(sr * (duration + 0.1)), sr);
+    A.schedule(ctx, project, cues, 0, duration, buffers);
+    const buf = await ctx.startRendering();
+    return A.wav(buf);
+  };
+  A.wav = function (buf) {
+    const n = buf.length, ch = buf.numberOfChannels, out = new DataView(new ArrayBuffer(44 + n * ch * 2));
+    const w = (o, s) => { for (let i = 0; i < s.length; i++) out.setUint8(o + i, s.charCodeAt(i)); };
+    w(0, "RIFF"); out.setUint32(4, 36 + n * ch * 2, true); w(8, "WAVE"); w(12, "fmt "); out.setUint32(16, 16, true); out.setUint16(20, 1, true);
+    out.setUint16(22, ch, true); out.setUint32(24, buf.sampleRate, true); out.setUint32(28, buf.sampleRate * ch * 2, true); out.setUint16(32, ch * 2, true);
+    out.setUint16(34, 16, true); w(36, "data"); out.setUint32(40, n * ch * 2, true);
+    const data = []; for (let c = 0; c < ch; c++) data.push(buf.getChannelData(c));
+    let o = 44;
+    for (let i = 0; i < n; i++) for (let c = 0; c < ch; c++) { const v = Math.max(-1, Math.min(1, data[c][i])); out.setInt16(o, v < 0 ? v * 0x8000 : v * 0x7fff, true); o += 2; }
+    return new Blob([out.buffer], { type: "audio/wav" });
+  };
+  // decode the imported files once per context type
+  // `files` maps an asset name to its URL; the result maps the same name to its decoded buffer (null when it cannot be read)
+  A.decode = async function (ctx, files) {
+    const out = {};
+    for (const [name, url] of Object.entries(files || {})) {
+      if (!name || !url) continue;
+      try { const r = await fetch(url); out[name] = await ctx.decodeAudioData(await r.arrayBuffer()); } catch (e) { out[name] = null; }
+    }
+    return out;
+  };
+})();
