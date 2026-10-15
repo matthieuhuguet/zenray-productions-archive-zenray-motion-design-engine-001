@@ -4,8 +4,8 @@
 # nothing of the reference can leak into a render); the page mixes the rendered stems for an instant preview of the level and tilt values.
 #   MusicStudio.py serve            http://127.0.0.1:3105/
 #   MusicStudio.py render --slug S --set bpm=100 --set bass=6     one render from the command line (same code path as the page)
-# The base of a variation is the RAW chain version of the member (the trim's base): the calibration of the 99.9 gate is not stored as parameters
-# yet, so a variation is a raw render and the page says so. FR : studio de variations musicales, rendu par le moteur sans acces a la reference.
+# The base of a variation is the RAW chain version of the member (the trim's base). The preview quality is a raw render (the page says so); the
+# final quality (15 October 2026) replays the stored calibration (calibration.npz of the trim version) when the member has one, then polishes. FR : studio de variations musicales, rendu par le moteur sans acces a la reference.
 from __future__ import annotations
 
 import argparse
@@ -193,9 +193,22 @@ def cook_variation(slug: str, version: str, values: dict, quality: str = "previe
             pc, t1 = PL.cfg(), time.time()
             report = {}
             tv = next((m["trimVersion"] for m in members() if m["slug"] == slug), None)
+            raws = {st: np.asarray(out["stems"][st] if st != "mix" else out["mix"], np.float32) for st in (*STEMS, "mix")}
+            for st, raw in raws.items():
+                sf.write(str(work / f"raw-{st}.wav"), raw, sr, subtype="FLOAT")
+            # 15 October 2026: the stored 99.9 calibration (numbers, calibration.npz of the trim version) is replayed on the exact render BEFORE the
+            # polish, time-warped with the tempo and moved with the transposition of the chosen values; a missing calibration is reported, never hidden.
+            # FR : la calibration finale rejouee depuis ses nombres, avant le polish.
+            calibrated, cal_info = False, None
+            if tv:
+                try:
+                    out, cal_info = _replay_calibration(slug, version, tv, prm, out, score, P)
+                    calibrated = cal_info is not None
+                except Exception as e:  # noqa: BLE001
+                    res["calibrationError"] = f"{type(e).__name__}: {e}"
+            res["calibrated"] = calibrated
             for st in (*STEMS, "mix"):
                 raw = np.asarray(out["stems"][st] if st != "mix" else out["mix"], np.float32)
-                sf.write(str(work / f"raw-{st}.wav"), raw, sr, subtype="FLOAT")
                 # the cleanliness criteria are RELATIVE to OUR calibrated version of the same member (a hi-hat stem has crackle bursts by the
                 # detector's definition): its own audio, never the reference's. FR : critere relatif a notre version calee, pas a la reference.
                 ref = None
@@ -215,8 +228,9 @@ def cook_variation(slug: str, version: str, values: dict, quality: str = "previe
                     y, rep = y2, {**rep2, "stages": {**rep["stages"], **{f"extra:{k}": v for k, v in rep2["stages"].items()}}}
                 sf.write(str(work / f"{st}.wav"), np.asarray(y, np.float32), sr, subtype="FLOAT")
                 report[st] = {"clean": rep["clean"], "cleanAbsolute": rep["cleanAbsolute"], "stages": rep["stages"]}
-            res.update(polished=True, polishSeconds=round(time.time() - t1, 2), polish=report,
-                       note="exact voices, then the production polish of every stem and of the mix; the 99.9 calibration is not replayable from parameters yet")
+            res.update(polished=True, polishSeconds=round(time.time() - t1, 2), polish=report, calibrationInfo=cal_info,
+                       note=("exact voices, the stored 99.9 calibration replayed from its numbers, then the production polish of every stem and of the mix"
+                             if calibrated else "exact voices, then the production polish of every stem and of the mix; no stored calibration was replayed"))
         else:
             for st in STEMS:
                 sf.write(str(work / f"{st}.wav"), np.asarray(out["stems"][st], np.float32), sr, subtype="FLOAT")
@@ -227,6 +241,28 @@ def cook_variation(slug: str, version: str, values: dict, quality: str = "previe
 
 
 COOK_FINAL = None
+
+
+def _replay_calibration(slug: str, base_version: str, trim_version: str, prm: dict, out: dict, score: dict, P: dict) -> tuple[dict, dict | None]:
+    """The calibration of the member's trim version replayed on `out`, the exact render of `prm` (the base version with the slider values).
+    Returns (out, info), or (out, None) when the trim version stores no calibration. The tempo ratio and the transposition are RELATIVE to the base
+    version the calibration was made on, so the default values give the calibrated version back and a changed value moves the calibration with it."""
+    import ResynthMusic as RM
+    from zrmd.audio import calibration as CAL
+    trim_dir = bench_of(slug) / trim_version
+    tp = json.loads((trim_dir / "params.json").read_text(encoding="utf-8"))
+    if not tp.get("calibration"):
+        return out, None
+    cal_file = CAL.locate(tp, trim_dir)
+    if not cal_file.is_file():
+        raise CAL.CalibrationError(f"calibration file not found: {cal_file}")
+    base = base_params(slug, base_version)
+    ratio = float(base["tempo"]["bpm"]) / float(prm["tempo"]["bpm"])
+    semi = float(prm.get("transposeSemitones", 0.0)) - float(base.get("transposeSemitones", 0.0))
+    t0 = time.time()
+    got = RM.apply_calibration({**prm, "calibration": tp["calibration"]}, out, score, P, trim_dir, ratio, semi)
+    return got, {"timeRatio": round(ratio, 6), "semitones": round(semi, 4), "seconds": round(time.time() - t0, 1),
+                 "trimVersion": trim_version, "signals": got.get("calibrationInfo")}
 
 
 # ------------------------------------------------------------------------------------------------ http
@@ -367,6 +403,7 @@ def main() -> int:
     r = sub.add_parser("render")
     r.add_argument("--slug", required=True)
     r.add_argument("--set", action="append", default=[], help="id=value (see params/music-studio.json)")
+    r.add_argument("--quality", choices=QUALITIES, default="preview", help="preview: compiled kernel, raw; final: exact voices, stored calibration, polish")
     a = ap.parse_args()
     if a.cmd == "serve":
         srv = ThreadingHTTPServer((SERVER["host"], SERVER["port"]), Handler)
@@ -380,7 +417,7 @@ def main() -> int:
     if not m:
         raise SystemExit(f"unknown member {a.slug}")
     values = {k: float(v) for k, v in (s.split("=", 1) for s in a.set)}
-    print(json.dumps(cook_variation(a.slug, m["baseVersion"], values), indent=1))
+    print(json.dumps(cook_variation(a.slug, m["baseVersion"], values, a.quality), indent=1))
     return 0
 
 

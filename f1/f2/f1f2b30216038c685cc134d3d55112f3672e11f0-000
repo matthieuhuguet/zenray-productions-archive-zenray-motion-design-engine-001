@@ -58,6 +58,31 @@ def run() -> int:
     check("RED: an out-of-range value is refused", refuses(lambda: MS.apply_values(prm, {"bpm": 400})))
     check("RED: an unknown quality is refused before any cook", refuses(lambda: MS.cook_variation(MS.members()[0]["slug"], MS.members()[0]["baseVersion"], {}, "ultra")))
     check("the qualities are the preview and the polished final", MS.QUALITIES == ("preview", "final"))
+    # 15 October 2026: the stored calibration is replayed by the final quality; its absence is reported, never replaced by a guess.
+    # FR : la calibration stockee est rejouee par la qualite finale ; son absence est dite, jamais remplacee par une valeur devinee.
+    import tempfile
+    from zrmd.audio import calibration as CAL
+    with tempfile.TemporaryDirectory() as d:
+        bench = Path(d) / "m" / "music-bench"
+        (bench / "V_002").mkdir(parents=True)
+        (bench / "V_001").mkdir(parents=True)
+        (bench / "V_001" / "params.json").write_text(json.dumps(prm))
+        (bench / "V_002" / "params.json").write_text(json.dumps({**prm, "trim": {"base": "V_001"}}))
+        old_bench = MS.bench_of
+        MS.bench_of = lambda slug: bench
+        try:
+            keep_out = {"stems": {}, "mix": None, "sr": 44100}
+            got, info = MS._replay_calibration("m", "V_001", "V_002", prm, keep_out, {}, {})
+            check("a trim version without calibration gives the render back and no info", got is keep_out and info is None)
+            (bench / "V_002" / "params.json").write_text(json.dumps({**prm, "calibration": {"file": "calibration.npz", "version": "V_002"}}))
+            named = ""
+            try:
+                MS._replay_calibration("m", "V_001", "V_002", prm, keep_out, {}, {})
+            except CAL.CalibrationError as e:
+                named = str(e)
+            check("RED: a calibration block whose file is missing raises and names the file", "calibration.npz" in named, named)
+        finally:
+            MS.bench_of = old_bench
     check("the interface exposes at most twelve values (4 primary, 8 secondary)", len(MS.SLIDERS) <= 12, len(MS.SLIDERS))
     drums = {"kick": {"kind": "drum", "macros": {"gainDb": 1.5, "timeScale": 1.0}}, "snare": {"kind": "drum", "macros": {"gainDb": -2.0, "timeScale": 1.2}},
              "clap": {"kind": "drum", "macros": {"gainDb": 0.0, "timeScale": 1.0}}, "hatClosed": {"kind": "drum", "macros": {"gainDb": 0.0, "timeScale": 1.0}},

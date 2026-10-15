@@ -663,7 +663,7 @@ def _runs_d(runs: list[np.ndarray]) -> str:
 
 
 def refine_vertices(layers: list[dict], target: np.ndarray, deltas=(0.25, 0.12, 0.06), only: list[int] | None = None, log=None,
-                    max_seconds: float = 1e9) -> dict:
+                    max_seconds: float = 1e9, max_vertices: int = 300) -> dict:
     """Move the vertices of the free-form layers along their outward normal, one at a time, by the steps in `deltas` (px), keeping a move when the
     EXACT render of the layers that overlap it lowers the sum of CIEDE2000^2 around the vertex. The contour of a soft alpha is placed to about a
     tenth of a pixel; at an edge of contrast 50 a tenth of a pixel is a dE of 4, so the vertices are where the last fidelity is. FR : sommets au
@@ -691,7 +691,10 @@ def refine_vertices(layers: list[dict], target: np.ndarray, deltas=(0.25, 0.12, 
             n = len(run)
             if n < 4:
                 continue
-            for vi in range(n):
+            # a hand-drawn stroke has thousands of vertices: a stride keeps the cost per layer bounded (every k-th vertex moves, the others follow
+            # their neighbours' polyline), the long contours are the ones that matter least per vertex. FR : foulee sur les contours tres longs.
+            stride = max(1, -(-n // max_vertices))
+            for vi in range(0, n, stride):
                 prev, nxt = run[vi - 1], run[(vi + 1) % n]
                 tan = nxt - prev
                 nrm = np.array([tan[1], -tan[0]])

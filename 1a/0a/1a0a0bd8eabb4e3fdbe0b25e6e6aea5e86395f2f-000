@@ -1,0 +1,73 @@
+# ZenRay Motion Design 1.2.0 (15 October 2026)
+
+Suite de `docs/RELEASE-1.1.0.md`. Le numéro vit une seule fois dans `params/v1-app.json` (`release`) et dans `pyproject.toml`. Détail technique : `docs/ARCHITECTURE.md` section 18 (le module vecteur en pile de calques). (15 October 2026)
+
+## Ce que 1.2.0 ajoute (15 October 2026)
+
+| Chantier | Livré | Preuve |
+|---|---|---|
+| Vecteur, multi-layering | une scène est peinte par une PILE de calques (poursuite résiduelle, rendu skia exact, contours sous-pixel, flou fin, primitives par moments, polissage des sommets, rondes prolonger et polir, profils direct et pyramide) ; la valeur du module est la fidélité composite en CIEDE2000 | `tests/test_layerfit.py`, `tests/test_orchestrator.py`, `Scripts/VectorLayers.py` |
+| Édition procédurale d'une pile | `view.adjust` (teinte, saturation, luminosité, contraste, douceur), groupes et rôles de calques édités comme des unités | `tests/test_vector_v1.py` |
+| Banque | `datasets/vector/bank.json` : formes, douceurs, rôles, polices, recettes d'effets | `layerfit.bank()` |
+| Musique, qualité finale | l'aperçu instantané est suivi du rendu final (voix exactes puis polish de chaque piste et du mix, critères relatifs à NOTRE version calée) | `tests/test_music_studio.py`, `Scripts/MusicStudio.py` |
+
+## Vecteur : composite des douze références (15 October 2026)
+
+| référence | composite avant (trace unique) | composite maintenant | ΔE moyen | à moins d'1 JND | calques | version |
+|---|---|---|---|---|---|---|
+| claude-opus-5-5 | 35.34 | **85.17** | 3.146 | 12.1 % | 953 | V_002 |
+| fin-4 | 71.42 | **99.98** | 0.027 | 99.7 % | 5516 | V_006 |
+| flora-agents-on-canvas | 79.12 | **98.09** | 0.673 | 74.8 % | 1994 | V_003 |
+| interface | 97.73 | **99.94** | 0.056 | 98.7 % | 13961 | V_007 |
+| kardashev-0-7 | 93.13 | **98.92** | 0.701 | 78.8 % | 2697 | V_004 |
+| memo | 35.44 | **99.70** | 0.361 | 94.1 % | 2095 | V_003 |
+| motion-opus-5-5 | 84.09 | **99.90** | 0.093 | 97.7 % | 17924 | V_006 |
+| onekey-pro-2 | 99.48 | **99.98** | 0.021 | 99.7 % | 5123 | V_003 |
+| paper-mono-code | 62.31 | **99.50** | 0.374 | 89.9 % | 6000 | V_003 |
+| x-anabology-2105325733312884869 | 33.19 | **99.91** | 0.104 | 98.3 % | 17624 | V_011 |
+| x-anabology-2106157622986748377 | 68.80 | **99.76** | 0.181 | 95.9 % | 5999 | V_005 |
+| yt-4Q-o_ylnVnc | -7.31 | **97.40** | 0.830 | 71.2 % | 6000 | V_004 |
+
+## Les six modules, douze références, à cette date (15 October 2026)
+
+reference                          rhythm  image(ceil) vector(ceil) music   sfx    mix
+claude-opus-5-5                    100.00*  96.39 (99.74)  85.17 ( -- ) 100.00*  99.97* 100.00*
+fin-4                              100.00*  97.19 (99.87)  99.98*( -- )   --      --      --   
+flora-agents-on-canvas             100.00*  97.79 (99.82)  98.09 ( -- ) 100.00*  99.98* 100.00*
+interface                          100.00*  93.24 (99.41)  99.94*( -- ) 100.00*  99.98* 100.00*
+kardashev-0-7                      100.00*  96.39 (99.58)  98.92 ( -- ) 100.00*  99.99* 100.00*
+memo                               100.00*  95.63 (99.95)  99.70*( -- ) 100.00*  99.98*  99.99*
+motion-opus-5-5                    100.00*  98.59 (99.90)  99.90*( -- ) 100.00*  99.98* 100.00*
+onekey-pro-2                       100.00*  97.32 (99.75)  99.98*( -- ) 100.00*  99.99*  99.98*
+paper-mono-code                    100.00*  94.03 (99.42)  99.50*( -- ) 100.00*  99.98* 100.00*
+x-anabology-2105325733312884869    100.00*  94.37 (99.40)  99.91*( -- ) 100.00*  99.99  100.00 
+x-anabology-2106157622986748377    100.00*  94.03 (99.57)  99.76*( -- ) 100.00*   --      --   
+yt-4Q-o_ylnVnc                     100.00*  97.52 (99.82)  97.40 ( -- ) 100.00*   --      --   
+
+## Ce qui n'est PAS atteint, dit sans arrondir (15 October 2026)
+
+- **Le vecteur atteint 99,9 % sur les scènes nettes** (UI, texte, aplats) à condition de laisser la pile grandir : de 5 000 à 18 000 calques selon la scène, 25 minutes à 5 heures de calcul. Les scènes à texture ou à bruit dans l'aplat (claude-opus-5-5 : croquis sur papier ; yt-4Q : remplissage rose moucheté ; flora et kardashev : champs doux et étoiles) sont en dessous et montent lentement : la limite est le temps de calcul et la taille de la pile, pas une impossibilité mesurée.
+- **Des milliers de calques sont une fidélité, pas une édition fine.** Les groupes, les rôles et `view.adjust` donnent la main sur la pile ; changer UN mot ou UNE forme précise d'une scène reste le travail du calque sémantique de la trace unique (le texte, les formes nettes), qui n'est pas remplacé.
+- **Le rendu de référence est celui de skia à 1x** (celui des navigateurs) : la `render.png` d'une pile est écrite à 1x aussi ; à 4x de suréchantillonnage elle ne vaut plus la même mesure.
+- **La musique** : la qualité finale polit chaque piste mais le calage 99,9 n'est pas rejoué depuis ses paramètres (`calibration.npz` n'est écrit pour aucun membre) ; pour la batterie, le critère de crépitement reste au bord de sa limite.
+- **Rythme, image, effets, mixage** : voir `docs/RELEASE-1.1.0.md` ; rien n'a bougé ici.
+
+## Commandes (15 October 2026)
+
+```bash
+cd /Users/zenray/Create/Build/Productions/GithubProductions/ZenRayMotionDesign
+PY=/Users/zenray/.venvs/zenray-motion/bin/python
+$PY -I Scripts/VectorLayers.py --slug interface --max-layers 6000 --max-seconds 10800 --stop-de 0.2    # une scène, deux profils, polissage
+$PY -I Scripts/VectorLayers.py --slug interface --resume --max-layers 18000                            # la prolonger
+$PY -I Scripts/VectorLayers.py --slug interface --adopt                                                # le module lit la meilleure version
+$PY -I tests/test_layerfit.py                                                                          # la poursuite, vert et rouge
+```
+
+## Chantiers de recherche à noter (15 October 2026)
+
+1. **Texte exact par police** : une scène de texte coûte des milliers de calques de bord ; la police exacte (la banque `datasets/vector/bank.json`, `zrmd/vector/fontfit.py`) donnerait des contours justes à la source. Mesurer d'abord quelle famille correspond à interface (serif italique), puis comparer le composite à nombre de calques égal.
+2. **Instances de glyphes** : un glyphe répété à la même taille se tracerait une fois et s'instancierait (position sous-pixel recalée) ; c'est le levier de taille de pile sur le texte monospace (paper-mono-code).
+3. **Fonds à texture** (claude-opus-5-5) : la pyramide perd contre le direct ; une première passe de champ lisse non paramétrique (profils de lignes et de colonnes) puis la poursuite sur le résidu.
+4. **Recettes d'effets à plusieurs calques** (ombre, lueur, liseré de `bank.json`, non construites) comme candidats uniques de la poursuite.
+5. **Calage musical rejouable** : `calibration.npz` pour chaque membre (re-calage), puis `calibration.apply` dans la qualité finale du studio.
+6. **Droits et publication** : inchangé, validés par une personne (`docs/RELEASE-1.1.0.md`).

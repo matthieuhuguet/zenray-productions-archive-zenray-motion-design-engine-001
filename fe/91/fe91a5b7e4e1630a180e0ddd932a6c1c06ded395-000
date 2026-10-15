@@ -110,7 +110,7 @@ def run(slug: str, max_layers: int | None = None, max_seconds: float | None = No
 
     def polish():
         LF.refine(layers, piece, sweeps=1)
-        v = LF.refine_vertices(layers, piece, deltas=(0.2, 0.1, 0.05), max_seconds=max(30.0, deadline - time.time()))
+        v = LF.refine_vertices(layers, piece, deltas=(0.2, 0.1, 0.05), max_seconds=min(1500.0, max(30.0, deadline - time.time())))
         LF.refine(layers, piece, sweeps=1)
         return v
     polish()
