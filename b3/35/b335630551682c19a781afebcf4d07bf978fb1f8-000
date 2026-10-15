@@ -1,28 +1,26 @@
-# ZenRay Motion Design (engine)
+# ZenRay Studio
 
-Deterministic motion reproduction: a reference video goes in, every module (cuts, image, music, sound effects, mix) is rebuilt by code and scored against the reference. No generative model. Details: `docs/ARCHITECTURE.md`.
+Make a 30 second motion film (or a vertical short of your 3D renders) by changing values, in real time, and export it to MP4 with its music and sound effects. Nothing is reproduced pixel by pixel: every scene is a template, every visible value is a parameter, the browser computes everything live. (15 October 2026)
 
-## Start (14 October 2026)
+## Start (15 October 2026)
 
 ```bash
-# the GUI: drop a video, run every module, read the scores and open the results
-/Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/Orchestrate.py serve       # http://127.0.0.1:3104/
-service/install-orchestrator.sh                                                      # optional: keep it running at login
-
-# the same thing from a terminal or any agent (one JSON object per command)
-python -I Scripts/Orchestrate.py ingest ~/Movies/clip.mp4
-python -I Scripts/Orchestrate.py run --slug clip --detach
-python -I Scripts/Orchestrate.py status --slug clip
-python -I Scripts/Orchestrate.py report                                              # static web report in the workshop
-python -I Scripts/RunTests.py                                                        # every test, red and green proofs
+open /Users/zenray/Create/Build/Productions/GithubProductions/ZenRayMotionDesign/studio/start.command   # starts the server and opens http://127.0.0.1:3104/
 ```
 
-Everything tunable lives in `params/orchestrator.json` (pipeline, targets, port, import rules) and `settings.json` (paths). The reference cache is never archived or published. Assets archiving: `node Scripts/AssetsLink.mjs register | inventory | archive`.
+or `python3 studio/server.py` then open `http://127.0.0.1:3104/`. The guide is `docs/STUDIO.md`. (15 October 2026)
 
-## Release 1.2.0 (15 October 2026)
+| Where | What |
+|---|---|
+| `studio/runtime/zs-templates.js` | the 11 motion templates (title card, prompt and status, kinetic words, big count, list, colour slam, orbit word, gradient word, logo, end card, 3D render showcase), each with at most 4 essential, 8 advanced and 16 expert values |
+| `studio/runtime/zs-core.js` | builds a project into DOM and one GSAP timeline (the HyperFrames contract: the same page plays live and renders to MP4) |
+| `studio/runtime/zs-audio.js` | generated music and synthesised sound effects (Web Audio), live and offline for the export |
+| `studio/web/` | the studio page |
+| `studio/server.py` | stores projects and media, exports (HyperFrames render, ffmpeg mux, loudness to -14 LUFS) |
+| `studio/presets/` | the starting projects: a 30 s launch film (16:9) and a 3D short (9:16) |
+| `studio/params/studio.json` | port, paths, fonts, export settings |
+| `studio/tests/` | `node studio/tests/test_runtime.mjs` and `python3 studio/tests/test_studio.py` (green and red, about 10 s) |
 
-Multi-layer vector stacks (up to 18,000 layers per scene, edited by group, role and whole-stack adjustments), the music studio's final quality replays the stored calibration under a fidelity guard, and the defect found when a calibration is moved to another tempo: `docs/RELEASE-1.2.0.md`. Release number: `params/v1-app.json` and `pyproject.toml`. (15 October 2026)
+## Labs (15 October 2026)
 
-## Release 1.1.0 (14 October 2026)
-
-State of the six modules, measured ceilings, what is not reached and the research chantiers to resume: `docs/RELEASE-1.1.0.md`. The release number lives once in `params/v1-app.json` (`release`) and is checked against `pyproject.toml`. (14 October 2026)
+Everything that reproduced references pixel by pixel or sample by sample (vector stacks, music resynthesis and calibration, image fields, rhythm models, SFX corpus, the V1 orchestrator app) moved to `labs/`. It still runs from there (`labs/Scripts/...`, the old app on port 3114) and its history is in `docs/RELEASE-1.1.0.md`, `docs/RELEASE-1.2.0.md` and `docs/ARCHITECTURE.md`. The root `mcp` and `service` are links into `labs/` so the MCP servers and the `com.zenray.motion` LaunchAgent keep their paths. (15 October 2026)

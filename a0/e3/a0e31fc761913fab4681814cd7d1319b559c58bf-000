@@ -1,0 +1,35 @@
+# ZenRay Studio, le guide (15 October 2026)
+
+Le studio sert à fabriquer vite un film de motion design (30 s en 16:9) ou un short vertical qui montre un travail 3D, en changeant des valeurs dont l'effet se voit et s'entend aussitôt. Rien n'y reproduit une vidéo de référence : la structure d'un film de lancement a été réécrite en modèles paramétriques, et le résultat se modifie en touchant ses paramètres. (15 October 2026)
+
+## Faire un film (15 October 2026)
+
+1. Lancer `studio/start.command` (ou `python3 studio/server.py`) puis ouvrir `http://127.0.0.1:3104/`. Le premier projet, « Film de lancement 30 s », se crée tout seul. (15 October 2026)
+2. **Nouveau** propose les deux modèles de départ : le film de lancement (16:9, dix scènes) et le short 3D (9:16, un titre, trois rendus, les outils, une carte de fin). **Dupliquer** copie un projet pour essayer sans toucher l'original. (15 October 2026)
+3. À gauche, les scènes : un clic place la tête de lecture dessus et ouvre ses réglages ; ↑ ↓ réordonnent, Dupliquer et Supprimer agissent sur la scène ; « Ajouter » insère un modèle après la scène choisie. (15 October 2026)
+4. À droite, l'onglet **Scène** montre la durée et les valeurs du modèle en trois paliers : Essentiel (4 au plus), Avancé (8 au plus), Expert (16 au plus). Le petit ↺ revient à la valeur par défaut ; une valeur marquée « (thème) » suit le thème tant qu'on ne la change pas. **Thème** porte les couleurs et les polices de tout le film. (15 October 2026)
+5. **Musique** : générée en direct (tempo, couleur majeure ou mineure, énergie de la batterie, volume, puis tonalité, accords, brillance, nappe, basse, arpège, réverbération, variante), ou un fichier importé (volume, fondus, début, vitesse), ou aucune. **Effets** : les scènes posent leurs effets sur leurs mouvements (souffle, pop, clic, frappe, montée, impact, scintillement) ; on règle le volume, la brillance et la part de chaque famille. (15 October 2026)
+6. **Médias** : déposer les rendus 3D (vidéo ou image) et les musiques ; la scène « Rendu 3D en vitrine » les montre dans un cadre ou plein écran, avec une poussée de caméra et une légende. (15 October 2026)
+7. Barre d'espace : lecture et pause ; cliquer la piste en bas : aller à un instant ; Cmd+Z et Cmd+Maj+Z : annuler et rétablir. Tout s'enregistre seul. (15 October 2026)
+8. **Exporter la vidéo** : le navigateur rend le son, HyperFrames rend les images de la même page, ffmpeg assemble et met le son à -14 LUFS. « brouillon » exporte plus vite. Le fichier va dans `~/.claude/tmp/tmp-zenray-motion-design/studio-v1/projects/<projet>/exports/`. (15 October 2026)
+
+## Ce qui a été mesuré (15 October 2026)
+
+| Mesure | Valeur |
+|---|---|
+| reconstruction de la composition après une modification | quelques millisecondes (DOM et timeline GSAP), l'aperçu suit pendant qu'on glisse un curseur |
+| export du film de lancement, 30 s, 1920 x 1080, qualité brouillon | 15 s, 3,0 Mo, son à -15,5 LUFS intégrés |
+| export du short 3D, 23,5 s, 1080 x 1920, avec une vidéo importée | 12,7 s, 6,6 Mo, la vidéo suit la timeline |
+| rendu du son complet (musique et effets) dans le navigateur | moins de 3 s |
+| tests | `node studio/tests/test_runtime.mjs` 54 contrôles, `python3 studio/tests/test_studio.py` 17 contrôles (vert et rouge), environ 7 s |
+
+## Ajouter un modèle (15 October 2026)
+
+Un modèle est un objet `ZS.register({ id, label, group, duration, params, build })` dans `studio/runtime/zs-templates.js`. `params` liste les valeurs (clé, libellé, type `text|lines|number|color|font|select|bool|media`, défaut, bornes, palier 1, 2 ou 3) ; un défaut `"@accent"` lit le thème. `build(ctx)` crée le DOM dans `ctx.el` et pose ses animations sur `ctx.tl` à partir de `ctx.t0` ; `ctx.u` est l'unité de taille (1 px à 1080 de petit côté), `ctx.cue(t, type, valeurs)` place un effet sonore. Toute valeur visible doit venir de `ctx.p` : c'est la règle qui garde le résultat modifiable. Le test `test_runtime.mjs` refuse un modèle au-delà de 4, 8 et 16 valeurs. (15 October 2026)
+
+## Limites dites (15 October 2026)
+
+- Les modèles reprennent la structure d'un film de lancement avec un contenu ZenRay par défaut ; ils ne copient ni logo ni marque d'un tiers. (15 October 2026)
+- La musique générée est simple (nappe, basse, batterie, arpège) : agréable et cohérente avec le tempo, elle ne remplace pas une musique composée ; pour un short public, importer un fichier dont on a les droits. (15 October 2026)
+- Le son de l'aperçu n'est pas normalisé ; l'export l'est (-14 LUFS). (15 October 2026)
+- Un seul export à la fois. Les polices Anthropic sont lues depuis `~/Library/Fonts` : sur une autre machine, le studio retombe sur les autres familles. (15 October 2026)
