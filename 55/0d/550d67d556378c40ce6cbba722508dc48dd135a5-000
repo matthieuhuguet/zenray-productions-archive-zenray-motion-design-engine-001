@@ -26,6 +26,11 @@ export async function montageView(root, { id, q, config }) {
   let playing = false
   let t0 = 0
   let pps = 80
+  // precise time (15 October 2026): m:ss.cc everywhere, typed or read; the position under the pointer in seconds
+  const fmtT = (x) => { const m = Math.floor(x / 60), s2 = x - m * 60; return `${m}:${s2.toFixed(2).padStart(5, '0')}` }
+  const parseT = (v) => { v = String(v).trim().replace(',', '.'); const m = /^(\d+):(\d+(?:\.\d+)?)$/.exec(v); return m ? +m[1] * 60 + +m[2] : isFinite(+v) ? +v : NaN }
+  let scrubbing = false
+  const tAt = (e) => { const inner = $('.tlin', tl); const r = (inner || tl).getBoundingClientRect(); return Math.max(0, Math.round((e.clientX - r.left) / pps * 30) / 30) }
   let raf = 0
   let stopJob = null
   let saveTimer = 0
@@ -96,12 +101,16 @@ export async function montageView(root, { id, q, config }) {
         <div class="pvwrap"><div class="pv" id="pv" data-testid="preview"></div></div>
         <div class="row transport" style="margin-top:10px">
           <button class="icon-btn" id="play" type="button" aria-label="Lecture" data-testid="play">▶</button>
-          <span class="num" id="clock">0:00.0 / 0:00.0</span>
+          <button class="btn" id="prevF" type="button" title="Image précédente (←), une seconde avec Maj">⏮︎</button>
+          <input class="num timeIn" id="clockIn" type="text" value="0:00.00" title="Tape un instant (1:23.5 ou 83.5) puis Entrée" />
+          <span class="num note" id="clock">/ 0:00.0</span>
+          <button class="btn" id="nextF" type="button" title="Image suivante (→), une seconde avec Maj">⏭︎</button>
+          <span class="note" title="Espace : lecture · glisser dans la règle ou la tête de lecture : parcourir · ← → : une image · Maj + ← → : une seconde · Cmd + molette : zoom · Début / Fin" style="cursor:help">Raccourcis ⓘ</span>
           <span class="grow"></span>
           <button class="btn" id="split" type="button" title="Couper le clip sélectionné à la tête de lecture (S)">Couper</button>
           <button class="btn" id="dup" type="button" title="Dupliquer (D)">Dupliquer</button>
           <button class="btn" id="del" type="button" title="Supprimer (Suppr)">Supprimer</button>
-          <button class="btn" id="zout" type="button" aria-label="Zoom arrière">−</button><button class="btn" id="zin" type="button" aria-label="Zoom avant">+</button>
+          <button class="btn" id="zout" type="button" aria-label="Zoom arrière" title="Dézoomer (Cmd + molette)">−</button><button class="btn" id="zfit" type="button" title="Tout le montage dans la piste">Ajuster</button><button class="btn" id="zin" type="button" aria-label="Zoom avant" title="Zoomer (Cmd + molette)">+</button>
         </div>
         <div class="tl" id="tl" data-testid="timeline"></div>
       </section>
@@ -246,11 +255,16 @@ export async function montageView(root, { id, q, config }) {
   // ------------------------------------------------------------------------------------------------ timeline
   const RULER_H = 22
   function drawTimeline() {
-    const total = Math.max(end() + 5, 20)
+    const total = Math.max(end() + 5, ((tl.clientWidth || 600) - 16) / pps)
     const width = Math.ceil(total * pps)
+    // a labelled tick at least every 70 px, minor ticks between (15 October 2026)
     const ticks = []
-    const step = pps >= 100 ? 1 : pps >= 50 ? 2 : pps >= 25 ? 5 : 10
-    for (let s = 0; s <= total; s += step) ticks.push(`<span style="left:${s * pps}px">${clock(s).replace(/\.0$/, '')}</span>`)
+    const STEPS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120]
+    const step = STEPS.find((x) => x * pps >= 70) || 120, minor = step / (step >= 1 && step % 5 === 0 ? 5 : step >= 1 ? 4 : 5)
+    for (let s = 0, n = 0; s <= total + 1e-6 && n < 4000; s = Math.round((s + minor) * 1000) / 1000, n++) {
+      const major = Math.abs(s / step - Math.round(s / step)) < 1e-6
+      ticks.push(major ? `<span class="maj" style="left:${s * pps}px">${fmtT(s).replace(/\.00$/, '')}</span>` : `<i style="left:${s * pps}px"></i>`)
+    }
     tl.innerHTML = `<div class="tlin" style="width:${width}px;position:relative">
       <div class="ruler" id="ruler" style="width:${width}px">${ticks.join('')}</div>
       ${spec.tracks.map((tr) => `<div class="track" data-track="${esc(tr.id)}" data-kind="${tr.kind}" style="width:${width}px">
@@ -261,7 +275,7 @@ export async function montageView(root, { id, q, config }) {
     return `<div class="clip ${kind} ${c.id === selected ? 'sel' : ''}" data-clip="${esc(c.id)}" style="left:${left}px;width:${w}px" title="${esc(c._title || c.text || '')}">
             <span class="h l"></span>${esc(tr.kind === 'text' ? c.text : c._title || c.source?.motion || 'clip')}<span class="h r"></span></div>`
   }).join('')}</div>`).join('')}
-      <div class="playhead" id="ph" style="left:${t * pps}px"></div></div>
+      <div class="playhead" id="ph" style="left:${t * pps}px"><b class="grip"></b></div><div class="hoverLine" id="hov" hidden><b></b></div></div>
       <div class="row" style="margin-top:8px">${['video', 'text', 'audio'].map((k) => `<button class="btn" type="button" data-addtrack="${k}">+ piste ${{ video: 'vidéo', text: 'texte', audio: 'son' }[k]}</button>`).join('')}</div>`
     $$('[data-addtrack]', tl).forEach((b) => b.addEventListener('click', () => {
       if (spec.tracks.length >= tcfg.limits.tracks) return toast(`Maximum ${tcfg.limits.tracks} pistes.`, true)
@@ -278,9 +292,14 @@ export async function montageView(root, { id, q, config }) {
     return round(near ?? Math.round(v / 0.05) * 0.05)
   }
   tl.addEventListener('pointerdown', (e) => {
-    const ruler = e.target.closest('#ruler')
-    if (ruler) { const r = ruler.getBoundingClientRect(); seek(clamp((e.clientX - r.left) / pps, 0, 1e6)); return }
     const el = e.target.closest('.clip')
+    if (!el && (e.target.closest('#ruler') || e.target.closest('#ph') || e.target.closest('.track'))) {
+      // scrub: the frame follows the pointer until it is released (snapped to 1/30 s)
+      scrubbing = true
+      try { tl.setPointerCapture?.(e.pointerId) } catch { /* synthetic pointer */ }
+      if (playing) playBtn.click()
+      seek(tAt(e)); return
+    }
     if (!el) return
     const found = findClip(el.dataset.clip)
     if (!found) return
@@ -292,6 +311,9 @@ export async function montageView(root, { id, q, config }) {
     drawInspector()
   })
   tl.addEventListener('pointermove', (e) => {
+    const hov = $('#hov', tl)
+    if (hov) { const tt = tAt(e); hov.hidden = false; hov.style.left = `${tt * pps}px`; hov.firstChild.textContent = fmtT(tt) }
+    if (scrubbing) { seek(tAt(e)); return }
     if (!drag) return
     const dx = (e.clientX - drag.x0) / pps
     if (Math.abs(e.clientX - drag.x0) > 2) drag.moved = true
@@ -320,6 +342,7 @@ export async function montageView(root, { id, q, config }) {
     drag.el.style.width = `${Math.max(6, clipDur(tr, c) * pps)}px`
   })
   const endDrag = (e) => {
+    if (scrubbing) { scrubbing = false; return }
     if (!drag) return
     const d = drag
     drag = null
@@ -513,9 +536,14 @@ export async function montageView(root, { id, q, config }) {
       })
     })
     nodes.forEach((n, cid) => { if (!live.has(cid)) { n.box.remove(); nodes.delete(cid) } })
-    $('#clock', root).textContent = `${clock(t)} / ${clock(end())}`
+    $('#clock', root).textContent = `/ ${fmtT(end())}`
+    const ci = $('#clockIn', root)
+    if (ci && document.activeElement !== ci) ci.value = fmtT(t)
     const phEl = $('#ph', tl)
     if (phEl) phEl.style.left = `${t * pps}px`
+    // the playhead stays in view while playing or stepping
+    const x = t * pps + 8
+    if (x < tl.scrollLeft + 20 || x > tl.scrollLeft + tl.clientWidth - 40) tl.scrollLeft = Math.max(0, x - tl.clientWidth * 0.3)
   }
   function seek(s) {
     t = clamp(s, 0, Math.max(end(), 0))
@@ -571,9 +599,32 @@ export async function montageView(root, { id, q, config }) {
     tr.clips.push(right)
     redrawAll(); draft()
   }
+  const step = (d) => { if (playing) playBtn.click(); seek(Math.round((t + d) * 30) / 30) }
+  $('#prevF', root).addEventListener('click', (e) => step(e.shiftKey ? -1 : -1 / 30))
+  $('#nextF', root).addEventListener('click', (e) => step(e.shiftKey ? 1 : 1 / 30))
+  $('#clockIn', root).addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { const v = parseT(e.target.value); if (isFinite(v)) seek(v); else toast('Instant non lu : écris 1:23.5 ou 83.5', true); e.target.blur() }
+    if (e.key === 'Escape') { e.target.value = fmtT(t); e.target.blur() }
+  })
+  const zoomTo = (k, ax) => {
+    const old = pps, anchor = ax == null ? t * old - tl.scrollLeft : ax, ta = (tl.scrollLeft + anchor) / old
+    pps = clamp(k, 4, 600); drawTimeline(); tl.scrollLeft = Math.max(0, ta * pps - anchor)
+  }
+  tl.addEventListener('wheel', (e) => {
+    if (!(e.metaKey || e.ctrlKey)) return
+    e.preventDefault()
+    const r = tl.getBoundingClientRect()
+    zoomTo(pps * Math.exp(-e.deltaY * 0.004), e.clientX - r.left)
+  }, { passive: false })
+  tl.addEventListener('pointerleave', () => { const hov = $('#hov', tl); if (hov) hov.hidden = true })
+  $('#zfit', root).addEventListener('click', () => { pps = clamp((tl.clientWidth - 24) / (end() + 5), 4, 600); drawTimeline(); tl.scrollLeft = 0 })
   const onKey = (e) => {
     if (e.target.matches('input, select, textarea')) return
-    if (e.code === 'Space') { e.preventDefault(); playBtn.click() }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); step(e.shiftKey ? -1 : -1 / 30) }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); step(e.shiftKey ? 1 : 1 / 30) }
+    else if (e.key === 'Home') { e.preventDefault(); seek(0) }
+    else if (e.key === 'End') { e.preventDefault(); seek(end()) }
+    else if (e.code === 'Space') { e.preventDefault(); playBtn.click() }
     else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); removeSelected() }
     else if (e.key === 's') splitSelected()
     else if (e.key === 'd') duplicateSelected()

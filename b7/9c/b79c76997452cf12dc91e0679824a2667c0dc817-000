@@ -114,3 +114,15 @@ a { color: var(--accent-ink); }
 .tl .tlin { position: relative; }
 .tl .clip .h { z-index: 2; }
 .lib .item { cursor: grab; }
+
+/* 15 October 2026: a montage timeline you can scrub (ruler and playhead drag, minor ticks, the time under the pointer, typed time) */
+.timeIn { width: 104px; text-align: center; padding: 4px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-size: 15px; }
+.tl .ruler { cursor: ew-resize; }
+.tl .ruler span.maj { top: 0; height: 100%; border-left: 1px solid var(--ink-3); padding-left: 3px; transform: none; line-height: 13px; }
+.tl .ruler i { position: absolute; bottom: 0; height: 5px; border-left: 1px solid var(--line); }
+.tl .track { cursor: ew-resize; }
+.tl .playhead { cursor: ew-resize; }
+.tl .playhead .grip { position: absolute; top: -2px; left: -7px; width: 16px; height: 13px; background: var(--accent); clip-path: polygon(0 0, 100% 0, 100% 55%, 50% 100%, 0 55%); }
+.tl .hoverLine { position: absolute; top: 0; bottom: 0; width: 1px; background: color-mix(in srgb, var(--ink) 35%, transparent); pointer-events: none; z-index: 3; }
+.tl .hoverLine b { position: absolute; top: 2px; left: 5px; background: var(--ink); color: var(--bg); font: 400 11px var(--zr-police-serif); padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
+.tl .hoverLine[hidden] { display: none; }
