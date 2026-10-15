@@ -149,14 +149,24 @@ def _paths_override(slug: str) -> dict:
                       "referenceVideo": f"{CFG['referenceUnreachable']}/ref.mp4", "cache": str(scratch() / slug / "cache"), "instruments": "music-instruments"}}
 
 
-def cook_variation(slug: str, version: str, values: dict) -> dict:
-    """Cook the variation in this process with the persistent, cached cook (zrmd/audio/cook.py), then write the stems and the mix as float WAVs."""
-    global COOK
+QUALITIES = ("preview", "final")
+
+
+def cook_variation(slug: str, version: str, values: dict, quality: str = "preview") -> dict:
+    """Cook the variation in this process with the persistent, cached cook (zrmd/audio/cook.py), then write the stems and the mix as float WAVs.
+    quality "preview": the compiled kernel, a raw render in a few seconds (what the sliders play while they move). quality "final" (15 October
+    2026): the exact voices (no compiled shortcut) THEN the production polish of every stem and of the mix (zrmd/audio/polish.py: DC and rumble,
+    clicks repaired, crackle softened, harsh resonances tamed, bass foundation, true-peak limiter), so that whatever value a person chooses the
+    result is pleasant to listen to; it takes tens of seconds to minutes and nobody waits for it in real time. The raw render of the same cook is
+    kept next to it (raw-*.wav) for the A/B. FR : qualite finale = voix exactes puis polish, quelle que soit la valeur choisie."""
+    global COOK, COOK_FINAL
     import numpy as np
     import soundfile as sf
-    from zrmd.audio import cook as CK, resynth as RS
+    from zrmd.audio import cook as CK, polish as PL, resynth as RS
+    if quality not in QUALITIES:
+        raise Refusal(f"quality must be one of {', '.join(QUALITIES)}")
     prm = apply_values(base_params(slug, version), values)
-    key = hashlib.sha256(json.dumps([slug, version, values], sort_keys=True).encode()).hexdigest()[:12]
+    key = hashlib.sha256(json.dumps([slug, version, values, quality], sort_keys=True).encode()).hexdigest()[:12]
     work = scratch() / slug / "cook" / key
     done = work / "done.json"
     if done.exists():
@@ -164,20 +174,59 @@ def cook_variation(slug: str, version: str, values: dict) -> dict:
     with COOK_LOCK:
         P = RS.params(_paths_override(slug))
         RS.install(P)
-        if COOK is None:
-            COOK = CK.Cook(P)
+        if quality == "final":
+            if COOK_FINAL is None:
+                COOK_FINAL = CK.Cook(P, fast=False)
+            engine = COOK_FINAL
+        else:
+            if COOK is None:
+                COOK = CK.Cook(P)
+            engine = COOK
         score = json.loads((bench_of(slug) / version / "score.json").read_text(encoding="utf-8"))
         t0 = time.time()
-        out = COOK.render(prm, score, P)
+        out = engine.render(prm, score, P)
         sec = round(time.time() - t0, 2)
         work.mkdir(parents=True, exist_ok=True)
-        for st in STEMS:
-            sf.write(str(work / f"{st}.wav"), np.asarray(out["stems"][st], np.float32), out["sr"], subtype="FLOAT")
-        sf.write(str(work / "mix.wav"), np.asarray(out["mix"], np.float32), out["sr"], subtype="FLOAT")
-        res = {"key": key, "dir": str(work), "seconds": sec, "values": values, "stats": COOK.stats, "calibrated": False,
-               "note": "raw render of the base version: the 99.9 calibration is not replayable from parameters yet"}
+        sr = out["sr"]
+        res = {"key": key, "dir": str(work), "seconds": sec, "values": values, "stats": engine.stats, "quality": quality, "calibrated": False}
+        if quality == "final":
+            pc, t1 = PL.cfg(), time.time()
+            report = {}
+            tv = next((m["trimVersion"] for m in members() if m["slug"] == slug), None)
+            for st in (*STEMS, "mix"):
+                raw = np.asarray(out["stems"][st] if st != "mix" else out["mix"], np.float32)
+                sf.write(str(work / f"raw-{st}.wav"), raw, sr, subtype="FLOAT")
+                # the cleanliness criteria are RELATIVE to OUR calibrated version of the same member (a hi-hat stem has crackle bursts by the
+                # detector's definition): its own audio, never the reference's. FR : critere relatif a notre version calee, pas a la reference.
+                ref = None
+                if tv:
+                    rp = bench_of(slug) / tv / ("mix.wav" if st == "mix" else f"stems/{st}.wav")
+                    if rp.is_file():
+                        ref, rsr = sf.read(str(rp), dtype="float32")
+                        ref = ref if rsr == sr else None
+                kind = "mix" if st == "mix" else "stem"
+                y, rep = PL.polish(raw, sr, pc, reference=ref, kind=kind)
+                for _ in range(int(CFG.get("finalExtraPasses", 2))):      # time is not the constraint: another gentle pass while it is not clean
+                    if rep["clean"]:
+                        break
+                    y2, rep2 = PL.polish(y, sr, pc, stages=["decrackle", "resonance", "limiter"], reference=ref, kind=kind)
+                    if rep2["after"]["cracklePerSecond"] + rep2["after"]["clicksPerSecond"] >= rep["after"]["cracklePerSecond"] + rep["after"]["clicksPerSecond"]:
+                        break
+                    y, rep = y2, {**rep2, "stages": {**rep["stages"], **{f"extra:{k}": v for k, v in rep2["stages"].items()}}}
+                sf.write(str(work / f"{st}.wav"), np.asarray(y, np.float32), sr, subtype="FLOAT")
+                report[st] = {"clean": rep["clean"], "cleanAbsolute": rep["cleanAbsolute"], "stages": rep["stages"]}
+            res.update(polished=True, polishSeconds=round(time.time() - t1, 2), polish=report,
+                       note="exact voices, then the production polish of every stem and of the mix; the 99.9 calibration is not replayable from parameters yet")
+        else:
+            for st in STEMS:
+                sf.write(str(work / f"{st}.wav"), np.asarray(out["stems"][st], np.float32), sr, subtype="FLOAT")
+            sf.write(str(work / "mix.wav"), np.asarray(out["mix"], np.float32), sr, subtype="FLOAT")
+            res.update(polished=False, note="raw preview of the base version: the final quality (exact voices and polish) follows")
         done.write_text(json.dumps(res), encoding="utf-8")
         return res
+
+
+COOK_FINAL = None
 
 
 # ------------------------------------------------------------------------------------------------ http
@@ -303,7 +352,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise Refusal("unknown member", 404)
                 values = {k: float(v) for k, v in (body.get("values") or {}).items()}
                 apply_values(base_params(slug, m["baseVersion"]), values)  # refuses unknown or out-of-range values before any work
-                return self._json({"ok": True, **cook_variation(slug, m["baseVersion"], values)})
+                return self._json({"ok": True, **cook_variation(slug, m["baseVersion"], values, str(body.get("quality") or "preview"))})
             raise Refusal("not found", 404)
         except Refusal as e:
             self._json({"ok": False, "error": str(e)}, e.status)

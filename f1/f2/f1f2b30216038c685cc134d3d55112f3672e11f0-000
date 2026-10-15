@@ -56,6 +56,8 @@ def run() -> int:
     check("the base params are never modified", prm == keep)
     check("RED: an unknown value is refused", refuses(lambda: MS.apply_values(prm, {"volume": 3})))
     check("RED: an out-of-range value is refused", refuses(lambda: MS.apply_values(prm, {"bpm": 400})))
+    check("RED: an unknown quality is refused before any cook", refuses(lambda: MS.cook_variation(MS.members()[0]["slug"], MS.members()[0]["baseVersion"], {}, "ultra")))
+    check("the qualities are the preview and the polished final", MS.QUALITIES == ("preview", "final"))
     check("the interface exposes at most twelve values (4 primary, 8 secondary)", len(MS.SLIDERS) <= 12, len(MS.SLIDERS))
     drums = {"kick": {"kind": "drum", "macros": {"gainDb": 1.5, "timeScale": 1.0}}, "snare": {"kind": "drum", "macros": {"gainDb": -2.0, "timeScale": 1.2}},
              "clap": {"kind": "drum", "macros": {"gainDb": 0.0, "timeScale": 1.0}}, "hatClosed": {"kind": "drum", "macros": {"gainDb": 0.0, "timeScale": 1.0}},

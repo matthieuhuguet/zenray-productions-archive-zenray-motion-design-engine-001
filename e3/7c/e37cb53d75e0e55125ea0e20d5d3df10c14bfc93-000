@@ -285,7 +285,10 @@ def _route(method: str, path: str, q: dict, body: dict, raw) -> Reply:
                 return fail("unknown music member", 404)
             values = {k: float(v) for k, v in (body.get("values") or {}).items()}
             s.apply_values(s.base_params(slug, m["baseVersion"]), values)
-            return ok({"ok": True, **s.cook_variation(slug, m["baseVersion"], values)})
+            quality = str(body.get("quality") or "preview")
+            if quality not in s.QUALITIES:
+                return fail(f"quality must be one of {', '.join(s.QUALITIES)}", 400)
+            return ok({"ok": True, **s.cook_variation(slug, m["baseVersion"], values, quality)})
         if path == "/api/v1/timeline/validate":
             p = TL.plan(body.get("spec") or {})
             return ok({"ok": True, "id": p["id"], "frames": p["frames"], "fps": p["fps"], "seconds": round(p["frames"] / p["fps"], 3), "formats": p["formats"],

@@ -13,6 +13,8 @@
   "scratch": "{workshop}/studio"
  },
  "referenceUnreachable": "/nonexistent",
+ "finalExtraPasses": 2,
+ "finalDoc": "Quality \"final\" (15 October 2026): exact voices then the production polish of every stem and of the mix; while a track is not clean (relative to our calibrated version of the same member) up to finalExtraPasses gentle passes more. Time is not the constraint: minutes are fine, nobody waits in real time.",
  "sliders": [
   {
    "id": "bpm",

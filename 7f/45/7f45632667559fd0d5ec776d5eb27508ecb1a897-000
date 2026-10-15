@@ -159,10 +159,34 @@ async function musicStudio(root, slug) {
     $('#reset', panel).addEventListener('click', () => { current = { ...defaults }; rendered = { ...defaults }; Object.entries(fields).forEach(([k, f]) => f.set(defaults[k])); Object.values(fields).forEach((f) => { const s = sliders[f.key]; f.el.querySelector('.num').textContent = valueText(s, defaults[f.key]) }); load() })
     const note = document.createElement('p')
     note.className = 'note'
-    note.textContent = '« Ours » vient du moteur, sans accès à la référence. Au départ, c\'est la version calée à 99,9 ; dès qu\'une valeur bouge, c\'est le rendu brut du moteur pour cette variation.'
+    note.textContent = '« Ours » vient du moteur, sans accès à la référence. Au départ, c\'est la version calée à 99,9 ; dès qu\'une valeur bouge, un aperçu brut arrive tout de suite, puis la qualité finale (voix exactes et polish) quand les valeurs se posent.'
     panel.append(note)
   }
-  function schedule() { dirty = true; clearTimeout(cookTimer); cookTimer = setTimeout(cook, 220) }
+  let finalTimer = 0, finalRun = 0
+  // 15 October 2026: the PREVIEW is the instant raw render while the sliders move; the FINAL quality (exact voices, then the production polish of every
+  // stem and of the mix, so the result is pleasant whatever the values) follows once the values rest. It takes up to a few minutes and nobody waits
+  // for it in real time: the preview keeps playing. FR : l'apercu est instantane, la qualite finale suit quand les valeurs se posent.
+  function scheduleFinal(values) { clearTimeout(finalTimer); finalTimer = setTimeout(() => finalCook(values), 1500) }
+  async function finalCook(values) {
+    const run = ++finalRun
+    const state = $('#cookState', root)
+    state.textContent = 'Qualité finale en cours (voix exactes, puis polish de chaque piste et du mix) : jusqu\'à quelques minutes, l\'aperçu reste jouable.'
+    const t0 = performance.now()
+    try {
+      const j = await post('/api/v1/music/cook', { slug, values, quality: 'final' })
+      if (dead || run !== finalRun || dirty || JSON.stringify(values) !== JSON.stringify(current)) return
+      const [mix, ...stems] = await Promise.all([decode(audioUrl('cook', 'mix', j.key)), ...STEMS.map((s) => decode(audioUrl('cook', s, j.key)))])
+      if (dead || run !== finalRun) return
+      buf.mix = mix; STEMS.forEach((s, i) => { buf[s] = stems[i] })
+      const clean = Object.values(j.polish || {}).every((r) => r.clean)
+      $('#oursLabel', root).textContent = `Ours : qualité finale, voix exactes puis polish${clean ? ' (propre : aucun clic, crépitement ni écrêtage)' : ''}.`
+      state.textContent = `Qualité finale calculée en ${j.seconds} s + ${j.polishSeconds} s de polish · reçue en ${((performance.now() - t0) / 1000).toFixed(0)} s`
+      if (playing) start(position() % buf.mix.duration); else applyLive()
+    } catch (e) {
+      if (run === finalRun) { state.textContent = ''; toast(e.message, true) }
+    }
+  }
+  function schedule() { dirty = true; finalRun++; clearTimeout(finalTimer); clearTimeout(cookTimer); cookTimer = setTimeout(cook, 220) }
   async function cook() {
     if (cooking || !dirty || dead) return
     cooking = true; dirty = false
@@ -177,10 +201,11 @@ async function musicStudio(root, slug) {
       buf.mix = mix; STEMS.forEach((s, i) => { buf[s] = stems[i] })
       rendered = { ...values }
       Object.values(fields).forEach((f) => f.el.classList.toggle('changed', Math.abs(current[f.key] - (rendered[f.key] ?? defaults[f.key])) > 1e-9))
-      $('#oursLabel', root).textContent = 'Ours : rendu du moteur, version brute (le calage 99,9 n\'est pas encore rejouable depuis les paramètres).'
+      $('#oursLabel', root).textContent = 'Ours : aperçu, rendu brut du moteur ; la qualité finale polie suit dès que les valeurs se posent.'
       const stt = j.stats || {}
       state.textContent = `Calculé en ${j.seconds} s (${stt.voicesRecomputed ?? '?'} voix sur ${stt.voicesTotal ?? '?'} recalculées) · reçu en ${((performance.now() - t0) / 1000).toFixed(1)} s`
       if (playing) start(position() % buf.mix.duration); else applyLive()
+      if (!dirty) scheduleFinal(values)
     } catch (e) {
       state.textContent = ''
       toast(e.message, true)
