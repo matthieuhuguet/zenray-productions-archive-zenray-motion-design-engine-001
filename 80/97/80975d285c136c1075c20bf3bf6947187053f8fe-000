@@ -1,0 +1,102 @@
+"""Build the camera track of a measured shot from the two trackers (15 October 2026).
+
+Canvas = the frame where the anchor was cut (scale 1, centre 960,540). Anchor samples (TrackAnchor.py: s, x, y of the anchor's top-left)
+give the camera directly: z = s, c = A + (C - (x, y)) / s. A segment tracked frame to frame (TrackCamera.py: p_t = s_t p_ref + d_t) is
+placed on the canvas by ONE instant where the anchor is also known (the link), then every frame of the segment follows. The track is
+reduced to the keys needed to stay within a tolerance on screen, and written as lines "t z cx cy" (t relative to the scene start).
+FR : construire la piste de camera d'un plan mesure, en raccordant le suivi global a l'ancre.
+Usage: python3 Scripts/BuildCameraTrack.py --spec spec.json   (see motion/reproductions/ for an example spec)
+"""
+import argparse
+import json
+
+import numpy as np
+
+C = np.array([960.0, 540.0])
+
+
+def load_jsonl(p):
+    return [json.loads(l) for l in open(p) if l.strip()]
+
+
+def from_anchor(r, A):
+    return r["t"], r["s"], A + (C - np.array([r["x"], r["y"]], float)) / r["s"]
+
+
+def segment(track, t0, t1, link_t, link):
+    """Cameras of a frame-to-frame segment, placed by the anchor camera `link` = (z, c) at link_t."""
+    rows = [r for r in track if "s" in r]
+    star = min(rows, key=lambda r: abs(r["t"] - link_t))
+    zs, cs = link
+    out = []
+    for r in rows:
+        if not (t0 - 1e-6 <= r["t"] <= t1 + 1e-6):
+            continue
+        k = r["s"] / star["s"]
+        z = k * zs
+        c = cs - (k * (C - np.array([star["x"], star["y"]])) + np.array([r["x"], r["y"]]) - C) / z
+        out.append((r["t"], z, c))
+    return out
+
+
+def reduce(keys, tol):
+    """Keep the keys a linear interpolation needs to stay within `tol` screen pixels (Douglas-Peucker on time)."""
+    def err(a, b, k):
+        u = (k[0] - a[0]) / max(1e-9, b[0] - a[0])
+        z = a[1] + (b[1] - a[1]) * u; c = a[2] + (b[2] - a[2]) * u
+        # screen error of the frame corners between the true and the interpolated camera
+        e = 0
+        for q in ([0, 0], [1920, 0], [0, 1080], [1920, 1080]):
+            q = np.array(q, float)
+            canvas = (q - C) / k[1] + k[2]
+            e = max(e, np.abs(z * (canvas - c) + C - q).max())
+        return e
+    def rec(i, j):
+        if j <= i + 1:
+            return [i]
+        worst, wi = 0, None
+        for m in range(i + 1, j):
+            e = err(keys[i], keys[j], keys[m])
+            if e > worst:
+                worst, wi = e, m
+        return [i] if worst <= tol else rec(i, wi) + rec(wi, j)
+    idx = rec(0, len(keys) - 1) + [len(keys) - 1]
+    return [keys[i] for i in idx]
+
+
+def main():
+    ap = argparse.ArgumentParser(); ap.add_argument("--spec", required=True); a = ap.parse_args()
+    spec = json.load(open(a.spec))
+    A = np.array(spec["anchorTopLeft"], float)
+    keys = []
+    for part in spec["parts"]:
+        if part["kind"] == "anchor":
+            rows = [from_anchor(r, A) for f in part["files"] for r in load_jsonl(f) if r["score"] >= part.get("minScore", 0.9)
+                    and part["from"] - 1e-6 <= r["t"] <= part["to"] + 1e-6]
+            keys += sorted(rows, key=lambda x: x[0])
+        else:
+            anchors = {round(r[0], 3): r for f in part["linkFiles"] for r in (from_anchor(x, A) for x in load_jsonl(f))}
+            lt = min(anchors, key=lambda t: abs(t - part["linkAt"]))
+            seg = segment(json.load(open(part["file"])), part["from"], part["to"], lt, (anchors[lt][1], anchors[lt][2]))
+            keys += seg
+    keys.sort(key=lambda x: x[0])
+    dedup = []
+    for k in keys:
+        if dedup and abs(k[0] - dedup[-1][0]) < 1e-3:
+            continue
+        dedup.append(k)
+    # a cut is a jump between two consecutive samples: the reduction must not interpolate across it
+    out, start = [], 0
+    for i in range(1, len(dedup) + 1):
+        if i == len(dedup) or i in [j for j, k in enumerate(dedup) if any(abs(k[0] - c) < 0.02 for c in spec.get("cuts", []))]:
+            out += reduce(dedup[start:i], spec.get("tolerance", 1.5)); start = i
+    t0 = spec["sceneStart"]
+    lines = [f"{k[0] - t0:.3f} {k[1]:.4f} {k[2][0]:.1f} {k[2][1]:.1f}" for k in out]
+    json.dump({"keys": lines, "samples": len(dedup)}, open(spec["out"], "w"), indent=0)
+    print(len(dedup), "samples ->", len(lines), "keys")
+    for l in lines:
+        print(l)
+
+
+if __name__ == "__main__":
+    main()

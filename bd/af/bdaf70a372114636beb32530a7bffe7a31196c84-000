@@ -61,11 +61,13 @@ def main():
     ap.add_argument("--width", type=int, default=640)
     ap.add_argument("--out", default="")
     ap.add_argument("--regions", default="", help="x0,y0,x1,y1;... in 1920x1080 coordinates: ink box of each zone in both images")
+    ap.add_argument("--ref-video", default="", help="compare with this video instead of the project reference (e.g. a rectified child)")
+    ap.add_argument("--ref-offset", type=float, default=0.0, help="reference time = project time + offset")
     ap.add_argument("--bg", default="", help="background colour r,g,b for the ink measure (default: the median of each image)")
     a = ap.parse_args()
     times = [float(x) for x in a.at.split(",") if x.strip()] if a.at else list(np.round(np.arange(a.t0, a.t1 + 1e-6, a.step), 3))
     p = server.read_project(a.project)
-    ref = banks.reference_video(p.get("reference", ""))
+    ref = Path(a.ref_video) if a.ref_video else banks.reference_video(p.get("reference", ""))
     if not ref:
         raise SystemExit(f"no reference video for {a.project}")
     W, H = server.FORMATS[p["format"]]
@@ -84,7 +86,7 @@ def main():
         rows, res = [], []
         for t, f in zip(times, files):
             mine = Image.open(f).convert("RGB").resize((w, h))
-            theirs = grab(ref, t, w, h)
+            theirs = grab(ref, t + a.ref_offset, w, h)
             d = diff(theirs, mine)
             item = {"t": t, "diff": d}
             if a.regions:
