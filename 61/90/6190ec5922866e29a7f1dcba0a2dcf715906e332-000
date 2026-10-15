@@ -150,7 +150,7 @@ def _paths_override(slug: str) -> dict:
 
 
 QUALITIES = ("preview", "final")
-PIPELINE = "15 October 2026 c: exact voices, stored calibration replayed (refused when it deforms), polish under a fidelity guard"
+PIPELINE = "15 October 2026 f: exact voices, stored calibration replayed (refused when it deforms), polish under a fidelity guard"
 
 
 def cook_variation(slug: str, version: str, values: dict, quality: str = "preview") -> dict:
@@ -195,6 +195,12 @@ def cook_variation(slug: str, version: str, values: dict, quality: str = "previe
         res = {"key": key, "dir": str(work), "seconds": sec, "values": values, "stats": engine.stats, "quality": quality, "calibrated": False}
         if quality == "final":
             pc, t1 = PL.cfg(), time.time()
+            # clicks and crackle are counted PER SECOND against our version at its own tempo: a track played 2.6 times faster has 2.6 times the events
+            # per second without one more per event, so the relative allowance follows the tempo ratio (measured: bpm 180 on memo-m1 failed `clean`
+            # on three signals that had no more defects per beat). FR : l'allocation relative suit le rapport de tempo.
+            tr = max(1.0, float(prm["tempo"]["bpm"]) / max(1e-9, float(base_params(slug, version)["tempo"]["bpm"])))
+            pc_t = copy.deepcopy(pc)
+            pc_t["clean"]["relativeAllowance"] = (1.0 + float(pc["clean"].get("relativeAllowance", 0.25))) * tr - 1.0
             report = {}
             tv = next((m["trimVersion"] for m in members() if m["slug"] == slug), None)
             raws = {st: np.asarray(out["stems"][st] if st != "mix" else out["mix"], np.float32) for st in (*STEMS, "mix")}
@@ -209,6 +215,9 @@ def cook_variation(slug: str, version: str, values: dict, quality: str = "previe
                     out_cal, cal_info = _replay_calibration(slug, version, tv, prm, out, score, P)
                     calibrated = cal_info is not None
                     if calibrated:
+                        refused = {k: v.get("levelDeltaDb") for k, v in (cal_info.get("signals") or {}).items() if isinstance(v, dict) and v.get("refused")}
+                        if refused:
+                            res["calibrationRefusedSignals"] = refused          # refused one by one inside the replay: those signals keep their exact render
                         # a replay that moved a signal by more than finalMaxLevelDeltaDb (or made it non finite) is a deformation, not a correction
                         # (a drum stem came out 17 dB too loud on another tempo before the t0 fix): it is refused and the exact render is kept, and
                         # the result says which signals. FR : un rejeu qui deforme est refuse, le rendu exact est garde et le dit.
@@ -238,7 +247,7 @@ def cook_variation(slug: str, version: str, values: dict, quality: str = "previe
                         ref, rsr = sf.read(str(rp), dtype="float32")
                         ref = ref if rsr == sr else None
                 kind = "mix" if st == "mix" else "stem"
-                y, rep, guard = _polish_guarded(raw, sr, pc, ref, kind, anchor=raw if calibrated else None)
+                y, rep, guard = _polish_guarded(raw, sr, pc_t, ref, kind, anchor=raw if calibrated else None)
                 sf.write(str(work / f"{st}.wav"), np.asarray(y, np.float32), sr, subtype="FLOAT")
                 report[st] = {"clean": rep["clean"], "cleanAbsolute": rep["cleanAbsolute"], "stages": rep["stages"], "fidelity": guard}
             sane = {}
@@ -272,7 +281,12 @@ def _polish_guarded(raw, sr: int, pc: dict, ref, kind: str, anchor=None):
     floor = float(CFG.get("finalFidelityFloor", 99.9))
     order = [x for x in CFG.get("finalDropOrder", ["bass", "resonance", "decrackle"]) if x in all_stages and x not in ("limiter", "declick", "dc")]
     spec = json.loads((ENGINE / "params" / "music-trim.json").read_text(encoding="utf-8"))["specs"]["critic"]
-    base = T.mono(np.asarray(anchor, np.float64)) if anchor is not None else None
+    base = None
+    if anchor is not None:
+        # the true-peak limiter is mandatory (a calibrated variation can peak above the ceiling): the guard measures what the OPTIONAL stages
+        # add, so the anchor is the calibrated signal under the limiter stage alone. FR : l'ancre passe par le limiteur, obligatoire.
+        y_lim, _ = PL.polish(anchor, sr, pc, stages=["limiter"], reference=ref, kind=kind)
+        base = T.mono(np.asarray(y_lim, np.float64))
 
     def run(stages):
         y, rep = PL.polish(raw, sr, pc, stages=stages, reference=ref, kind=kind)
@@ -326,7 +340,8 @@ def _replay_calibration(slug: str, base_version: str, trim_version: str, prm: di
     ratio = float(base["tempo"]["bpm"]) / float(prm["tempo"]["bpm"])
     semi = float(prm.get("transposeSemitones", 0.0)) - float(base.get("transposeSemitones", 0.0))
     t0 = time.time()
-    got = RM.apply_calibration({**prm, "calibration": tp["calibration"]}, out, score, P, trim_dir, ratio, semi)
+    got = RM.apply_calibration({**prm, "calibration": tp["calibration"]}, out, score, P, trim_dir, ratio, semi,
+                               max_level_delta_db=float(CFG.get("finalMaxLevelDeltaDb", 6.0)))
     return got, {"timeRatio": round(ratio, 6), "semitones": round(semi, 4), "seconds": round(time.time() - t0, 1),
                  "trimVersion": trim_version, "signals": got.get("calibrationInfo")}
 

@@ -99,7 +99,7 @@ def stem_warp(sig: str, time_ratio: float, semitones: float, t0: float = 0.0) ->
 
 
 def apply(prm: dict, version_dir: Path, raw_stems: dict[str, np.ndarray], make_mix: Callable[[dict], np.ndarray], sr: int,
-          time_ratio: float = 1.0, semitones: float = 0.0, workers: int = 4, t0: float = 0.0) -> dict:
+          time_ratio: float = 1.0, semitones: float = 0.0, workers: int = 4, t0: float = 0.0, max_level_delta_db: float | None = None) -> dict:
     """Replay the stored calibration of a version on a render of its params: the four stems side by side, then the mix built from the calibrated
     stems by `make_mix` (the version's own bus) and calibrated in turn. Reference not needed. Returns {"stems", "mix", "info"}."""
     cal = load(locate(prm, version_dir))
@@ -111,7 +111,20 @@ def apply(prm: dict, version_dir: Path, raw_stems: dict[str, np.ndarray], make_m
         res = list(ex.map(_replay_job, jobs))
     stems = {s: y for s, y, _ in res}
     info = {s: i for s, _, i in res}
+    if max_level_delta_db:
+        # 15 October 2026: a replay that moves ONE signal by more than the limit is a deformation of that signal (an octave down moved the chords of
+        # memo-m1 by 9 dB): that signal keeps its exact render, the others keep their calibration, and the info says which. FR : refus par signal.
+        for sig in list(stems):
+            a, b = np.asarray(raw_stems[sig], np.float64), np.asarray(stems[sig], np.float64)
+            d = 20 * np.log10((np.sqrt((b ** 2).mean()) + 1e-12) / (np.sqrt((a ** 2).mean()) + 1e-12))
+            if not np.isfinite(b).all() or abs(d) > max_level_delta_db:
+                stems[sig] = raw_stems[sig]
+                info[sig] = {**info[sig], "refused": True, "levelDeltaDb": round(float(d), 2)}
     mix_raw = make_mix(stems)
     _, mix, mi = _replay_job(("mix", mix_raw, cal["mix"], sr, {"timeRatio": time_ratio, "semitones": 0.0, "t0": t0}))
+    if max_level_delta_db:
+        dm = 20 * np.log10((np.sqrt((np.asarray(mix, np.float64) ** 2).mean()) + 1e-12) / (np.sqrt((np.asarray(mix_raw, np.float64) ** 2).mean()) + 1e-12))
+        if not np.isfinite(mix).all() or abs(dm) > max_level_delta_db:
+            mix, mi = mix_raw, {**mi, "refused": True, "levelDeltaDb": round(float(dm), 2)}
     info["mix"] = mi
     return {"stems": stems, "mix": mix, "info": info, "mixRaw": mix_raw}

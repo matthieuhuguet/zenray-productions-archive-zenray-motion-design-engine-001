@@ -433,6 +433,7 @@ def replay(ours: np.ndarray, calib: dict, sr: int, warp: dict | None = None) -> 
     moved = abs(ratio - 1.0) > 1e-9 or len(ours) != calib["nSamples"]
     n_ref = len(ours) if moved else calib["nRef"]
     tg, shifts = {}, {}
+    static = False
     for name in need:
         L = calib["layouts"][name]
         O = np.stack(origs[name])
@@ -446,6 +447,15 @@ def replay(ours: np.ndarray, calib: dict, sr: int, warp: dict | None = None) -> 
             wmax = warp.get("maxDeviationDb", cfg().get("replay", {}).get("warpMaxDeviationDb"))
             if wmax:
                 d = np.clip(d, -float(wmax), float(wmax))
+            # 15 October 2026: at a tempo far from the calibrated one the per-frame field no longer lines up with anything and its fast gain changes
+            # are heard as crackle (memo-m1 at 2.57 times the tempo: vocals 0.0 crackle per second in the exact render, 2.3 after the replay). Past
+            # timeVaryingRatioMax the correction is STATIC: the median deviation of each band over time, a fixed balance without per-frame gains.
+            # FR : loin du tempo calibre la correction devient statique (la mediane par bande), sans gains par trame.
+            span = max(ratio, 1.0 / ratio)
+            tvmax = warp.get("timeVaryingRatioMax", cfg().get("replay", {}).get("timeVaryingRatioMax"))
+            if tvmax and span > float(tvmax):
+                d = np.repeat(np.median(d, axis=2, keepdims=True), d.shape[2], axis=2)
+                static = True
         rmax = L["rmax"] + (O.max(axis=(1, 2)) - L["omax"])
         fl = (rmax - FLOOR_DB)[:, None, None]
         tg[name] = np.maximum(O, fl) + d.astype(np.float64)
@@ -454,7 +464,7 @@ def replay(ours: np.ndarray, calib: dict, sr: int, warp: dict | None = None) -> 
         for name in names:
             cur, _ = trim_once(None, cur, sr, allspec[name], c, origs[name], R=tg[name], n_ref=n_ref)
         cur = _highpass(cur, sr, c)
-    if fill_name:
+    if fill_name and not static:                      # carriers are placed per frame: a static correction adds none
         spec = allspec[fill_name]
         for rnd in range(int(c["fill"].get("rounds", 1))):
             add, _ = fill_carriers(None, mono(cur).astype(np.float64), sr, spec, {**c, "fill": {**c["fill"], "seed": c["fill"]["seed"] + rnd}},
@@ -472,7 +482,7 @@ def replay(ours: np.ndarray, calib: dict, sr: int, warp: dict | None = None) -> 
         for _ in range(fin["iterations"]):
             cur, _ = trim_once(None, cur, sr, allspec[fin["spec"]], c2, o2, R=tg[fin["spec"]], n_ref=n_ref)
         cur = _highpass(cur, sr, c)
-    return cur, {"moved": bool(moved), "maxLevelShiftDb": round(max(shifts.values()), 2)}
+    return cur, {"moved": bool(moved), "maxLevelShiftDb": round(max(shifts.values()), 2), "static": bool(static)}
 
 
 def trim_parallel(jobs: dict, sr: int, c: dict | None = None, workers: int = 4, calibration: bool = False) -> dict:

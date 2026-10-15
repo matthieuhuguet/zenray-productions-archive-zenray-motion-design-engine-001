@@ -194,6 +194,7 @@
   "referenceUnreachable": "/nonexistent",
   "snrMinDb": 50.0,
   "warpMaxDeviationDb": 8.0,
+  "timeVaryingRatioMax": 1.6,
   "criticTolerance": 0.05,
   "variation": {
    "bpmRatio": 1.15,

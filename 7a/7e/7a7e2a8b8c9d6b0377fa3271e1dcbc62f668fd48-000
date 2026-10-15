@@ -95,6 +95,16 @@ def run() -> int:
             ok_apply = "calibration.npz" in str(e)
         check("RED: applying a version whose calibration file does not exist raises an error that names the file", ok_apply)
 
+        # --- 15 October 2026: a signal the replay moves beyond the limit keeps its exact render, the others keep their calibration
+        f2 = Path(tmp) / "cal2.npz"
+        CAL.save(f2, {"drums": cal, "mix": cal})
+        prm2 = {"calibration": {"file": "cal2.npz"}}
+        free = CAL.apply(prm2, Path(tmp), {"drums": bad}, lambda st: st["drums"], SR)
+        tight = CAL.apply(prm2, Path(tmp), {"drums": bad}, lambda st: st["drums"], SR, max_level_delta_db=0.0001)
+        check("GREEN: without a limit the drums are calibrated (not refused)", not free["info"]["drums"].get("refused"))
+        check("RED: with a tight limit the drums are refused and keep the exact render, the info says by how much",
+              tight["info"]["drums"].get("refused") is True and np.array_equal(tight["stems"]["drums"], bad) and "levelDeltaDb" in tight["info"]["drums"])
+
         # --- variation: an edit survives (relative), re-calibrating against the reference would cancel it
         up = (bad * 2.0).astype(np.float32)             # +6 dB everywhere, as a voice macro gainDb 6 would do on a stem
         y_up, info_up = T.replay(up, loaded, SR)
@@ -136,6 +146,11 @@ def run() -> int:
         y_clip, _ = T.replay(slow_ours, loaded, SR, {"timeRatio": 0.9, "semitones": 0.0, "t0": 0.5, "maxDeviationDb": 1.0})
         lvl_c = 20 * np.log10(np.sqrt((y_clip ** 2).mean()) / np.sqrt((slow_ours ** 2).mean()))
         check("GREEN: with maxDeviationDb 1 a warped replay stays within 6 dB of the render level", abs(lvl_c) < 6.0, lvl_c)
+        _, info_near = T.replay(slow_ours, loaded, SR, {"timeRatio": 1.25, "semitones": 0.0, "t0": 0.5})
+        y_far, info_far = T.replay(slow_ours, loaded, SR, {"timeRatio": 2.2, "semitones": 0.0, "t0": 0.5})
+        check("GREEN: far from the calibrated tempo (ratio 2.2) the correction is static, near it (1.25) it is not", info_far.get("static") is True and info_near.get("static") is False,
+              (info_far.get("static"), info_near.get("static")))
+        check("the static correction is finite and bounded", np.isfinite(y_far).all() and np.sqrt((y_far ** 2).mean()) < 4 * np.sqrt((slow_ours ** 2).mean()))
     print(f"{len(FAIL)} failure(s)")
     return 1 if FAIL else 0
 

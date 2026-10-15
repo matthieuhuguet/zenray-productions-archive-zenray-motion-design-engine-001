@@ -129,9 +129,11 @@
   "maxLines": 6,
   "fontsPerLine": 2,
   "upscale": 1.0,
+  "stackVariant": true,
   "stackMinIou": 0.3,
   "stackMaxLines": 8,
   "stackMinConf": 70,
+  "stackMaxFidelityLoss": 0.25,
   "stackFontSearch": true,
   "stackFontTopK": 6
  }

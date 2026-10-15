@@ -40,6 +40,8 @@ def main() -> int:
     ap.add_argument("--slug", required=True)
     ap.add_argument("--only", default="", help="comma separated slider ids (default: all)")
     ap.add_argument("--also-default", action="store_true", help="also cook the default values once")
+    ap.add_argument("--tag", default="", help="suffix of the result file (two sweeps of one member side by side)")
+    ap.add_argument("--values", default="", help="JSON list of extra cases, each {name, values}: e.g. a tempo half way to the extreme")
     a = ap.parse_args()
     m = next((x for x in MS.members() if x["slug"] == a.slug), None)
     if not m:
@@ -51,10 +53,12 @@ def main() -> int:
             continue
         for tag, v in (("min", s["min"]), ("max", s["max"])):
             cases.append((f"{s['id']}={tag}", {s["id"]: float(v)}))
+    for extra in (json.loads(a.values) if a.values else []):
+        cases.append((extra["name"], {k: float(v) for k, v in extra["values"].items()}))
     rows = []
     out_dir = MS.scratch().parent / "sweep"
     out_dir.mkdir(parents=True, exist_ok=True)
-    target = out_dir / f"{a.slug}.json"
+    target = out_dir / f"{a.slug}{a.tag}.json"
     for name, values in cases:
         t0 = time.time()
         try:
