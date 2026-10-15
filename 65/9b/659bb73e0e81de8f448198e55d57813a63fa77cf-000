@@ -18,6 +18,7 @@
     <a href="#/" data-nav="home" data-testid="nav-projects">Projets</a>
     <a href="#/music" data-nav="music" data-testid="nav-music">Musique</a>
     <a href="#/montage" data-nav="montage" data-testid="nav-montage">Montage</a>
+    <a href="/motion/" data-testid="nav-motion">Motion</a>
   </nav>
   <span class="grow"></span>
   <span class="tag" id="busy" hidden>travail en cours</span>

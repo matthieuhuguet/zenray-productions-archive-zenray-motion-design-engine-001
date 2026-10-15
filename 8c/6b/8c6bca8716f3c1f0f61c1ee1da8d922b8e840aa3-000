@@ -53,6 +53,20 @@ def reference_view(slug: str) -> dict:
             "meta": orch.read_json(orch.settings.path("workshop") / "references" / slug / "reference.json", {})}
 
 
+_MOTION = None
+
+
+def motion_module():
+    """motion/server.py, loaded once (the module lives beside zrmd, outside the package)."""
+    global _MOTION
+    if _MOTION is None:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("zrmd_motion_server", Path(__file__).resolve().parent.parent / "motion" / "server.py")
+        _MOTION = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_MOTION)
+    return _MOTION
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "ZenRayMotionOrchestrator/1"
 
@@ -132,6 +146,23 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 left -= len(block)
 
+    # --------------------------------------------------------------------------------------------- motion module (motion/server.py)
+    # 15 October 2026: the procedural motion editor is a module of this application: /motion (page, runtime, media) and /api/motion (projects,
+    # versions, banks, export). FR : le module motion monte dans l'application.
+    def _motion(self, method, path, q):
+        ms = motion_module()
+        try:
+            r = ms.handle(method, path, q, self.rfile.read, int(self.headers.get("Content-Length") or 0))
+        except ms.Refusal as e:
+            return self._json({"ok": False, "error": str(e)}, e.status)
+        except Exception as e:  # noqa: BLE001  a crash is reported with its cause, never swallowed
+            return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+        if "json" in r:
+            return self._json(r["json"], r.get("status", 200))
+        if "bytes" in r:
+            return self._bytes(r["bytes"], r["mime"])
+        return self._file(Path(r["file"]), r["mime"])
+
     # --------------------------------------------------------------------------------------------- V1 application (zrmd/app/api.py)
     def _v1(self, method, path, q, body, raw=None):
         r = v1api.route(method, path, q, body, raw)
@@ -149,6 +180,8 @@ class Handler(BaseHTTPRequestHandler):
             p = unquote(url.path)
             if p.startswith("/api/v1/"):
                 return self._v1("GET", p, q, None)
+            if p.startswith("/motion") or p.startswith("/api/motion/"):
+                return self._motion("GET", p, q)
             if p == "/":  # 14 October 2026: the V1 application page; the pipeline console stays at /pipeline
                 page = APP_DIR / "studio.html"
                 return self._file(page if page.is_file() else APP_DIR / "index.html", "text/html; charset=utf-8")
@@ -207,6 +240,8 @@ class Handler(BaseHTTPRequestHandler):
             self._guard(True)
             url = urlparse(self.path)
             q = {k: v[0] for k, v in parse_qs(url.query).items()}
+            if url.path.startswith("/api/motion/"):
+                return self._motion("POST", unquote(url.path), q)
             if url.path == "/api/upload":
                 return self._json(self._upload(q))
             if url.path == "/api/v1/media/upload":
@@ -233,6 +268,16 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": False, "error": str(e)}, e.status)
         except orch.OrchestratorError as e:
             self._json({"ok": False, "error": str(e)}, 400)
+
+    def do_PUT(self):
+        try:
+            self._guard(True)
+            url = urlparse(self.path)
+            if url.path.startswith("/api/motion/"):
+                return self._motion("PUT", unquote(url.path), {k: v[0] for k, v in parse_qs(url.query).items()})
+            raise Refusal("not found", 404)
+        except Refusal as e:
+            self._json({"ok": False, "error": str(e)}, e.status)
 
     def _upload(self, q: dict) -> dict:
         name = Path(q.get("name", "")).name
@@ -271,12 +316,13 @@ def main() -> int:
     # threads never share a GIL with that rendering work
     import os
     import subprocess
-    try:
-        subprocess.Popen([sys.executable, "-I", "-c", "from zrmd.app import api; api.warm()"], cwd=str(Path(__file__).resolve().parent.parent),
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, start_new_session=True,
-                         preexec_fn=lambda: os.nice(10))
-    except OSError:
-        pass
+    if CFG["gui"].get("warmVector", False):   # 15 October 2026: off by default, it kept the processor busy at every start
+        try:
+            subprocess.Popen([sys.executable, "-I", "-c", "from zrmd.app import api; api.warm()"], cwd=str(Path(__file__).resolve().parent.parent),
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, start_new_session=True,
+                             preexec_fn=lambda: os.nice(10))
+        except OSError:
+            pass
     print(json.dumps({"ok": True, "url": f"http://{SERVER['host']}:{srv.server_port}/"}), flush=True)
     import signal
     # SIGTERM (a restart, launchd) closes the music cook pool too: without it its workers outlive the server as idle orphans (about 90 MB each)
