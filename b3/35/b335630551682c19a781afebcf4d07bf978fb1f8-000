@@ -19,6 +19,10 @@ python -I Scripts/RunTests.py                                                   
 
 Everything tunable lives in `params/orchestrator.json` (pipeline, targets, port, import rules) and `settings.json` (paths). The reference cache is never archived or published. Assets archiving: `node Scripts/AssetsLink.mjs register | inventory | archive`.
 
+## Release 1.2.0 (15 October 2026)
+
+Multi-layer vector stacks (up to 18,000 layers per scene, edited by group, role and whole-stack adjustments), the music studio's final quality replays the stored calibration under a fidelity guard, and the defect found when a calibration is moved to another tempo: `docs/RELEASE-1.2.0.md`. Release number: `params/v1-app.json` and `pyproject.toml`. (15 October 2026)
+
 ## Release 1.1.0 (14 October 2026)
 
 State of the six modules, measured ceilings, what is not reached and the research chantiers to resume: `docs/RELEASE-1.1.0.md`. The release number lives once in `params/v1-app.json` (`release`) and is checked against `pyproject.toml`. (14 October 2026)

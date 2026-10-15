@@ -91,3 +91,8 @@ Page Projet, « Publication sur le site » : le plan est un essai à blanc (rien
 ## Version 1.1.0 (14 October 2026)
 
 La version 1.1.0 ne change pas les pages ni les gestes décrits plus haut. Elle ajoute la chaîne de master du mixage, les plafonds mesurés (infobulle des pastilles de module : « plafond mesuré »), le rythme de seconde passe et la lecture par extrait. Ce qui est mesuré, ce qui n'est pas atteint et les chantiers de recherche à reprendre : `docs/RELEASE-1.1.0.md`. (14 October 2026)
+
+## Version 1.2.0 (15 October 2026)
+
+La version 1.2.0 ne change ni les pages ni les gestes ci-dessus ; elle change ce qu'ils agissent. **Vecteur :** un composant peut compter des milliers de calques (jusqu'à 18 000). Les 16 valeurs tertiaires restent 16 : `layerVisible`, `layerOpacity`, `layerBlur` et `paletteColour` sont des cartes dont la clé est un calque, un groupe (`G012`) ou un rôle (`role:glow`), et `adjust` (teinte, saturation, luminosité, contraste, douceur) agit sur toute la pile ; au-delà de 150 calques l'interface liste des unités (groupes et rôles), pas des calques. Le défaut de chaque valeur reproduit l'image livrée. **Musique :** la qualité « final » du studio (elle suit l'aperçu toute seule quand les valeurs se posent) rejoue le calage 99,9 stocké du membre puis polit ; le résultat dit s'il a été calé (`calibrated`) et ce que le garde de fidélité a retiré. Cela remplace la limite écrite plus haut (« le calage n'est pas encore rejouable depuis les paramètres ») pour la qualité finale ; l'aperçu reste un rendu brut. Détail et mesures : `docs/RELEASE-1.2.0.md`. (15 October 2026)
+

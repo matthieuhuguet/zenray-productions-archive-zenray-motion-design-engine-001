@@ -1,73 +1,129 @@
 # ZenRay Motion Design 1.2.0 (15 October 2026)
 
-Suite de `docs/RELEASE-1.1.0.md`. Le numéro vit une seule fois dans `params/v1-app.json` (`release`) et dans `pyproject.toml`. Détail technique : `docs/ARCHITECTURE.md` section 18 (le module vecteur en pile de calques). (15 October 2026)
+Suite de `docs/RELEASE-1.1.0.md`. Le numéro est déclaré une seule fois dans `params/v1-app.json` (`release`) et dans `pyproject.toml` ; `GET /api/v1/status` le rend et un test les garde égaux. Le détail technique est dans `docs/ARCHITECTURE.md` (sections 18 et 19). Ce fichier dit ce qui est livré, ce qui est mesuré, ce qui ne l'est pas, et où reprendre. (15 October 2026)
 
 ## Ce que 1.2.0 ajoute (15 October 2026)
 
 | Chantier | Livré | Preuve |
 |---|---|---|
-| Vecteur, multi-layering | une scène est peinte par une PILE de calques (poursuite résiduelle, rendu skia exact, contours sous-pixel, flou fin, primitives par moments, polissage des sommets, rondes prolonger et polir, profils direct et pyramide) ; la valeur du module est la fidélité composite en CIEDE2000 | `tests/test_layerfit.py`, `tests/test_orchestrator.py`, `Scripts/VectorLayers.py` |
-| Édition procédurale d'une pile | `view.adjust` (teinte, saturation, luminosité, contraste, douceur), groupes et rôles de calques édités comme des unités | `tests/test_vector_v1.py` |
-| Banque | `datasets/vector/bank.json` : formes, douceurs, rôles, polices, recettes d'effets | `layerfit.bank()` |
-| Musique, qualité finale | l'aperçu instantané est suivi du rendu final (voix exactes puis polish de chaque piste et du mix, critères relatifs à NOTRE version calée) | `tests/test_music_studio.py`, `Scripts/MusicStudio.py` |
+| Vecteur, multi-layering | une scène est peinte par une PILE de calques (poursuite résiduelle : on rend la pile, on cherche le pic d'erreur lissé, on propose des formes, on garde ce qui fait baisser l'erreur CIEDE2000), contours sous-pixel, flou fin, primitives (ellipse, rectangle arrondi) quand elles valent le chemin, jusqu'à 18 000 calques | `tests/test_layerfit.py` (4 contrôles), `Scripts/VectorLayers.py`, tableau ci-dessous |
+| Édition atomique d'une pile | les 16 valeurs tertiaires ne grossissent pas avec la pile : `layerVisible`, `layerOpacity`, `layerBlur` et `paletteColour` sont des cartes dont la clé est un calque, un groupe (`G012`, des calques qui forment un objet) ou un rôle (`role:glow`) ; `view.adjust` (teinte, saturation, luminosité, contraste, douceur) agit sur toute la pile en un seul filtre | `tests/test_vector_v1.py` (adjust, group, role) |
+| Banque | formes, douceurs, rôles, polices et recettes d'effets sont des données : `datasets/vector/bank.json` | `layerfit.bank()` |
+| Le module vecteur lit la pile | la valeur du module est la fidélité composite (CIEDE2000 de la pile entière contre l'image), plus l'IoU moyen d'un calque, que le bruit du codec plafonnait à 0,89 à 0,99 ; l'ancien nombre reste dans `detail.iouMean` | `tests/test_orchestrator.py` |
+| Pipelines | l'étape `layers` fait partie du pipeline visuel et du module vecteur | `params/orchestrator.json`, `params/v1-app.json` |
+| Musique, qualité finale rejouable | l'aperçu reste instantané ; la qualité finale cuit les voix exactes, REJOUE le calage 99,9 stocké (`calibration.npz`, des nombres, sans la référence), puis polit sous un garde de fidélité | `tests/test_music_studio.py`, section « Musique » ci-dessous |
+| Défaut trouvé et corrigé : le rejeu sur un autre tempo | la carte des déviations se déformait autour de 0 au lieu de `t0` : une stem de batterie sortait 17 dB trop forte ; elle se déforme maintenant autour de `t0`, comme la partition, et son champ est borné | `tests/test_calibration.py` (vert et rouge) |
+
+## Le vecteur, ce que le logiciel sait faire (15 October 2026)
+
+**Peut-il calculer un grand nombre de calques sur n'importe quelle vidéo ?** Oui pour toute référence qui passe par le pipeline : `scene` choisit un plan et un recadrage, puis `layers` peint ce recadrage. Trois précisions, dites sans arrondir :
+
+- **Une scène, une image.** La pile reproduit UNE image fixe choisie par référence (le plan et le recadrage de `scene.json`), pas toutes les images de la vidéo ; les calques ne sont pas animés dans le temps.
+- **Le coût suit la précision.** Environ 800 calques suffisent à 99,89 % sur une scène nette (fin-4 : 0,9989) ; 99,9 % demande de 5 000 à 18 000 calques et plusieurs heures sur cette machine (les prolongations sont plafonnées à 6 h). Une pile de 18 000 calques pèse 6,5 Mo en composant HTML et 5,6 Mo en SVG.
+- **Les scènes à texture et à lueurs résistent** (claude-opus 0,852, yt-4Q 0,974, flora 0,981, kardashev 0,989) : la poursuite par formes y paie un calque pour du bruit que la référence porte déjà.
+
+**Comment jouer sur le procédural avec autant de calques, de manière atomique ?** Par unités, jamais par calque isolé quand la pile dépasse 150 calques :
+
+| Geste | Valeur | Portée |
+|---|---|---|
+| masquer ou montrer | `layerVisible` | un calque, un groupe `G012`, un rôle `role:glow` |
+| opacité | `layerOpacity` | idem |
+| flou | `layerBlur` | idem (rôle `glow` en premier) |
+| une couleur de la palette | `paletteColour` | tous les calques qui la portent |
+| teinte, saturation, luminosité, contraste, douceur | `view.adjust` | toute la pile, un seul filtre SVG `#adjust` ; 0 partout rend le fichier identique |
+| échelle, opacité, décalage, rotation, miroir, fond transparent | `view.*` | tout le composant |
+
+Les groupes se forment par recouvrement de boîtes (au moins 25 % de la plus petite) et les rôles par le flou (fond, corps, halo, lueur) ; les grands calques sont exclus des groupes (`W###`). Le défaut de chaque valeur reproduit exactement l'image livrée. (15 October 2026)
 
 ## Vecteur : composite des douze références (15 October 2026)
 
-| référence | composite avant (trace unique) | composite maintenant | ΔE moyen | à moins d'1 JND | calques | version |
+Valeur du module = 1 − 0,01 × ΔE00² moyen de la pile contre le recadrage, lue sur le disque. « Atteint 99,9 » veut dire au moins 0,999. (15 October 2026)
+
+| référence | composite avant (trace unique) | composite maintenant | ΔE moyen | à moins d'1 JND | calques |
+|---|---|---|---|---|---|
+| claude-opus-5-5 | 35,34 | 85,17 | 3,146 | 12,1 % | 953 |
+| fin-4 | 71,42 | **99,983** | 0,027 | 99,7 % | 5 516 |
+| flora-agents-on-canvas | 79,12 | 98,09 | 0,673 | 74,8 % | 1 994 |
+| interface | 97,73 | **99,942** | 0,056 | 98,7 % | 13 961 |
+| kardashev-0-7 | 93,13 | 98,92 | 0,701 | 78,8 % | 2 697 |
+| memo | 35,44 | 99,70 | 0,361 | 94,1 % | 2 095 |
+| motion-opus-5-5 | 84,09 | 99,899 (0,001 sous la cible) | 0,093 | 97,7 % | 17 924 |
+| onekey-pro-2 | 99,48 | **99,984** | 0,021 | 99,7 % | 5 123 |
+| paper-mono-code | 62,31 | 99,843 | 0,156 | 97,0 % | 17 998 |
+| x-anabology-2105325733312884869 | 33,19 | **99,912** | 0,104 | 98,3 % | 17 624 |
+| x-anabology-2106157622986748377 | 68,80 | 99,756 | 0,181 | 95,9 % | 5 999 |
+| yt-4Q-o_ylnVnc | −7,31 | 97,40 | 0,830 | 71,2 % | 6 000 |
+
+**4 références sur 12 atteignent 99,9** (fin-4, interface, onekey-pro-2, x-anabology-2105). motion-opus est à 0,001 près. Les prolongations de memo (0,998 à 4 700 calques), x-anabology-2106 (0,9987 à 15 000 calques), paper-mono et yt-4Q tournaient encore au moment de cette note ; elles n'écrivent leur version qu'à la fin, et `Scripts/VectorLayers.py --slug S --adopt` suivi de `Scripts/Orchestrate.py status` met le tableau à jour. (15 October 2026)
+
+## Les six modules, douze références (15 October 2026)
+
+Valeur en pour cent lue sur le disque par `orchestrator.module_scores` ; `*` : atteint (au moins 99 et lecture complète). « -- » : pas de lecture. (15 October 2026)
+
+| référence | rythme | image (plancher) | vecteur | musique | effets | mixage |
 |---|---|---|---|---|---|---|
-| claude-opus-5-5 | 35.34 | **85.17** | 3.146 | 12.1 % | 953 | V_002 |
-| fin-4 | 71.42 | **99.98** | 0.027 | 99.7 % | 5516 | V_006 |
-| flora-agents-on-canvas | 79.12 | **98.09** | 0.673 | 74.8 % | 1994 | V_003 |
-| interface | 97.73 | **99.94** | 0.056 | 98.7 % | 13961 | V_007 |
-| kardashev-0-7 | 93.13 | **98.92** | 0.701 | 78.8 % | 2697 | V_004 |
-| memo | 35.44 | **99.70** | 0.361 | 94.1 % | 2095 | V_003 |
-| motion-opus-5-5 | 84.09 | **99.90** | 0.093 | 97.7 % | 17924 | V_006 |
-| onekey-pro-2 | 99.48 | **99.98** | 0.021 | 99.7 % | 5123 | V_003 |
-| paper-mono-code | 62.31 | **99.50** | 0.374 | 89.9 % | 6000 | V_003 |
-| x-anabology-2105325733312884869 | 33.19 | **99.91** | 0.104 | 98.3 % | 17624 | V_011 |
-| x-anabology-2106157622986748377 | 68.80 | **99.76** | 0.181 | 95.9 % | 5999 | V_005 |
-| yt-4Q-o_ylnVnc | -7.31 | **97.40** | 0.830 | 71.2 % | 6000 | V_004 |
+| claude-opus-5-5 | 100,00* | 96,39 (99,74) | 85,17 | 100,00* | 99,97* | 100,00* |
+| fin-4 | 100,00* | 97,19 (99,87) | 99,98* | -- | -- | -- |
+| flora-agents-on-canvas | 100,00* | 97,79 (99,82) | 98,09 | 100,00* | 99,98* | 100,00* |
+| interface | 100,00* | 93,24 (99,41) | 99,94* | 100,00* | 99,98* | 100,00* |
+| kardashev-0-7 | 100,00* | 96,39 (99,58) | 98,92 | 100,00* | 99,99* | 100,00* |
+| memo | 100,00* | 95,63 (99,95) | 99,70* | 100,00* | 99,98* | 99,99* |
+| motion-opus-5-5 | 100,00* | 98,59 (99,90) | 99,90* | 100,00* | 99,98* | 100,00* |
+| onekey-pro-2 | 100,00* | 97,32 (99,75) | 99,98* | 100,00* | 99,99* | 99,98* |
+| paper-mono-code | 100,00* | 94,03 (99,42) | 99,84* | 100,00* | 99,98* | 100,00* |
+| x-anabology-2105 | 100,00* | 94,37 (99,40) | 99,91* | 100,00* | 99,99 (1 membre sur 3) | 100,00 (1 sur 3) |
+| x-anabology-2106 | 100,00* | 94,03 (99,57) | 99,76* | 100,00* | -- (0 sur 3) | -- (0 sur 3) |
+| yt-4Q | 100,00* | 97,52 (99,82) | 97,40 | 100,00* | -- (0 sur 3) | -- (0 sur 3) |
 
-## Les six modules, douze références, à cette date (15 October 2026)
+## Musique : la qualité finale rejoue le calage (15 October 2026)
 
-reference                          rhythm  image(ceil) vector(ceil) music   sfx    mix
-claude-opus-5-5                    100.00*  96.39 (99.74)  85.17 ( -- ) 100.00*  99.97* 100.00*
-fin-4                              100.00*  97.19 (99.87)  99.98*( -- )   --      --      --   
-flora-agents-on-canvas             100.00*  97.79 (99.82)  98.09 ( -- ) 100.00*  99.98* 100.00*
-interface                          100.00*  93.24 (99.41)  99.94*( -- ) 100.00*  99.98* 100.00*
-kardashev-0-7                      100.00*  96.39 (99.58)  98.92 ( -- ) 100.00*  99.99* 100.00*
-memo                               100.00*  95.63 (99.95)  99.70*( -- ) 100.00*  99.98*  99.99*
-motion-opus-5-5                    100.00*  98.59 (99.90)  99.90*( -- ) 100.00*  99.98* 100.00*
-onekey-pro-2                       100.00*  97.32 (99.75)  99.98*( -- ) 100.00*  99.99*  99.98*
-paper-mono-code                    100.00*  94.03 (99.42)  99.50*( -- ) 100.00*  99.98* 100.00*
-x-anabology-2105325733312884869    100.00*  94.37 (99.40)  99.91*( -- ) 100.00*  99.99  100.00 
-x-anabology-2106157622986748377    100.00*  94.03 (99.57)  99.76*( -- ) 100.00*   --      --   
-yt-4Q-o_ylnVnc                     100.00*  97.52 (99.82)  97.40 ( -- ) 100.00*   --      --   
+- **Ce qui est livré.** La qualité « final » du studio musical enchaîne trois choses : les voix exactes (sans le noyau compilé), le calage 99,9 REJOUÉ depuis ses nombres (`calibration.npz` de la version calée du membre, la référence est injoignable), puis le polish de chaque piste et du mix. Le tempo et la transposition choisis déplacent le calage avec eux. Un calage absent est dit dans le résultat (`calibrated: false`, `calibrationError`), jamais remplacé par une valeur devinée. (15 October 2026)
+- **Mesuré sur memo-m1, valeurs par défaut.** Le rendu brut vaut 85,4 à 93,6 au critique officiel ; le calage rejoué donne 99,997 à 100,000 (le même nombre que la version calée stockée) ; la sortie finale polie, lue contre la VRAIE référence, donne 99,989 (batterie), 99,993 (basse), 100,000 (autres), 99,999 (voix) et 99,948 (mix). (15 October 2026)
+- **Le polish ne s'éloigne pas du calage.** Le polish complet faisait tomber la basse à 99,15 (l'étage « bass foundation » change le spectre exprès). Un garde de fidélité note le signal poli contre le signal calé avec le même critique et retire les étages de `finalDropOrder` (basse, résonances, craquements) tant que le score est sous `finalFidelityFloor` (99,9). Le limiteur de crête et la réparation des clics ne sont jamais retirés. Le rapport nomme ce qui a été retiré. (15 October 2026)
+- **Sur une variation (tempo, transposition, valeur d'une voix).** Il n'existe pas de vérité à 99,9 pour un morceau que la référence n'a jamais joué ; la preuve est relative. Mesuré à tempo × 1,15 contre la référence étirée du même facteur (une approximation) : le calage rejoué bat le rendu brut sur chaque piste, de +0,7 à +6,1 points (batterie 66,4 contre 62,1, basse 81,2 contre 75,1, autres 82,6 contre 78,9, voix 87,0 contre 83,2, mix 89,8 contre 89,1), toutes finies, crêtes au plus 2 dB au-dessus du brut. (15 October 2026)
+- **Un défaut réel, trouvé en le mesurant.** Sur une variation, la stem de batterie sortait 17 dB trop forte (crête 252, loudness +29 LUFS) alors que le rapport disait « décalage maximal 3,57 dB ». Cause : l'axe des trames se déformait autour de 0, la partition autour de `t0` (0,67 s ici, soit dix trames de décalage) ; et une déviation déplacée sur une autre ligne de temps n'est plus une mesure, c'est une correction relative. Corrigé : déformation autour de `t0`, champ borné à ±8 dB (`warpMaxDeviationDb`, mesuré : 11,97 de RMS sans borne, 0,171 à 8 dB pour 0,148 en entrée). (15 October 2026)
+- **Temps.** Cuisson 4 s, rejeu du calage environ 160 s, polish et garde 40 à 200 s : de 4 à 6 minutes, sur une machine chargée à 17. Personne n'attend cela en temps réel ; l'aperçu reste instantané. (15 October 2026)
 
 ## Ce qui n'est PAS atteint, dit sans arrondir (15 October 2026)
 
-- **Le vecteur atteint 99,9 % sur les scènes nettes** (UI, texte, aplats) à condition de laisser la pile grandir : de 5 000 à 18 000 calques selon la scène, 25 minutes à 5 heures de calcul. Les scènes à texture ou à bruit dans l'aplat (claude-opus-5-5 : croquis sur papier ; yt-4Q : remplissage rose moucheté ; flora et kardashev : champs doux et étoiles) sont en dessous et montent lentement : la limite est le temps de calcul et la taille de la pile, pas une impossibilité mesurée.
-- **Des milliers de calques sont une fidélité, pas une édition fine.** Les groupes, les rôles et `view.adjust` donnent la main sur la pile ; changer UN mot ou UNE forme précise d'une scène reste le travail du calque sémantique de la trace unique (le texte, les formes nettes), qui n'est pas remplacé.
-- **Le rendu de référence est celui de skia à 1x** (celui des navigateurs) : la `render.png` d'une pile est écrite à 1x aussi ; à 4x de suréchantillonnage elle ne vaut plus la même mesure.
-- **La musique** : la qualité finale polit chaque piste mais le calage 99,9 n'est pas rejoué depuis ses paramètres (`calibration.npz` n'est écrit pour aucun membre) ; pour la batterie, le critère de crépitement reste au bord de sa limite.
-- **Rythme, image, effets, mixage** : voir `docs/RELEASE-1.1.0.md` ; rien n'a bougé ici.
+- **Le vecteur n'atteint 99,9 que sur 4 références de 12.** Les scènes à texture ou à lueurs (claude-opus 0,852, yt-4Q 0,974, flora 0,981, kardashev 0,989) demandent une autre méthode que la poursuite par formes : un fond lisse non paramétrique d'abord, puis des calques. Aucun seuil n'a été baissé ni redéfini. (15 October 2026)
+- **Des milliers de calques sont une fidélité, pas une édition fine.** Les groupes, les rôles et `view.adjust` donnent la main sur la pile ; changer UN mot dans un texte de 3 000 calques de bord demande de refaire le groupe de ce texte. (15 October 2026)
+- **Le rendu de référence est celui de skia à 1x** (celui des navigateurs). À 4x de suréchantillonnage la pile est jugée sur un autre rendu et le nombre bouge à la quatrième décimale. (15 October 2026)
+- **Musique, variations.** Le garde de fidélité et la preuve relative protègent une variation, ils ne la rendent pas « vraie » : sans référence jouée à ce tempo, la note de 66 à 90 n'est qu'un ordre de grandeur. Le rejeu du calage exige que le membre ait un `calibration.npz` : 30 membres du corpus en ont un (relevé par `find` dans le dossier du banc), les autres demandent `Scripts/MusicTrim.py --slug S`. Un seul membre (memo-m1) a eu la preuve de rejeu complète et la preuve de variation ; les 29 autres n'ont pas été rejoués ici. (15 October 2026)
+- **Rythme sur vidéo neuve, image sous son plancher de codec, effets des trois références incomplètes, publication** : inchangés depuis `docs/RELEASE-1.1.0.md`. (15 October 2026)
 
-## Commandes (15 October 2026)
+## Vérifier (15 October 2026)
 
 ```bash
 cd /Users/zenray/Create/Build/Productions/GithubProductions/ZenRayMotionDesign
 PY=/Users/zenray/.venvs/zenray-motion/bin/python
-$PY -I Scripts/VectorLayers.py --slug interface --max-layers 6000 --max-seconds 10800 --stop-de 0.2    # une scène, deux profils, polissage
-$PY -I Scripts/VectorLayers.py --slug interface --resume --max-layers 18000                            # la prolonger
-$PY -I Scripts/VectorLayers.py --slug interface --adopt                                                # le module lit la meilleure version
-$PY -I tests/test_layerfit.py                                                                          # la poursuite, vert et rouge
+$PY -I Scripts/RunTests.py                                              # tous les tests, chacun dans son processus
+$PY -I tests/test_layerfit.py                                           # la poursuite, vert et rouge
+$PY -I tests/test_calibration.py                                        # le rejeu du calage, la déformation autour de t0
+$PY -I tests/test_music_studio.py                                       # la qualité finale, le garde de fidélité
+$PY -I Scripts/Orchestrate.py status                                    # le tableau des modules, lu sur le disque
+$PY -I Scripts/MusicReplay.py variation --slug memo-m1 --bpm-ratio 1.15 # la preuve d'une variation de tempo
+$PY -I Scripts/MusicStudio.py render --slug memo-m1 --quality final     # la qualité finale en ligne de commande
 ```
 
-## Chantiers de recherche à noter (15 October 2026)
+## Où régler, sans me le demander (15 October 2026)
 
-1. **Texte exact par police** : une scène de texte coûte des milliers de calques de bord ; la police exacte (la banque `datasets/vector/bank.json`, `zrmd/vector/fontfit.py`) donnerait des contours justes à la source. Mesurer d'abord quelle famille correspond à interface (serif italique), puis comparer le composite à nombre de calques égal.
-2. **Instances de glyphes** : un glyphe répété à la même taille se tracerait une fois et s'instancierait (position sous-pixel recalée) ; c'est le levier de taille de pile sur le texte monospace (paper-mono-code).
-3. **Fonds à texture** (claude-opus-5-5) : la pyramide perd contre le direct ; une première passe de champ lisse non paramétrique (profils de lignes et de colonnes) puis la poursuite sur le résidu.
-4. **Recettes d'effets à plusieurs calques** (ombre, lueur, liseré de `bank.json`, non construites) comme candidats uniques de la poursuite.
-5. **Calage musical rejouable** : `calibration.npz` pour chaque membre (re-calage), puis `calibration.apply` dans la qualité finale du studio.
-6. **Droits et publication** : inchangé, validés par une personne (`docs/RELEASE-1.1.0.md`).
+| Ce que tu veux changer | Où |
+|---|---|
+| formes, douceurs, rôles, polices, recettes d'effets de la pile | `datasets/vector/bank.json` |
+| budget de la pile (calques, secondes, seuil d'arrêt, profils) | `Scripts/VectorLayers.py --max-layers --max-seconds --stop-de --profile`, ou `params/orchestrator.json` (étape `layers`) |
+| prolonger ou adopter une pile | `--resume`, `--adopt` |
+| plancher de fidélité du polish, étages retirés d'abord, passes en plus | `params/music-studio.json` : `finalFidelityFloor`, `finalDropOrder`, `finalExtraPasses` |
+| borne du calage déplacé sur un autre tempo | `params/music-trim.json`, bloc `replay` : `warpMaxDeviationDb`, `variation.maxPeakOverRawDb` |
+| numéro de version, pipelines, pages | `params/v1-app.json` |
+
+## Chantiers de recherche à noter, dans l'ordre du levier (15 October 2026)
+
+1. **Terminer les prolongations de pile** (memo, x-anabology-2106, paper-mono, motion-opus) : du temps de calcul seulement ; `--resume` puis `--adopt`. (15 October 2026)
+2. **Fonds à texture** (claude-opus, yt-4Q, flora, kardashev) : une première passe de champ lisse non paramétrique (dégradé, bruit à basse fréquence) portée par un calque unique, puis la poursuite sur le résidu ; mesurer contre le plancher du codec. (15 October 2026)
+3. **Texte exact par police** : une scène de texte coûte des milliers de calques de bord ; la police exacte de la banque donnerait un glyphe par calque et ferait gagner un ordre de grandeur. (15 October 2026)
+4. **Instances de glyphes** : un glyphe répété à la même taille se tracerait une fois et s'instancierait (position seule), ce qui rend un mot modifiable en une valeur. (15 October 2026)
+5. **Recettes d'effets à plusieurs calques** (ombre, lueur, liseré de `bank.json`, listées et non construites) comme candidats de la poursuite. (15 October 2026)
+6. **Fait en fin de version : une version par point de reprise.** `Scripts/VectorLayers.py --checkpoint-seconds 3600` (0 = seulement à la fin) écrit une version neuve au plus toutes les heures quand la pile gagne ; vérifié sur fin-4 (V_008 à V_010, 0,99906 à 1 099 calques). Les prolongations lancées AVANT ce changement n'écrivent qu'à la fin. (15 October 2026)
+7. **Preuve de rejeu et de variation sur les 29 autres membres** : `Scripts/MusicReplay.py check` puis `variation` (chaque membre : environ 10 minutes) ; relancer `Scripts/MusicTrim.py` pour les membres sans `calibration.npz`. (15 October 2026)
+8. **Droits et publication** : inchangé (`rights.cleared` posé par une personne). (15 October 2026)

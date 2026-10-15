@@ -43,7 +43,7 @@ def run() -> int:
     check("status answers V1 with sound tiers", s["ok"] and s["version"] == "V1" and s["tierProblems"] == [], s.get("tierProblems"))
     import tomllib
     pyproject = tomllib.loads((Path(__file__).resolve().parent.parent / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
-    check("the release is declared once (params/v1-app.json) and matches pyproject", s["release"] == pyproject == "1.1.0", (s.get("release"), pyproject))
+    check("the release is declared once (params/v1-app.json) and matches pyproject", s["release"] == pyproject == "1.2.0", (s.get("release"), pyproject))
     cfg = get("/api/v1/config")["json"]
     check("config lists the named pipelines and the page sizes", {"scenes", "visual", "music", "sound"} <= set(cfg["pipelines"]) and cfg["paging"]["projects"] > 0)
     check("config limits are 4, 8 and 16", cfg["limits"] == {"primary": 4, "secondary": 8, "tertiary": 16}, cfg["limits"])

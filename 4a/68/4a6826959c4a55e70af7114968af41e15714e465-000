@@ -193,13 +193,15 @@
  "replay": {
   "referenceUnreachable": "/nonexistent",
   "snrMinDb": 50.0,
+  "warpMaxDeviationDb": 8.0,
   "criticTolerance": 0.05,
   "variation": {
    "bpmRatio": 1.15,
    "transposeSemitones": 0,
    "minLift": 0.0,
-   "maxPeak": 1.5
+   "maxPeak": 1.5,
+   "maxPeakOverRawDb": 2.0
   },
-  "doc": "Interface of Scripts/MusicReplay.py (14 October 2026). A calibrated version must re-render from params.json and calibration.npz alone: the render runs with the reference path set to referenceUnreachable (a render that touched it would fail), its stems must come out within snrMinDb of the stored trimmed stems and score within criticTolerance of them on the official critic. A variation (tempo x bpmRatio, transposition) is scored against the reference stretched by the same ratio: the calibrated variation must beat the raw one by minLift points and stay finite under maxPeak. FR : seuils de la preuve de rejeu de la calibration."
+  "doc": "Interface of Scripts/MusicReplay.py (14 October 2026). warpMaxDeviationDb (15 October 2026): a deviation moved onto another tempo is bounded to +-this many dB (measured on the drums of memo-m1 at +20 percent tempo: unbounded 11.97 rms, 0.1483 in; 4 dB 0.1493; 8 dB 0.1712; 12 dB 0.2082). A calibrated version must re-render from params.json and calibration.npz alone: the render runs with the reference path set to referenceUnreachable (a render that touched it would fail), its stems must come out within snrMinDb of the stored trimmed stems and score within criticTolerance of them on the official critic. A variation (tempo x bpmRatio, transposition) is scored against the reference stretched by the same ratio: the calibrated variation must beat the raw one by minLift points and stay finite under maxPeak. FR : seuils de la preuve de rejeu de la calibration."
  }
 }

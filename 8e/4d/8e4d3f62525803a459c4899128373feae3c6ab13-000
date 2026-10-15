@@ -173,7 +173,7 @@ def cmd_variation(a) -> int:
     prm = json.loads((real / v / "params.json").read_text(encoding="utf-8"))
     bpm0 = float(prm["tempo"]["bpm"])
     bpm = round(bpm0 * a.bpm_ratio, 4)
-    args = ["variation", "--base", v, "--bpm", str(bpm), "--transpose", str(a.transpose)]
+    args = ["variation", "--from", v, "--bpm", str(bpm), "--transpose", str(a.transpose)]
     cal = render(a.slug, args, f"variation {bpm} bpm {a.transpose:+.0f} st calibrated")
     cal_dir = cal
     got = {s: read(cal_dir / "stems" / f"{s}.wav") for s in STEMS}
@@ -187,9 +187,12 @@ def cmd_variation(a) -> int:
     for k in (*STEMS, "mix"):
         rc, rr = float(np.sqrt((got[k].astype(np.float64) ** 2).mean()) + 1e-12), float(np.sqrt((got_raw[k].astype(np.float64) ** 2).mean()) + 1e-12)
         rows[k] = {"criticRaw": s_raw[k], "criticCalibrated": s_cal[k], "gainDb": round(20 * np.log10(rc / rr), 2),
-                   "peak": round(float(np.abs(got[k]).max()), 3), "finite": bool(np.isfinite(got[k]).all())}
-    ok = all(rows[k]["criticCalibrated"] - rows[k]["criticRaw"] >= REPLAY["variation"]["minLift"] and rows[k]["finite"] and rows[k]["peak"] <= REPLAY["variation"]["maxPeak"]
-             for k in rows)
+                   "peak": round(float(np.abs(got[k]).max()), 3), "rawPeak": round(float(np.abs(got_raw[k]).max()), 3), "finite": bool(np.isfinite(got[k]).all())}
+    # 15 October 2026: a stem is float and unlimited (the raw drums of memo-m1 peak at 1.85 before any calibration), so the ceiling is the larger of
+    # maxPeak and the raw peak raised by maxPeakOverRawDb: the calibration may not make a render hotter than a bounded correction. FR : plafond relatif.
+    over = 10 ** (float(REPLAY["variation"].get("maxPeakOverRawDb", 0.0)) / 20.0)
+    ok = all(rows[k]["criticCalibrated"] - rows[k]["criticRaw"] >= REPLAY["variation"]["minLift"] and rows[k]["finite"]
+             and rows[k]["peak"] <= max(REPLAY["variation"]["maxPeak"], rows[k]["rawPeak"] * over) for k in rows)
     out = {"slug": a.slug, "version": v, "bpmRatio": a.bpm_ratio, "transposeSemitones": a.transpose, "bpm": [bpm0, bpm], "rows": rows, "ok": ok,
            "minLift": REPLAY["variation"]["minLift"], "date": "14 October 2026",
            "note": "scored against the reference time-stretched (and pitch-shifted) by the same amounts: an approximation of what the variation should be"}

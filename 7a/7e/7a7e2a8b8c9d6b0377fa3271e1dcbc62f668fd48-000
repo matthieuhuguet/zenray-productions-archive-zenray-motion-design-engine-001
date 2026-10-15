@@ -114,12 +114,28 @@ def run() -> int:
         n = min(len(slow_ours), len(slow_ref))
         slow_ours, slow_ref = slow_ours[:n], slow_ref[:n]
         before = critic(slow_ref, slow_ours, c)
-        y_w, info_w = T.replay(slow_ours, loaded, SR, {"timeRatio": 1.25, "semitones": 0.0})
-        y_nw, _ = T.replay(slow_ours, loaded, SR, {"timeRatio": 1.0, "semitones": 0.0})
+        # maxDeviationDb 0 keeps the warped field unbounded here: this render is deliberately far off (the production default bounds it, see below)
+        y_w, info_w = T.replay(slow_ours, loaded, SR, {"timeRatio": 1.25, "semitones": 0.0, "maxDeviationDb": 0})
+        y_nw, _ = T.replay(slow_ours, loaded, SR, {"timeRatio": 1.0, "semitones": 0.0, "maxDeviationDb": 0})
         after_w, after_nw = critic(slow_ref, y_w, c), critic(slow_ref, y_nw, c)
         check("GREEN: with the time warp the calibration improves a slowed render a lot (critic up by more than 8 points)", after_w - before > 8.0, (before, after_w))
         check("RED: without the warp the same stored calibration is worse (at least 2 points below)", after_w - after_nw > 2.0, (after_w, after_nw))
         check("the warped replay stays bounded (finite, RMS within 4x of the slowed render)", np.isfinite(y_w).all() and np.sqrt((y_w ** 2).mean()) < 4 * np.sqrt((slow_ours ** 2).mean()))
+        # 15 October 2026: the frame axis is warped AROUND t0, like the times of a score (resynth.retime), and a warped deviation is bounded.
+        # FR : l'axe des trames est deforme autour de t0 comme la partition, et une deviation deformee est bornee.
+        spec = {"hop": 512}
+        d0 = np.zeros((1, 3, 400))
+        d0[:, :, 143] = 20.0
+        t0s, ratio, hop_s = 0.5, 0.8, 512 / SR
+        t0f = t0s / hop_s
+        want = int(round(t0f + (143 - t0f) * ratio))
+        got_t0 = int(np.argmax(T.warp_deviation(d0, spec, SR, 400, ratio, 0.0, t0s)[0, 0]))
+        got_0 = int(np.argmax(T.warp_deviation(d0, spec, SR, 400, ratio, 0.0, 0.0)[0, 0]))
+        check("GREEN: a pulse lands on the frame the score time map gives (around t0)", abs(got_t0 - want) <= 1, (got_t0, want))
+        check("RED: mapped around zero the same pulse lands several frames away (the defect measured on a drum stem)", abs(got_0 - want) >= 5, (got_0, want))
+        y_clip, _ = T.replay(slow_ours, loaded, SR, {"timeRatio": 0.9, "semitones": 0.0, "t0": 0.5, "maxDeviationDb": 1.0})
+        lvl_c = 20 * np.log10(np.sqrt((y_clip ** 2).mean()) / np.sqrt((slow_ours ** 2).mean()))
+        check("GREEN: with maxDeviationDb 1 a warped replay stays within 6 dB of the render level", abs(lvl_c) < 6.0, lvl_c)
     print(f"{len(FAIL)} failure(s)")
     return 1 if FAIL else 0
 

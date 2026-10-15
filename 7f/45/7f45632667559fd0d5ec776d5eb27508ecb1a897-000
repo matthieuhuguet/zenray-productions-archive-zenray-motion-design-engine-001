@@ -159,7 +159,7 @@ async function musicStudio(root, slug) {
     $('#reset', panel).addEventListener('click', () => { current = { ...defaults }; rendered = { ...defaults }; Object.entries(fields).forEach(([k, f]) => f.set(defaults[k])); Object.values(fields).forEach((f) => { const s = sliders[f.key]; f.el.querySelector('.num').textContent = valueText(s, defaults[f.key]) }); load() })
     const note = document.createElement('p')
     note.className = 'note'
-    note.textContent = '« Ours » vient du moteur, sans accès à la référence. Au départ, c\'est la version calée à 99,9 ; dès qu\'une valeur bouge, un aperçu brut arrive tout de suite, puis la qualité finale (voix exactes et polish) quand les valeurs se posent.'
+    note.textContent = '« Ours » vient du moteur, sans accès à la référence. Au départ, c\'est la version calée à 99,9 ; dès qu\'une valeur bouge, un aperçu brut arrive tout de suite, puis la qualité finale (voix exactes, calage 99,9 rejoué, polish) quand les valeurs se posent.'
     panel.append(note)
   }
   let finalTimer = 0, finalRun = 0
@@ -170,7 +170,7 @@ async function musicStudio(root, slug) {
   async function finalCook(values) {
     const run = ++finalRun
     const state = $('#cookState', root)
-    state.textContent = 'Qualité finale en cours (voix exactes, puis polish de chaque piste et du mix) : jusqu\'à quelques minutes, l\'aperçu reste jouable.'
+    state.textContent = 'Qualité finale en cours (voix exactes, calage rejoué, puis polish de chaque piste et du mix) : de 4 à 6 minutes, l\'aperçu reste jouable.'
     const t0 = performance.now()
     try {
       const j = await post('/api/v1/music/cook', { slug, values, quality: 'final' })
@@ -179,7 +179,10 @@ async function musicStudio(root, slug) {
       if (dead || run !== finalRun) return
       buf.mix = mix; STEMS.forEach((s, i) => { buf[s] = stems[i] })
       const clean = Object.values(j.polish || {}).every((r) => r.clean)
-      $('#oursLabel', root).textContent = `Ours : qualité finale, voix exactes puis polish${clean ? ' (propre : aucun clic, crépitement ni écrêtage)' : ''}.`
+      // 15 October 2026: the final quality replays the stored 99.9 calibration when the member has one, and says what the fidelity guard removed.
+      const dropped = [...new Set(Object.values(j.polish || {}).flatMap((r) => (r.fidelity && r.fidelity.dropped) || []))]
+      const calText = j.calibrated ? 'calage 99,9 rejoué' : `calage non rejoué${j.calibrationError ? ' (' + j.calibrationError + ')' : ''}`
+      $('#oursLabel', root).textContent = `Ours : qualité finale, voix exactes, ${calText}, puis polish${dropped.length ? ' (étages retirés pour rester fidèle : ' + dropped.join(', ') + ')' : ''}${clean ? ', propre : aucun clic, crépitement ni écrêtage' : ''}.`
       state.textContent = `Qualité finale calculée en ${j.seconds} s + ${j.polishSeconds} s de polish · reçue en ${((performance.now() - t0) / 1000).toFixed(0)} s`
       if (playing) start(position() % buf.mix.duration); else applyLive()
     } catch (e) {

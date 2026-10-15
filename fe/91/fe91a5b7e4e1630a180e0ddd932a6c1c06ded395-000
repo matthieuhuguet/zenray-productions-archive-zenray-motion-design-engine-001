@@ -60,7 +60,8 @@ def composite_of(layers, w, h):
     return R.render_svg(A.cook_svg({"canvas": {"width": w, "height": h}, "palette": {}, "layers": layers, "view": {}}), w, h, engine="skia", ss=1)[..., :3]
 
 
-def run(slug: str, max_layers: int | None = None, max_seconds: float | None = None, write: bool = True, log=None, stop_de: float = 0.4, profile: str = "auto", resume: bool = False) -> dict:
+def run(slug: str, max_layers: int | None = None, max_seconds: float | None = None, write: bool = True, log=None, stop_de: float = 0.4, profile: str = "auto", resume: bool = False,
+        checkpoint_s: float = 3600.0) -> dict:
     c = S.cfg()
     ws = settings.path("workshop")
     d = json.loads((S._path(c["paths"]["out"], slug) / "scene.json").read_text(encoding="utf-8"))
@@ -116,6 +117,34 @@ def run(slug: str, max_layers: int | None = None, max_seconds: float | None = No
     polish()
     cur = fidelity(composite(layers), piece)["fidelity"]
     stages.append({"layers": len(layers), "fidelity": cur})
+    def emit() -> dict:
+        """Write the stack as it is now as a NEW version (every one is kept) and let the module read it when it is the best. Called at checkpoints of a
+        long run and at its end: an interrupted six hour run no longer loses everything (15 October 2026). FR : une version par point de reprise."""
+        res["report"]["layers"] = len(layers)
+        res["report"]["groups"] = LF.assign_groups_and_roles(layers)
+        res["report"]["profile"] = best[2]
+        res["report"]["profilesTried"] = tried
+        res["report"]["stages"] = stages
+        params = {**{k: v for k, v in P0.items() if k not in ("layers", "texts", "palette")}, "layers": res["layers"], "palette": {}}
+        params["trace"] = {**(P0.get("trace") or {}), "method": "multi-layer residual pursuit", "layers": len(res["layers"]), "raster_ss": 1}
+        comp = R.render_svg(A.cook_svg({**params, "view": {}}), w, h, engine="skia", ss=1)[..., :3]
+        got = fidelity(comp, piece)
+        floor = codec_floor(slug, d, comp, frame)
+        out = {"slug": slug, "shot": d["shot"], "applicable": True, "layers": len(res["layers"]), "fidelity": got, "codecFloor": floor,
+               "normalised": round(got["fidelity"] / floor["fidelity"], 5) if floor["fidelity"] > 0 else None,
+               "before": (d.get("layered") or {}).get("fidelity"), "seconds": round(time.time() - t0, 1), "report": res["report"], "date": "15 October 2026"}
+        if write:
+            folder = A.write_version(Path(d["dir"]).parent, params, piece, None, parent=Path(d["dir"]).name, note="multi-layer residual pursuit (zrmd/vector/layerfit.py)")
+            (folder / "component.html").write_text(S.export_html(json.loads((folder / "params.json").read_text(encoding="utf-8")), f"{slug}-layers"), encoding="utf-8")
+            (folder / "layered.json").write_text(json.dumps(out, indent=1, default=float), encoding="utf-8")
+            out["dir"] = str(folder)
+            sc = S._path(c["paths"]["out"], slug) / "layered.json"
+            cur = json.loads(sc.read_text(encoding="utf-8")) if sc.is_file() else None
+            if not cur or cur.get("shot") != d["shot"] or cur["fidelity"]["fidelity"] <= got["fidelity"]:     # the module keeps reading the best version
+                sc.write_text(json.dumps(out, indent=1, default=float), encoding="utf-8")
+        return out
+
+    last_write = time.time()
     cap = int(max_layers or 6000)
     while len(layers) < cap and time.time() < deadline:
         add = min(cap - len(layers), max(500, len(layers) // 2))
@@ -128,31 +157,12 @@ def run(slug: str, max_layers: int | None = None, max_seconds: float | None = No
         if log:
             log(f"[stage] {stages[-1]}")
         gain, cur = nxt - cur, nxt
+        if write and checkpoint_s and time.time() - last_write >= checkpoint_s and gain >= 5e-5:
+            emit()
+            last_write = time.time()
         if gain < 5e-5:
             break
-    res["report"]["layers"] = len(layers)
-    res["report"]["groups"] = LF.assign_groups_and_roles(layers)
-    res["report"]["profile"] = best[2]
-    res["report"]["profilesTried"] = tried
-    res["report"]["stages"] = stages
-    params = {**{k: v for k, v in P0.items() if k not in ("layers", "texts", "palette")}, "layers": res["layers"], "palette": {}}
-    params["trace"] = {**(P0.get("trace") or {}), "method": "multi-layer residual pursuit", "layers": len(res["layers"]), "raster_ss": 1}
-    comp = R.render_svg(A.cook_svg({**params, "view": {}}), w, h, engine="skia", ss=1)[..., :3]
-    got = fidelity(comp, piece)
-    floor = codec_floor(slug, d, comp, frame)
-    out = {"slug": slug, "shot": d["shot"], "applicable": True, "layers": len(res["layers"]), "fidelity": got, "codecFloor": floor,
-           "normalised": round(got["fidelity"] / floor["fidelity"], 5) if floor["fidelity"] > 0 else None,
-           "before": (d.get("layered") or {}).get("fidelity"), "seconds": round(time.time() - t0, 1), "report": res["report"], "date": "15 October 2026"}
-    if write:
-        folder = A.write_version(Path(d["dir"]).parent, params, piece, None, parent=Path(d["dir"]).name, note="multi-layer residual pursuit (zrmd/vector/layerfit.py)")
-        (folder / "component.html").write_text(S.export_html(json.loads((folder / "params.json").read_text(encoding="utf-8")), f"{slug}-layers"), encoding="utf-8")
-        (folder / "layered.json").write_text(json.dumps(out, indent=1, default=float), encoding="utf-8")
-        out["dir"] = str(folder)
-        sc = S._path(c["paths"]["out"], slug) / "layered.json"
-        cur = json.loads(sc.read_text(encoding="utf-8")) if sc.is_file() else None
-        if not cur or cur.get("shot") != d["shot"] or cur["fidelity"]["fidelity"] <= got["fidelity"]:     # the module keeps reading the best version
-            sc.write_text(json.dumps(out, indent=1, default=float), encoding="utf-8")
-    return out
+    return emit()
 
 
 def adopt(slug: str) -> dict:
@@ -179,12 +189,13 @@ def main() -> int:
     ap.add_argument("--stop-de", type=float, default=0.4, help="stop when the smoothed CIEDE2000 error peak falls under this (also the smallest region repaired)")
     ap.add_argument("--profile", choices=["auto", "direct", "pyramid"], default="auto")
     ap.add_argument("--resume", action="store_true", help="continue the best existing multi-layer version (rounds of extend and polish) instead of starting again")
+    ap.add_argument("--checkpoint-seconds", type=float, default=3600.0, help="write an interim version at most this often during a long run (0 = only at the end)")
     ap.add_argument("--no-write", action="store_true")
     a = ap.parse_args()
     if a.adopt:
         print(json.dumps(adopt(a.slug), default=float))
         return 0
-    out = run(a.slug, a.max_layers, a.max_seconds, write=not a.no_write, log=lambda m: print(m, file=sys.stderr, flush=True), stop_de=a.stop_de, profile=a.profile, resume=a.resume)
+    out = run(a.slug, a.max_layers, a.max_seconds, write=not a.no_write, log=lambda m: print(m, file=sys.stderr, flush=True), stop_de=a.stop_de, profile=a.profile, resume=a.resume, checkpoint_s=a.checkpoint_seconds)
     print(json.dumps(out, default=float))
     return 0
 
