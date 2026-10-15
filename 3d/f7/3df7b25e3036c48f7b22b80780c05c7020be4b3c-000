@@ -1,0 +1,13 @@
+#!/bin/zsh
+# 15 October 2026: stop every batch job of the engine and the worker processes they leave behind, WITHOUT touching the app server (port 3104).
+#   Scripts/StopJobs.sh        stops VectorLayers, MusicSweep, MusicReplay, MusicTrim, RunTests, SfxCorpus, AssembleCorpus and orphan pool workers
+# FR : arrete les calculs par lots du moteur et leurs processus orphelins, jamais le serveur de l'application.
+for pat in "Scripts/VectorLayers.py" "Scripts/MusicSweep.py" "Scripts/MusicReplay.py" "Scripts/MusicTrim.py" "Scripts/MusicStudio.py render" \
+           "Scripts/RunTests.py" "Scripts/SfxCorpus.py" "Scripts/AssembleCorpus.py" "Scripts/ReproduceField.py"; do
+  pkill -f "$pat" 2>/dev/null
+done
+sleep 1
+# pool workers whose parent is gone (parent pid 1) are orphans of a stopped job
+ps -axo pid,ppid,command | awk '$2==1 && /multiprocessing/ && /Python/ {print $1}' | xargs -r kill 2>/dev/null
+echo "stopped; busiest processes now:"
+ps -axo pcpu,pid,command | sort -rn | head -4 | cut -c1-120

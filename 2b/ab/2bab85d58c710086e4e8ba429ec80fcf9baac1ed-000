@@ -36,6 +36,8 @@ def verdict(r: dict) -> dict:
 
 
 def main() -> int:
+    import os
+    os.nice(10)    # 15 October 2026: a batch job yields the processor to the machine (its workers inherit it); the engine server is not niced
     ap = argparse.ArgumentParser()
     ap.add_argument("--slug", required=True)
     ap.add_argument("--only", default="", help="comma separated slider ids (default: all)")

@@ -202,6 +202,8 @@ def cmd_variation(a) -> int:
 
 
 def main() -> int:
+    import os
+    os.nice(10)    # 15 October 2026: a batch job yields the processor to the machine (its workers inherit it); the engine server is not niced
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name in ("check", "raw", "variation"):

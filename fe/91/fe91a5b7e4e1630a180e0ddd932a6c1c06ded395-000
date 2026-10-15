@@ -323,6 +323,8 @@ def adopt(slug: str) -> dict:
 
 
 def main() -> int:
+    import os
+    os.nice(10)    # 15 October 2026: a batch job yields the processor to the machine (its workers inherit it); the engine server is not niced
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--slug", required=True)
     ap.add_argument("--finalize", action="store_true", help="adopt the best stack, bind its palette, write its text-editable variant (what the app needs to edit it)")
