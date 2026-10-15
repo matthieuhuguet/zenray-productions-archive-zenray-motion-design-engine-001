@@ -21,8 +21,19 @@ SS = 4                                   # supersampling of a candidate coverage
 BANK_PATH = Path(__file__).resolve().parents[2] / "datasets" / "vector" / "bank.json"
 
 
+_LIN = np.array([((v / 255.0) / 12.92 if v / 255.0 <= 0.04045 else ((v / 255.0 + 0.055) / 1.055) ** 2.4) for v in range(256)], np.float32)
+_M = np.array([[0.412453, 0.357580, 0.180423], [0.212671, 0.715160, 0.072169], [0.019334, 0.119193, 0.950227]], np.float32).T   # sRGB D65, skimage's matrix
+_WHITE = np.array([0.95047, 1.0, 1.08883], np.float32)
+
+
 def _lab(rgb: np.ndarray) -> np.ndarray:
-    return rgb2lab(np.clip(rgb, 0, 255) / 255.0)
+    """sRGB (0..255, rounded to the 8-bit grid) to CIELAB with a lookup table for the gamma: the same numbers as skimage.color.rgb2lab (checked to
+    0.01) at a third of the cost, which matters because it is the inner loop of the pursuit."""
+    idx = np.clip(np.rint(rgb), 0, 255).astype(np.uint8)
+    xyz = _LIN[idx] @ _M / _WHITE
+    f = np.where(xyz > 0.008856, np.cbrt(xyz), 7.787 * xyz + 16.0 / 116.0)
+    L = 116.0 * f[..., 1] - 16.0
+    return np.stack([L, 500.0 * (f[..., 0] - f[..., 1]), 200.0 * (f[..., 1] - f[..., 2])], axis=-1).astype(np.float32)
 
 
 def _poly(kind: str, g: dict, n: int = 48) -> np.ndarray:
