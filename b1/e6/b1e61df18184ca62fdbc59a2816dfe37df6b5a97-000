@@ -92,26 +92,26 @@ def _replay_job(args):
     return sig, y, info
 
 
-def stem_warp(sig: str, time_ratio: float, semitones: float) -> dict:
+def stem_warp(sig: str, time_ratio: float, semitones: float, t0: float = 0.0) -> dict:
     """The warp of one signal: time follows the tempo for everything, pitch follows the transposition for the tonal stems only (the drums do not
     transpose, and the mix is a sum of both: its calibration stays at the original frequencies, which is reported as a limit)."""
-    return {"timeRatio": time_ratio, "semitones": semitones if sig in TONAL_STEMS else 0.0}
+    return {"timeRatio": time_ratio, "semitones": semitones if sig in TONAL_STEMS else 0.0, "t0": t0}
 
 
 def apply(prm: dict, version_dir: Path, raw_stems: dict[str, np.ndarray], make_mix: Callable[[dict], np.ndarray], sr: int,
-          time_ratio: float = 1.0, semitones: float = 0.0, workers: int = 4) -> dict:
+          time_ratio: float = 1.0, semitones: float = 0.0, workers: int = 4, t0: float = 0.0) -> dict:
     """Replay the stored calibration of a version on a render of its params: the four stems side by side, then the mix built from the calibrated
     stems by `make_mix` (the version's own bus) and calibrated in turn. Reference not needed. Returns {"stems", "mix", "info"}."""
     cal = load(locate(prm, version_dir))
     missing = [s for s in (*raw_stems, "mix") if s not in cal]
     if missing:
         raise CalibrationError(f"calibration {locate(prm, version_dir)} has no signal {missing}")
-    jobs = [(s, raw_stems[s], cal[s], sr, stem_warp(s, time_ratio, semitones)) for s in raw_stems]
+    jobs = [(s, raw_stems[s], cal[s], sr, stem_warp(s, time_ratio, semitones, t0)) for s in raw_stems]
     with ProcessPoolExecutor(max_workers=min(workers, len(jobs))) as ex:
         res = list(ex.map(_replay_job, jobs))
     stems = {s: y for s, y, _ in res}
     info = {s: i for s, _, i in res}
     mix_raw = make_mix(stems)
-    _, mix, mi = _replay_job(("mix", mix_raw, cal["mix"], sr, {"timeRatio": time_ratio, "semitones": 0.0}))
+    _, mix, mi = _replay_job(("mix", mix_raw, cal["mix"], sr, {"timeRatio": time_ratio, "semitones": 0.0, "t0": t0}))
     info["mix"] = mi
     return {"stems": stems, "mix": mix, "info": info, "mixRaw": mix_raw}

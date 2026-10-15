@@ -633,7 +633,7 @@ def apply_calibration(prm, out, score, P, version_dir, time_ratio=1.0, semitones
     _, k = RS.retime(score, prm["tempo"]["bpm"])
     t0 = score["tempo"]["t0"]
     res = CAL.apply(prm, Path(version_dir), out["stems"], lambda st: RS.apply_mix_bus(st, prm.get("mixBus"), sr, P, k, t0), sr, time_ratio, semitones,
-                    workers=min(P["workers"], 4))
+                    workers=min(P["workers"], 4), t0=float(t0))        # 15 October 2026: the warp is around t0, like the score
     return {**out, "stems": res["stems"], "mix": res["mix"], "calibrationInfo": res["info"]}
 
 

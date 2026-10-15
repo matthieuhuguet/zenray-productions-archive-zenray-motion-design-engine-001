@@ -386,13 +386,18 @@ def _band_centres_any(spec: dict, sr: int) -> np.ndarray:
     return librosa.mel_frequencies(n_mels=spec["bands"] + 2, fmin=spec["fMin"], fmax=min(spec["fMax"], sr / 2 - 50.0))[1:-1]
 
 
-def warp_deviation(d: np.ndarray, spec: dict, sr: int, frames_new: int, time_ratio: float = 1.0, semitones: float = 0.0) -> np.ndarray:
+def warp_deviation(d: np.ndarray, spec: dict, sr: int, frames_new: int, time_ratio: float = 1.0, semitones: float = 0.0, t0: float = 0.0) -> np.ndarray:
     """The stored deviation of one layout [channels, bands, frames] moved onto a render that is `time_ratio` times as long (a slower tempo is a
     ratio above one) and `semitones` higher in pitch: a linear map of the frame axis, then of the log-frequency axis. FR : la calibration suit le
-    tempo (axe du temps) et, pour les pistes tonales, la transposition (axe de la frequence)."""
+    tempo (axe du temps) et, pour les pistes tonales, la transposition (axe de la frequence).
+    15 October 2026: the times of a score are scaled AROUND t0 (resynth.retime: t0 + (t - t0) * k), not around 0, so the frame axis is mapped the same
+    way: a hit that stays at t0 stays on its frame. Mapped around 0 the deviations land `t0 * (1 - k)` seconds beside the hits (0.11 s on a 0.67 s t0
+    at +20 percent tempo, ten frames), and a drum stem came out 17 dB too loud (measured on memo-m1). FR : la partition est mise a l'echelle autour de t0."""
     d = d.astype(np.float64)
     F = d.shape[2]
-    pos = np.arange(frames_new) / float(time_ratio)
+    hop = float(spec["hop"])
+    t0f = float(t0) * sr / hop                          # t0 in frames of this layout
+    pos = t0f + (np.arange(frames_new) - t0f) / float(time_ratio)
     i0 = np.clip(np.floor(pos).astype(int), 0, F - 1)
     i1 = np.clip(i0 + 1, 0, F - 1)
     w = np.clip(pos - np.floor(pos), 0.0, 1.0)
@@ -435,7 +440,7 @@ def replay(ours: np.ndarray, calib: dict, sr: int, warp: dict | None = None) -> 
         if not moved:
             O = O[:, :, : d.shape[2]]
         else:
-            d = warp_deviation(d, allspec[name], sr, O.shape[2], ratio, semi)
+            d = warp_deviation(d, allspec[name], sr, O.shape[2], ratio, semi, float(warp.get("t0", 0.0)))
         rmax = L["rmax"] + (O.max(axis=(1, 2)) - L["omax"])
         fl = (rmax - FLOOR_DB)[:, None, None]
         tg[name] = np.maximum(O, fl) + d.astype(np.float64)
