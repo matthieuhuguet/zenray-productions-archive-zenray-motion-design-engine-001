@@ -441,6 +441,11 @@ def replay(ours: np.ndarray, calib: dict, sr: int, warp: dict | None = None) -> 
             O = O[:, :, : d.shape[2]]
         else:
             d = warp_deviation(d, allspec[name], sr, O.shape[2], ratio, semi, float(warp.get("t0", 0.0)))
+            # 15 October 2026: a deviation moved onto another timeline is a relative correction, not a measurement: it is bounded (a hit's tail
+            # does not scale with the tempo, so the field of a drum stem can ask +30 dB where the variation has real content). FR : bornee.
+            wmax = warp.get("maxDeviationDb", cfg().get("replay", {}).get("warpMaxDeviationDb"))
+            if wmax:
+                d = np.clip(d, -float(wmax), float(wmax))
         rmax = L["rmax"] + (O.max(axis=(1, 2)) - L["omax"])
         fl = (rmax - FLOOR_DB)[:, None, None]
         tg[name] = np.maximum(O, fl) + d.astype(np.float64)
