@@ -1,0 +1,64 @@
+"""Propose the variations of every reproduced music (15 October 2026).
+
+The agent's proposals, written as data: for each member of the 99.9 % bank, the level of each stem is measured (RMS, dBFS),
+then four variations are proposed from it (a bed without drums, the rhythm section, more energy, calmer). A stem that is almost
+silent in the reproduction is never pushed, and a variation that would only change a silent stem is replaced. Nothing is
+rendered: the browser mixes the stems live with these values, and every value stays editable in the Motion page.
+FR : les variations proposees pour chaque musique reproduite, decidees depuis le niveau mesure de chaque piste.
+Usage: python3 Scripts/ProposeMusicVariations.py   (writes motion/params/music-variations.json)
+"""
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+import soundfile as sf
+
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "motion"))
+import banks  # noqa: E402
+
+SILENT_DB = -42.0   # below this RMS a stem is treated as absent in the reproduction
+
+
+def level(path: Path) -> float:
+    x, _ = sf.read(str(path), dtype="float32", always_2d=True)
+    r = float(np.sqrt(np.mean(np.square(x)))) if x.size else 0.0
+    return round(20 * np.log10(max(r, 1e-9)), 1)
+
+
+def propose(m: dict, lv: dict) -> list:
+    has = {s: lv.get(s, -120) > SILENT_DB for s in banks.STEMS}
+    up = 1 if m["bpm"] < 128 else 0
+    out = []
+    bed = {"drums": -60, "bass": -4, "other": 1, "tilt": -2}
+    if has["vocals"]:
+        bed["vocals"] = -6
+    out.append({"id": "bed", "label": "Nappe sans batterie", "why": "sous une voix off ou un texte long", "values": bed})
+    if has["drums"]:
+        out.append({"id": "pulse", "label": "Pulsation", "why": "batterie et basse seules, pour un montage rythmé",
+                    "values": {"drums": 1, "bass": 2, "other": -12, "vocals": -60, "tilt": 1}})
+    else:
+        out.append({"id": "low", "label": "Basse en avant", "why": "la reproduction n'a presque pas de batterie : la basse porte le rythme",
+                    "values": {"bass": 4, "other": -3, "vocals": -60, "tilt": -1}})
+    out.append({"id": "energy", "label": "Plus d'énergie", "why": f"{'+1 demi-ton, ' if up else ''}batterie et aigus en avant, plus large",
+                "values": {"semitones": up, "drums": 2 if has["drums"] else 0, "tilt": 2.5, "width": 1.25}})
+    out.append({"id": "calm", "label": "Version calme", "why": "-1 demi-ton, batterie en retrait, plus sombre",
+                "values": {"semitones": -1, "drums": -10 if has["drums"] else 0, "tilt": -3, "width": 0.9, "fadeIn": 1.5}})
+    return out
+
+
+def main():
+    out = {"date": "15 October 2026", "proposedBy": "the agent, from the measured level of each stem (Scripts/ProposeMusicVariations.py)",
+           "silentDb": SILENT_DB}
+    for m in banks.music_bank()["music"]:
+        lv = {s: level(banks.bank_file("music", url.split("/motion/bank/music/", 1)[1])) for s, url in m["stems"].items()}
+        out[m["id"]] = propose(m, lv)
+        print(m["id"], m["bpm"], lv, [v["id"] for v in out[m["id"]]])
+    dst = REPO / "motion" / "params" / "music-variations.json"
+    dst.write_text(json.dumps(out, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    print("written", dst, sum(len(v) for k, v in out.items() if isinstance(v, list)), "variations")
+
+
+if __name__ == "__main__":
+    main()
