@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+# 15 October 2026: does the music stay itself and pleasant when a value of the studio is moved to its extremes? For one member (or all), every
+# slider of params/music-studio.json is set to its minimum and to its maximum in turn (the others at their defaults) and cooked at the FINAL
+# quality (exact voices, stored calibration replayed, polish under the fidelity guard). A case passes when every signal is finite, the calibration
+# was replayed and not refused, no signal moved from the exact render by more than finalMaxLevelDeltaDb, the polish reports it clean, and the mix
+# peaks under the ceiling. Numbers only, one JSON per member (Memory-side proof: <workshop>/studio/sweep/<slug>.json).
+#   MusicSweep.py --slug memo-m1 [--only bpm,bass] [--also-default]
+# Exit 0 when every case passes, 1 otherwise (the table says which). FR : le morceau reste lui-meme et agreable aux extremes de chaque valeur.
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+sys.path.insert(0, str(ENGINE / "Scripts"))
+import MusicStudio as MS  # noqa: E402
+
+
+def verdict(r: dict) -> dict:
+    sane = r.get("sanity") or {}
+    pol = r.get("polish") or {}
+    checks = {
+        "calibrationReplayed": bool(r.get("calibrated")),
+        "calibrationNotRefused": "calibrationRejected" not in r,
+        "allFinite": bool(sane) and all(v["finite"] for v in sane.values()),
+        "levelWithin": bool(sane) and all(abs(v["levelVsRenderDb"]) <= float(MS.CFG.get("finalMaxLevelDeltaDb", 6.0)) for v in sane.values()),
+        "polishClean": bool(pol) and all(v.get("clean") for v in pol.values()),
+        "mixPeakUnderCeiling": bool(sane) and sane["mix"]["peak"] <= 1.0,
+        "guardOk": all((v.get("fidelity") or {}).get("ok", True) for v in pol.values()),
+    }
+    return {"checks": checks, "pass": all(checks.values())}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--slug", required=True)
+    ap.add_argument("--only", default="", help="comma separated slider ids (default: all)")
+    ap.add_argument("--also-default", action="store_true", help="also cook the default values once")
+    a = ap.parse_args()
+    m = next((x for x in MS.members() if x["slug"] == a.slug), None)
+    if not m:
+        raise SystemExit(f"unknown member {a.slug}")
+    only = {x for x in a.only.split(",") if x}
+    cases = [("default", {})] if a.also_default else []
+    for s in MS.SLIDERS:
+        if only and s["id"] not in only:
+            continue
+        for tag, v in (("min", s["min"]), ("max", s["max"])):
+            cases.append((f"{s['id']}={tag}", {s["id"]: float(v)}))
+    rows = []
+    out_dir = MS.scratch().parent / "sweep"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    target = out_dir / f"{a.slug}.json"
+    for name, values in cases:
+        t0 = time.time()
+        try:
+            r = MS.cook_variation(a.slug, m["baseVersion"], values, "final")
+            v = verdict(r)
+            row = {"case": name, "values": values, "seconds": round(time.time() - t0, 1), **v, "sanity": r.get("sanity"),
+                   "calibrationRejected": r.get("calibrationRejected"), "dropped": sorted({d for p in (r.get("polish") or {}).values()
+                                                                                         for d in (p.get("fidelity") or {}).get("dropped", [])}),
+                   "key": r.get("key")}
+        except Exception as e:  # noqa: BLE001  a crash is a failed case, with its cause
+            row = {"case": name, "values": values, "pass": False, "error": f"{type(e).__name__}: {e}", "seconds": round(time.time() - t0, 1)}
+        rows.append(row)
+        print(json.dumps({k: row[k] for k in ("case", "pass", "seconds") if k in row} | ({"failed": [c for c, ok in row["checks"].items() if not ok]} if "checks" in row else {"error": row.get("error")})), flush=True)
+        target.write_text(json.dumps({"slug": a.slug, "date": "15 October 2026", "pipeline": MS.PIPELINE, "rows": rows}, indent=1), encoding="utf-8")
+    ok = all(r["pass"] for r in rows)
+    print(json.dumps({"slug": a.slug, "cases": len(rows), "passed": sum(1 for r in rows if r["pass"]), "ok": ok, "file": str(target)}))
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

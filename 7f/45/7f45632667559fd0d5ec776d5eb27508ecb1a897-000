@@ -181,9 +181,14 @@ async function musicStudio(root, slug) {
       const clean = Object.values(j.polish || {}).every((r) => r.clean)
       // 15 October 2026: the final quality replays the stored 99.9 calibration when the member has one, and says what the fidelity guard removed.
       const dropped = [...new Set(Object.values(j.polish || {}).flatMap((r) => (r.fidelity && r.fidelity.dropped) || []))]
-      const calText = j.calibrated ? 'calage 99,9 rejoué' : `calage non rejoué${j.calibrationError ? ' (' + j.calibrationError + ')' : ''}`
+      const rej = j.calibrationRejected ? Object.entries(j.calibrationRejected.levelDeltaDb || {}).map(([k, v]) => `${k} ${v > 0 ? '+' : ''}${v} dB`).join(', ') : ''
+      const calText = j.calibrated ? 'calage 99,9 rejoué' : (rej ? `calage refusé car il déformait (${rej}), rendu exact gardé` : `calage non rejoué${j.calibrationError ? ' (' + j.calibrationError + ')' : ''}`)
       $('#oursLabel', root).textContent = `Ours : qualité finale, voix exactes, ${calText}, puis polish${dropped.length ? ' (étages retirés pour rester fidèle : ' + dropped.join(', ') + ')' : ''}${clean ? ', propre : aucun clic, crépitement ni écrêtage' : ''}.`
-      state.textContent = `Qualité finale calculée en ${j.seconds} s + ${j.polishSeconds} s de polish · reçue en ${((performance.now() - t0) / 1000).toFixed(0)} s`
+      // 15 October 2026: the check a person can read: how far each signal moved from the exact render, the loudest peak of the mix.
+      const san = j.sanity || {}
+      const lv = Object.entries(san).filter(([k]) => k !== 'mix').map(([k, v]) => `${k} ${v.levelVsRenderDb > 0 ? '+' : ''}${v.levelVsRenderDb} dB`).join(' · ')
+      const ctl = lv ? ` · contrôle : niveau vs rendu exact ${lv} · crête du mix ${san.mix ? san.mix.peak : '?'}` : ''
+      state.textContent = `Qualité finale calculée en ${j.seconds} s + ${j.polishSeconds} s de polish · reçue en ${((performance.now() - t0) / 1000).toFixed(0)} s${ctl}`
       if (playing) start(position() % buf.mix.duration); else applyLive()
     } catch (e) {
       if (run === finalRun) { state.textContent = ''; toast(e.message, true) }
