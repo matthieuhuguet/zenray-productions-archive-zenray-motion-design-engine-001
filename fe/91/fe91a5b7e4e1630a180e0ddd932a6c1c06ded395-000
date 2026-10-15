@@ -72,27 +72,60 @@ def run(slug: str, max_layers: int | None = None, max_seconds: float | None = No
     direct = [{"scale": 1, "maxLayers": LF.DEFAULTS["maxLayers"], "stopDE": stop_de, "minDE": stop_de, "window": 60}]
     for lv in (direct, full_levels):
         lv[-1].update(stopDE=stop_de, minDE=stop_de, **({"maxLayers": int(max_layers)} if max_layers else {}))
-    # two profiles, the better composite wins: DIRECT (full resolution only: crisp UI and text, where a coarse wash only leaves traces to repair) and
-    # PYRAMID (coarse to fine: soft backdrops, glows and textures, where it is far cheaper). Measured: fin-4 0.9987 direct against 0.9937 pyramid.
-    profiles = {"direct": direct, "pyramid": full_levels}
+    # Three moves, in this order (all measured on the interface scene): (1) a PROBE of both profiles at the same small budget, the better wins
+    # (DIRECT: crisp UI and text, where a coarse wash only leaves traces to repair; PYRAMID: soft backdrops, glows, textures, far cheaper there:
+    # fin-4 0.9987 direct against 0.9937 pyramid); (2) vertex polish and refine (a contour is placed to a tenth of a pixel, an edge of contrast 50
+    # makes that a dE of 4: 400 layers 0.9948 -> 0.9958 in 20 s); (3) rounds of extend + polish until the budget or the gain runs out (3500 layers
+    # polished 0.9978 against 6000 unpolished 0.9970). FR : sonde des deux profils, polissage des sommets, rondes prolonge + polis.
+    probe_n = min(int(max_layers or 6000), 1500)
+    profiles = {"direct": [{"scale": 1, "maxLayers": probe_n, "stopDE": stop_de, "minDE": stop_de, "window": 60}],
+                "pyramid": [dict(l) for l in LF.DEFAULTS["levels"]]}
+    profiles["pyramid"][-1].update(maxLayers=probe_n, stopDE=stop_de, minDE=stop_de)
     chosen = [profile] if profile in profiles else ["direct", "pyramid"]
     t0 = time.time()
-    best = None
-    tried = {}
+    deadline = t0 + (float(max_seconds) if max_seconds else 7200.0)
+    best, tried = None, {}
+
+    def composite(layers):
+        return R.render_svg(A.cook_svg({"canvas": {"width": w, "height": h}, "palette": {}, "layers": layers, "view": {}}), w, h, engine="skia", ss=1)[..., :3]
     for name in chosen:
-        cfg = {**base_cfg, "levels": profiles[name], "maxLayers": profiles[name][-1]["maxLayers"], "stopDE": stop_de, "minDE": stop_de}
+        cfg = {"maxSeconds": max(60.0, (deadline - time.time()) / 3), "levels": profiles[name], "maxLayers": probe_n, "stopDE": stop_de, "minDE": stop_de}
         res_i = LF.fit(piece, cfg, log=log)
-        res_i["report"]["refine"] = LF.refine(res_i["layers"], piece, sweeps=2, log=log)     # colour, blur and removal against the exact local render
-        res_i["report"]["layers"] = len(res_i["layers"])
-        res_i["report"]["groups"] = LF.assign_groups_and_roles(res_i["layers"])
-        c_i = R.render_svg(A.cook_svg({"canvas": {"width": w, "height": h}, "palette": {}, "layers": res_i["layers"], "view": {}}), w, h, engine="skia", ss=1)[..., :3]
-        f_i = fidelity(c_i, piece)
+        f_i = fidelity(composite(res_i["layers"]), piece)
         tried[name] = {"fidelity": f_i["fidelity"], "layers": len(res_i["layers"]), "seconds": res_i["report"]["seconds"]}
         if best is None or f_i["fidelity"] > best[0]["fidelity"]:
             best = (f_i, res_i, name)
     res = best[1]
+    layers = res["layers"]
+    stages = []
+
+    def polish():
+        LF.refine(layers, piece, sweeps=1)
+        v = LF.refine_vertices(layers, piece, deltas=(0.2, 0.1, 0.05), max_seconds=max(30.0, deadline - time.time()))
+        LF.refine(layers, piece, sweeps=1)
+        return v
+    polish()
+    cur = fidelity(composite(layers), piece)["fidelity"]
+    stages.append({"layers": len(layers), "fidelity": cur})
+    cap = int(max_layers or 6000)
+    while len(layers) < cap and time.time() < deadline:
+        add = min(cap - len(layers), max(500, len(layers) // 2))
+        got = LF.extend(layers, piece, add, stop_de=stop_de)
+        if got == 0:
+            break
+        polish()
+        nxt = fidelity(composite(layers), piece)["fidelity"]
+        stages.append({"layers": len(layers), "fidelity": nxt})
+        if log:
+            log(f"[stage] {stages[-1]}")
+        gain, cur = nxt - cur, nxt
+        if gain < 5e-5:
+            break
+    res["report"]["layers"] = len(layers)
+    res["report"]["groups"] = LF.assign_groups_and_roles(layers)
     res["report"]["profile"] = best[2]
     res["report"]["profilesTried"] = tried
+    res["report"]["stages"] = stages
     params = {**{k: v for k, v in P0.items() if k not in ("layers", "texts", "palette")}, "layers": res["layers"], "palette": {}}
     params["trace"] = {**(P0.get("trace") or {}), "method": "multi-layer residual pursuit", "layers": len(res["layers"]), "raster_ss": 1}
     comp = R.render_svg(A.cook_svg({**params, "view": {}}), w, h, engine="skia", ss=1)[..., :3]
@@ -107,7 +140,9 @@ def run(slug: str, max_layers: int | None = None, max_seconds: float | None = No
         (folder / "layered.json").write_text(json.dumps(out, indent=1, default=float), encoding="utf-8")
         out["dir"] = str(folder)
         sc = S._path(c["paths"]["out"], slug) / "layered.json"
-        sc.write_text(json.dumps(out, indent=1, default=float), encoding="utf-8")
+        cur = json.loads(sc.read_text(encoding="utf-8")) if sc.is_file() else None
+        if not cur or cur.get("shot") != d["shot"] or cur["fidelity"]["fidelity"] <= got["fidelity"]:     # the module keeps reading the best version
+            sc.write_text(json.dumps(out, indent=1, default=float), encoding="utf-8")
     return out
 
 
