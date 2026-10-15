@@ -134,6 +134,8 @@
   "stackMaxLines": 8,
   "stackMinConf": 70,
   "stackMaxFidelityLoss": 0.25,
+  "stackMinChars": 3,
+  "stackMaxSizeOverBox": 1.8,
   "stackFontSearch": true,
   "stackFontTopK": 6
  }

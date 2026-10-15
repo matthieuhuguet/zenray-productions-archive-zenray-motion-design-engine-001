@@ -217,6 +217,7 @@ def text_variant(slug: str, min_iou: float | None = None, max_lines: int | None 
     tc["minIou"] = float(min_iou if min_iou is not None else tc.get("stackMinIou", 0.3))
     tc["maxLines"] = int(max_lines if max_lines is not None else tc.get("stackMaxLines", 8))
     tc["minConf"] = float(min_conf if min_conf is not None else tc.get("stackMinConf", 70.0))
+    tc["minChars"] = int(tc.get("stackMinChars", 3))           # a one or two character reading ("d.") is a fragment, never the main text
     sc = S._path(c["paths"]["out"], slug) / "layered.json"
     cur = json.loads(sc.read_text(encoding="utf-8"))
     folder = Path(cur["dir"])
@@ -249,6 +250,19 @@ def text_variant(slug: str, min_iou: float | None = None, max_lines: int | None 
     report = found["report"]
     if not found["layers"]:
         return {"slug": slug, "textLayers": 0, "report": report, "minIou": tc["minIou"], "fontSearch": font_search}
+    # a fitted line far taller than the box it was read from is a misfit (the main text would then be that line): dropped, and said in the report
+    keep = []
+    for tl in found["layers"]:
+        bh = float((tl.get("fit_measure") or {}).get("box", [0, 0, 0, 0])[3]) or 1.0
+        if float(tl.get("size_px", 0.0)) <= float(tc.get("stackMaxSizeOverBox", 1.8)) * bh:
+            keep.append(tl)
+        else:
+            for r in report:
+                if r.get("id") == tl["id"]:
+                    r.update(kept=False, why=f"fitted size {tl.get('size_px')} px over {bh:.0f} px box")
+    found = {**found, "layers": keep}
+    if not keep:
+        return {"slug": slug, "textLayers": 0, "written": False, "report": report, "minIou": tc["minIou"], "fontSearch": font_search}
     P2 = copy.deepcopy(P)
     P2["palette"].update(found["palette"])
     P2["texts"] = found["layers"]

@@ -35,7 +35,7 @@ export async function sceneView(root, { slug, id, config }) {
   // the first motion that has values to edit comes first (a plate is only a clip of the video)
   let mi = Math.max(0, motions.findIndex((m) => m.supported))
   let md = motions[mi] || null
-  let view = md ? (md.composition ? 'live' : 'render') : 'ref'
+  let view = md ? (md.composition || md.vector ? 'live' : 'render') : 'ref'      // 15 October 2026: a vector component opens on the LIVE preview, where a value shows at once
   const edits = {}
   const fieldOf = {}
   let player = null
