@@ -150,7 +150,7 @@ def _paths_override(slug: str) -> dict:
 
 
 QUALITIES = ("preview", "final")
-PIPELINE = "15 October 2026 f: exact voices, stored calibration replayed (refused when it deforms), polish under a fidelity guard"
+PIPELINE = "15 October 2026 g: exact voices, stored calibration replayed (refused when it deforms), polish under a fidelity guard"
 
 
 def cook_variation(slug: str, version: str, values: dict, quality: str = "preview") -> dict:
@@ -293,7 +293,7 @@ def _polish_guarded(raw, sr: int, pc: dict, ref, kind: str, anchor=None):
         for _ in range(int(CFG.get("finalExtraPasses", 2))):      # time is not the constraint: another gentle pass while it is not clean
             if rep["clean"]:
                 break
-            extra = [x for x in ("decrackle", "resonance", "limiter") if x in stages]
+            extra = [x for x in ("declick", "decrackle", "resonance", "limiter") if x in stages]    # declick again: a second pass finds the clicks the first masked
             y2, rep2 = PL.polish(y, sr, pc, stages=extra, reference=ref, kind=kind)
             if rep2["after"]["cracklePerSecond"] + rep2["after"]["clicksPerSecond"] >= rep["after"]["cracklePerSecond"] + rep["after"]["clicksPerSecond"]:
                 break

@@ -48,11 +48,11 @@ def run() -> int:
                       "bass": {"kind": "tonal", "macros": {"gainDb": 0.0, "tiltDbOct": 0.0, "releaseS": 0.25}},
                       "pad": {"kind": "tonal", "macros": {"gainDb": 0.0, "releaseS": 0.5}}}}
     keep = copy.deepcopy(prm)
-    out = MS.apply_values(prm, {"bpm": 100, "transpose": 3, "bass": 6, "tilt": 1.5, "release": 2.0})
-    check("tempo and transposition reach the params", out["tempo"]["bpm"] == 100 and out["transposeSemitones"] == 3)
+    out = MS.apply_values(prm, {"bpm": 100, "transpose": 2, "bass": 6, "tilt": 1.5, "release": 1.5})
+    check("tempo and transposition reach the params", out["tempo"]["bpm"] == 100 and out["transposeSemitones"] == 2)
     check("a stem gain reaches stemGainsDb", out["stemGainsDb"].get("bass") == 6 and out["stemGainsDb"].get("drums") == 0)
     check("tilt reaches every voice that has the macro and only those", out["voices"]["kick"]["macros"]["tiltDbOct"] == 1.5 and out["voices"]["bass"]["macros"]["tiltDbOct"] == 1.5 and "tiltDbOct" not in out["voices"]["pad"]["macros"])
-    check("release scales the tonal voices from their OWN value", out["voices"]["bass"]["macros"]["releaseS"] == 0.5 and out["voices"]["pad"]["macros"]["releaseS"] == 1.0)
+    check("release scales the tonal voices from their OWN value", out["voices"]["bass"]["macros"]["releaseS"] == 0.375 and out["voices"]["pad"]["macros"]["releaseS"] == 0.75)
     check("the base params are never modified", prm == keep)
     check("RED: an unknown value is refused", refuses(lambda: MS.apply_values(prm, {"volume": 3})))
     check("RED: an out-of-range value is refused", refuses(lambda: MS.apply_values(prm, {"bpm": 400})))
@@ -101,11 +101,11 @@ def run() -> int:
              "bass": {"kind": "tonal", "macros": {"gainDb": 0.5, "releaseS": 0.25}}}
     prm2 = {"tempo": {"bpm": 120.0}, "transposeSemitones": 0.0, "version": "V_002", "stemGainsDb": {}, "voices": drums}
     keep2 = copy.deepcopy(prm2)
-    o2 = MS.apply_values(prm2, {"kick": 3.0, "snareClap": -1.0, "hats": 2.0, "drumLength": 0.5})
+    o2 = MS.apply_values(prm2, {"kick": 3.0, "snareClap": -1.0, "hats": 2.0, "drumLength": 0.7})
     v2 = o2["voices"]
     check("a named voice gain is added to the voice's OWN calibrated value", v2["kick"]["macros"]["gainDb"] == 4.5 and v2["snare"]["macros"]["gainDb"] == -3.0)
     check("a group slider reaches only its voices (hats, not the bass)", v2["hatClosed"]["macros"]["gainDb"] == 2.0 and v2["bass"]["macros"]["gainDb"] == 0.5)
-    check("a scale slider multiplies the voice's own macro", v2["snare"]["macros"]["timeScale"] == 0.6 and v2["kick"]["macros"]["timeScale"] == 0.5)
+    check("a scale slider multiplies the voice's own macro", abs(v2["snare"]["macros"]["timeScale"] - 0.84) < 1e-9 and abs(v2["kick"]["macros"]["timeScale"] - 0.7) < 1e-9)
     check("a voice that does not exist in this track is skipped, not invented", "hatOpen" not in v2)
     check("the base params are never modified (named voices)", prm2 == keep2)
     check("RED: a named-voice slider out of range is refused", refuses(lambda: MS.apply_values(prm2, {"kick": 40})))
