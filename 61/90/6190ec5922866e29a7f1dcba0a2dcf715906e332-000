@@ -150,6 +150,7 @@ def _paths_override(slug: str) -> dict:
 
 
 QUALITIES = ("preview", "final")
+PIPELINE = "15 October 2026 b: exact voices, stored calibration replayed, polish under a fidelity guard"
 
 
 def cook_variation(slug: str, version: str, values: dict, quality: str = "preview") -> dict:
@@ -166,7 +167,10 @@ def cook_variation(slug: str, version: str, values: dict, quality: str = "previe
     if quality not in QUALITIES:
         raise Refusal(f"quality must be one of {', '.join(QUALITIES)}")
     prm = apply_values(base_params(slug, version), values)
-    key = hashlib.sha256(json.dumps([slug, version, values, quality], sort_keys=True).encode()).hexdigest()[:12]
+    # the key carries what the final pipeline depends on (its settings and the pipeline stamp), so a cook made by an older pipeline is never
+    # served as the current one. FR : la cle porte la version du pipeline, un ancien rendu ne se fait pas passer pour le courant.
+    pipe = [PIPELINE, CFG.get("finalExtraPasses"), CFG.get("finalFidelityFloor"), CFG.get("finalDropOrder")] if quality == "final" else [PIPELINE]
+    key = hashlib.sha256(json.dumps([slug, version, values, quality, pipe], sort_keys=True).encode()).hexdigest()[:12]
     work = scratch() / slug / "cook" / key
     done = work / "done.json"
     if done.exists():
