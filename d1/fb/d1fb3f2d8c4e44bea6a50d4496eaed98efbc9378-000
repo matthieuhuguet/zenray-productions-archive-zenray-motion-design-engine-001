@@ -474,9 +474,14 @@ def fit(target: np.ndarray, cfg: dict | None = None, log=None) -> dict:
 def _layer_bbox(l: dict) -> tuple[float, float, float, float]:
     import re
     g, pad = l["geometry"], 3.0 * l["effects"].get("blur", 0.0)
+    if l["kind"] not in ("path", "ellipse", "circle", "rect", "rounded_rect"):
+        from zrmd.vector import asset as A           # a traced scene (V_001) has strokes, lines, arcs, polylines: the file's own box rule
+        return A.layer_bbox(l, pad)
     if l["kind"] == "path":
         nums = [float(x) for x in re.findall(r"-?\d+(?:\.\d+)?", g["d"])]
         xs, ys = nums[0::2], nums[1::2]
+        if not xs:
+            return 0.0, 0.0, 0.0, 0.0
         return min(xs) - pad, min(ys) - pad, max(xs) + pad, max(ys) + pad
     if l["kind"] in ("ellipse", "circle"):
         rx, ry = (g["r"], g["r"]) if l["kind"] == "circle" else (g["rx"], g["ry"])
@@ -763,6 +768,78 @@ def _round_geom(g: dict) -> dict:
 def _hex(c) -> str:
     c = np.clip(np.round(np.asarray(c, float)), 0, 255).astype(int)
     return "#%02x%02x%02x" % tuple(c)
+
+
+def bind_palette(layers: list[dict], k: int | None = None) -> dict:
+    """Bind the flat hex colours of a stack to a few NAMED palette entries (15 October 2026), in place; returns the palette {key: hex}.
+    A stack of thousands of layers has thousands of colours, so no palette parameter could say "the shape colour". Weighted k-means in CIELAB
+    (weight = painted area, geometric when the layer has no Bezier) names `k` groups c0..; the background layer owns `bg`. Every layer keeps its
+    EXACT colour as entry + delta (integer RGB), so the render does not change by one level, and recolouring an entry moves its group with the
+    shading kept. unbind_palette() is the exact inverse. FR : la pile d'un millier de calques recoit une palette nommee, le rendu ne bouge pas."""
+    from zrmd.vector import v1 as V1
+    cfg = bank().get("palette", {})
+    k = int(k or cfg.get("k", 16))
+    bg_key = cfg.get("backgroundKey", "bg")
+    flat = [l for l in layers if (l.get("paint") or {}).get("type") == "flat" and str(l["paint"].get("colour", "")).startswith("#")]
+    body = [l for l in flat if not (l.get("fit") or {}).get("background")]
+    palette: dict = {}
+    for l in flat:
+        if (l.get("fit") or {}).get("background"):
+            palette[bg_key] = l["paint"]["colour"]
+            l["paint"] = {**l["paint"], "colour": f"@{bg_key}"}
+            l["paint"].pop("delta", None)
+            break
+    if len(body) < 2:
+        return palette
+    rgb = np.array([_unhex(l["paint"]["colour"]) for l in body])
+    lab = _lab(rgb).astype(np.float64)
+    area = np.array([(V1._geometric_area(l) or 0.5 * max(0.0, (lambda b: (b[2] - b[0]) * (b[3] - b[1]))(_layer_bbox(l)))) for l in body], np.float64)
+    wt = np.maximum(area, 1.0)
+    k = min(k, len(body))
+    cent = [int(np.argmax(wt))]                       # farthest-first start from the heaviest colour: deterministic
+    dmin = np.linalg.norm(lab - lab[cent[0]], axis=1)
+    for _ in range(k - 1):
+        j = int(np.argmax(dmin * np.sqrt(wt)))
+        if dmin[j] < 1e-6:
+            break
+        cent.append(j)
+        dmin = np.minimum(dmin, np.linalg.norm(lab - lab[j], axis=1))
+    C = lab[cent].copy()
+    for _ in range(int(cfg.get("iterations", 12))):
+        lbl = np.argmin(((lab[:, None, :] - C[None, :, :]) ** 2).sum(-1), axis=1)
+        for c in range(len(C)):
+            m = lbl == c
+            if m.any():
+                C[c] = (lab[m] * wt[m, None]).sum(0) / wt[m].sum()
+    lbl = np.argmin(((lab[:, None, :] - C[None, :, :]) ** 2).sum(-1), axis=1)
+    used = sorted(set(lbl.tolist()), key=lambda c: -wt[lbl == c].sum())
+    names = {c: f"c{i}" for i, c in enumerate(used)}
+    ent = {}
+    for c in used:
+        m = lbl == c
+        ent[c] = np.clip(np.rint((rgb[m] * wt[m, None]).sum(0) / wt[m].sum()), 0, 255)
+        palette[names[c]] = _hex(ent[c])
+    for l, c, col in zip(body, lbl, rgb):
+        d = [int(v) for v in (col - ent[int(c)])]
+        l["paint"] = {**l["paint"], "colour": f"@{names[int(c)]}"}
+        if any(d):
+            l["paint"]["delta"] = d
+        else:
+            l["paint"].pop("delta", None)
+    return palette
+
+
+def unbind_palette(layers: list[dict], palette: dict) -> list[dict]:
+    """The exact inverse of bind_palette (in place): every bound flat paint becomes its hex again. A stack resumed from a saved version needs it
+    because the pursuit works on literal colours. FR : l'inverse exact de la liaison a la palette."""
+    for l in layers:
+        p = l.get("paint") or {}
+        c = p.get("colour")
+        if p.get("type") == "flat" and isinstance(c, str) and c.startswith("@") and c[1:] in palette:
+            col = _unhex(palette[c[1:]]) + np.array(p.get("delta") or [0, 0, 0], np.float64)
+            l["paint"] = {k2: v for k2, v in p.items() if k2 != "delta"}
+            l["paint"]["colour"] = _hex(col)
+    return layers
 
 
 def bank() -> dict:

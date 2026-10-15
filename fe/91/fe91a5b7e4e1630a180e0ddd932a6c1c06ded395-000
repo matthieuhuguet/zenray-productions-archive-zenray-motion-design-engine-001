@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import sys
 import tempfile
@@ -92,7 +93,8 @@ def run(slug: str, max_layers: int | None = None, max_seconds: float | None = No
     best, tried = None, {}
     if resume:                                     # continue the best existing multi-layer version instead of starting again
         prev = json.loads((S._path(c["paths"]["out"], slug) / "layered.json").read_text(encoding="utf-8"))
-        prior = json.loads((Path(prev["dir"]) / "params.json").read_text(encoding="utf-8"))["layers"]
+        prior_p = json.loads((Path(prev["dir"]) / "params.json").read_text(encoding="utf-8"))
+        prior = LF.unbind_palette(prior_p["layers"], prior_p.get("palette") or {})      # the pursuit works on literal colours
         best = (fidelity(composite_of(prior, w, h), piece), {"layers": prior, "report": {"seconds": 0.0, "resumedFrom": prev["dir"]}}, "resume")
         chosen = []
 
@@ -125,7 +127,8 @@ def run(slug: str, max_layers: int | None = None, max_seconds: float | None = No
         res["report"]["profile"] = best[2]
         res["report"]["profilesTried"] = tried
         res["report"]["stages"] = stages
-        params = {**{k: v for k, v in P0.items() if k not in ("layers", "texts", "palette")}, "layers": res["layers"], "palette": {}}
+        bound = copy.deepcopy(res["layers"])                  # the pursuit keeps literal colours; the written file names them (palette groups)
+        params = {**{k: v for k, v in P0.items() if k not in ("layers", "texts", "palette")}, "layers": bound, "palette": LF.bind_palette(bound)}
         params["trace"] = {**(P0.get("trace") or {}), "method": "multi-layer residual pursuit", "layers": len(res["layers"]), "raster_ss": 1}
         comp = R.render_svg(A.cook_svg({**params, "view": {}}), w, h, engine="skia", ss=1)[..., :3]
         got = fidelity(comp, piece)
@@ -165,6 +168,37 @@ def run(slug: str, max_layers: int | None = None, max_seconds: float | None = No
     return emit()
 
 
+def bind_version(slug: str) -> dict:
+    """Write the best existing multi-layer version again with its colours bound to named palette groups (no refit: the render is identical, checked
+    to the level). It becomes the version the module reads. FR : reecrit la meilleure pile avec une palette nommee, sans refaire le calcul."""
+    c = S.cfg()
+    sc = S._path(c["paths"]["out"], slug) / "layered.json"
+    cur = json.loads(sc.read_text(encoding="utf-8"))
+    folder = Path(cur["dir"])
+    P = json.loads((folder / "params.json").read_text(encoding="utf-8"))
+    if P.get("palette"):
+        return {"slug": slug, "bound": False, "reason": "already has a palette", "version": folder.name}
+    d = json.loads((S._path(c["paths"]["out"], slug) / "scene.json").read_text(encoding="utf-8"))
+    frame = np.asarray(Image.open(S._path(c["paths"]["frames"], slug) / f"frame-{d['shot']}.png").convert("RGB"))
+    cr, w, h = d["crop"], P["canvas"]["width"], P["canvas"]["height"]
+    piece = frame[cr["y"]:cr["y"] + h, cr["x"]:cr["x"] + w]
+    layers = copy.deepcopy(P["layers"])
+    params = {**P, "layers": layers, "palette": LF.bind_palette(layers)}
+    comp = R.render_svg(A.cook_svg({**params, "view": {}}), w, h, engine="skia", ss=1)[..., :3]
+    before = R.render_svg(A.cook_svg({**P, "view": {}}), w, h, engine="skia", ss=1)[..., :3]
+    diff = int(np.abs(comp.astype(int) - before.astype(int)).max())
+    if diff != 0:
+        raise SystemExit(f"{slug}: binding changed the render by {diff} levels; nothing written")
+    got = fidelity(comp, piece)
+    out = {**cur, "fidelity": got, "palette": len(params["palette"]), "date": "15 October 2026"}
+    nf = A.write_version(Path(d["dir"]).parent, params, piece, None, parent=folder.name, note="palette groups bound (layerfit.bind_palette), same render")
+    (nf / "component.html").write_text(S.export_html(json.loads((nf / "params.json").read_text(encoding="utf-8")), f"{slug}-layers"), encoding="utf-8")
+    out["dir"] = str(nf)
+    (nf / "layered.json").write_text(json.dumps(out, indent=1, default=float), encoding="utf-8")
+    sc.write_text(json.dumps(out, indent=1, default=float), encoding="utf-8")
+    return {"slug": slug, "bound": True, "version": nf.name, "palette": len(params["palette"]), "fidelity": got["fidelity"], "maxDiff": diff}
+
+
 def adopt(slug: str) -> dict:
     """Make the BEST version of a scene's multi-layer fits the one the module reads: the highest composite fidelity among the versions that carry a
     layered.json (runs differ by profile and budget; every one is kept, none is overwritten). FR : adopte la meilleure version multi-calques."""
@@ -183,6 +217,7 @@ def adopt(slug: str) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--slug", required=True)
+    ap.add_argument("--bind", action="store_true", help="rewrite the best existing version with its colours bound to named palette groups (same render)")
     ap.add_argument("--adopt", action="store_true", help="only make the best existing multi-layer version the one the module reads")
     ap.add_argument("--max-layers", type=int, default=None)
     ap.add_argument("--max-seconds", type=float, default=None)
@@ -194,6 +229,9 @@ def main() -> int:
     a = ap.parse_args()
     if a.adopt:
         print(json.dumps(adopt(a.slug), default=float))
+        return 0
+    if a.bind:
+        print(json.dumps(bind_version(a.slug), default=float))
         return 0
     out = run(a.slug, a.max_layers, a.max_seconds, write=not a.no_write, log=lambda m: print(m, file=sys.stderr, flush=True), stop_de=a.stop_de, profile=a.profile, resume=a.resume, checkpoint_s=a.checkpoint_seconds)
     print(json.dumps(out, default=float))

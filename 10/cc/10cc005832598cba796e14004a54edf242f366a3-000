@@ -78,6 +78,46 @@ def test_scale_round_trip():
         assert abs(back["effects"]["blur"] - l["effects"]["blur"]) < 0.02
 
 
+def test_palette_binding_is_exact_and_editable():
+    """15 October 2026: a stack's colours are bound to named palette groups without moving the render by one level, unbind is the exact inverse, and
+    recolouring one group moves ITS layers only (a render that does not change would be a binding that does nothing)."""
+    import copy
+    res = LF.fit(scene(), SMALL)
+    layers = res["layers"]
+    before = render(layers)
+    bound = copy.deepcopy(layers)
+    pal = LF.bind_palette(bound)
+    assert pal and any(k.startswith("c") for k in pal) and "bg" in pal, pal
+    svg = A.cook_svg({"canvas": {"width": W, "height": H}, "palette": pal, "layers": bound, "view": {}})
+    after = R.render_svg(svg, W, H, engine="skia", ss=1)[..., :3]
+    assert int(np.abs(before.astype(int) - after.astype(int)).max()) == 0                 # green: not one level
+    again = LF.unbind_palette(copy.deepcopy(bound), pal)
+    assert [l["paint"]["colour"] for l in again] == [l["paint"]["colour"] for l in layers]  # green: exact inverse
+    key = next(k for k in pal if k.startswith("c"))
+    svg2 = A.cook_svg({"canvas": {"width": W, "height": H}, "palette": {**pal, key: "#ff00ff"}, "layers": bound, "view": {}})
+    edited = R.render_svg(svg2, W, H, engine="skia", ss=1)[..., :3]
+    assert int((np.abs(edited.astype(int) - after.astype(int)).sum(-1) > 0).sum()) > 0   # green: the group moved
+    members = {l["id"] for l in bound if l["paint"]["colour"] == f"@{key}"}
+    other = [l for l in bound if l["id"] not in members]
+    assert other and members                                                              # red side: the other groups are untouched layers
+    svg3 = A.cook_svg({"canvas": {"width": W, "height": H}, "palette": {**pal, key: "#ff00ff"}, "layers": other, "view": {}})
+    svg4 = A.cook_svg({"canvas": {"width": W, "height": H}, "palette": pal, "layers": other, "view": {}})
+    assert svg3 == svg4                                                                   # the layers outside the group do not depend on its entry
+
+
+def test_empty_path_and_stroke_kinds_do_not_break_the_boxes():
+    """A traced scene (V_001) has paths with no segment and stroke kinds; the group naming and the file box rule must not raise on them."""
+    layers = [{"id": "L0", "name": "L0", "z": 0, "kind": "path", "geometry": {"d": "", "segments": 0}, "paint": {"type": "flat", "colour": "#101010"},
+               "effects": {"blur": 0.0, "opacity": 1.0}},
+              {"id": "L1", "name": "L1", "z": 1, "kind": "line", "geometry": {"x1": 1, "y1": 1, "x2": 40, "y2": 20, "width": 2},
+               "paint": {"type": "flat", "colour": "#ffffff"}, "effects": {"blur": 0.0, "opacity": 1.0}}]
+    assert LF._layer_bbox(layers[0]) == (0.0, 0.0, 0.0, 0.0)                              # an empty path is an empty box
+    assert LF._layer_bbox(layers[1])[2] >= 40.0                                           # a line is measured by the file's own rule
+    LF.assign_groups_and_roles(layers)
+    svg = A.cook_svg({"canvas": {"width": W, "height": H}, "palette": {}, "layers": [{**layers[0], "effects": {"blur": 1.0, "opacity": 1.0}}], "view": {}})
+    assert "<svg" in svg
+
+
 def main() -> int:
     bad = []
     for name, fn in sorted(globals().items()):

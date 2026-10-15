@@ -59,7 +59,17 @@ def _paint_defs(layer: dict, palette: dict, css: bool = False) -> tuple[str, str
     p = layer["paint"]
     gid = f"grad-{layer['id']}"
     if p["type"] == "flat":
-        return _resolve(p["colour"], palette, css), ""
+        col = _resolve(p["colour"], palette, css)
+        d = p.get("delta")
+        if d and any(d):
+            # 15 October 2026: a layer of a stack is its palette entry plus a small RGB delta (layerfit.bind_palette): the HTML component keeps the
+            # entry as a CSS variable and shifts it with relative colour syntax, the file render resolves it to the same hex. FR : entree + delta.
+            if css:
+                col = f"rgb(from {col} calc(r + {int(d[0])}) calc(g + {int(d[1])}) calc(b + {int(d[2])}))"
+            else:
+                c0 = [int(col.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4)]
+                col = "#%02x%02x%02x" % tuple(max(0, min(255, c0[i] + int(d[i]))) for i in range(3))
+        return col, ""
     stops = "".join(f'<stop offset="{_f(s["offset"], 5)}" stop-color="{_resolve(s["colour"], palette, css)}"/>' for s in p["stops"])
     if p["type"] == "linear":
         d = (f'<linearGradient id="{gid}" gradientUnits="userSpaceOnUse" x1="{_f(p["x1"])}" y1="{_f(p["y1"])}" '
@@ -173,6 +183,8 @@ def layer_bbox(layer: dict, pad: float = 0.0) -> tuple[float, float, float, floa
         pts = list(zip(nums[0::2], nums[1::2]))
     else:
         return 0.0, 0.0, 1e9, 1e9
+    if not pts:                                   # an empty path (a traced layer with no segment) paints nothing: an empty box
+        return 0.0, 0.0, 0.0, 0.0
     xs, ys = [p[0] for p in pts], [p[1] for p in pts]
     sw = g.get("width", 0.0) / 2 if k in P.STROKE_KINDS else 0.0
     return min(xs) - sw - pad, min(ys) - sw - pad, max(xs) + sw + pad, max(ys) + sw + pad
