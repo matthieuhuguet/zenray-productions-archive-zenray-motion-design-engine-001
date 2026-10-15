@@ -199,6 +199,59 @@ def bind_version(slug: str) -> dict:
     return {"slug": slug, "bound": True, "version": nf.name, "palette": len(params["palette"]), "fidelity": got["fidelity"], "maxDiff": diff}
 
 
+def text_variant(slug: str, min_iou: float | None = None, max_lines: int | None = None, min_conf: float | None = None) -> dict:
+    """The TEXT-EDITABLE variant of the best stack (15 October 2026): the lines of text found in the crop become live text layers (a font fitted
+    on the matte of each line, size, tracking, colour), and the stack layers that sit inside a kept line are hidden (not deleted: the exact stack
+    stays in the version before). The scene run keeps a line at a soft IoU of 0.8; a compressed video rarely reaches it (0.38 to 0.64 on
+    paper-mono-code), so a stack variant keeps lines from `texts.stackMinIou` (params/vector-scene.json) and says so in its note and its report:
+    the string and the colour become editable, the glyph shapes are the fitted font's. FR : la variante au texte editable d'une pile."""
+    from zrmd.vector import texts as TX
+    c = S.cfg()
+    tc = dict(c["texts"])
+    tc["minIou"] = float(min_iou if min_iou is not None else tc.get("stackMinIou", 0.3))
+    tc["maxLines"] = int(max_lines if max_lines is not None else tc.get("stackMaxLines", 8))
+    tc["minConf"] = float(min_conf if min_conf is not None else tc.get("stackMinConf", 70.0))
+    sc = S._path(c["paths"]["out"], slug) / "layered.json"
+    cur = json.loads(sc.read_text(encoding="utf-8"))
+    folder = Path(cur["dir"])
+    P = json.loads((folder / "params.json").read_text(encoding="utf-8"))
+    d = json.loads((S._path(c["paths"]["out"], slug) / "scene.json").read_text(encoding="utf-8"))
+    frame = np.asarray(Image.open(S._path(c["paths"]["frames"], slug) / f"frame-{d['shot']}.png").convert("RGB"))
+    cr, w, h = d["crop"], P["canvas"]["width"], P["canvas"]["height"]
+    piece = frame[cr["y"]:cr["y"] + h, cr["x"]:cr["x"] + w]
+    bible_path = settings.path("workshop") / "references" / slug / "bible.json"
+    ranking = (json.loads(bible_path.read_text(encoding="utf-8")).get("font_match") or {}).get("ranking") if bible_path.exists() else None
+    found = TX.detect_layers(piece, ranking, 0, P.get("palette", {}), tc)
+    report = found["report"]
+    if not found["layers"]:
+        return {"slug": slug, "textLayers": 0, "report": report, "minIou": tc["minIou"]}
+    P2 = copy.deepcopy(P)
+    P2["palette"].update(found["palette"])
+    P2["texts"] = found["layers"]
+    boxes = [r["box"] for r in report if r.get("kept")]
+    hidden = []
+    for l in P2["layers"]:
+        if (l.get("fit") or {}).get("background") or l.get("visible", True) is False:
+            continue
+        x0, y0, x1, y1 = LF._layer_bbox(l)
+        for bx, by, bw, bh in boxes:
+            pad = max(4, int(0.15 * bh))
+            if x0 >= bx - pad and x1 <= bx + bw + pad and y0 >= by - pad and y1 <= by + bh + pad:
+                l["visible"] = False
+                hidden.append(l["id"])
+                break
+    P2["variant"] = {"kind": "text-editable", "hidden_layers": hidden, "text_layers": [t["id"] for t in P2["texts"]], "minIou": tc["minIou"],
+                     "of": folder.name, "note": "live text fitted at a soft IoU under the scene gate; the exact stack stays in the version before"}
+    comp = R.render_svg(A.cook_svg({**P2, "view": {}}), w, h, engine="skia", ss=1)[..., :3]
+    got = fidelity(comp, piece)
+    nf = A.write_version(Path(d["dir"]).parent, P2, None, None, parent=folder.name,
+                         note=f"text-editable variant of {folder.name} ({len(P2['texts'])} lines, soft IoU gate {tc['minIou']})")
+    urls = TX.ship_fonts(P2, nf)
+    (nf / "component.html").write_text(S.export_html(json.loads((nf / "params.json").read_text(encoding="utf-8")), f"{slug}-text", fonts=urls), encoding="utf-8")
+    return {"slug": slug, "version": nf.name, "textLayers": len(P2["texts"]), "hiddenLayers": len(hidden), "fidelityWithOutlineText": got["fidelity"],
+            "of": folder.name, "minIou": tc["minIou"], "lines": [{k: r.get(k) for k in ("text", "conf", "iou_soft", "font", "kept", "why")} for r in report]}
+
+
 def adopt(slug: str) -> dict:
     """Make the BEST version of a scene's multi-layer fits the one the module reads: the highest composite fidelity among the versions that carry a
     layered.json (runs differ by profile and budget; every one is kept, none is overwritten). FR : adopte la meilleure version multi-calques."""
@@ -217,6 +270,8 @@ def adopt(slug: str) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--slug", required=True)
+    ap.add_argument("--text-variant", action="store_true", help="write the text-editable variant of the best stack (live text layers, glyph layers hidden)")
+    ap.add_argument("--text-min-iou", type=float, default=None, help="soft IoU a line must reach to become a live text layer (default texts.stackMinIou)")
     ap.add_argument("--bind", action="store_true", help="rewrite the best existing version with its colours bound to named palette groups (same render)")
     ap.add_argument("--adopt", action="store_true", help="only make the best existing multi-layer version the one the module reads")
     ap.add_argument("--max-layers", type=int, default=None)
@@ -232,6 +287,9 @@ def main() -> int:
         return 0
     if a.bind:
         print(json.dumps(bind_version(a.slug), default=float))
+        return 0
+    if a.text_variant:
+        print(json.dumps(text_variant(a.slug, a.text_min_iou), default=float))
         return 0
     out = run(a.slug, a.max_layers, a.max_seconds, write=not a.no_write, log=lambda m: print(m, file=sys.stderr, flush=True), stop_de=a.stop_de, profile=a.profile, resume=a.resume, checkpoint_s=a.checkpoint_seconds)
     print(json.dumps(out, default=float))

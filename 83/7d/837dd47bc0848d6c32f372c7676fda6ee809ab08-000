@@ -128,6 +128,9 @@
   "minIou": 0.8,
   "maxLines": 6,
   "fontsPerLine": 2,
-  "upscale": 1.0
+  "upscale": 1.0,
+  "stackMinIou": 0.3,
+  "stackMaxLines": 8,
+  "stackMinConf": 70
  }
 }
