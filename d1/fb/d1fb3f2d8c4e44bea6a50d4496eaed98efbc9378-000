@@ -776,7 +776,8 @@ def _defaults() -> dict:
                    {"scale": 4, "maxLayers": 700, "stopDE": 1.6, "minDE": 1.2, "window": 100},
                    {"scale": 2, "maxLayers": 1800, "stopDE": 0.8, "minDE": 0.7, "window": 80},
                    {"scale": 1, "maxLayers": 6000, "stopDE": 0.4, "minDE": 0.4, "window": 60}],
-        "maxSeconds": 900, "stopDE": 0.4, "minDE": 0.4, "relThrs": [0.4],        # one region threshold: three cost 3.2x the time for +0.0002 at 800 layers (interface), the polish and the rounds recover it "peakSmooth": 1.0, "window": 120, "pad": 4,
+        "maxSeconds": 900, "stopDE": 0.4, "minDE": 0.4, # one region threshold: three cost 3.2x the time for +0.0002 at 800 layers (interface), the polish and the rounds recover it
+        "relThrs": [0.4], "peakSmooth": 1.0, "window": 120, "pad": 4,
         "exactTop": 3, "levels_iso": b["shapes"]["isoLevels"], "simplifyPx": b["shapes"]["simplifyPx"], "sigmas": sig,
         "primitives": b["shapes"]["primitives"], "paths": b["shapes"]["path"], "preferPrimitive": b["shapes"]["preferPrimitive"],
         "minGain": 0.05, "tabuR": 2, "maxLayers": 3000,
