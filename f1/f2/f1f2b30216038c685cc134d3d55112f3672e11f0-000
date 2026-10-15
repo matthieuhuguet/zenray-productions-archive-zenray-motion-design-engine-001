@@ -60,6 +60,18 @@ def run() -> int:
     check("the qualities are the preview and the polished final", MS.QUALITIES == ("preview", "final"))
     # 15 October 2026: the stored calibration is replayed by the final quality; its absence is reported, never replaced by a guess.
     # FR : la calibration stockee est rejouee par la qualite finale ; son absence est dite, jamais remplacee par une valeur devinee.
+    import numpy as np
+    from zrmd.audio import polish as PL
+    sr_t = 44100
+    tt = np.arange(int(2.0 * sr_t)) / sr_t
+    tone = (0.3 * np.sin(2 * np.pi * 110 * tt) + 0.2 * np.sin(2 * np.pi * 880 * tt) + 0.1 * np.sin(2 * np.pi * 3520 * tt)).astype(np.float32)
+    y_ok, _, g_ok = MS._polish_guarded(tone, sr_t, PL.cfg(), tone, "stem", anchor=tone)
+    check("the fidelity guard keeps the polish at the floor against its own anchor", g_ok is not None and g_ok["ok"] and g_ok["score"] >= g_ok["floor"], str(g_ok))
+    noise = np.random.default_rng(5).normal(0, 0.2, tone.shape).astype(np.float32)
+    _, _, g_bad = MS._polish_guarded(tone, sr_t, PL.cfg(), tone, "stem", anchor=noise)
+    check("RED: an anchor the render cannot match drops every droppable stage and reports ok False", g_bad is not None and not g_bad["ok"] and g_bad["dropped"] == MS.CFG["finalDropOrder"], str(g_bad))
+    _, _, g_none = MS._polish_guarded(tone, sr_t, PL.cfg(), tone, "stem", anchor=None)
+    check("without a calibration there is no guard and nothing is claimed", g_none is None)
     import tempfile
     from zrmd.audio import calibration as CAL
     with tempfile.TemporaryDirectory() as d:

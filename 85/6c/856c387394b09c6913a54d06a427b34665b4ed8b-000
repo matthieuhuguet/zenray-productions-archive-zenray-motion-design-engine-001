@@ -14,7 +14,9 @@
  },
  "referenceUnreachable": "/nonexistent",
  "finalExtraPasses": 2,
- "finalDoc": "Quality \"final\" (15 October 2026): exact voices then the production polish of every stem and of the mix; while a track is not clean (relative to our calibrated version of the same member) up to finalExtraPasses gentle passes more. Time is not the constraint: minutes are fine, nobody waits in real time.",
+ "finalFidelityFloor": 99.9,
+ "finalDropOrder": ["bass", "resonance", "decrackle"],
+ "finalDoc": "Quality \"final\" (15 October 2026): exact voices then the production polish of every stem and of the mix; while a track is not clean (relative to our calibrated version of the same member) up to finalExtraPasses gentle passes more. Time is not the constraint: minutes are fine, nobody waits in real time. When the stored calibration was replayed, the polished signal is scored against the calibrated one with the official critic and the stages of finalDropOrder are removed one by one while it is under finalFidelityFloor (15 October 2026).",
  "sliders": [
   {
    "id": "bpm",

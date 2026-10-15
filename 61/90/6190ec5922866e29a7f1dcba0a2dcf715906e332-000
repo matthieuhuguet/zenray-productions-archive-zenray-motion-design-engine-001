@@ -218,16 +218,9 @@ def cook_variation(slug: str, version: str, values: dict, quality: str = "previe
                         ref, rsr = sf.read(str(rp), dtype="float32")
                         ref = ref if rsr == sr else None
                 kind = "mix" if st == "mix" else "stem"
-                y, rep = PL.polish(raw, sr, pc, reference=ref, kind=kind)
-                for _ in range(int(CFG.get("finalExtraPasses", 2))):      # time is not the constraint: another gentle pass while it is not clean
-                    if rep["clean"]:
-                        break
-                    y2, rep2 = PL.polish(y, sr, pc, stages=["decrackle", "resonance", "limiter"], reference=ref, kind=kind)
-                    if rep2["after"]["cracklePerSecond"] + rep2["after"]["clicksPerSecond"] >= rep["after"]["cracklePerSecond"] + rep["after"]["clicksPerSecond"]:
-                        break
-                    y, rep = y2, {**rep2, "stages": {**rep["stages"], **{f"extra:{k}": v for k, v in rep2["stages"].items()}}}
+                y, rep, guard = _polish_guarded(raw, sr, pc, ref, kind, anchor=raw if calibrated else None)
                 sf.write(str(work / f"{st}.wav"), np.asarray(y, np.float32), sr, subtype="FLOAT")
-                report[st] = {"clean": rep["clean"], "cleanAbsolute": rep["cleanAbsolute"], "stages": rep["stages"]}
+                report[st] = {"clean": rep["clean"], "cleanAbsolute": rep["cleanAbsolute"], "stages": rep["stages"], "fidelity": guard}
             res.update(polished=True, polishSeconds=round(time.time() - t1, 2), polish=report, calibrationInfo=cal_info,
                        note=("exact voices, the stored 99.9 calibration replayed from its numbers, then the production polish of every stem and of the mix"
                              if calibrated else "exact voices, then the production polish of every stem and of the mix; no stored calibration was replayed"))
@@ -238,6 +231,52 @@ def cook_variation(slug: str, version: str, values: dict, quality: str = "previe
             res.update(polished=False, note="raw preview of the base version: the final quality (exact voices and polish) follows")
         done.write_text(json.dumps(res), encoding="utf-8")
         return res
+
+
+def _polish_guarded(raw, sr: int, pc: dict, ref, kind: str, anchor=None):
+    """The production polish of one signal, with a FIDELITY GUARD (15 October 2026). When `anchor` is given (the calibrated render, which the
+    official critic scores at 99.99 and above against the reference: measured on memo-m1), the polished signal is scored against it with the same
+    critic; while it is under finalFidelityFloor the stages of finalDropOrder are removed one by one (bass foundation first, which measurably moves
+    the spectrum on purpose: bass 99.15, drums 99.84, mix 99.85 with every stage), and the report names what was dropped and the score reached.
+    The true-peak limiter and the click repair are never dropped. FR : le polish ne s'eloigne jamais de la version calee plus que le plancher."""
+    import numpy as np
+    from zrmd.audio import polish as PL, trim as T
+    all_stages = ["dc", "declick", "decrackle", "resonance", "bass", "limiter"]
+    floor = float(CFG.get("finalFidelityFloor", 99.9))
+    order = [x for x in CFG.get("finalDropOrder", ["bass", "resonance", "decrackle"]) if x in all_stages and x not in ("limiter", "declick", "dc")]
+    spec = json.loads((ENGINE / "params" / "music-trim.json").read_text(encoding="utf-8"))["specs"]["critic"]
+    base = T.mono(np.asarray(anchor, np.float64)) if anchor is not None else None
+
+    def run(stages):
+        y, rep = PL.polish(raw, sr, pc, stages=stages, reference=ref, kind=kind)
+        for _ in range(int(CFG.get("finalExtraPasses", 2))):      # time is not the constraint: another gentle pass while it is not clean
+            if rep["clean"]:
+                break
+            extra = [x for x in ("decrackle", "resonance", "limiter") if x in stages]
+            y2, rep2 = PL.polish(y, sr, pc, stages=extra, reference=ref, kind=kind)
+            if rep2["after"]["cracklePerSecond"] + rep2["after"]["clicksPerSecond"] >= rep["after"]["cracklePerSecond"] + rep["after"]["clicksPerSecond"]:
+                break
+            y, rep = y2, {**rep2, "stages": {**rep["stages"], **{f"extra:{k}": v for k, v in rep2["stages"].items()}}}
+        return y, rep
+
+    def fidelity(y):
+        m = T.mono(np.asarray(y, np.float64))
+        n = min(len(base), len(m))
+        return round(float(T.score_spec(base[:n], m[:n], sr, spec)["score"]), 3)
+
+    stages, dropped = list(all_stages), []
+    y, rep = run(stages)
+    if base is None:
+        return y, rep, None
+    score = fidelity(y)
+    for name in order:
+        if score >= floor:
+            break
+        stages.remove(name)
+        dropped.append(name)
+        y, rep = run(stages)
+        score = fidelity(y)
+    return y, rep, {"floor": floor, "score": score, "ok": score >= floor, "dropped": dropped}
 
 
 COOK_FINAL = None
