@@ -150,7 +150,7 @@ def _paths_override(slug: str) -> dict:
 
 
 QUALITIES = ("preview", "final")
-PIPELINE = "15 October 2026 b: exact voices, stored calibration replayed, polish under a fidelity guard"
+PIPELINE = "15 October 2026 c: exact voices, stored calibration replayed (refused when it deforms), polish under a fidelity guard"
 
 
 def cook_variation(slug: str, version: str, values: dict, quality: str = "preview") -> dict:
@@ -169,7 +169,7 @@ def cook_variation(slug: str, version: str, values: dict, quality: str = "previe
     prm = apply_values(base_params(slug, version), values)
     # the key carries what the final pipeline depends on (its settings and the pipeline stamp), so a cook made by an older pipeline is never
     # served as the current one. FR : la cle porte la version du pipeline, un ancien rendu ne se fait pas passer pour le courant.
-    pipe = [PIPELINE, CFG.get("finalExtraPasses"), CFG.get("finalFidelityFloor"), CFG.get("finalDropOrder")] if quality == "final" else [PIPELINE]
+    pipe = [PIPELINE, CFG.get("finalExtraPasses"), CFG.get("finalFidelityFloor"), CFG.get("finalDropOrder"), CFG.get("finalMaxLevelDeltaDb")] if quality == "final" else [PIPELINE]
     key = hashlib.sha256(json.dumps([slug, version, values, quality, pipe], sort_keys=True).encode()).hexdigest()[:12]
     work = scratch() / slug / "cook" / key
     done = work / "done.json"
@@ -206,8 +206,24 @@ def cook_variation(slug: str, version: str, values: dict, quality: str = "previe
             calibrated, cal_info = False, None
             if tv:
                 try:
-                    out, cal_info = _replay_calibration(slug, version, tv, prm, out, score, P)
+                    out_cal, cal_info = _replay_calibration(slug, version, tv, prm, out, score, P)
                     calibrated = cal_info is not None
+                    if calibrated:
+                        # a replay that moved a signal by more than finalMaxLevelDeltaDb (or made it non finite) is a deformation, not a correction
+                        # (a drum stem came out 17 dB too loud on another tempo before the t0 fix): it is refused and the exact render is kept, and
+                        # the result says which signals. FR : un rejeu qui deforme est refuse, le rendu exact est garde et le dit.
+                        lim = float(CFG.get("finalMaxLevelDeltaDb", 6.0))
+                        bad = {}
+                        for st in (*STEMS, "mix"):
+                            c_sig = np.asarray(out_cal["stems"][st] if st != "mix" else out_cal["mix"], np.float64)
+                            r_sig = raws[st].astype(np.float64)
+                            dlt = 20 * np.log10((np.sqrt((c_sig ** 2).mean()) + 1e-12) / (np.sqrt((r_sig ** 2).mean()) + 1e-12))
+                            if not np.isfinite(c_sig).all() or abs(dlt) > lim:
+                                bad[st] = round(float(dlt), 2)
+                        if bad:
+                            calibrated, res["calibrationRejected"] = False, {"limitDb": lim, "levelDeltaDb": bad}
+                        else:
+                            out = out_cal
                 except Exception as e:  # noqa: BLE001
                     res["calibrationError"] = f"{type(e).__name__}: {e}"
             res["calibrated"] = calibrated
@@ -225,6 +241,13 @@ def cook_variation(slug: str, version: str, values: dict, quality: str = "previe
                 y, rep, guard = _polish_guarded(raw, sr, pc, ref, kind, anchor=raw if calibrated else None)
                 sf.write(str(work / f"{st}.wav"), np.asarray(y, np.float32), sr, subtype="FLOAT")
                 report[st] = {"clean": rep["clean"], "cleanAbsolute": rep["cleanAbsolute"], "stages": rep["stages"], "fidelity": guard}
+            sane = {}
+            for st in (*STEMS, "mix"):
+                y_f, _ = sf.read(str(work / f"{st}.wav"), dtype="float32")
+                r_s = raws[st].astype(np.float64)
+                sane[st] = {"peak": round(float(np.abs(y_f).max()), 3), "finite": bool(np.isfinite(y_f).all()),
+                            "levelVsRenderDb": round(float(20 * np.log10((np.sqrt((y_f.astype(np.float64) ** 2).mean()) + 1e-12) / (np.sqrt((r_s ** 2).mean()) + 1e-12))), 2)}
+            res["sanity"] = sane
             res.update(polished=True, polishSeconds=round(time.time() - t1, 2), polish=report, calibrationInfo=cal_info,
                        note=("exact voices, the stored 99.9 calibration replayed from its numbers, then the production polish of every stem and of the mix"
                              if calibrated else "exact voices, then the production polish of every stem and of the mix; no stored calibration was replayed"))

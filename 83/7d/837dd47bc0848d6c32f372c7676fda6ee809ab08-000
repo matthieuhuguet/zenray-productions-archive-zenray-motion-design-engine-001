@@ -131,6 +131,8 @@
   "upscale": 1.0,
   "stackMinIou": 0.3,
   "stackMaxLines": 8,
-  "stackMinConf": 70
+  "stackMinConf": 70,
+  "stackFontSearch": true,
+  "stackFontTopK": 6
  }
 }

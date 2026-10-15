@@ -221,10 +221,28 @@ def text_variant(slug: str, min_iou: float | None = None, max_lines: int | None 
     piece = frame[cr["y"]:cr["y"] + h, cr["x"]:cr["x"] + w]
     bible_path = settings.path("workshop") / "references" / slug / "bible.json"
     ranking = (json.loads(bible_path.read_text(encoding="utf-8")).get("font_match") or {}).get("ranking") if bible_path.exists() else None
+    font_search = None
+    if tc.get("stackFontSearch", True):
+        # the bible's font match is often empty on a screen recording (paper-mono-code: none): rank the dataset's faces against the matte of the
+        # longest line, and use the winning family for every line of the scene (one search per scene). FR : famille cherchee sur la plus longue ligne.
+        from zrmd.vector import fontfit
+        lines = sorted(TX.ocr_lines(piece, tc["minConf"], upscale=tc.get("upscale", 1.0)), key=lambda r: -len(r["text"]) * r["box"][3])
+        for ln in lines[:3]:
+            lm = TX.line_matte(piece, ln["box"])
+            if lm is None or len(ln["text"].replace(" ", "")) < tc.get("minChars", 2):
+                continue
+            t0f = time.time()
+            m = fontfit.match_font(lm[0], ln["text"], top_k=int(tc.get("stackFontTopK", 6)))
+            if m.get("best"):
+                fam = m["best"].get("family")
+                font_search = {"line": ln["text"], "family": fam, "loss": round(float(m["best"]["loss"]), 4), "candidates": m["candidates"],
+                               "seconds": round(time.time() - t0f, 1)}
+                ranking = [{"family": fam}] + [{"family": r["family"]} for r in (m.get("fits") or [])[1:3] if r.get("family") and r["family"] != fam]
+                break
     found = TX.detect_layers(piece, ranking, 0, P.get("palette", {}), tc)
     report = found["report"]
     if not found["layers"]:
-        return {"slug": slug, "textLayers": 0, "report": report, "minIou": tc["minIou"]}
+        return {"slug": slug, "textLayers": 0, "report": report, "minIou": tc["minIou"], "fontSearch": font_search}
     P2 = copy.deepcopy(P)
     P2["palette"].update(found["palette"])
     P2["texts"] = found["layers"]
@@ -249,7 +267,7 @@ def text_variant(slug: str, min_iou: float | None = None, max_lines: int | None 
     urls = TX.ship_fonts(P2, nf)
     (nf / "component.html").write_text(S.export_html(json.loads((nf / "params.json").read_text(encoding="utf-8")), f"{slug}-text", fonts=urls), encoding="utf-8")
     return {"slug": slug, "version": nf.name, "textLayers": len(P2["texts"]), "hiddenLayers": len(hidden), "fidelityWithOutlineText": got["fidelity"],
-            "of": folder.name, "minIou": tc["minIou"], "lines": [{k: r.get(k) for k in ("text", "conf", "iou_soft", "font", "kept", "why")} for r in report]}
+            "of": folder.name, "minIou": tc["minIou"], "fontSearch": font_search, "lines": [{k: r.get(k) for k in ("text", "conf", "iou_soft", "font", "kept", "why")} for r in report]}
 
 
 def adopt(slug: str) -> dict:
