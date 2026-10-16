@@ -1,0 +1,28 @@
+# Corpus de références et calcul de nuit (16 October 2026)
+
+Ce document fait foi pour les corpus de vidéos de référence calculées en lot (corpus de 102, 16 October 2026). Règle épinglée :
+`/Users/zenray/.claude/Memory1/Projects/zenray-motion-design/Rules.md`.
+
+## Le workflow, toujours dans cet ordre (16 October 2026)
+
+| Étape | Commande interne | Résultat |
+|---|---|---|
+| 1. Télécharger | yt-dlp, 1080p au plus, 240 s au plus, lien principal puis liens de secours | `<refcache>/_corpus/<slug>/` (jamais archivé) |
+| 2. Couper au rythme | `zrmd.cli shots` | `references/<slug>/analysis/shots.json` |
+| 3. Bible et storyboard | `Scripts/BuildReferenceBook.py` | `bible.json`, `bible.md`, `storyboard.html` |
+| 4. Analyser les images | `Scripts/VisionFrames.swift` (Apple Vision) | classes de scène, texte (géométrie et nombre de caractères), visages, personnes |
+| 5. Calculer l'animation | `motion/corpus.py` | un projet Motion par vidéo, plans illustrés, textes de remplacement, réglages exposés |
+| 6. Style maison et formats | `motion/house.py`, `ZS.cropCheck` | polices du trio, tailles lisibles, quatre formats |
+| 7. Musique | `motion/corpus.py music` | piste rangée dans la banque de l'app (usage local) |
+
+## Lancer, reprendre, suivre (16 October 2026)
+
+- Tout lancer : `python3 Scripts/CorpusNight.py run` (reprenable : une vidéo finie n'est pas refaite ; `--only <numéro>` pour une seule).
+- État : `python3 Scripts/CorpusNight.py status` ; fichier `<atelier>/corpus-102/state.json`, journal `<atelier>/corpus-102/night.log`.
+- Une vidéo qui échoue (lien mort, page protégée) est notée avec sa cause et ne bloque jamais les suivantes.
+- Tous les réglages (durée maximale, résolution, parallélisme, durée minimale d'un plan) : `motion/params/corpus.json`.
+
+## Droits (16 October 2026)
+
+- On mesure, on ne copie pas : les mots de la référence ne sont jamais repris, seul leur nombre de caractères et leur géométrie le sont ; le texte d'un plan est un paramètre dont la valeur par défaut est un texte ZenRay de même longueur.
+- Les vidéos téléchargées restent dans le cache local, hors Assets. La musique rangée dans la banque est locale : elle n'est pas publiée sur ZenRayProgress sans décision de Matthieu.

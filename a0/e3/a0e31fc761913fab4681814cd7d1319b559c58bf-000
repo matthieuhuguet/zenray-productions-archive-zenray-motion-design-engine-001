@@ -33,3 +33,7 @@ Un modèle est un objet `ZS.register({ id, label, group, duration, params, build
 - La musique générée est simple (nappe, basse, batterie, arpège) : agréable et cohérente avec le tempo, elle ne remplace pas une musique composée ; pour un short public, importer un fichier dont on a les droits. (15 October 2026)
 - Le son de l'aperçu n'est pas normalisé ; l'export l'est (-14 LUFS). (15 October 2026)
 - Un seul export à la fois. Les polices Anthropic sont lues depuis `~/Library/Fonts` : sur une autre machine, le studio retombe sur les autres familles. (15 October 2026)
+
+## Corpus de références (16 October 2026)
+
+Un corpus de vidéos se calcule en lot par un workflow unique (télécharger, couper au rythme, bible et storyboard, Apple Vision, animation procédurale, style maison, musique) : voir `docs/CORPUS.md`.
