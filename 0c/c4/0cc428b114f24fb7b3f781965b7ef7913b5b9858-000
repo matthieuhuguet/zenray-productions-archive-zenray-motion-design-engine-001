@@ -23,7 +23,7 @@
 <body>
   <header class="top">
     <a class="brand" href="/#/">ZenRay Motion Design</a>
-    <nav class="appnav"><a href="/#/">Projets</a><a href="/#/music">Musique</a><a href="/#/montage">Montage</a><a class="on" href="/motion/">Motion</a></nav>
+    <nav class="appnav"><a href="/#/">Projets</a><a href="/#/music">Musique</a><a href="/#/montage">Montage</a><a class="on" href="/motion/">Motion</a><a href="/motion/validate">Validate</a></nav>
     <div class="seg" id="modeSeg"><button data-mode="edit" class="on" type="button">Éditeur</button><button data-mode="gallery" type="button">Galerie</button></div>
     <select id="projectSel" title="Projet"></select>
     <button id="newBtn" class="ghost" type="button">Nouveau</button>
@@ -74,7 +74,8 @@
     </section>
     <aside class="right">
       <nav class="tabs" id="tabs">
-        <button data-tab="scene" class="on" type="button">Scène</button>
+        <button data-tab="controls" type="button" hidden>Motion</button>
+        <button data-tab="scene" type="button">Scène</button>
         <button data-tab="theme" type="button">Thème</button>
         <button data-tab="music" type="button">Musique</button>
         <button data-tab="sfx" type="button">Effets</button>
@@ -100,6 +101,7 @@
   <dialog id="dlg"></dialog>
   <div id="toast" class="toast"></div>
   <script src="/motion/web/app.js"></script>
+  <script src="/motion/web/music-player.js"></script>
   <script src="/motion/web/gallery.js"></script>
 </body>
 </html>

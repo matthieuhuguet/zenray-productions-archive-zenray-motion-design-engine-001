@@ -19,6 +19,7 @@
     <a href="#/music" data-nav="music" data-testid="nav-music">Musique</a>
     <a href="#/montage" data-nav="montage" data-testid="nav-montage">Montage</a>
     <a href="/motion/" data-testid="nav-motion">Motion</a>
+    <a href="/motion/validate" data-testid="nav-validate">Validate</a>
   </nav>
   <span class="grow"></span>
   <span class="tag" id="busy" hidden>travail en cours</span>

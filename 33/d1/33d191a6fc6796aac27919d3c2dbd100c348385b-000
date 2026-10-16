@@ -281,6 +281,16 @@
     const k = W / 1920;
     return H.css(H.el("div", "zs-abs", el), { left: "0", top: (H_ - 1080 * k) / 2 + "px", width: "1920px", height: "1080px", transform: `scale(${k})`, transformOrigin: "0 0" });
   };
+  // 16 October 2026: a design stage that follows the FORMAT. Wide frames (16:9 and wider) use a 1920 x 1080 design, centred; tall and square frames (9:16, 4:5,
+  // 1:1) use a 1080-wide design as tall as the frame (1920, 1350, 1080). The template lays its elements out for the one it gets (`tall`), so a format
+  // change reflows the motion instead of shrinking or cropping it. FR : une scene de conception qui suit le format (large ou haut).
+  ZS.stageAdaptive = (ctx) => {
+    const { el, W } = ctx, H_ = ctx.H, tall = W / H_ < 1.25;
+    const sw = tall ? 1080 : 1920, sh = tall ? Math.round(1080 * H_ / W) : 1080, k = Math.min(W / sw, H_ / sh);
+    const st = H.css(H.el("div", "zs-abs", el), { left: (W - sw * k) / 2 + "px", top: (H_ - sh * k) / 2 + "px", width: sw + "px", height: sh + "px",
+      transform: `scale(${k})`, transformOrigin: "0 0" });
+    return { st, tall, w: sw, h: sh, k };
+  };
   // cropCheck(project, format) -> the text that leaves the frame at the end of each scene (when all of it is shown).
   // Built off screen at full size, so the measure is in composition pixels. An empty list is the proof of "never crop".
   ZS.cropCheck = function (project, format, tolerance) {

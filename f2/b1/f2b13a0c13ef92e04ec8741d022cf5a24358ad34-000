@@ -1,0 +1,36 @@
+<!doctype html>
+<!-- 16 October 2026: ZenRay Motion Design Validate. The motions to judge, each playing in its own frame, in the format you choose, next to its reference, with a verdict. -->
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ZenRay Motion Design · Validate</title>
+  <link rel="stylesheet" href="/motion/fonts.css" />
+  <link rel="stylesheet" href="/motion/runtime/zs-runtime.css" />
+  <link rel="stylesheet" href="/motion/web/app.css" />
+  <link rel="stylesheet" href="/motion/web/validate.css" />
+  <script src="/motion/runtime/gsap.min.js"></script>
+  <script src="/motion/runtime/zs-core.js"></script>
+  <script src="/motion/runtime/zs-post.js"></script>
+  <script src="/motion/runtime/zs-templates.js"></script>
+  <script src="/motion/runtime/zs-templates-extra.js"></script>
+  <script src="/motion/runtime/zs-templates-app.js"></script>
+  <script src="/motion/runtime/zs-illustrate.js"></script>
+  <script src="/motion/runtime/zs-vector.js"></script>
+  <script src="/motion/runtime/zs-templates-kit.js"></script>
+  <script src="/motion/runtime/zs-templates-agentplay.js"></script>
+</head>
+<body class="vd">
+  <header class="top">
+    <a class="brand" href="/#/">ZenRay Motion Design</a>
+    <nav class="appnav"><a href="/#/">Projets</a><a href="/#/music">Musique</a><a href="/#/montage">Montage</a><a href="/motion/">Motion</a><a class="on" href="/motion/validate">Validate</a></nav>
+    <div class="grow"></div>
+    <span class="hint" id="vdCount"></span>
+    <label class="inline">Format <select id="vdFormat"></select></label>
+    <label class="inline"><input type="checkbox" id="vdRef" /> à côté de la référence</label>
+    <button id="vdPlayAll" class="ghost" type="button">Tout lire</button>
+  </header>
+  <main id="vdMain" class="vd-main"></main>
+  <script src="/motion/web/validate.js"></script>
+</body>
+</html>

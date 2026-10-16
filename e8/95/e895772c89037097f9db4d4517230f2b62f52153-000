@@ -124,6 +124,25 @@ def list_projects() -> list[dict]:
     return out
 
 
+def validate_set() -> dict:
+    """The projects of the page Motion Design Validate (params/validate.json), with what the page needs to show each one."""
+    cfg = json.loads((MOTION / "params" / "validate.json").read_text(encoding="utf-8"))
+    out = []
+    for it in cfg["set"]:
+        f = projects_root() / it["id"] / "project.json"
+        row = {"id": it["id"], "group": it.get("group", ""), "reference": it.get("reference"), "exists": f.is_file()}
+        if f.is_file():
+            try:
+                pr = json.loads(f.read_text(encoding="utf-8"))
+                row.update({"title": pr.get("title") or it["id"], "format": pr.get("format"), "reference": pr.get("reference") or it.get("reference"),
+                            "scenes": len(pr.get("scenes", [])), "duration": round(sum(sc.get("duration", 0) for sc in pr.get("scenes", [])), 2),
+                            "validation": pr.get("validation")})
+            except (OSError, json.JSONDecodeError):
+                row["exists"] = False
+        out.append(row)
+    return {"items": out, "formats": cfg.get("formats", [])}
+
+
 def presets() -> list[dict]:
     out = []
     for f in sorted((REPO / CFG["presets"]).glob("*.json")):
@@ -422,6 +441,9 @@ def handle(method: str, path: str, q: dict, read, length: int) -> dict:
         m = re.fullmatch(r"/motion/gallery/wave/([A-Za-z0-9._-]+)\.png", p)
         if m:
             return F(_bank().waveform(m.group(1)), "image/png")
+        m = re.fullmatch(r"/motion/bank/preview/([A-Za-z0-9._-]+)/(drums|bass|other|vocals|mix)\.m4a", p)
+        if m:
+            return F(_bank().preview_file(m.group(1), m.group(2)), "audio/mp4")
         m = re.fullmatch(r"/motion/bank/stored/([A-Za-z0-9._-]+\.mp3)", p)
         if m:
             return F(_bank().BANK / "corpus-music" / m.group(1), "audio/mpeg")
@@ -436,6 +458,10 @@ def handle(method: str, path: str, q: dict, read, length: int) -> dict:
                       "busy": any(j["state"] in ("cook", "render", "mux") for j in JOBS.values())})
         if p == "/api/motion/projects":
             return J({"ok": True, "projects": list_projects(), "presets": presets()})
+        if p == "/api/motion/validate":
+            return J({"ok": True, **validate_set()})
+        if p in ("/motion/validate", "/motion/validate/"):
+            return F(MOTION / "web" / "validate.html", "text/html; charset=utf-8")
         if p == "/api/motion/banks/music":
             return J({"ok": True, **_bank().music_bank()})
         if p == "/api/motion/banks/sfx":
@@ -471,6 +497,18 @@ def handle(method: str, path: str, q: dict, read, length: int) -> dict:
                 return json.loads(read(length) or b"{}") if length else {}
             except ValueError:
                 raise Refusal("invalid JSON")
+        m = re.fullmatch(r"/api/motion/validate/([a-z0-9-]+)", p)
+        if m:
+            b = body_json()
+            state = str(b.get("state", ""))
+            if state not in ("validated", "redo", "pending", ""):
+                raise Refusal("state must be validated, redo, pending or empty")
+            pr = read_project(m.group(1))
+            if state:
+                pr["validation"] = {"state": state, "note": str(b.get("note", ""))[:600], "at": time.strftime("%d %B %Y, %H:%M")}
+            else:
+                pr.pop("validation", None)
+            return J({"ok": True, "validation": write_project(m.group(1), pr).get("validation")})
         if p == "/api/motion/projects":
             b = body_json()
             return J({"ok": True, "project": create_project(str(b.get("preset", "")), b.get("title"))})

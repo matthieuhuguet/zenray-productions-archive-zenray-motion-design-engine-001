@@ -65,7 +65,19 @@ def _variations() -> dict:
     return _json(MOTION / "params" / "music-variations.json", {}) or {}
 
 
+_MB: dict = {"t": 0.0, "v": None}
+
+
 def music_bank() -> dict:
+    """The reproduced musics. Read from the disk at most every 20 s (16 October 2026): every preview and waveform request called this and cost 300 ms."""
+    import time
+    if _MB["v"] is None or time.monotonic() - _MB["t"] > 20:
+        _MB["v"] = _music_bank_now()
+        _MB["t"] = time.monotonic()
+    return _MB["v"]
+
+
+def _music_bank_now() -> dict:
     out, var = [], _variations()
     for member in sorted(SOUND.iterdir()) if SOUND.is_dir() else []:
         v = final_version(member)
@@ -81,10 +93,35 @@ def music_bank() -> dict:
         out.append({
             "id": member.name, "reference": ref, "version": v.name, "polished": mix.parent == polish,
             "mix": f"/motion/bank/music/{mix.relative_to(SOUND)}", "stems": stems,
+            "previews": {st: f"/motion/bank/preview/{member.name}/{st}.m4a" for st in (*stems, "mix")},
             "bpm": round(float(tempo.get("bpm") or 0), 2), "key": key.get("name", ""), "duration": float(tempo.get("duration") or 0),
             "fidelity": _fidelity(v), "variations": var.get(member.name) or var.get("_default", []),
         })
     return {"music": out, "count": len(out), "root": str(SOUND), "stored": stored_music()}
+
+
+def preview_file(track_id: str, stem: str) -> Path:
+    """A small AAC copy (96 kb/s) of one stem of a reproduced music, made once (16 October 2026): the player decodes four of them in a few
+    milliseconds, where the 10 MB wavs took seconds. FR : copie AAC legere d'une piste, pour changer de variation sans attendre."""
+    import subprocess
+    if stem not in (*STEMS, "mix"):
+        raise FileNotFoundError(stem)
+    m = next((x for x in music_bank()["music"] if x["id"] == track_id), None)
+    if not m:
+        raise FileNotFoundError(track_id)
+    url = m["mix"] if stem == "mix" else m["stems"].get(stem)
+    if not url:
+        raise FileNotFoundError(stem)
+    src = bank_file("music", url.split("/motion/bank/music/", 1)[1])
+    out = _cache("previews", re.sub(r"[^A-Za-z0-9._-]+", "-", track_id) + f".{stem}.m4a")
+    if not out.is_file() or out.stat().st_mtime < src.stat().st_mtime:
+        tmp = out.with_suffix(".part.m4a")
+        r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(src), "-vn", "-c:a", "aac", "-b:a", "96k", "-ar", "44100", "-movflags", "+faststart", str(tmp)],
+                           capture_output=True, text=True)
+        if r.returncode != 0 or not tmp.is_file():
+            raise RuntimeError((r.stderr or "ffmpeg failed")[-300:])
+        tmp.replace(out)
+    return out
 
 
 def stored_music() -> list[dict]:

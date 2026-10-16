@@ -432,11 +432,45 @@
   S.openTiers = {};
 
   // ------------------------------------------------------------------------------------------------ panels
-  function setTab(t) { S.tab = t; [...$("#tabs").children].forEach((b) => b.classList.toggle("on", b.dataset.tab === t)); renderPanel(); }
+  function setTab(t) { S.tab = t; S.tabChosen = true; [...$("#tabs").children].forEach((b) => b.classList.toggle("on", b.dataset.tab === t)); renderPanel(); }
   $("#tabs").onclick = (e) => { if (e.target.dataset.tab) setTab(e.target.dataset.tab); };
   function renderPanel() {
     panel.innerHTML = "";
-    ({ scene: scenePanel, theme: themePanel, music: musicPanel, sfx: sfxPanel, media: mediaPanel, post: postPanel, versions: versionsPanel })[S.tab]();
+    ({ controls: controlsPanel, scene: scenePanel, theme: themePanel, music: musicPanel, sfx: sfxPanel, media: mediaPanel, post: postPanel, versions: versionsPanel })[S.tab]();
+  }
+  // PROMOTED CONTROLS (16 October 2026): the few values that matter for THIS motion, chosen from its graphic bible and storyboard (project.controls),
+  // each one driving every scene value it names. A person changes a headline, a colour or a product name here, without opening a scene.
+  // control = { id, label, type, group, default, min, max, step, options, targets: [{ scene, child?, key }] }
+  const targetParams = (p, t) => { const sc = p.scenes.find((x) => x.id === t.scene); if (!sc) return null; const o = t.child != null && sc.children ? sc.children[t.child] : sc; return o ? (o.params = o.params || {}) : null; };
+  function controlValue(c) {
+    const t = (c.targets || [])[0]; if (!t) return c.default;
+    const sc = S.project.scenes.find((x) => x.id === t.scene), o = sc && (t.child != null && sc.children ? sc.children[t.child] : sc), tpl = o && ZS.templates[o.template];
+    if (!tpl) return c.default;
+    const r = ZS.resolve(tpl, o.params || {}, ZS.theme(S.project));
+    return r[t.key] !== undefined ? r[t.key] : c.default;
+  }
+  function controlsPanel() {
+    const cs = S.project.controls || [];
+    panel.insertAdjacentHTML("beforeend", `<h3>Réglages du motion</h3><p class="hint">Ce qui peut changer dans ce motion, choisi depuis sa bible graphique : chaque réglage agit sur tout ce qui le concerne.</p>`);
+    const groups = {};
+    cs.forEach((c) => { (groups[c.group || "Réglages"] = groups[c.group || "Réglages"] || []).push(c); });
+    Object.entries(groups).forEach(([g, list]) => {
+      const det = document.createElement("details"); det.open = true; det.innerHTML = `<summary>${esc(g)} · ${list.length}</summary>`;
+      list.forEach((c) => {
+        const shown = controlValue(c), def = { key: c.id, label: c.label, type: c.type || "text", min: c.min, max: c.max, step: c.step, unit: c.unit, options: c.options, default: c.default };
+        det.appendChild(field(def, shown, shown, (v, reset) => change((p) => {
+          (c.targets || []).forEach((t) => { const pr = targetParams(p, t); if (!pr) return; if (reset) delete pr[t.key]; else pr[t.key] = v; });
+        }, { keepPanel: !reset })));
+      });
+      panel.appendChild(det);
+    });
+  }
+  function syncControlsTab() {
+    const has = !!(S.project && S.project.controls && S.project.controls.length), b = $("#tabs").querySelector('[data-tab="controls"]');
+    if (b) b.hidden = !has;
+    if (!has && S.tab === "controls") S.tab = "scene";
+    if (has && !S.tabChosen) S.tab = "controls";
+    [...$("#tabs").children].forEach((x) => x.classList.toggle("on", x.dataset.tab === S.tab));
   }
   function scenePanel() {
     const sc = S.project.scenes[S.sel];
@@ -661,6 +695,7 @@
     $("#projectSel").value = id;
     $("#formatSel").value = S.project.format;
     await document.fonts.ready;
+    S.tabChosen = false; syncControlsTab();
     rebuild(); renderAll();
     let cmp = false; try { cmp = localStorage.getItem("zs-compare") === "1"; } catch (e) { /* private window */ }
     setCompare(cmp && !!S.project.reference);

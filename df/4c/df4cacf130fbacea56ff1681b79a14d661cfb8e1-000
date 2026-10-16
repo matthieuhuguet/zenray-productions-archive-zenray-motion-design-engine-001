@@ -1,0 +1,26 @@
+/* 16 October 2026: the page Motion Design Validate. Tokens come from app.css. */
+.vd-main { padding: 16px 18px 60px; display: grid; gap: 26px; }
+.vd-group h2 { font-family: var(--f-serif); font-weight: 400; font-size: 22px; margin: 0 0 10px; }
+.vd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(560px, 1fr)); gap: 16px; }
+.vd-card { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); overflow: hidden; display: flex; flex-direction: column; }
+.vd-card.ok { border-color: #4f9d2a; box-shadow: 0 0 0 1px #4f9d2a; }
+.vd-card.redo { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.vd-stages { display: grid; gap: 1px; background: var(--line); }
+.vd-stages.two { grid-template-columns: 1fr 1fr; }
+.vd-stage { position: relative; background: #0f0f0e; overflow: hidden; width: 100%; }
+.vd-stage .inner { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.vd-stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+.vd-stage .tag { position: absolute; left: 8px; top: 8px; background: rgba(0,0,0,0.55); color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 6px; z-index: 3; }
+.vd-todo { display: grid; place-items: center; min-height: 220px; color: var(--ink-2); background: var(--surface-2); text-align: center; padding: 20px; }
+.vd-body { padding: 10px 12px 12px; display: grid; gap: 8px; }
+.vd-title { display: flex; align-items: baseline; gap: 10px; }
+.vd-title b { font-family: var(--f-serif); font-weight: 400; font-size: 18px; }
+.vd-title small { color: var(--ink-2); }
+.vd-bar { display: flex; align-items: center; gap: 10px; }
+.vd-bar input[type=range] { flex: 1; accent-color: var(--accent); }
+.vd-bar .t { font-family: var(--f-serif); font-variant-numeric: tabular-nums; color: var(--ink-2); min-width: 86px; text-align: right; }
+.vd-verdict { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.vd-verdict button.on-ok { background: #4f9d2a; border-color: #4f9d2a; color: #fff; }
+.vd-verdict button.on-redo { background: var(--accent); border-color: var(--accent); color: #fff; }
+.vd-verdict input { flex: 1; min-width: 180px; }
+.vd-chip { font-size: 11.5px; color: var(--ink-2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }

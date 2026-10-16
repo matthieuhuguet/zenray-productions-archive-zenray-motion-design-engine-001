@@ -1,0 +1,150 @@
+// ZenRay Motion Design Validate (16 October 2026): the motions to judge, each playing in its own frame, in the format you choose (the same project,
+// rebuilt at 16:9, 9:16, 1:1 or 4:5: a layout that breaks in another format shows here), next to its reference video, with a verdict saved in the project.
+// The list lives in motion/params/validate.json. FR : la page ou l'on juge chaque motion, dans le format choisi, a cote de sa reference.
+(function () {
+  "use strict";
+  const $ = (q, r) => (r || document).querySelector(q);
+  const el = (tag, cls, html) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html !== undefined) n.innerHTML = html; return n; };
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const api = async (method, path, body) => {
+    const r = await fetch(path, { method, headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
+    const j = await r.json(); if (!j.ok) throw new Error(j.error || r.status); return j;
+  };
+  const LS = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
+  const FORMAT_LABEL = { "16x9": "16:9", "9x16": "9:16", "1x1": "1:1", "4x5": "4:5" };
+  const state = { items: [], cards: new Map(), format: LS("vd-format") || "16x9", ref: LS("vd-ref") === "1" };
+  const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+  const observer = "IntersectionObserver" in window ? new IntersectionObserver((es) => es.forEach((e) => {
+    const c = state.cards.get(e.target.dataset.id); if (!c) return;
+    if (e.isIntersecting) c.show(); else c.hide();
+  }), { rootMargin: "300px" }) : null;
+
+  function card(it, host) {
+    const c = { it, built: null, project: null, playing: false };
+    const root = el("article", "vd-card"); root.dataset.id = it.id;
+    const stages = el("div", "vd-stages"), body = el("div", "vd-body");
+    root.append(stages, body);
+    host.appendChild(root);
+    state.cards.set(it.id, c);
+    c.root = root;
+    if (!it.exists) {
+      stages.appendChild(el("div", "vd-todo", `<div><b>${esc(it.id)}</b><br>pas encore commencé${it.reference ? ` · référence « ${esc(it.reference)} » prête` : ""}</div>`));
+      body.appendChild(el("div", "hint", it.reference ? "La reproduction arrive ici dès qu'elle existe." : ""));
+      return c;
+    }
+    body.innerHTML = `<div class="vd-title"><b>${esc(it.title)}</b><small>${it.scenes} scènes · ${it.duration} s</small><span class="vd-chip" data-k="fmt"></span></div>
+      <div class="vd-bar"><button class="round primary" data-k="play" type="button">▶</button><input type="range" min="0" max="1000" value="0" data-k="seek" /><span class="t" data-k="time">0:00</span></div>
+      <div class="vd-verdict"><button data-k="ok" type="button">✓ Valider</button><button data-k="redo" type="button">↻ À refaire</button><input type="text" data-k="note" placeholder="Remarque" />
+      <button class="ghost" data-k="edit" type="button">Ouvrir dans l'éditeur</button></div>`;
+    const q = (k) => $(`[data-k="${k}"]`, body);
+    // ---- the frames: the motion, and the reference when asked
+    const mot = el("div", "vd-stage"), inner = el("div", "inner"); mot.appendChild(inner); mot.appendChild(el("span", "tag", "Motion"));
+    let refStage = null, refVideo = null;
+    const layout = () => {
+      stages.replaceChildren(mot);
+      stages.classList.toggle("two", state.ref && !!it.reference);
+      if (state.ref && it.reference) {
+        refStage = refStage || el("div", "vd-stage"); refVideo = refVideo || el("video"); refVideo.muted = true; refVideo.playsInline = true; refVideo.preload = "metadata";
+        if (!refStage.firstChild) { refStage.append(refVideo, el("span", "tag", "Référence")); }
+        stages.appendChild(refStage);
+      }
+      sizeStage();
+    };
+    const sizeStage = () => {
+      const [W, H] = c.built ? [c.built.W, c.built.H] : ZS.size(Object.assign({}, c.project || {}, { format: state.format }));
+      // a tall format never makes a card taller than the screen: the frame keeps its ratio and is centred in the card
+      const room = (stages.clientWidth || 560) / (state.ref && it.reference ? 2 : 1), w = Math.min(room, Math.round(520 * W / H) + (W >= H ? 9999 : 0)), h = Math.round(w * H / W);
+      mot.style.width = w + "px"; mot.style.height = h + "px"; mot.style.justifySelf = "center";
+      if (refStage) { refStage.style.height = h + "px"; refStage.style.width = w + "px"; refStage.style.justifySelf = "center"; }
+      inner.style.width = W + "px"; inner.style.height = H + "px"; inner.style.transform = `scale(${w / W})`;
+    };
+    c.sizeStage = sizeStage;
+    const refSync = (t, play) => {
+      if (!refVideo || !state.ref) return;
+      const want = t + (Number(c.project.referenceOffset) || 0);
+      if (!refVideo.getAttribute("src")) refVideo.src = `/motion/bank/ref/${encodeURIComponent(it.reference)}`;
+      if (Math.abs(refVideo.currentTime - want) > (play ? 0.2 : 0.03)) { try { refVideo.currentTime = want; } catch (e) { /* not ready */ } }
+      if (play && refVideo.paused) refVideo.play().catch(() => {});
+      if (!play && !refVideo.paused) refVideo.pause();
+    };
+    const setTime = (t) => {
+      if (!c.built) return;
+      c.built.tl.seek(t, false); q("seek").value = String(Math.round(t / c.built.duration * 1000)); q("time").textContent = `${fmt(t)} / ${fmt(c.built.duration)}`;
+      refSync(t, c.playing);
+    };
+    const tick = () => { if (!c.playing || !c.built) return; const t = c.built.tl.time(); setTime(t); if (t >= c.built.duration - 0.02) { c.pause(); } else requestAnimationFrame(tick); };
+    c.play = () => {
+      if (!c.built) c.build();
+      state.cards.forEach((o) => { if (o !== c && o.playing && !state.all) o.pause(); });
+      if (c.built.tl.time() >= c.built.duration - 0.05) c.built.tl.seek(0, false);
+      c.built.tl.play(); c.playing = true; q("play").textContent = "⏸"; tick();
+    };
+    c.pause = () => { c.playing = false; if (c.built) c.built.tl.pause(); q("play").textContent = "▶"; if (c.built) refSync(c.built.tl.time(), false); };
+    c.build = () => {
+      if (c.built) return;
+      if (!c.project) return;
+      const p = JSON.parse(JSON.stringify(c.project)); p.format = state.format;
+      const keep = window.__timelines && window.__timelines.main;
+      try { c.built = ZS.build(p, inner, { preview: true, assetBase: `/motion/files/${it.id}/`, hideRefs: true }); }
+      catch (e) { inner.textContent = e.message; return; }
+      if (window.__timelines) window.__timelines.main = keep;
+      document.fonts && document.fonts.ready.then(() => { if (c.built) ZS.refit(c.built); });
+      q("fmt").textContent = FORMAT_LABEL[state.format] || state.format;
+      layout();
+      setTime(Math.min(c.built.duration * 0.5, Math.max(0, c.built.duration - 0.3)));
+    };
+    c.show = async () => {
+      if (!c.project) { try { c.project = (await api("GET", `/api/motion/projects/${it.id}`)).project; } catch (e) { inner.textContent = e.message; return; } }
+      if (!c.built) c.build();
+    };
+    c.hide = () => { if (c.playing) return; if (c.built) { try { c.built.tl.kill(); } catch (e) { /* gone */ } inner.innerHTML = ""; c.built = null; } };
+    c.rebuild = () => { const was = c.playing; c.pause(); if (c.built) { try { c.built.tl.kill(); } catch (e) { /* gone */ } inner.innerHTML = ""; c.built = null; } if (c.project) { c.build(); if (was) c.play(); } };
+    q("play").onclick = () => (c.playing ? c.pause() : c.play());
+    q("seek").oninput = () => { if (!c.built) c.build(); setTime(Number(q("seek").value) / 1000 * c.built.duration); };
+    q("edit").onclick = () => { LS("zs-project", it.id); LS("zs-mode", "edit"); location.href = "/motion/"; };
+    // ---- the verdict
+    const paintVerdict = (v) => {
+      root.classList.toggle("ok", !!v && v.state === "validated"); root.classList.toggle("redo", !!v && v.state === "redo");
+      q("ok").classList.toggle("on-ok", !!v && v.state === "validated"); q("redo").classList.toggle("on-redo", !!v && v.state === "redo");
+      if (v && v.note !== undefined && document.activeElement !== q("note")) q("note").value = v.note || "";
+      q("note").title = v && v.at ? `Dernier avis : ${v.at}` : "";
+    };
+    const send = async (st) => { try { const j = await api("POST", `/api/motion/validate/${it.id}`, { state: st, note: q("note").value }); it.validation = j.validation; paintVerdict(j.validation); updateCount(); } catch (e) { alert(e.message); } };
+    q("ok").onclick = () => send(it.validation && it.validation.state === "validated" ? "" : "validated");
+    q("redo").onclick = () => send(it.validation && it.validation.state === "redo" ? "" : "redo");
+    q("note").onchange = () => { const st = it.validation && it.validation.state; if (st) send(st); };
+    paintVerdict(it.validation);
+    stages.appendChild(mot);
+    observer && observer.observe(root);
+    if (!observer) c.show();
+    return c;
+  }
+
+  function updateCount() {
+    const ok = state.items.filter((i) => i.validation && i.validation.state === "validated").length;
+    $("#vdCount").textContent = `${ok} validé(s) sur ${state.items.length}`;
+  }
+
+  async function main() {
+    const j = await api("GET", "/api/motion/validate");
+    state.items = j.items;
+    const sel = $("#vdFormat");
+    sel.innerHTML = (j.formats.length ? j.formats : ["16x9"]).map((f) => `<option value="${f}">${FORMAT_LABEL[f] || f}</option>`).join("");
+    sel.value = state.format; $("#vdRef").checked = state.ref;
+    const main = $("#vdMain"), groups = new Map();
+    j.items.forEach((it) => { if (!groups.has(it.group)) groups.set(it.group, []); groups.get(it.group).push(it); });
+    groups.forEach((its, g) => {
+      const sec = el("section", "vd-group"); sec.appendChild(el("h2", "", esc(g)));
+      const grid = el("div", "vd-grid"); sec.appendChild(grid); main.appendChild(sec);
+      its.forEach((it) => card(it, grid));
+    });
+    updateCount();
+    sel.onchange = () => { state.format = sel.value; LS("vd-format", state.format); state.cards.forEach((c) => c.rebuild && c.rebuild()); };
+    $("#vdRef").onchange = (e) => { state.ref = e.target.checked; LS("vd-ref", state.ref ? "1" : ""); state.cards.forEach((c) => c.rebuild && c.rebuild()); };
+    $("#vdPlayAll").onclick = () => { state.all = true; state.cards.forEach((c) => c.built && c.play && c.play()); setTimeout(() => { state.all = false; }, 50); };
+    window.addEventListener("resize", () => state.cards.forEach((c) => c.sizeStage && c.sizeStage()));
+    window.ZS_VALIDATE = state;
+  }
+  main().catch((e) => { document.body.appendChild(el("p", "hint", "Erreur : " + esc(e.message))); });
+})();

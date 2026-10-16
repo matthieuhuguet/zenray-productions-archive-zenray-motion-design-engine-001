@@ -106,48 +106,36 @@
 
   async function music(body) {
     const j = await get("music", "/api/motion/banks/music"), cur = (A().S.project.music || {});
-    head(body, "Musiques reproduites", `${j.count} musiques reproduites à 99,9 % depuis les références, ${j.music.reduce((n, m) => n + (m.variations || []).length, 0)} variations proposées. « Utiliser » les met dans le projet, mixées en direct piste par piste.`);
-    const grid = el("div", "cards");
-    j.music.forEach((m) => {
-      const on = cur.mode === "bank" && (cur.bank || {}).track === m.id;
-      const c = el("div", "card" + (on ? " on" : ""));
-      const w = el("div", "wave"); w.style.backgroundImage = `url(/motion/gallery/wave/${encodeURIComponent(m.id)}.png)`;
-      const b = el("div", "body");
-      b.appendChild(el("div", "title", A().esc(m.id)));
-      b.appendChild(el("div", "meta", `${m.bpm} bpm · ${A().esc(m.key)} · ${m.duration.toFixed(0)} s${m.fidelity ? " · " + m.fidelity + " %" : ""}${m.polished ? " · polie" : ""}`));
-      const acts = el("div", "acts");
-      acts.appendChild(btn("▶", (bb) => listen(m.mix, bb), "Écouter le mix reproduit"));
-      acts.appendChild(btn(on ? "Dans le projet" : "Utiliser", () => {
-        A().change((p) => { p.music = p.music || {}; p.music.mode = "bank"; p.music.bank = { track: m.id, volume: (p.music.bank || {}).volume ?? -8 }; });
-        A().loadBank(); A().toast("Musique du projet : " + m.id); render();
-      }));
-      const vs = el("select"); vs.innerHTML = `<option value="">${(m.variations || []).length} variations…</option>` + (m.variations || []).map((v) => `<option value="${A().esc(v.id)}" title="${A().esc(v.why || "")}">${A().esc(v.label)}</option>`).join("");
-      if (on && (cur.bank || {}).variation) vs.value = cur.bank.variation;
-      vs.onchange = () => {
-        const v = (m.variations || []).find((x) => x.id === vs.value);
-        A().change((p) => { p.music = p.music || {}; p.music.mode = "bank"; const keep = { track: m.id, volume: (p.music.bank || {}).volume ?? -8, offset: (p.music.bank || {}).offset, fadeOut: (p.music.bank || {}).fadeOut };
-          p.music.bank = Object.fromEntries(Object.entries(keep).filter(([, x]) => x !== undefined)); if (v) Object.assign(p.music.bank, v.values, { variation: v.id }); });
-        A().loadBank(); A().toast(v ? `Variation « ${v.label} » sur ${m.id}` : m.id); render();
-      };
-      acts.appendChild(vs);
-      b.appendChild(acts); c.append(w, b); grid.appendChild(c);
+    // 16 October 2026: the music player (music-player.js): a list, one click plays, a variation chip changes the mix at once on the running music
+    body.classList.add("mp-page");
+    const vcount = j.music.reduce((n, m) => n + (m.variations || []).length, 0);
+    body.appendChild(el("h3", "", "Musiques reproduites"));
+    body.appendChild(el("p", "sub", `${j.count} musiques reproduites à 99,9 % depuis les références, ${vcount} variations. Clique une musique pour l'écouter, puis une variation : le mix change tout de suite.`));
+    window.ZS_MUSIC.mount(body, {
+      music: j.music, current: cur, esc: A().esc,
+      use: (m, vid, vals) => {
+        A().change((p) => {
+          p.music = p.music || {}; p.music.mode = "bank";
+          const keep = { track: m.id, volume: (p.music.bank || {}).volume ?? -8, offset: (p.music.bank || {}).offset, fadeOut: (p.music.bank || {}).fadeOut };
+          p.music.bank = Object.fromEntries(Object.entries(keep).filter(([, x]) => x !== undefined));
+          const v = (m.variations || []).find((x) => x.id === vid);
+          if (v) Object.assign(p.music.bank, v.values, { variation: v.id });
+        });
+        A().loadBank(); A().toast(vid ? `« ${m.id} » en variation ${vid}, dans le projet` : "Musique du projet : " + m.id);
+      },
     });
-    body.appendChild(grid);
     // the audio of the references, stored for editing (local, never published): listen, or put it under the project's film
     const st = j.stored || [];
     if (st.length) {
       body.appendChild(el("h3", "", `Pistes des références rangées pour le montage (${st.length})`));
       body.appendChild(el("p", "hint", "Le son d'origine de chaque vidéo du corpus, gardé en local pour monter dessus. « Utiliser » l'importe dans le projet comme fichier audio."));
-      const g2 = el("div", "cards");
+      const list = el("div", "mp-stored");
       st.forEach((m) => {
         const on = cur.mode === "file" && (cur.file || {}).file === m.file;
-        const c = el("div", "card" + (on ? " on" : ""));
-        const b = el("div", "body");
-        b.appendChild(el("div", "title", `${String(m.n).padStart(3, "0")} ${A().esc(m.title)}`));
-        b.appendChild(el("div", "meta", `${A().esc(m.category)} · ${m.tempoBpm ? Math.round(m.tempoBpm) + " bpm · " : ""}${m.duration ? Math.round(m.duration) + " s" : ""}`));
-        const acts = el("div", "acts");
-        acts.appendChild(btn("▶", (bb) => listen(m.url, bb), "Écouter la piste"));
-        acts.appendChild(btn(on ? "Dans le projet" : "Utiliser", async () => {
+        const r = el("div", "mp-srow" + (on ? " on" : ""));
+        r.appendChild(btn("▶", (bb) => listen(m.url, bb), "Écouter la piste"));
+        r.appendChild(el("span", "t", `<b>${String(m.n).padStart(3, "0")} ${A().esc(m.title)}</b><small>${A().esc(m.category)} · ${m.tempoBpm ? Math.round(m.tempoBpm) + " bpm · " : ""}${m.duration ? Math.round(m.duration) + " s" : ""}</small>`));
+        r.appendChild(btn(on ? "Dans le projet" : "Utiliser", async () => {
           try {
             const blob = await (await fetch(m.url)).blob();
             await A().upload([new File([blob], m.file, { type: "audio/mpeg" })]);
@@ -156,9 +144,9 @@
             A().loadBank(); A().toast("Musique du projet : " + m.title); render();
           } catch (e) { A().toast(e.message, true); }
         }));
-        b.appendChild(acts); c.appendChild(b); g2.appendChild(c);
+        list.appendChild(r);
       });
-      body.appendChild(g2);
+      body.appendChild(list);
     }
   }
 

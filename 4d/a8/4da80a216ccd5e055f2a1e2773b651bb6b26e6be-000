@@ -1,0 +1,233 @@
+// ZenRay Motion Design, the music player of the gallery (16 October 2026): the 33 reproduced musics as a list you click, like a streaming app.
+// A click plays at once; a variation chip changes the mix IMMEDIATELY on the running music (no reload, the position is kept): the four stems are
+// small AAC previews decoded once and mixed live (stem levels, tilt, cuts, reverb, drive, width, pitch), every value ramped over 30 ms.
+// Keyboard: Space play and pause, Up and Down the track, Left and Right the variation. FR : le lecteur de musiques ; on clique, ca joue ; une variation change le mix en direct.
+(function () {
+  "use strict";
+  const STEMS = ["drums", "bass", "other", "vocals"];
+  const DEF = { drums: 0, bass: 0, other: 0, vocals: 0, tilt: 0, semitones: 0, lowCut: 20, highCut: 20000, reverb: 0, drive: 0, width: 1, volume: -8 };
+  const db = (x) => Math.pow(10, x / 20);
+  const E = { ctx: null, cache: new Map(), ready: new Set(), g: null, track: null, variation: "", playing: false, t0: 0, off: 0, rate: 1, per: {}, raf: 0, ui: null };
+  // one reverb for the whole player, built once (a convolver is slow to prepare: it is never made per track)
+  const ctx = () => {
+    if (!E.ctx) {
+      const c = (E.ctx = new (window.AudioContext || window.webkitAudioContext)());
+      E.master = c.createGain(); E.master.connect(c.destination);
+      E.rin = c.createGain(); const conv = c.createConvolver(); conv.buffer = ir(c); E.rin.connect(conv); conv.connect(E.master);
+    }
+    return E.ctx;
+  };
+
+  // ------------------------------------------------------------------------------------------------------------- engine
+  function stemsOf(track) {
+    if (!E.cache.has(track.id)) {
+      const c = ctx();
+      E.cache.set(track.id, Promise.all(STEMS.filter((s) => track.previews[s]).map(async (s) => {
+        const ab = await (await fetch(track.previews[s])).arrayBuffer();
+        return [s, await c.decodeAudioData(ab)];
+      })).then((o) => { E.ready.add(track.id); return Object.fromEntries(o); }));
+      // a decoded track weighs about 40 MB: the cache keeps the last six (the playing one never leaves it)
+      while (E.cache.size > 6) { const old = [...E.cache.keys()].find((k) => !E.track || k !== E.track.id); if (!old) break; E.cache.delete(old); E.ready.delete(old); }
+    }
+    return E.cache.get(track.id);
+  }
+  function curve(k) { const n = 1024, a = new Float32Array(n); for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1; a[i] = Math.tanh(k * x) / Math.tanh(k); } return a; }
+  let IR = null;
+  function ir(c) {
+    if (IR) return IR;
+    const len = Math.floor(c.sampleRate * 2.6); IR = c.createBuffer(2, len, c.sampleRate);
+    for (let ch = 0; ch < 2; ch++) { const d = IR.getChannelData(ch); let r = 12345 + ch * 777; for (let i = 0; i < len; i++) { r = (r * 1664525 + 1013904223) >>> 0; d[i] = ((r / 4294967296) * 2 - 1) * Math.pow(1 - i / len, 3); } }
+    return IR;
+  }
+  // the graph of one playing track; set(values) ramps every value of it
+  function graph(bufs) {
+    const c = ctx(), G = { src: {}, sg: {} };
+    G.out = c.createGain(); G.out.gain.value = 0; G.out.connect(E.master);
+    G.bus = c.createGain(); G.split = c.createChannelSplitter(2); G.merge = c.createChannelMerger(2);
+    G.ll = c.createGain(); G.lr = c.createGain(); G.rl = c.createGain(); G.rr = c.createGain();
+    G.bus.connect(G.split); G.split.connect(G.ll, 0); G.split.connect(G.lr, 0); G.split.connect(G.rl, 1); G.split.connect(G.rr, 1);
+    G.ll.connect(G.merge, 0, 0); G.rl.connect(G.merge, 0, 0); G.lr.connect(G.merge, 0, 1); G.rr.connect(G.merge, 0, 1);
+    G.lo = c.createBiquadFilter(); G.lo.type = "lowshelf"; G.lo.frequency.value = 250;
+    G.hi = c.createBiquadFilter(); G.hi.type = "highshelf"; G.hi.frequency.value = 3000;
+    G.hp = c.createBiquadFilter(); G.hp.type = "highpass"; G.hp.Q.value = 0.7;
+    G.lp = c.createBiquadFilter(); G.lp.type = "lowpass"; G.lp.Q.value = 0.7;
+    G.merge.connect(G.lo); G.lo.connect(G.hi); G.hi.connect(G.hp); G.hp.connect(G.lp);
+    G.dry = c.createGain(); G.wet = c.createGain(); G.ws = c.createWaveShaper(); G.ws.curve = curve(8); G.ws.oversample = "2x";
+    G.vol = c.createGain();
+    G.lp.connect(G.dry); G.lp.connect(G.ws); G.ws.connect(G.wet); G.dry.connect(G.vol); G.wet.connect(G.vol);
+    G.rev = c.createGain(); G.lp.connect(G.rev); G.rev.connect(E.rin);
+    G.vol.connect(G.out);
+    Object.entries(bufs).forEach(([s, b]) => {
+      const src = c.createBufferSource(), sg = c.createGain(); src.buffer = b; src.loop = true; src.connect(sg); sg.connect(G.bus);
+      G.src[s] = src; G.sg[s] = sg;
+    });
+    G.set = (v, snap) => {
+      const t = c.currentTime, T = snap ? 0.001 : 0.03, S = (p, x) => p.setTargetAtTime(x, t, T);
+      STEMS.forEach((s) => { if (G.sg[s]) S(G.sg[s].gain, v[s] <= -59 ? 0 : db(v[s])); });
+      S(G.lo.gain, -v.tilt / 2); S(G.hi.gain, v.tilt);
+      S(G.hp.frequency, Math.max(20, v.lowCut)); S(G.lp.frequency, Math.min(20000, v.highCut));
+      S(G.dry.gain, 1 - 0.7 * v.drive); S(G.wet.gain, 0.7 * v.drive * 0.8); S(G.rev.gain, v.reverb * 0.6 * db(v.volume));
+      const w = Math.max(0, v.width), a = (1 + w) / 2, b = (1 - w) / 2;
+      S(G.ll.gain, a); S(G.rr.gain, a); S(G.lr.gain, b); S(G.rl.gain, b);
+      S(G.vol.gain, db(v.volume));
+      const rate = Math.pow(2, v.semitones / 12);
+      Object.values(G.src).forEach((s) => S(s.playbackRate, rate));
+      if (rate !== E.rate && E.playing) { const p = pos(); E.off = p; E.t0 = t; }
+      E.rate = rate;
+    };
+    return G;
+  }
+  const values = (track, id) => {
+    const v = (track.variations || []).find((x) => x.id === id);
+    return Object.assign({}, DEF, v ? v.values : {}, { volume: DEF.volume });     // the listening volume is the slider's, not the variation's
+  };
+  const pos = () => { if (!E.track) return 0; const d = E.track.duration || 30; return ((E.off + (ctx().currentTime - E.t0) * E.rate) % d + d) % d; };
+
+  // the whole mix (one small file) starts the music at once when the four stems are not decoded yet; the stems then take over at the same instant
+  const mixOf = (track) => {
+    const k = track.id + ":mix";
+    if (!E.cache.has(k)) E.cache.set(k, fetch(track.previews.mix).then((r) => r.arrayBuffer()).then((ab) => ctx().decodeAudioData(ab)).then((b) => ({ mix: b })));
+    return E.cache.get(k);
+  };
+  function launch(track, bufs, from, v) {
+    const c = ctx(), old = E.g, G = graph(bufs);
+    G.set(v, true); E.rate = Math.pow(2, v.semitones / 12);
+    const t = c.currentTime;
+    G.out.gain.setValueAtTime(0.0001, t); G.out.gain.linearRampToValueAtTime(1, t + 0.05);
+    E.off = from || 0; E.t0 = t; E.g = G; E.playing = true;
+    Object.values(G.src).forEach((s) => s.start(t, E.off % (track.duration || 30)));
+    if (old) { old.out.gain.cancelScheduledValues(t); old.out.gain.setTargetAtTime(0, t, 0.03); setTimeout(() => { Object.values(old.src).forEach((s) => { try { s.stop(); } catch (e) { /* stopped */ } }); old.out.disconnect(); }, 400); }
+    paint(); tick();
+  }
+  async function playTrack(track, variation, from) {
+    const c = ctx(); if (c.state === "suspended") await c.resume();
+    E.track = track; E.variation = variation === undefined ? (E.per[track.id] || "") : variation; E.per[track.id] = E.variation;
+    paint();
+    const my = (E.token = (E.token || 0) + 1);
+    // the neighbours are decoded in the background: Up, Down and the next click start at once
+    const all = (E.ui && E.ui.tracks) || [], k = all.indexOf(track);
+    [all[k + 1], all[k - 1]].forEach((n, i) => n && setTimeout(() => stemsOf(n).catch(() => {}), 600 + i * 400));
+    if (E.ready.has(track.id)) { const bufs = await stemsOf(track); if (my === E.token) launch(track, bufs, from, values(track, E.variation)); return; }
+    const quick = await mixOf(track);
+    if (my !== E.token) return;
+    launch(track, quick, from, Object.assign(values(track, E.variation), { drums: 0, bass: 0, other: 0, vocals: 0 }));
+    const bufs = await stemsOf(track);
+    if (my === E.token) launch(track, bufs, pos(), values(track, E.variation));       // the stems take over at the same position, with the variation of the moment
+  }
+  function setVariation(id) {
+    if (!E.track) return;
+    E.variation = id; E.per[E.track.id] = id;
+    if (E.g) E.g.set(values(E.track, id), false);       // the running music changes at once: only the values move
+    else playTrack(E.track, id);
+    paint();
+  }
+  function toggle() {
+    const c = ctx();
+    if (!E.track) return;
+    if (!E.g) { playTrack(E.track); return; }
+    if (E.playing) { E.off = pos(); c.suspend(); E.playing = false; } else { c.resume().then(() => { E.t0 = c.currentTime; E.playing = true; tick(); }); }
+    paint();
+  }
+  function seek(frac) {
+    if (!E.track) return;
+    const d = E.track.duration || 30;
+    if (E.g) { playTrack(E.track, E.variation, frac * d); } else { E.off = frac * d; paint(); }
+  }
+  function tick() {
+    cancelAnimationFrame(E.raf);
+    const u = E.ui;
+    if (u && u.head && u.root.isConnected) { const f = pos() / (E.track.duration || 30); u.head.style.setProperty("--p", (f * 100).toFixed(2) + "%"); u.time.textContent = `${fmt(pos())} / ${fmt(E.track.duration || 30)}`; }
+    if (E.playing) E.raf = requestAnimationFrame(tick);
+  }
+  const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+  // ------------------------------------------------------------------------------------------------------------- interface
+  const el = (tag, cls, html) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html !== undefined) n.innerHTML = html; return n; };
+  let paint = () => {};
+
+  function mount(body, o) {
+    const esc = o.esc, tracks = o.music, cur = o.current || {};
+    body.classList.add("mp-body");
+    const root = el("div", "mp"), list = el("aside", "mp-list"), main = el("section", "mp-main");
+    root.append(list, main);
+    const ui = (E.ui = { root, tracks });
+
+    // ---- the list
+    const search = el("input"); search.type = "text"; search.placeholder = `Chercher parmi ${tracks.length} musiques…`; search.className = "mp-search";
+    const rows = el("div", "mp-rows"); list.append(search, rows);
+    const rowEls = new Map();
+    const io = "IntersectionObserver" in window ? new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { const w = e.target.querySelector(".w"); if (w && !w.style.backgroundImage) w.style.backgroundImage = `url(/motion/gallery/wave/${encodeURIComponent(e.target.dataset.id)}.png)`; io.unobserve(e.target); } }), { root: rows, rootMargin: "200px" }) : null;
+    tracks.forEach((t, i) => {
+      const r = el("button", "mp-row"); r.type = "button"; r.dataset.id = t.id;
+      r.innerHTML = `<span class="i">${i + 1}</span><span class="t"><b>${esc(t.id)}</b><small>${t.bpm} bpm · ${esc(t.key)}${t.fidelity ? " · " + t.fidelity + " %" : ""}</small></span><span class="w"></span><span class="u"></span>`;
+      r.onclick = () => { if (E.track === t && E.g) toggle(); else playTrack(t); };
+      r.onmouseenter = () => { stemsOf(t).catch(() => {}); };           // decoded before the click: the music starts at once
+      rows.appendChild(r); rowEls.set(t.id, r); io && io.observe(r);
+    });
+    search.oninput = () => { const q = search.value.trim().toLowerCase(); rowEls.forEach((r, id) => { r.hidden = q && !id.toLowerCase().includes(q); }); };
+
+    // ---- the main part: now playing, transport, variations
+    const head = el("div", "mp-head"), time = el("span", "mp-time", "0:00 / 0:30");
+    head.innerHTML = `<div class="mp-wave"></div><div class="mp-bar"></div>`;
+    head.onclick = (e) => { const b = head.getBoundingClientRect(); seek(Math.max(0, Math.min(1, (e.clientX - b.left) / b.width))); };
+    const title = el("div", "mp-title"), meta = el("div", "mp-meta");
+    const tr = el("div", "mp-transport");
+    const prev = el("button", "round", "⏮"), play = el("button", "round primary", "▶"), next = el("button", "round", "⏭");
+    [prev, play, next].forEach((b) => (b.type = "button"));
+    const vol = el("input"); vol.type = "range"; vol.min = -30; vol.max = 0; vol.step = 0.5; vol.value = -8; vol.className = "mp-vol"; vol.title = "Volume d'écoute";
+    vol.oninput = () => { DEF.volume = Number(vol.value); if (E.track && E.g) E.g.set(values(E.track, E.variation), false); };
+    tr.append(prev, play, next, time, el("span", "grow"), el("span", "hint", "Volume"), vol);
+    const vlbl = el("div", "mp-lbl"), chips = el("div", "mp-chips"), why = el("div", "mp-why");
+    const acts = el("div", "mp-acts"), use = el("button", "primary", "Utiliser dans le projet"); use.type = "button";
+    acts.append(use, el("span", "hint", "Espace : lecture · ← → : variation · ↑ ↓ : musique"));
+    main.append(title, meta, head, tr, vlbl, chips, why, acts);
+    ui.head = head; ui.time = time;
+
+    const idx = () => tracks.findIndex((t) => t === E.track);
+    const go = (d) => { const i = Math.max(0, Math.min(tracks.length - 1, (idx() < 0 ? 0 : idx()) + d)); playTrack(tracks[i]); rowEls.get(tracks[i].id).scrollIntoView({ block: "nearest" }); };
+    prev.onclick = () => go(-1); next.onclick = () => go(1); play.onclick = () => (E.track ? toggle() : playTrack(tracks[0]));
+    use.onclick = () => { if (E.track) o.use(E.track, E.variation, values(E.track, E.variation)); };
+
+    paint = () => {
+      if (!root.isConnected) return;
+      rowEls.forEach((r, id) => { r.classList.toggle("on", !!E.track && E.track.id === id); r.classList.toggle("playing", !!E.track && E.track.id === id && E.playing); r.querySelector(".u").textContent = cur.mode === "bank" && (cur.bank || {}).track === id ? "dans le projet" : ""; });
+      play.textContent = E.playing ? "⏸" : "▶";
+      const t = E.track;
+      if (!t) { title.innerHTML = "Choisis une musique"; meta.textContent = `${tracks.length} musiques reproduites à 99,9 %. Un clic la joue ; une variation change le mix tout de suite.`; vlbl.textContent = ""; chips.replaceChildren(); why.textContent = ""; use.disabled = true; return; }
+      use.disabled = false;
+      title.textContent = t.id; meta.textContent = `${t.bpm} bpm · ${t.key} · ${Math.round(t.duration)} s${t.fidelity ? " · fidélité " + t.fidelity + " %" : ""}${t.polished ? " · polie" : ""}`;
+      head.firstChild.style.backgroundImage = `url(/motion/gallery/wave/${encodeURIComponent(t.id)}.png)`;
+      vlbl.textContent = `${(t.variations || []).length + 1} variations`;
+      if (chips.dataset.track !== t.id) {
+        chips.dataset.track = t.id; chips.replaceChildren();
+        [{ id: "", label: "Original", why: "le mix reproduit, tel quel" }].concat(t.variations || []).forEach((v) => {
+          const b = el("button", "chip"); b.type = "button"; b.textContent = v.label; b.dataset.id = v.id; b.title = v.why || ""; b.onclick = () => setVariation(v.id);
+          chips.appendChild(b);
+        });
+      }
+      chips.querySelectorAll(".chip").forEach((b) => b.classList.toggle("on", b.dataset.id === E.variation));
+      const vv = [{ id: "", why: "le mix reproduit, tel quel" }].concat(t.variations || []).find((x) => x.id === E.variation);
+      why.textContent = vv ? vv.why || "" : "";
+      tick();
+    };
+    document.removeEventListener("keydown", E.key);
+    E.key = (e) => {
+      if (!root.isConnected) { document.removeEventListener("keydown", E.key); return; }
+      if (/INPUT|TEXTAREA|SELECT/.test((e.target || {}).tagName || "") && e.target !== vol) return;
+      const t = E.track, vs = t ? [{ id: "" }].concat(t.variations || []) : [];
+      if (e.code === "Space") { e.preventDefault(); play.onclick(); }
+      else if (e.key === "ArrowDown") { e.preventDefault(); go(1); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); go(-1); }
+      else if (e.key === "ArrowRight" && t) { e.preventDefault(); setVariation(vs[(vs.findIndex((x) => x.id === E.variation) + 1) % vs.length].id); }
+      else if (e.key === "ArrowLeft" && t) { e.preventDefault(); setVariation(vs[(vs.findIndex((x) => x.id === E.variation) - 1 + vs.length) % vs.length].id); }
+    };
+    document.addEventListener("keydown", E.key);
+    body.appendChild(root);
+    if (E.track) E.track = tracks.find((x) => x.id === E.track.id) || E.track;
+    else { const on = cur.mode === "bank" && tracks.find((x) => x.id === (cur.bank || {}).track); if (on) { E.track = on; E.variation = (cur.bank || {}).variation || ""; } else E.track = tracks[0]; }
+    if (E.track) stemsOf(E.track).catch(() => {});          // the first music is decoded while the page is read
+    paint();
+    return root;
+  }
+  window.ZS_MUSIC = { mount, engine: E, playTrack, setVariation, toggle, values };
+})();

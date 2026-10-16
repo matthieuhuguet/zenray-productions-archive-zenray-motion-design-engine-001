@@ -1,0 +1,28 @@
+"""Prepares what the music player needs for every reproduced music (16 October 2026): the five AAC previews (four stems and the mix) and the
+waveform picture, in parallel. Idempotent: what exists and is newer than its source is kept. FR : prepare les apercus AAC et les formes d'onde.
+Usage: python3 Scripts/BuildMusicPreviews.py [--workers 8]"""
+import argparse
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "motion"))
+import banks  # noqa: E402
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--workers", type=int, default=8)
+    a = ap.parse_args()
+    tracks = banks.music_bank()["music"]
+    jobs = [(t["id"], st) for t in tracks for st in (*t["stems"], "mix")]
+    t0 = time.time()
+    with ThreadPoolExecutor(a.workers) as ex:
+        list(ex.map(lambda j: banks.preview_file(*j), jobs))
+        list(ex.map(lambda t: banks.waveform(t["id"]), tracks))
+    print(f"{len(jobs)} previews and {len(tracks)} waveforms in {time.time() - t0:.1f} s")
+
+
+if __name__ == "__main__":
+    main()

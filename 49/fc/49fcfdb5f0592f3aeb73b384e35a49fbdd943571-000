@@ -190,3 +190,42 @@ button.toggled { background: var(--ink); color: var(--bg); border-color: var(--i
 #timeTot { min-width: 74px; }
 .transport button.ghost:not(.icon) { padding: 5px 9px; font-size: 12px; }
 .keys { cursor: help; white-space: nowrap; }
+
+/* 16 October 2026: the music player of the gallery (music-player.js): list on the left, now playing, transport and variation chips on the right. */
+.mp { display: grid; grid-template-columns: minmax(250px, 340px) minmax(0, 1fr); gap: 14px; height: min(72vh, 760px); min-height: 420px; margin: 4px 0 26px; }
+.mp-list { display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); overflow: hidden; }
+.mp-search { margin: 8px; }
+.mp-rows { overflow: auto; flex: 1; padding: 0 6px 8px; }
+.mp-row { display: grid; grid-template-columns: 26px minmax(0, 1fr) 84px auto; align-items: center; gap: 8px; width: 100%; border: 1px solid transparent; background: transparent; border-radius: 9px; padding: 6px 8px; text-align: left; content-visibility: auto; contain-intrinsic-size: 48px; }
+.mp-row:hover { background: var(--surface); border-color: var(--line); }
+.mp-row.on { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); border-color: var(--accent); }
+.mp-row .i { color: var(--ink-2); font-family: var(--f-serif); text-align: center; font-variant-numeric: tabular-nums; }
+.mp-row.playing .i::before { content: "♪"; color: var(--accent); }
+.mp-row.playing .i { font-size: 0; } .mp-row.playing .i::before { font-size: 15px; }
+.mp-row .t { display: grid; min-width: 0; } .mp-row .t b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-row .t small { color: var(--ink-2); font-size: 11.5px; }
+.mp-row .w { height: 30px; background: center / 100% 100% no-repeat; opacity: 0.8; }
+.mp-row .u { color: var(--accent); font-size: 11px; }
+.mp-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; overflow: auto; padding-right: 2px; }
+.mp-title { font-family: var(--f-serif); font-size: 28px; line-height: 1.1; }
+.mp-meta { color: var(--ink-2); }
+.mp-head { position: relative; height: 96px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); cursor: pointer; overflow: hidden; --p: 0%; }
+.mp-wave { position: absolute; inset: 6px 0; background: center / 100% 100% no-repeat; opacity: 0.35; }
+.mp-bar { position: absolute; inset: 0 auto 0 0; width: var(--p); background: color-mix(in srgb, var(--accent) 22%, transparent); border-right: 2px solid var(--accent); }
+.mp-transport { display: flex; align-items: center; gap: 10px; }
+.mp-time { font-family: var(--f-serif); font-variant-numeric: tabular-nums; color: var(--ink-2); margin-left: 6px; }
+.mp-vol { width: 120px; accent-color: var(--accent); }
+.mp-lbl { color: var(--ink-2); font-size: 12px; margin-top: 4px; }
+.mp-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.mp-chips .chip { border-radius: 999px; padding: 8px 15px; font-size: 13.5px; transition: background 0.08s, border-color 0.08s; }
+.mp-chips .chip:hover { border-color: var(--accent); }
+.mp-chips .chip.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.mp-why { min-height: 20px; color: var(--ink-2); }
+.mp-acts { display: flex; align-items: center; gap: 12px; margin-top: 2px; }
+.mp-stored { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 6px 14px; margin-top: 8px; }
+.mp-srow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 5px 8px; border: 1px solid var(--line); border-radius: 9px; }
+.mp-srow.on { border-color: var(--accent); }
+.mp-srow .t { display: grid; min-width: 0; } .mp-srow .t b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-srow .t small { color: var(--ink-2); font-size: 11.5px; }
+@media (max-width: 900px) { .mp { grid-template-columns: 1fr; } .mp-list { max-height: 320px; } }
+.tabs button[hidden] { display: none; }
