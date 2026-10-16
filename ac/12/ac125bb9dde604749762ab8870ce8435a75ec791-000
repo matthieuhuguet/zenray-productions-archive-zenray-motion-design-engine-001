@@ -44,10 +44,11 @@ def lowres(video: str, hz: float, seconds: float) -> np.ndarray:
     return np.frombuffer(r.stdout[: n * w * h], dtype=np.uint8).reshape(n, h, w)
 
 
-def pick_keys(low: np.ndarray, hz: float, t0: float, t1: float) -> list[float]:
+def pick_keys(low: np.ndarray, hz: float, t0: float, t1: float, thr: float | None = None, ov: dict | None = None) -> list[float]:
     """The instants of a shot that get a traced image: the first one, then each time the picture moved by more than the threshold
     since the last one (at least minGap apart, at most maxKeys). A still shot is one image."""
-    s = CFG["sampling"]
+    s = {**CFG["sampling"], **(ov or {})}
+    thr = s["changeThreshold"] if thr is None else thr
     dur = max(1e-3, t1 - t0)
     first = t0 + min(s["firstOffsetS"], dur / 2)
     keys = [first]
@@ -63,7 +64,7 @@ def pick_keys(low: np.ndarray, hz: float, t0: float, t1: float) -> list[float]:
         t = i / hz
         if t >= t1 - 1e-3 or len(keys) >= cap:
             break
-        if t - keys[-1] >= s["minGapS"] and float(np.abs(at(t) - last).mean()) >= s["changeThreshold"]:
+        if t - keys[-1] >= s["minGapS"] and float(np.abs(at(t) - last).mean()) >= thr:
             keys.append(t)
             last = at(t)
     return keys
@@ -113,11 +114,11 @@ def fidelity(lab: np.ndarray, labels: np.ndarray, centers: np.ndarray) -> dict:
     return {"share": round(float((de <= tol).mean()), 4), "meanDeltaE": round(float(de.mean()), 2)}
 
 
-def potrace_mask(mask: np.ndarray) -> tuple[str, str] | None:
+def potrace_mask(mask: np.ndarray, over: dict | None = None) -> tuple[str, str] | None:
     """One stacked colour: the black pixels of the mask traced to a path (data and the group transform potrace gives)."""
     h, w = mask.shape
     pbm = b"P4\n%d %d\n" % (w, h) + np.packbits(mask.astype(np.uint8), axis=1).tobytes()
-    p = CFG["potrace"]
+    p = {**CFG["potrace"], **(over or {})}
     r = subprocess.run([POTRACE, "-b", "svg", "-t", str(p["speckle"]), "-a", str(p["cornerThreshold"]), "-O", str(p["curveTolerance"]),
                         "-o", "-", "-"], input=pbm, capture_output=True, timeout=120)
     txt = r.stdout.decode("utf-8", "replace")
@@ -126,7 +127,7 @@ def potrace_mask(mask: np.ndarray) -> tuple[str, str] | None:
     return (d.group(1).replace("\n", " "), tr.group(1)) if d and tr else None
 
 
-def key_svg(labels: np.ndarray, hexes: list[str], width: int, height: int) -> str:
+def key_svg(labels: np.ndarray, hexes: list[str], width: int, height: int, over: dict | None = None) -> str:
     """The stacked SVG of one keyframe: colour 0 is the ground, every next colour is the union of itself and all the later ones
     (painter's order), so no gap shows between two regions and the number of nodes stays small."""
     parts = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" preserveAspectRatio="xMidYMid slice" '
@@ -135,20 +136,38 @@ def key_svg(labels: np.ndarray, hexes: list[str], width: int, height: int) -> st
         mask = labels >= i
         if not mask.any():
             continue
-        t = potrace_mask(mask)
+        t = potrace_mask(mask, over)
         if t:
             parts.append(f'<g transform="{t[1]}" style="fill:var(--c{i},{hexes[i]})"><path d="{t[0]}"/></g>')
     parts.append("</svg>")
     return "".join(parts)
 
 
-def trace_shot(frames: list[np.ndarray]) -> dict:
+_VAR = re.compile(r"var\(--c\d+,(#[0-9a-fA-F]{6})\)")
+
+
+def render_svg(svg: str, w: int, h: int) -> np.ndarray | None:
+    """What the SVG really shows: rasterised by librsvg at the size of the frame."""
+    r = subprocess.run([CFG["raster"]["binary"], "-f", "png", "-w", str(w), "-h", str(h)], input=_VAR.sub(r"\1", svg).encode(), capture_output=True, timeout=120)
+    img = cv2.imdecode(np.frombuffer(r.stdout, dtype=np.uint8), cv2.IMREAD_COLOR) if r.stdout else None
+    return img if img is not None and img.shape[:2] == (h, w) else None
+
+
+def rendered_share(img: np.ndarray | None, frame: np.ndarray) -> dict:
+    if img is None:
+        return {"share": 0.0, "meanDeltaE": 99.0}
+    de = np.sqrt(((to_lab(frame) - to_lab(img)) ** 2).sum(axis=2))
+    return {"share": round(float((de <= CFG["fidelity"]["toleranceDeltaE"]).mean()), 4), "meanDeltaE": round(float(de.mean()), 2)}
+
+
+def trace_shot(frames: list[np.ndarray], over: dict | None = None, ladder: list[int] | None = None) -> dict:
     """Palette and SVGs of the keyframes of one shot, at the least detail that reaches the target (or the cap)."""
     q, fcfg = CFG["quantize"], CFG["fidelity"]
+    ladder = ladder or q["colorLadder"]
     labs = [to_lab(f) for f in frames]
     h, w = frames[0].shape[:2]
     best = None
-    for n in q["colorLadder"]:
+    for n in ladder:
         centers = fit_palette(labs, n)
         labels = [assign(l, centers) for l in labs]
         fid = [fidelity(l, lb, centers) for l, lb in zip(labs, labels)]
@@ -157,18 +176,20 @@ def trace_shot(frames: list[np.ndarray]) -> dict:
         if share >= fcfg["targetShare"]:
             break
     hexes = [hexof(c) for c in best["centers"]]
-    svgs = [key_svg(lb, hexes, w, h) for lb in best["labels"]]
+    svgs = [key_svg(lb, hexes, w, h, over) for lb in best["labels"]]
     # size cap: a keyframe over the cap is traced again with a coarser palette (never silently truncated)
     cap = CFG["potrace"]["maxKeyBytes"]
-    lad = [n for n in q["colorLadder"] if n < best["n"]]
+    lad = [n for n in ladder if n < best["n"]]
     while max(len(s) for s in svgs) > cap and lad:
         n = lad.pop()
         centers = fit_palette(labs, n)
         labels = [assign(l, centers) for l in labs]
         hexes = [hexof(c) for c in centers]
-        svgs = [key_svg(lb, hexes, w, h) for lb in labels]
+        svgs = [key_svg(lb, hexes, w, h, over) for lb in labels]
         best = {"centers": centers, "labels": labels, "fid": [fidelity(l, lb, centers) for l, lb in zip(labs, labels)], "n": n}
-    return {"palette": hexes, "svgs": svgs, "fidelity": best["fid"], "colors": len(hexes), "width": w, "height": h}
+    rasters = [render_svg(sv, w, h) for sv in svgs]
+    rendered = [rendered_share(r, fr) for r, fr in zip(rasters, frames)]
+    return {"palette": hexes, "svgs": svgs, "fidelity": rendered, "quantized": best["fid"], "colors": len(hexes), "width": w, "height": h, "rasters": rasters}
 
 
 # ---------------------------------------------------------------------------------------------------- the standalone HTML
@@ -215,53 +236,116 @@ def player_html(title: str, shot: dict, trace: dict, times: list[float]) -> str:
 
 
 # ---------------------------------------------------------------------------------------------------- one video
-def run_video(slug: str, video: str, workshop: Path, assets_dir: Path, html_dir: Path, log=print) -> dict:
-    """Every shot of the bible of `slug`: keyframes, one palette, SVGs (written into assets_dir, flat names the project can use) and
-    one standalone HTML per shot (html_dir). Resumable: a shot whose files exist is read back, not traced again."""
+def erase_boxes(frame: np.ndarray, boxes: list) -> np.ndarray:
+    """Text that stays editable is removed from the picture before tracing: each box (x0, y0, x1, y1 in % of the frame) is filled
+    with the median colour of the ring around it."""
+    h, w = frame.shape[:2]
+    out = frame.copy()
+    for x0, y0, x1, y1 in boxes:
+        a, b, c, d = int(x0 / 100 * w), int(y0 / 100 * h), int(x1 / 100 * w), int(y1 / 100 * h)
+        ring = np.concatenate([frame[max(0, b - 4):b, a:c].reshape(-1, 3), frame[d:d + 4, a:c].reshape(-1, 3),
+                               frame[b:d, max(0, a - 4):a].reshape(-1, 3), frame[b:d, c:c + 4].reshape(-1, 3)])
+        if len(ring):
+            out[b:d, a:c] = np.median(ring, axis=0)
+    return out
+
+
+def temporal_error(low: np.ndarray, hz: float, t0: float, t1: float, times: list[float], rasters: list) -> dict:
+    """The stepping error of a shot: at every probe sample, the picture of the reference against the keyframe on screen (64 x 36 grey)."""
+    w, h = CFG["sampling"]["probeSize"]
+    grey = [cv2.resize(cv2.cvtColor(r, cv2.COLOR_BGR2GRAY), (w, h), interpolation=cv2.INTER_AREA).astype(np.int16) if r is not None else None for r in rasters]
+    errs = []
+    for i in range(int(math.ceil(t0 * hz)), min(len(low), int(math.ceil(t1 * hz)))):
+        t = i / hz
+        k = max(j for j, kt in enumerate(times) if kt <= t + 1e-6) if any(kt <= t + 1e-6 for kt in times) else 0
+        if grey[k] is not None:
+            errs.append(float(np.abs(low[i].astype(np.int16) - grey[k]).mean()))
+    return {"mean": round(float(np.mean(errs)), 2) if errs else 0.0, "max": round(float(np.max(errs)), 2) if errs else 0.0, "samples": len(errs)}
+
+
+def trace_with_loops(video: str, low: np.ndarray, hz: float, t0: float, t1: float, base_width: int, ov: dict) -> dict:
+    """One shot, measured: keys, then a rendered-fidelity loop (finer tracing) and a stepping-error loop (more keys)."""
+    rc, fc = CFG["refine"], CFG["fidelity"]
+    thr = ov.get("changeThreshold", CFG["sampling"]["changeThreshold"])
+    width = ov.get("width", base_width)
+    over = dict(ov.get("potrace") or {})
+    best = None
+    for rnd in range(rc["passes"] + 1):
+        times = pick_keys(low, hz, t0, t1, thr, ov)
+        frames = [grab(video, t, width) for t in times]
+        keep = [(t, f) for t, f in zip(times, frames) if f is not None]
+        if not keep:
+            return best or {}
+        times, frames = [k[0] for k in keep], [erase_boxes(k[1], ov["erase"]) if ov.get("erase") else k[1] for k in keep]
+        tr = trace_shot(frames, over, ov.get("ladder"))
+        tr["times"] = times
+        tr["temporal"] = temporal_error(low, hz, t0, t1, times, tr["rasters"])
+        tr["share"] = min(f["share"] for f in tr["fidelity"])
+        tr["rounds"] = rnd
+        if best is None or (tr["share"], -tr["temporal"]["max"]) > (best["share"], -best["temporal"]["max"]):
+            best = tr
+        weak_pic = tr["share"] < fc["targetShare"] and width < rc["maxWidth"]
+        weak_time = tr["temporal"]["max"] > rc["temporalMax"] and thr > rc["minThreshold"]
+        if not (weak_pic or weak_time):
+            break
+        if weak_pic:
+            width = min(rc["maxWidth"], int(width * rc["widthStep"]))
+            over = {**over, **rc["finePotrace"]}
+        if weak_time:
+            thr = max(rc["minThreshold"], thr * rc["thresholdStep"])
+    return best
+
+
+def run_video(slug: str, video: str, workshop: Path, assets_dir: Path, html_dir: Path, recipe: dict | None = None, only: list[str] | None = None, log=print) -> dict:
+    """Every shot of the bible of `slug` (or the shots in `only`): keyframes, one palette, SVGs (written into assets_dir, flat names the
+    project plays) and one standalone HTML per shot (html_dir). The recipe of the video holds the per-shot decisions (erase, width,
+    palette ladder, thresholds). Resumable: a shot whose result file exists is read back; delete it to measure the shot again."""
+    recipe = recipe or {}
     bible = json.loads((workshop / "references" / slug / "bible.json").read_text(encoding="utf-8"))
     info = probe(video)
-    shots = bible["shots"]
-    total = max(float(s["end"]) for s in shots)
+    shots = [s for s in bible["shots"] if not only or s["id"] in only]
+    total = max(float(s["end"]) for s in bible["shots"])
     hz = CFG["sampling"]["probeHz"]
     low = lowres(video, hz, min(total + 0.5, info["duration"]))
-    width = CFG["trace"]["width"] if info["width"] >= info["height"] else CFG["trace"]["widthVertical"]
+    base = recipe.get("width") or (CFG["trace"]["width"] if info["width"] >= info["height"] else CFG["trace"]["widthVertical"])
     assets_dir.mkdir(parents=True, exist_ok=True)
     html_dir.mkdir(parents=True, exist_ok=True)
-    out, bytes_total = [], 0
+    out = []
     for s in shots:
         sid = s["id"]
         meta_file = assets_dir / f"{sid}.json"
         if meta_file.is_file():
-            m = json.loads(meta_file.read_text(encoding="utf-8"))
-            out.append(m)
-            bytes_total += m["bytes"]
+            out.append(json.loads(meta_file.read_text(encoding="utf-8")))
             continue
         t0, t1 = float(s["start"]), float(s["end"])
-        times = pick_keys(low, hz, t0, t1)
-        frames = [f for f in (grab(video, t, width) for t in times) if f is not None]
-        if not frames:
+        tr = trace_with_loops(video, low, hz, t0, t1, base, (recipe.get("shots") or {}).get(sid, {}) | {k: v for k, v in recipe.items() if k in ("potrace",) and k not in (recipe.get("shots") or {}).get(sid, {})})
+        if not tr:
             continue
-        times = times[: len(frames)]
-        tr = trace_shot(frames)
         files, size = [], 0
         for k, svg in enumerate(tr["svgs"]):
             name = f"{sid}-k{k:02d}.svg"
             (assets_dir / name).write_text(svg, encoding="utf-8")
-            files.append({"t": round(times[k] - t0, 3), "file": name, "bytes": len(svg)})
+            files.append({"t": round(tr["times"][k] - t0, 3), "file": name, "bytes": len(svg)})
             size += len(svg)
         shot = {"start": t0, "duration": round(t1 - t0, 4)}
-        (html_dir / f"{sid}.html").write_text(player_html(f"{slug} {sid}", shot, tr, times), encoding="utf-8")
+        (html_dir / f"{sid}.html").write_text(player_html(f"{slug} {sid}", shot, tr, tr["times"]), encoding="utf-8")
         m = {"id": sid, "start": t0, "end": t1, "duration": round(t1 - t0, 4), "family": s.get("family"), "keys": files, "palette": tr["palette"],
-             "colors": tr["colors"], "width": tr["width"], "height": tr["height"], "bytes": size,
-             "fidelityShare": min(f["share"] for f in tr["fidelity"]), "meanDeltaE": round(float(np.mean([f["meanDeltaE"] for f in tr["fidelity"]])), 2)}
+             "colors": tr["colors"], "width": tr["width"], "height": tr["height"], "bytes": size, "rounds": tr["rounds"],
+             "fidelityShare": tr["share"], "meanDeltaE": round(float(np.mean([f["meanDeltaE"] for f in tr["fidelity"]])), 2), "temporal": tr["temporal"]}
         meta_file.write_text(json.dumps(m, ensure_ascii=False) + "\n", encoding="utf-8")
         out.append(m)
-        bytes_total += size
-    keys = sum(len(m["keys"]) for m in out)
+        log(f"{slug} {sid} {t0:.2f}s keys {len(files)} colours {tr['colors']} w{tr['width']} share {tr['share']:.3f} step-err max {tr['temporal']['max']:.1f}")
+    return summarize(slug, out, info, assets_dir)
+
+
+def summarize(slug: str, out: list, info: dict, assets_dir: Path) -> dict:
     share = [m["fidelityShare"] for m in out]
-    summary = {"slug": slug, "shots": len(out), "keys": keys, "bytes": bytes_total, "width": info["width"], "height": info["height"],
+    summary = {"slug": slug, "shots": len(out), "keys": sum(len(m["keys"]) for m in out), "bytes": sum(m["bytes"] for m in out),
+               "width": info["width"], "height": info["height"],
                "fidelityMeanShare": round(float(np.mean(share)), 4) if share else None,
                "fidelityMinShare": round(float(np.min(share)), 4) if share else None,
-               "shotsAtTarget": sum(1 for x in share if x >= CFG["fidelity"]["targetShare"])}
+               "shotsAtTarget": sum(1 for x in share if x >= CFG["fidelity"]["targetShare"]),
+               "steppingMax": round(max((m["temporal"]["max"] for m in out), default=0.0), 2),
+               "steppingMean": round(float(np.mean([m["temporal"]["mean"] for m in out])), 2) if out else None}
     (assets_dir / "vector.json").write_text(json.dumps({"summary": summary, "shots": out}, ensure_ascii=False) + "\n", encoding="utf-8")
     return summary

@@ -1,0 +1,110 @@
+"""ZenRay Motion Design, the reproduction of one reference video as an editable motion project (16 October 2026).
+
+One video at a time, measured: motion/htmlvec.py traces every cut of the bible into keyframes (one palette per shot, stacked SVG,
+rendered fidelity and stepping error measured), this module turns the result into a project of `vector-shot` scenes (editable
+colour grading, camera and texts), stores the track of the reference in the app's music bank (local), and writes the report.
+The per-video decisions (texts to keep editable and where, per-shot detail) live in motion/reproductions/data/<slug>.json.
+FR : la reproduction d'une video de reference en projet Motion modifiable, une video a la fois, mesuree.
+Usage: python3 motion/reproduce.py <slug> [--only S01,S02] [--again S05] [--no-trace]
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import sys
+from pathlib import Path
+
+MOTION = Path(__file__).resolve().parent
+sys.path.insert(0, str(MOTION))
+import corpus  # noqa: E402
+import htmlvec  # noqa: E402
+import house  # noqa: E402
+import server  # noqa: E402
+
+DATA = MOTION / "reproductions" / "data"
+
+
+def project_id(slug: str) -> str:
+    return f"{slug}-motion"
+
+
+def recipe_of(slug: str) -> dict:
+    f = DATA / f"{slug}.json"
+    return json.loads(f.read_text(encoding="utf-8")) if f.is_file() else {}
+
+
+def overlay_lines(items: list) -> str:
+    return "\n".join(f"{o['t0']} {o['t1']} {o['x']} {o['y']} {o['size']} {o.get('weight', 400)} {o.get('tracking', 0)} {o.get('colour', '#111111')} | {o['text']}" for o in items)
+
+
+def nearest_format(w: int, h: int) -> str:
+    a = w / h
+    return min({"16x9": 16 / 9, "9x16": 9 / 16, "1x1": 1.0, "4x5": 0.8}.items(), key=lambda kv: abs(kv[1] - a))[0]
+
+
+def build_project(slug: str, title: str, shots: list[dict], info: dict, recipe: dict, music_name: str | None) -> dict:
+    scenes = []
+    shot_recipe = recipe.get("shots") or {}
+    for m in sorted(shots, key=lambda x: x["start"]):
+        r = shot_recipe.get(m["id"], {})
+        keys = "\n".join(f"{k['t']} {k['file']}" for k in m["keys"])
+        params = {"bg": m["palette"][0], "keys": keys, "fit": "cover", **(r.get("params") or {})}
+        if r.get("overlays"):
+            params["overlays"] = overlay_lines(r["overlays"])
+        scenes.append({"id": f"s{len(scenes) + 1:03d}", "template": "vector-shot", "duration": min(120.0, max(0.02, round(m["duration"], 4))), "params": params,
+                       "ref": {"shot": m["id"], "start": m["start"]}})
+    p = {"schema": "zrmd/motion-project@1", "title": f"{title} · reproduction", "format": nearest_format(info["width"], info["height"]), "fps": 30,
+         "reference": slug, "doc": "16 October 2026: one reference reproduced as vector motion (motion/reproduce.py): every cut is a vector-shot scene "
+                                   "(stacked SVG keyframes, one palette per shot), texts kept editable by the per-video recipe.",
+         "theme": {"fontBody": "InterVariable", "fontTitle": "AnthropicSerif", "fontMono": "AnthropicMono"}, "scenes": scenes, "sfx": {"source": "none"}}
+    if music_name:
+        p["music"] = {"mode": "file", "file": {"file": music_name}}
+    house.apply(p)
+    return p
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("slug")
+    ap.add_argument("--only", default="")
+    ap.add_argument("--again", default="", help="shots to measure again (their result files are deleted first)")
+    ap.add_argument("--no-trace", action="store_true")
+    a = ap.parse_args()
+    slug = a.slug
+    items = {i["slug"]: i for i in corpus.load_items()}
+    item = items[slug]
+    r = corpus.process(item, ["fetch", "ingest", "shots", "book"])
+    if r.get("failed"):
+        print(json.dumps(r, ensure_ascii=False))
+        return 2
+    video = corpus.read_state()["items"][slug]["fetch"]["file"]
+    pid = project_id(slug)
+    assets = server.project_dir(pid) / "assets"
+    html_dir = corpus.HOME / "html" / slug
+    for sid in [x for x in a.again.split(",") if x]:
+        (assets / f"{sid}.json").unlink(missing_ok=True)
+    recipe = recipe_of(slug)
+    only = [x for x in a.only.split(",") if x] or None
+    info = htmlvec.probe(video)
+    if not a.no_trace:
+        htmlvec.run_video(slug, video, corpus.WORKSHOP, assets, html_dir, recipe, only, log=corpus.log)
+    vec = json.loads((assets / "vector.json").read_text(encoding="utf-8")) if (assets / "vector.json").is_file() else None
+    shots = [json.loads(f.read_text(encoding="utf-8")) for f in sorted(assets.glob("S*.json"))]
+    summary = htmlvec.summarize(slug, shots, info, assets) if shots else None
+    music = corpus.music(item, video) if not corpus.done(slug, "music") else {"file": f"{slug}.mp3"}
+    mp3 = corpus.P["bank"] / corpus.CFG["music"]["folder"] / f"{slug}.mp3"
+    music_name = None
+    if mp3.is_file():
+        shutil.copy2(mp3, assets / "music.mp3")
+        music_name = "music.mp3"
+    project = build_project(slug, item["title"], shots, info, recipe, music_name)
+    if (server.project_dir(pid) / "project.json").is_file():
+        server.save_version(pid, "avant la reproduction du 16 octobre")
+    server.write_project(pid, project)
+    print(json.dumps({"project": pid, "summary": summary}, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

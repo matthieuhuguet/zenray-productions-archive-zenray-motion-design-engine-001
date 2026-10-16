@@ -9,8 +9,8 @@
   "changeThreshold": 5.0,
   "minGapS": 0.2,
   "firstOffsetS": 0.04,
-  "maxKeysPerShot": 24,
-  "maxKeysPerSecond": 6
+  "maxKeysPerShot": 48,
+  "maxKeysPerSecond": 10
  },
  "trace": {
   "width": 640,
@@ -38,5 +38,21 @@
   "cornerThreshold": 1.0,
   "curveTolerance": 0.4,
   "maxKeyBytes": 450000
+ },
+ "raster": {
+  "binary": "/opt/homebrew/bin/rsvg-convert"
+ },
+ "refine": {
+  "passes": 2,
+  "maxWidth": 1280,
+  "widthStep": 1.5,
+  "finePotrace": {
+   "speckle": 2,
+   "curveTolerance": 0.2,
+   "cornerThreshold": 0.9
+  },
+  "temporalMax": 10.0,
+  "thresholdStep": 0.55,
+  "minThreshold": 1.2
  }
 }

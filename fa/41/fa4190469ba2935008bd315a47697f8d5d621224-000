@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""A contact sheet of the measured shots of a reference (16 October 2026): the 'mid' thumbnail of each shot with its id, start and length.
+Usage: ContactSheet.py <slug> [--cols 5] [--width 384] [--from S01] [--to S29] [--kind mid|in|out] [--out PATH]
+The sheet goes to the reference cache (never archived). FR : planche contact des plans mesures d'une reference."""
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from PIL import Image, ImageDraw, ImageFont
+
+WORK = Path.home() / ".claude/tmp/tmp-zenray-motion-design"
+CACHE = Path.home() / ".claude/tmp/tmp-zenray-motion-design-refcache"
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("slug")
+    ap.add_argument("--cols", type=int, default=5)
+    ap.add_argument("--width", type=int, default=384)
+    ap.add_argument("--kind", default="mid")
+    ap.add_argument("--from", dest="a", default="")
+    ap.add_argument("--to", dest="b", default="")
+    ap.add_argument("--out", default="")
+    a = ap.parse_args()
+    bible = json.loads((WORK / "references" / a.slug / "bible.json").read_text())
+    shots = bible["shots"]
+    ids = [s["id"] for s in shots]
+    i0 = ids.index(a.a) if a.a in ids else 0
+    i1 = ids.index(a.b) + 1 if a.b in ids else len(shots)
+    shots = shots[i0:i1]
+    w = a.width
+    h = int(w * 9 / 16)
+    rows = (len(shots) + a.cols - 1) // a.cols
+    sheet = Image.new("RGB", (a.cols * w, rows * (h + 22)), (24, 24, 26))
+    d = ImageDraw.Draw(sheet)
+    try:
+        font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 15)
+    except OSError:
+        font = ImageFont.load_default()
+    for k, s in enumerate(shots):
+        f = CACHE / a.slug / "storyboard" / s["thumbs"][a.kind]
+        x, y = (k % a.cols) * w, (k // a.cols) * (h + 22)
+        if f.is_file():
+            im = Image.open(f).convert("RGB")
+            im.thumbnail((w, h))
+            sheet.paste(im, (x, y + 22))
+        d.text((x + 4, y + 3), f"{s['id']}  {s['start']:.2f}s  +{s['duration']:.2f}  {s['family'][:4]}", fill=(235, 235, 230), font=font)
+    out = Path(a.out) if a.out else CACHE / a.slug / f"sheet-{shots[0]['id']}-{shots[-1]['id']}.jpg"
+    sheet.save(out, quality=88)
+    print(out)
+
+
+if __name__ == "__main__":
+    main()

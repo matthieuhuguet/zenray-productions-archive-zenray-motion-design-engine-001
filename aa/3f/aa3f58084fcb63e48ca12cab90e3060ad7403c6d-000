@@ -11,7 +11,7 @@ const here = dirname(fileURLToPath(import.meta.url)), studio = dirname(here);
 const ctx = { console };
 ctx.window = ctx;
 vm.createContext(ctx);
-for (const f of ["zs-core.js", "zs-post.js", "zs-templates.js", "zs-templates-extra.js", "zs-templates-app.js", "zs-illustrate.js", "zs-templates-kit.js", "zs-audio.js"]) vm.runInContext(readFileSync(join(studio, "runtime", f), "utf8"), ctx, { filename: f });
+for (const f of ["zs-core.js", "zs-post.js", "zs-templates.js", "zs-templates-extra.js", "zs-templates-app.js", "zs-illustrate.js", "zs-vector.js", "zs-templates-kit.js", "zs-audio.js"]) vm.runInContext(readFileSync(join(studio, "runtime", f), "utf8"), ctx, { filename: f });
 const ZS = ctx.ZS, fails = [];
 const check = (name, ok, detail) => { console.log((ok ? "ok   " : "FAIL ") + name + (ok ? "" : "  " + (detail || ""))); if (!ok) fails.push(name); };
 
