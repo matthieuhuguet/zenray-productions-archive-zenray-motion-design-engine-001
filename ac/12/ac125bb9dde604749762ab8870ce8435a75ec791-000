@@ -297,7 +297,7 @@ def trace_with_loops(video: str, low: np.ndarray, hz: float, t0: float, t1: floa
         fast = len(times) / max(0.1, t1 - t0) > CFG["fast"]["keysPerSecond"]
         if fast and width > CFG["fast"]["maxWidth"]:
             frames = [cv2.resize(f, (CFG["fast"]["maxWidth"], int(round(f.shape[0] * CFG["fast"]["maxWidth"] / f.shape[1]))), interpolation=cv2.INTER_AREA) for f in frames]
-        tr = trace_shot(frames, over, ov.get("ladder"), CFG["fast"]["maxKeyBytes"] if fast else None)
+        tr = trace_shot(frames, over, ov.get("ladder"), ov.get("capBytes") or (CFG["fast"]["maxKeyBytes"] if fast else None))
         tr["fast"] = fast
         tr["times"] = times
         tr["temporal"] = temporal_error(low, hz, t0, t1, times, tr["rasters"])
