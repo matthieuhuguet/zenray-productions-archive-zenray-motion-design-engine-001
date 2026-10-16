@@ -111,8 +111,10 @@ def assign(lab: np.ndarray, centers: np.ndarray) -> np.ndarray:
 
 
 def fidelity(lab: np.ndarray, labels: np.ndarray, centers: np.ndarray) -> dict:
+    """The quantised picture against the frame: the palette ladder is gated on a stricter tolerance than the rendered fidelity, so that
+    smooth gradients (skies, mist) climb to more colours before they show as bands."""
     de = np.sqrt(((lab - centers[labels]) ** 2).sum(axis=2))
-    tol = CFG["fidelity"]["toleranceDeltaE"]
+    tol = CFG["fidelity"]["quantizeToleranceDeltaE"]
     return {"share": round(float((de <= tol).mean()), 4), "meanDeltaE": round(float(de.mean()), 2)}
 
 

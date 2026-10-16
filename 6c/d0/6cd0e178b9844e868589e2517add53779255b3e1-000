@@ -3,8 +3,8 @@
  "sampling": {
   "probeHz": 30,
   "probeSize": [
-   64,
-   36
+   160,
+   90
   ],
   "changeThreshold": 5.0,
   "minGapS": 0.033,
@@ -23,7 +23,8 @@
    12,
    20,
    32,
-   48
+   48,
+   64
   ],
   "samples": 60000,
   "iterations": 20,
@@ -32,7 +33,8 @@
  },
  "fidelity": {
   "toleranceDeltaE": 4.0,
-  "targetShare": 0.99
+  "targetShare": 0.99,
+  "quantizeToleranceDeltaE": 2.0
  },
  "potrace": {
   "binary": "/opt/homebrew/bin/potrace",
