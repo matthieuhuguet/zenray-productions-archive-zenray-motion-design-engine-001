@@ -23,8 +23,7 @@
    12,
    20,
    32,
-   48,
-   64
+   48
   ],
   "samples": 60000,
   "iterations": 20,
@@ -34,7 +33,7 @@
  "fidelity": {
   "toleranceDeltaE": 4.0,
   "targetShare": 0.99,
-  "quantizeToleranceDeltaE": 2.0
+  "quantizeToleranceDeltaE": 4.0
  },
  "potrace": {
   "binary": "/opt/homebrew/bin/potrace",

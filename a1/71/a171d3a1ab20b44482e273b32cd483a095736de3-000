@@ -1,0 +1,19 @@
+{
+ "_doc": "16 October 2026: c067 (flat 2D infographic reel). S09 is a landscape with mist gradients and S24 a globe of small dots: finer palette and a larger size cap, and the dots need the finer probe.",
+ "shots": {
+  "S09": {
+   "capBytes": 900000,
+   "ladder": [
+    32,
+    48
+   ]
+  },
+  "S24": {
+   "capBytes": 600000,
+   "ladder": [
+    20,
+    32
+   ]
+  }
+ }
+}
