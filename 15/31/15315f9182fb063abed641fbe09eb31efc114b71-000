@@ -1,0 +1,57 @@
+// 16 October 2026: the templates of the Claude Opus 5.5 film (whatships.com/videos/claude-opus-5-5, 20 s), measured on the reference. Workflow Premier Plan Mesuré (ppm).
+// FOREGROUND ONLY (Matthieu's rule): the three words and the closing card with its horizon; the macro photographs of the twenty shots are NOT reproduced (a flat dark tile stands for them).
+// FR : les mots et la carte finale ; jamais les photos macro.
+(function () {
+  const ZS = window.ZS, h = ZS.h;
+  const P = (key, label, type, def, tier, extra) => Object.assign({ key, label, type, default: def, tier }, extra || {});
+  const N = (key, label, def, min, max, step, tier, unit) => ({ key, label, type: "number", default: def, min, max, step, tier, unit });
+  const SERIF = "AnthropicSerif";
+  const abs = (parent, css, text) => { const e = h.css(h.el("div", "zs-abs", parent), css); if (text !== undefined) { if (/[<&]/.test(String(text))) e.innerHTML = text; else e.textContent = text; } return e; };
+  const rows = (lines) => lines.map((l) => l.split("|").map((s) => s.trim())).filter((r) => r.length >= 2);
+  const num = Number;
+  // the first shot's horizon: a blue haze, an orange line, black below; the closing card's horizon: a soft glow rising from the bottom edge
+  function horizonBand(st, w, hh) { return abs(st, { left: "0", top: "0", width: w + "px", height: hh + "px", background: "linear-gradient(180deg,#0a1018 0%,#3b556b 14%,#6f8ea5 24%,#c9783d 36%,#ff8d3d 41%,#2b1507 45%,#050403 52%,#000 100%)" }); }
+  function bottomGlow(st, w, hh, warm) { const g = abs(st, { left: "0", top: hh * 0.62 + "px", width: w + "px", height: hh * 0.38 + "px", background: "radial-gradient(ellipse 85% 100% at 50% 100%, rgba(120,170,200,0.75) 0%, rgba(70,110,140,0.45) 35%, rgba(30,50,70,0) 100%)" }); const o = abs(st, { left: "0", top: hh * 0.5 + "px", width: w + "px", height: hh * 0.5 + "px", opacity: 0, background: "radial-gradient(ellipse 80% 100% at 50% 100%, rgba(255,130,50,1) 0%, rgba(235,90,40,0.75) 22%, rgba(150,70,60,0.35) 50%, rgba(60,40,60,0) 100%)" }); void warm; return o; }
+  const starSvg = (size, col) => `<svg width="${size}" height="${size}" viewBox="-12 -12 24 24" style="vertical-align:-0.08em;margin-right:0.18em">${Array.from({ length: 12 }, (_, i) => { const a = i * Math.PI / 6; return `<line x1="${(Math.cos(a) * 3.2).toFixed(2)}" y1="${(Math.sin(a) * 3.2).toFixed(2)}" x2="${(Math.cos(a) * 10.5).toFixed(2)}" y2="${(Math.sin(a) * 10.5).toFixed(2)}" stroke="${col}" stroke-width="2.1" stroke-linecap="round"/>`; }).join("")}</svg>`;
+
+  ZS.register({
+    id: "oc-words", label: "Opus : « There's more to discover » sans photo", group: "Texte", duration: 15.95,
+    params: [
+      P("words", "Mots (début | fin | texte | taille | x | y | échelle finale | rotation finale)", "lines", ["9.0 | 10.75 | There's | 84 | 0.5 | 0.45 | 1 | 0", "11.0 | 12.4 | more to | 84 | 0.5 | 0.45 | 1 | 0", "12.5 | 15.95 | discover | 110 | 0.5 | 0.44 | 1.9 | -5"], 1),
+      P("arc", "Horizon d'ouverture (début | fin)", "text", "0 | 1.3", 2), P("tone", "Teinte de la tuile", "color", "#0b0c10", 2), P("ink", "Encre", "color", "#fbf7ee", 2),
+      N("weight", "Graisse des mots", 500, 300, 800, 10, 3), N("film0", "Début dans le film (s)", 0, 0, 30, 0.01, 4, "s"),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0 } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx), k = tall ? 1.15 : 1;
+      h.css(el, { background: p.tone });
+      const [a0, b0] = p.arc.split("|").map((s) => num(s.trim()));
+      const arc = abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px", opacity: 0 }); horizonBand(arc, w, sh); tl.set(arc, { opacity: 1 }, t0 + a0); tl.set(arc, { opacity: 0 }, t0 + b0);
+      rows(p.words).forEach((r) => {
+        const a = num(r[0]), b = num(r[1]), size = num(r[3]) * k, x = num(r[4]), y = num(r[5]), sc = num(r[6] || 1), rot = num(r[7] || 0);
+        const t = abs(st, { left: x * w + "px", top: y * sh - size * 0.55 + "px", fontFamily: h.font(SERIF), fontWeight: p.weight, fontSize: size + "px", color: p.ink, whiteSpace: "nowrap", transform: "translateX(-50%)", opacity: 0, letterSpacing: "0.01em", textShadow: "0 2px 14px rgba(0,0,0,0.45)" }, r[2]);
+        tl.fromTo(t, { opacity: 0, scale: 0.96, filter: "blur(3px)" }, { opacity: 1, scale: 1, filter: "blur(0px)", duration: 0.35, ease: "power2.out" }, t0 + a);
+        tl.fromTo(t, { scale: 1, rotation: 0 }, { scale: sc, rotation: rot, duration: Math.max(0.1, b - a), ease: "none" }, t0 + a);
+        if (b < ctx.dur - 0.02) tl.to(t, { opacity: 0, duration: 0.12 }, t0 + b - 0.12);
+      });
+    },
+  });
+
+  ZS.register({
+    id: "oc-end", label: "Opus : la carte finale (Opus 5.5, puis Claude qui monte)", group: "Marque", duration: 4.1,
+    params: [
+      P("first", "Première ligne", "text", "Opus 5.5", 1), P("second", "Seconde ligne", "text", "Claude", 1), P("tone", "Fond", "color", "#0e1218", 2), P("ink", "Encre", "color", "#f7f3ea", 2),
+      N("size", "Taille (large)", 95, 20, 200, 1, 3, "px"), N("swap", "Instant de la seconde ligne (s)", 1.35, 0, 4, 0.05, 3, "s"), N("riseAt", "Début de la montée (s)", 2.9, 0, 4, 0.05, 3, "s"), N("film0", "Début dans le film (s)", 15.95, 0, 30, 0.01, 4, "s"),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx), k = tall ? 1.2 : 1;
+      h.css(el, { background: p.tone });
+      const warm = bottomGlow(st, w, sh);
+      tl.fromTo(warm, { opacity: 0 }, { opacity: 1, duration: Math.max(0.1, dur - p.riseAt), ease: "power1.in" }, t0 + p.riseAt);
+      const mk = (text, star) => abs(st, { left: "0", width: w + "px", top: sh * 0.47 - p.size * k * 0.6 + "px", textAlign: "center", fontFamily: h.font(SERIF), fontWeight: 400, fontSize: p.size * k + "px", color: p.ink, opacity: 0, whiteSpace: "nowrap" }, star ? `${starSvg(p.size * k * 0.85, p.ink)}${text}` : text);
+      const a = mk(p.first, false), b = mk(p.second, true);
+      tl.set(a, { opacity: 1 }, t0); tl.set(a, { opacity: 0 }, t0 + p.swap);
+      tl.set(b, { opacity: 1 }, t0 + p.swap);
+      tl.fromTo(b, { y: 0 }, { y: -sh * 0.42, duration: Math.max(0.1, dur - p.riseAt), ease: "power2.in" }, t0 + p.riseAt);
+    },
+  });
+})();

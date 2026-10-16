@@ -1,0 +1,21 @@
+"""Reproduction of the Interface film (whatships.com/videos/interface, 90.1 s, 4K), workflow Premier Plan Mesuré (16 October 2026).
+Foreground only: the captions, one message bubble and the closing titles; the live-action footage is not reproduced. Captions read by OCR on the white text. Usage: python3 motion/reproductions/interface.py"""
+import ppm
+from ppm import T
+
+SLUG = "interface"
+END = 90.09
+CAPTIONS = ["1.5 | 3.5 | in case you haven't noticed", "3.5 | 4.25 | we've entered", '4.25 | 7.0 | the era of personal agents', '7.0 | 8.0 | which means...', "8.0 | 9.25 | it's time...", '9.25 | 9.75 | to look up!', '11.25 | 12.75 | Start tracking my morning run', "13.5 | 15.25 | What's on my schedule today?", '17.5 | 19.25 | Water the tomatoes at seven', '19.25 | 20.0 | every day', "21.5 | 22.5 | I'm out of shampoo", '22.5 | 23.25 | reorder it', '23.25 | 24.25 | Build a landing page', '24.25 | 25.5 | for the new brand', '25.5 | 27.0 | host it and send me the link', "27.75 | 29.0 | Save Leila's number and send her", '29.0 | 30.5 | my notes from our conversation', '31.25 | 32.0 | Order my usual', '32.0 | 33.0 | from the corner store', '33.0 | 35.0 | and add a bottle of red', '35.75 | 37.75 | Find a private therapy slot after work', '37.75 | 38.75 | and move my appointment', '39.5 | 40.75 | Arrange dinner with Sarah', '40.75 | 42.5 | at our usual place this Friday', '43.5 | 45.0 | Share my location with mom', '47.75 | 49.75 | Send Max a draft for the contract', '49.75 | 50.5 | standard terms', '52.75 | 53.75 | Start the dishwasher', '56.5 | 57.75 | Lights off', '60.5 | 62.0 | Turn off the TV and set my alarm', '62.0 | 64.0 | for nine tomorrow morning', '66.5 | 67.75 | Next startup idea', '67.75 | 69.25 | Tinder but for dogs', '69.75 | 71.75 | Add this song to my playlist', '75.5 | 77.25 | Deploy build 61', "77.25 | 78.5 | and let Lucy know I'll", '78.5 | 79.5 | be vibe coding till four']
+BEATS = [
+    (0.00, "kd-live", {"captions": CAPTIONS, "capFont": "sans", "capSize": 38, "capY": 0.87, "tone": "#101214", "ink": "#f2f2f2", "bubbles": ["5.8 | 6.7 | 0.53 | 0.45 | ···"]}),
+    (80.00, "if-title", {}),
+]
+CONTROLS = [
+    {"id": "captions", "label": "Captions (début | fin | texte)", "type": "lines", "group": "Phrases", "targets": [T("b01", "captions")]},
+    {"id": "titles", "label": "Titres de fin", "type": "lines", "group": "Phrases", "targets": [T("b02", "titles")]},
+    {"id": "ink", "label": "Encre des captions", "type": "color", "group": "Couleurs", "targets": [T("b01", "ink")]},
+    {"id": "titleInk", "label": "Encre des titres", "type": "color", "group": "Couleurs", "targets": [T("b02", "ink")]},
+]
+
+if __name__ == "__main__":
+    ppm.run("interface-ppm", ppm.build("Interface, premier plan mesuré", SLUG, BEATS, END, CONTROLS, bg="#101214", ink="#f2f2f2", accent="#2f6cf6"))

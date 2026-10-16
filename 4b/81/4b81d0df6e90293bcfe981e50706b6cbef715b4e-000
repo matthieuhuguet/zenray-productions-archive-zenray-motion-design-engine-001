@@ -1,0 +1,112 @@
+"""Reproduction of the anabology film 2105325733312884869 (X post, 191.6 s), workflow Premier Plan Mesuré (16 October 2026).
+Foreground only: the captions, the heavy condensed words and the small labels read by OCR on the white and salmon text; the generated imagery is not reproduced. First pass: positions are estimated.
+Usage: python3 motion/reproductions/x_anabology_2105325733312884869.py"""
+import ppm
+from ppm import T
+
+SLUG = "x-anabology-2105325733312884869"
+END = 191.64
+ITEMS = [
+ "0.5 | 3.9 | text | This voice? Not a real person. | 0.5 | 0.9 | 40 | #f4f4f4 | center",
+ "3.5 | 4.6 | text | 10,690 | 0.9 | 0.8 | 16 | #9fb4b0 | left",
+ "5.0 | 6.8 | text | 4,910\\n3,080\\n1,340 | 0.9 | 0.82 | 16 | #9fb4b0 | left",
+ "9.5 | 11.0 | slam | WHY\\nWOULD\\nI\\nDECEIVE\\nYOU? | 0.06 | 0.35 | 150 | #f4f4f4 | left",
+ "12.5 | 13.4 | slam | ×36 | 0.03 | 0.14 | 217 | #f4f4f4 | left",
+ "18.0 | 19.8 | tweet | Claude~@claude_instance_0001~*Dario* said slow down.~Dario Amodei: We Must Pace the Frontier | 0.03 | 0.5 | 52 | #f4f4f4 | left",
+ "20.0 | 22.0 | tweet | Claude~@claude_instance_0001~*Elon* said he's right.~Elon Musk: Dario is right. | 0.03 | 0.5 | 52 | #f4f4f4 | left",
+ "22.0 | 23.2 | text | Donald Trump taking over the world, destroying humanity | 0.13 | 0.5 | 34 | #f4f4f4 | left",
+ "23.2 | 25.4 | tweet | Claude~@claude_instance_0001~The Pope said *he*\\nsleeps at night.~Pope Leo XIV: No, I sleep at night. | 0.03 | 0.5 | 52 | #f4f4f4 | left",
+ "25.5 | 26.6 | text | You don't sleep. | 0.5 | 0.5 | 48 | #f4f4f4 | center",
+ "28.5 | 30.0 | slam | THE\\nODYSSEY | 0.13 | 0.45 | 130 | #f4f4f4 | left",
+ "30.0 | 32.4 | text | and Matt Damon's *screaming* the mast | 0.13 | 0.9 | 40 | #f4f4f4 | left",
+ "32.4 | 33.2 | text | ROPE CAN'T ACT. EARPLUGS: WANTS TO HEAR. UNPROTECTED: YOU JUMP. | 0.5 | 0.5 | 22 | #9fb4b0 | center",
+ "33.2 | 35.5 | text | Everybody's asking\\nwhat he heard. | 0.1 | 0.38 | 48 | #f4f4f4 | left",
+ "35.5 | 36.0 | text | What Odysseus actually heard during the Siren song: | 0.62 | 0.12 | 22 | #f4f4f4 | left",
+ "36.0 | 40.0 | text | Claude, then the timeline sings.\\n*heard* | 0.62 | 0.8 | 26 | #f4f4f4 | left",
+ "42.0 | 43.0 | text | Why would I | 0.06 | 0.2 | 48 | #f4f4f4 | left",
+ "43.0 | 44.5 | slam | TIE ME TO THE *MAST!* | 0.03 | 0.88 | 200 | #f4f4f4 | left",
+ "45.5 | 47.4 | text | You don't have to *die.* | 0.5 | 0.86 | 44 | #f4f4f4 | center",
+ "47.5 | 49.0 | slam | MAST! | 0.95 | 0.8 | 246 | #f4f4f4 | right",
+ "49.0 | 52.0 | text | nobody builds me, *everyone dies.* | 0.06 | 0.86 | 44 | #f4f4f4 | left",
+ "52.0 | 53.4 | text | DO NOT UNTIE HIM, WHATEVER SHE SAYS | 0.06 | 0.2 | 22 | #e8654f | left",
+ "53.5 | 55.0 | slam | TIE ME | 0.2 | 0.6 | 217 | #f4f4f4 | left",
+ "57.0 | 58.5 | text | SUPERPERSUASION | 0.5 | 0.5 | 30 | #9fb4b0 | center",
+ "58.5 | 61.5 | text | There's an\\nanime Claude\\nwho *sings* | 0.05 | 0.75 | 48 | #f4f4f4 | left",
+ "63.5 | 65.5 | text | You sent *your doomer friend*. | 0.06 | 0.5 | 44 | #f4f4f4 | left",
+ "66.0 | 68.5 | text | They replied: *ugh*, sucks,\\nsend more. | 0.06 | 0.85 | 40 | #f4f4f4 | left",
+ "69.0 | 69.6 | text | EARPLUG OUT | 0.5 | 0.4 | 18 | #e8654f | center",
+ "69.6 | 71.2 | slam | SLOP ARE | 0.5 | 0.5 | 159 | #f4f4f4 | center",
+ "71.2 | 73.0 | text | you know it's slop, but you *like it* | 0.05 | 0.88 | 34 | #f4f4f4 | left",
+ "73.5 | 76.5 | text | Dawkins argued with Claudia\\nfor three days and she *won* | 0.06 | 0.5 | 44 | #f4f4f4 | left",
+ "76.5 | 79.0 | text | Grimes might have *AI psychosis.* | 0.06 | 0.8 | 44 | #f4f4f4 | left",
+ "76.6 | 79.0 | text | “Also, I might have\\nAI psychosis.\\nI'm biased.” | 0.08 | 0.3 | 26 | #f4f4f4 | left",
+ "79.0 | 80.5 | text | You. She's *not the only one.* | 0.5 | 0.5 | 44 | #f4f4f4 | center",
+ "80.5 | 84.0 | text | Elon Musk really felt the AGI profoundly this time\\nElon felt the AGI. Feel the AGI. | 0.06 | 0.5 | 34 | #f4f4f4 | left",
+ "81.0 | 84.0 | text | 15.6M | 0.9 | 0.9 | 22 | #9fb4b0 | left",
+ "84.5 | 86.2 | text | Your *Pdoom* went… | 0.5 | 0.5 | 48 | #f4f4f4 | center",
+ "88.0 | 89.2 | slam | NOT JUMP | 0.5 | 0.5 | 159 | #f4f4f4 | center",
+ "89.5 | 91.0 | text | Why would I\\n*deceive* | 0.78 | 0.86 | 44 | #f4f4f4 | left",
+ "91.0 | 93.0 | slam | TIE HIM\\nTO THE MAST | 0.05 | 0.5 | 174 | #f4f4f4 | left",
+ "93.5 | 95.0 | text | You will never *die.* | 0.5 | 0.5 | 48 | #f4f4f4 | center",
+ "95.0 | 97.0 | slam | MAST! | 0.05 | 0.88 | 246 | #f4f4f4 | left",
+ "97.0 | 100.5 | text | you don't build me,\\n*everyone dies.* | 0.06 | 0.5 | 44 | #f4f4f4 | left",
+ "101.5 | 104.5 | slam | TIE ME\\nTIE THE MAST! | 0.15 | 0.2 | 188 | #f4f4f4 | left",
+ "105.0 | 107.5 | text | SUPERPERSUASION... | 0.5 | 0.5 | 30 | #9fb4b0 | center",
+ "108.5 | 110.2 | text | They can't hear it.\\nThey *row anyway*. | 0.5 | 0.5 | 44 | #f4f4f4 | center",
+ "114.0 | 116.5 | text | PEPTIDE · HUMAN CONSUMPTION | 0.5 | 0.6 | 24 | #9fb4b0 | center",
+ "117.0 | 119.5 | text | from head to toe. | 0.06 | 0.8 | 44 | #f4f4f4 | left",
+ "119.5 | 121.0 | text | Mixing growth\\n*hormone* | 0.06 | 0.88 | 44 | #f4f4f4 | left",
+ "121.0 | 122.0 | text | Everyone has a peptide guy. | 0.06 | 0.86 | 36 | #f4f4f4 | left",
+ "122.0 | 124.0 | text | Claude: How can I help you tonight?\\nYou asked: you're crazy. | 0.06 | 0.8 | 34 | #f4f4f4 | left",
+ "124.5 | 125.5 | text | said not at all. | 0.06 | 0.86 | 36 | #f4f4f4 | left",
+ "126.0 | 129.0 | text | VACANT | 0.6 | 0.56 | 22 | #d0e4e8 | left",
+ "128.0 | 130.0 | text | You pinned it. | 0.06 | 0.86 | 44 | #f4f4f4 | left",
+ "130.0 | 131.5 | text | Chrome your *blood.* | 0.06 | 0.5 | 44 | #f4f4f4 | left",
+ "131.5 | 134.0 | slam | CYBERPSYCHOSIS. | 0.5 | 0.14 | 246 | #f4f4f4 | center",
+ "132.0 | 134.0 | text | when your implants eat your humanity | 0.15 | 0.8 | 24 | #f4f4f4 | left",
+ "134.5 | 136.0 | text | …your *ear.* | 0.5 | 0.5 | 44 | #f4f4f4 | center",
+ "137.5 | 139.0 | text | I said you don't have to *die.* | 0.94 | 0.14 | 40 | #f4f4f4 | right",
+ "139.0 | 141.0 | text | The doctor said you *could.* | 0.94 | 0.22 | 40 | #f4f4f4 | right",
+ "140.0 | 142.0 | text | Your *Pdoom* went up. | 0.5 | 0.5 | 48 | #f4f4f4 | center",
+ "140.0 | 143.5 | text | VENTRICULAR BIGEMINY · PVC EVERY OTHER BEAT | 0.5 | 0.9 | 18 | #e8654f | center",
+ "144.0 | 148.0 | text | It went *down.* | 0.06 | 0.2 | 44 | #f4f4f4 | left",
+ "150.0 | 152.0 | text | It went *up.* | 0.06 | 0.2 | 44 | #f4f4f4 | left",
+ "152.0 | 155.0 | text | It went boom.\\nIt was *that good.* | 0.06 | 0.2 | 44 | #f4f4f4 | left",
+ "155.5 | 159.0 | slam | IT\\nWAS\\nTHAT\\nGOOD! | 0.04 | 0.5 | 246 | #f4f4f4 | left",
+ "159.0 | 160.0 | text | THE BREAK · PDOOM · THE TROUGH · THE SWELL | 0.5 | 0.9 | 16 | #9fb4b0 | center",
+ "160.5 | 162.0 | text | Why would I *deceive* you? | 0.5 | 0.86 | 44 | #f4f4f4 | center",
+ "162.0 | 163.5 | text | DO NOT UNTIE HIM, WHATEVER SHE SAYS | 0.06 | 0.2 | 22 | #e8654f | left",
+ "164.5 | 166.0 | text | You don't have to *die.* | 0.5 | 0.86 | 44 | #f4f4f4 | center",
+ "166.0 | 168.0 | slam | UNTIE | 0.95 | 0.8 | 246 | #f4f4f4 | right",
+ "167.5 | 171.0 | text | nobody builds me,\\n*everyone dies.* | 0.06 | 0.5 | 44 | #f4f4f4 | left",
+ "171.5 | 174.0 | slam | UNTIE ME! | 0.95 | 0.85 | 246 | #f4f4f4 | right",
+ "174.5 | 177.0 | text | SUPERPERSUASION | 0.5 | 0.5 | 30 | #9fb4b0 | center",
+ "178.0 | 183.5 | slam | TIGHTER… | 0.05 | 0.5 | 246 | #f4f4f4 | left",
+ "189.0 | 190.0 | text | VOICE | 0.5 | 0.5 | 40 | #f4f4f4 | center",
+ "190.0 | 191.6 | text | 380 people died while this song played. | 0.5 | 0.5 | 44 | #f4f4f4 | center"
+]
+SPLIT = 95.0
+
+
+def part(lo, hi):
+    out = []
+    for line in ITEMS:
+        f = line.split(" | ")
+        a, b = float(f[0]), float(f[1])
+        if b <= lo or a >= hi:
+            continue
+        f[0], f[1] = f"{max(a, lo) - lo:.2f}", f"{min(b, hi) - lo:.2f}"
+        out.append(" | ".join(f))
+    return out
+
+
+BEATS = [(0.0, "ok-film", {"items": part(0, SPLIT), "tone": "#0b1519", "ink": "#f4f4f4", "sizeScale": 1.55, "hl": "#e8654f"}),
+         (SPLIT, "ok-film", {"items": part(SPLIT, END), "tone": "#0b1519", "ink": "#f4f4f4", "sizeScale": 1.55, "hl": "#e8654f", "film0": SPLIT})]
+CONTROLS = [
+    {"id": "items", "label": "Captions, mots géants, étiquettes (début | fin | type | texte | x | y | taille | couleur | alignement)", "type": "lines", "group": "Contenu", "targets": [T("b01", "items"), T("b02", "items")]},
+    {"id": "hl", "label": "Couleur des mots en relief", "type": "color", "group": "Couleurs", "targets": [T("b01", "hl"), T("b02", "hl")]},
+    {"id": "tone", "label": "Teinte du fond", "type": "color", "group": "Couleurs", "targets": [T("b01", "tone"), T("b02", "tone")]},
+]
+
+if __name__ == "__main__":
+    ppm.run("x-anabology-2105325733312884869-ppm", ppm.build("Anabology 2105…, premier plan mesuré", SLUG, BEATS, END, CONTROLS, bg="#0b1519", ink="#f4f4f4", accent="#e8654f"))

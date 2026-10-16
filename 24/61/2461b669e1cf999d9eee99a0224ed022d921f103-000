@@ -1,0 +1,43 @@
+// 16 October 2026: the template of the OneKey Pro 2 product film (whatships.com/videos/onekey-pro-2, 68.05 s), measured on the reference. Workflow Premier Plan Mesuré (ppm).
+// FOREGROUND ONLY (Matthieu's rule): the title, the feature captions, the PRO letters and the key mark; the 3D renders of the device and the hand footage are NOT reproduced.
+// FR : titre, legendes, lettres PRO, marque ; jamais les rendus 3D du produit ni les mains filmees.
+(function () {
+  const ZS = window.ZS, h = ZS.h;
+  const P = (key, label, type, def, tier, extra) => Object.assign({ key, label, type, default: def, tier }, extra || {});
+  const N = (key, label, def, min, max, step, tier, unit) => ({ key, label, type: "number", default: def, min, max, step, tier, unit });
+  const NS = "http://www.w3.org/2000/svg", SANS = "InterVariable";
+  const abs = (parent, css, text) => { const e = h.css(h.el("div", "zs-abs", parent), css); if (text !== undefined) { if (/[<&]/.test(String(text))) e.innerHTML = text; else e.textContent = text; } return e; };
+  const rows = (lines) => lines.map((l) => l.split("|").map((s) => s.trim())).filter((r) => r.length >= 2);
+  const svgEl = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); Object.keys(attrs || {}).forEach((k) => e.setAttribute(k, attrs[k])); if (parent) parent.appendChild(e); return e; };
+  const num = Number, sans2 = (css) => Object.assign({ fontFamily: h.font(SANS), whiteSpace: "nowrap", color: "#ddd" }, css);
+  ZS.register({
+    id: "ok-film", label: "OneKey : titre, légendes, lettres PRO et marque (sans rendu 3D)", group: "Texte", duration: 68.05,
+    params: [
+      P("items", "Éléments (début | fin | type | texte | x | y | taille | couleur | alignement)", "lines", [], 1), P("tone", "Teinte du fond", "color", "#0a0b0d", 2), P("ink", "Encre", "color", "#f4f4f4", 2),
+      P("accent", "Couleur de la marque", "color", "#e6682a", 2), P("hl", "Couleur des mots en relief (*mot*)", "color", "#e8654f", 2), N("sizeScale", "Échelle des légendes", 2.1, 0.5, 4, 0.05, 3), N("fade", "Fondu des légendes (s)", 0.3, 0, 2, 0.05, 3, "s"), N("tallScale", "Échelle des textes en format haut", 0.62, 0.3, 1.2, 0.01, 3), N("film0", "Début dans le film (s)", 0, 0, 70, 0.01, 4, "s"),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx), k = tall ? p.tallScale : 1;
+      h.css(el, { background: p.tone });
+      abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px", background: "radial-gradient(ellipse 80% 70% at 50% 45%, rgba(40,48,62,0.35), rgba(0,0,0,0.35))" });
+      rows(p.items).forEach((r) => {
+        const a = num(r[0]), b = num(r[1]), kind = r[2], text = r[3] || "", x = num(r[4] || 0.5), y = num(r[5] || 0.5), size = num(r[6] || 40) * k * (r[2] === "text" ? p.sizeScale : 1), col = r[7] || p.ink, al = r[8] || "center";
+        let g;
+        if (kind === "tweet") { const [who, handle, body, quote] = text.split("~").map((q) => q.trim()); const W = size * 11; g = abs(st, { left: x * w + "px", top: y * sh + "px", width: W + "px", opacity: 0, transform: "translate(0,-50%)" }); abs(g, { left: 0, top: 0, width: W + "px", height: size * 8.2 + "px", borderRadius: size * 0.4 + "px", background: "#0c0c0d", border: "1px solid #262626" }); abs(g, { left: size * 0.6 + "px", top: size * 0.5 + "px", width: size * 0.9 + "px", height: size * 0.9 + "px", borderRadius: "50%", background: "#b86e5a" }); abs(g, sans2({ left: size * 1.8 + "px", top: size * 0.55 + "px", fontSize: size * 0.5 + "px", color: "#ddd" }), `<b>${who}</b> <span style="color:#777">${handle}</span>`); abs(g, sans2({ left: size * 0.6 + "px", top: size * 1.8 + "px", fontSize: size * 1.25 + "px", fontWeight: 500, color: "#f4f4f4", whiteSpace: "pre" }), (body || "").replace(/\\n/g, "\n").replace(/\*([^*]+)\*/g, `<span style="color:${p.hl}">$1</span>`)); if (quote) { abs(g, { left: size * 0.6 + "px", top: size * 3.8 + "px", width: W - size * 1.2 + "px", height: size * 3.6 + "px", borderRadius: size * 0.3 + "px", border: "1px solid #262626", background: "#101011" }); abs(g, sans2({ left: size * 1.0 + "px", top: size * 4.1 + "px", fontSize: size * 0.46 + "px", color: "#bbb" }), quote); abs(g, { left: size * 1.0 + "px", top: size * 5.1 + "px", width: W - size * 2.0 + "px", height: size * 2.0 + "px", borderRadius: size * 0.2 + "px", background: "linear-gradient(135deg,#2f5964,#6d8f94)" }); } }
+        else if (kind === "slam") { g = abs(st, { left: x * w + "px", top: y * sh + "px", transform: `translate(${al === "right" ? "-100%" : al === "center" ? "-50%" : "0"}, -50%) scaleX(0.8)`, transformOrigin: al === "right" ? "100% 50%" : al === "center" ? "50% 50%" : "0 50%", fontFamily: h.font(SANS), fontWeight: 900, fontSize: size + "px", color: col, whiteSpace: "pre", textAlign: al, lineHeight: 0.92, letterSpacing: "-0.02em", textTransform: "uppercase", opacity: 0, textShadow: "0 4px 26px rgba(0,0,0,0.55)" }, text.replace(/\\n/g, "\n").replace(/\*([^*]+)\*/g, `<span style="background:${p.hl};color:#111;padding:0 0.08em">$1</span>`)); }
+        else if (kind === "text") { g = abs(st, { left: x * w + "px", top: y * sh + "px", transform: `translate(${al === "left" ? "0" : al === "right" ? "-100%" : "-50%"}, -50%)`, fontFamily: h.font(SANS), fontWeight: 500, fontSize: size + "px", color: col, whiteSpace: "pre", textAlign: al, letterSpacing: "-0.01em", opacity: 0, textShadow: "0 2px 18px rgba(0,0,0,0.5)" }, text.replace(/\\n/g, "\n").replace(/\*([^*]+)\*/g, `<span style="color:${p.hl}">$1</span>`)); ctx.fit(g, w * 0.94, 0); }
+        else if (kind === "pro") {
+          g = abs(st, { left: x * w + "px", top: y * sh + "px", transform: "translate(-50%,-50%)", fontFamily: h.font(SANS), fontWeight: 900, fontSize: size + "px", whiteSpace: "nowrap", letterSpacing: "-0.04em", lineHeight: 1, opacity: 0, background: `linear-gradient(180deg, #e9f2ff 0%, #7aa2d8 45%, #1b3a6b 100%)`, webkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", webkitTextFillColor: "transparent" }, text);
+          const g2 = abs(g.parentNode, { left: "0", top: "0" }); void g2; ctx.fit(g, w * 0.9, 0);
+          const lab = abs(st, { left: x * w + "px", top: (y - 0.34) * sh + "px", transform: "translate(-50%,-50%)", fontFamily: h.font(SANS), fontSize: size * 0.07 + "px", color: "#cfd8e6", opacity: 0, whiteSpace: "nowrap" }, "OneKey Pro 2");
+          tl.fromTo(lab, { opacity: 0 }, { opacity: 1, duration: 0.3 }, t0 + a); if (b < dur - 0.02) tl.to(lab, { opacity: 0, duration: 0.25 }, t0 + b - 0.25);
+        } else if (kind === "mark") {
+          g = abs(st, { left: x * w + "px", top: y * sh + "px", transform: "translate(-50%,-50%)", width: size + "px", height: size * 1.4 + "px", opacity: 0 });
+          const sv = svgEl("svg", { width: size, height: size * 1.4, viewBox: "0 0 50 70" }, g); svgEl("path", { d: "M15,10 L24,4 L24,28", fill: "none", stroke: col, "stroke-width": 5, "stroke-linecap": "round", "stroke-linejoin": "round" }, sv); svgEl("circle", { cx: 25, cy: 49, r: 14, fill: "none", stroke: col, "stroke-width": 5 }, sv);
+        }
+        const f = Math.max(0.01, p.fade);
+        tl.fromTo(g, { opacity: 0, y: 6 * k }, { opacity: 1, y: 0, duration: f, ease: "power2.out" }, t0 + a); if (b < dur - 0.02) tl.to(g, { opacity: 0, duration: f }, t0 + b - f);
+      });
+    },
+  });
+})();

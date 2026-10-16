@@ -1,0 +1,25 @@
+"""Reproduction of the Memo launch film (whatships.com/videos/memo, 44.5 s, 4K), workflow Premier Plan Mesuré (16 October 2026).
+Foreground only: the orange kinetic words (read by OCR on the orange pixels), the RADIO card, the small caption and the wordmark; the black and white footage is not reproduced.
+Usage: python3 motion/reproductions/memo.py"""
+import ppm
+from ppm import T
+
+SLUG = "memo"
+END = 44.54
+BEATS = [
+    (0.00, "mm-slam", {}),
+    (13.00, "mm-card", {"kind": "radio", "text": "RADIO"}),
+    (15.10, "kd-live", {"captions": ["0.4 | 27.4 | real radio"], "capFont": "sans", "capSize": 15, "capY": 0.955, "tone": "#0d0d0d", "ink": "#d8d8d8"}),
+    (43.00, "mm-card", {"kind": "memo", "text": "memo", "size": 560}),
+]
+CONTROLS = [
+    {"id": "words", "label": "Mots orange (début | fin | texte)", "type": "lines", "group": "Phrases", "targets": [T("b01", "words")]},
+    {"id": "ink", "label": "Orange", "type": "color", "group": "Couleurs", "targets": [T("b01", "ink"), T("b02", "ink"), T("b04", "ink")]},
+    {"id": "radio", "label": "Mot de la carte", "type": "text", "group": "Phrases", "targets": [T("b02", "text")]},
+    {"id": "small", "label": "Petit texte", "type": "text", "group": "Phrases", "targets": [T("b02", "small")]},
+    {"id": "caption", "label": "Caption du montage", "type": "lines", "group": "Phrases", "targets": [T("b03", "captions")]},
+    {"id": "brand", "label": "Logotype", "type": "text", "group": "Phrases", "targets": [T("b04", "text")]},
+]
+
+if __name__ == "__main__":
+    ppm.run("memo-ppm", ppm.build("Memo, premier plan mesuré", SLUG, BEATS, END, CONTROLS, bg="#000000", ink="#ef5e05", accent="#ef5e05"))

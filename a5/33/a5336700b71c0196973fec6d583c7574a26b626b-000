@@ -1,0 +1,17 @@
+"""Reproduction of the Claude Opus 5.5 film (whatships.com/videos/claude-opus-5-5, 20 s), workflow Premier Plan Mesuré (16 October 2026).
+Foreground only: the three words and the closing card; the macro photographs are not reproduced. Usage: python3 motion/reproductions/claude_opus_5_5.py"""
+import ppm
+from ppm import T
+
+SLUG = "claude-opus-5-5"
+BEATS = [(0.00, "oc-words", {}), (15.95, "oc-end", {})]
+END = 20.05
+CONTROLS = [
+    {"id": "words", "label": "Les trois mots (début | fin | texte | taille | x | y | échelle | rotation)", "type": "lines", "group": "Phrases", "targets": [T("b01", "words")]},
+    {"id": "first", "label": "Carte finale, première ligne", "type": "text", "group": "Carte finale", "targets": [T("b02", "first")]},
+    {"id": "second", "label": "Carte finale, seconde ligne", "type": "text", "group": "Carte finale", "targets": [T("b02", "second")]},
+    {"id": "ink", "label": "Encre des mots", "type": "color", "group": "Couleurs", "targets": [T("b01", "ink")]},
+]
+
+if __name__ == "__main__":
+    ppm.run("claude-opus-5-5-ppm", ppm.build("Claude Opus 5.5, premier plan mesuré", SLUG, BEATS, END, CONTROLS, bg="#0b0c10", ink="#fbf7ee", accent="#e08a4a"))

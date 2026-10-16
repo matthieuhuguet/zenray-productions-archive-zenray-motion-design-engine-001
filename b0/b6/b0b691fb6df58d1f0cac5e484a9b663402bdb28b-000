@@ -36,6 +36,7 @@
       P("captions", "Captions (début | fin | texte)", "lines", ["1.55 | 2.4 | humanity advanced"], 1), P("bigs", "Mots géants (début | fin | texte | taille | x | y)", "lines", [], 1),
       P("tone", "Teinte de la tuile", "color", "#171b1d", 2), P("ink", "Encre des captions", "color", "#f4efe6", 2), P("bigInk", "Encre des mots géants", "color", CREAM, 2),
       N("capSize", "Taille des captions (large)", 63, 16, 140, 1, 3, "px"), N("capY", "Hauteur des captions (fraction)", 0.84, 0.3, 0.97, 0.005, 3), N("fade", "Fondu des captions (s)", 0.12, 0, 1, 0.01, 3, "s"),
+      SEL("capFont", "Police des captions", "serif", ["serif", "sans"], 3), P("bubbles", "Bulles de message (début | fin | x | y | texte)", "lines", [], 2),
       N("film0", "Début dans le film (s)", 0, 0, 70, 0.01, 4, "s"),
     ],
     build(ctx) {
@@ -43,13 +44,19 @@
       h.css(el, { background: p.tone });
       abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px", background: `radial-gradient(ellipse 70% 60% at 50% 40%, rgba(255,255,255,0.05), rgba(0,0,0,0.35))` });
       rows(p.captions).forEach((r) => {
-        const a = num(r[0]), b = num(r[1]), t = abs(st, serif({ left: (tall ? w * 0.05 : 0) + "px", width: (tall ? w * 0.9 : w) + "px", whiteSpace: tall ? "normal" : "nowrap", textAlign: "center", top: sh * p.capY - p.capSize * 0.6 * k * (tall ? 1.6 : 1) + "px", fontSize: p.capSize * k + "px", color: p.ink, textShadow: "0 2px 12px rgba(0,0,0,0.55)", opacity: 0 }), r.slice(2).join(" | "));
+        const a = num(r[0]), b = num(r[1]), t = abs(st, (p.capFont === "sans" ? sans : serif)({ fontWeight: p.capFont === "sans" ? 300 : 400, left: (tall ? w * 0.05 : 0) + "px", width: (tall ? w * 0.9 : w) + "px", whiteSpace: tall ? "normal" : "nowrap", textAlign: "center", top: sh * p.capY - p.capSize * 0.6 * k * (tall ? 1.6 : 1) + "px", fontSize: p.capSize * k + "px", color: p.ink, textShadow: "0 2px 12px rgba(0,0,0,0.55)", opacity: 0 }), r.slice(2).join(" | "));
         tl.fromTo(t, { opacity: 0 }, { opacity: 1, duration: Math.max(0.01, p.fade) }, t0 + a); tl.to(t, { opacity: 0, duration: Math.max(0.01, p.fade) }, t0 + Math.max(a, b - p.fade));
       });
       rows(p.bigs).forEach((r) => {
         const a = num(r[0]), b = num(r[1]), size = num(r[3]) * k, x = num(r[4]), y = num(r[5]);
         const t = abs(st, serif({ fontFamily: h.font("InstrumentSerif"), left: x * w + "px", top: y * sh - size * 0.55 + "px", fontSize: size + "px", color: p.bigInk, letterSpacing: "-0.03em", transform: "translateX(-50%)", opacity: 0 }), r[2]);
         tl.fromTo(t, { opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1, duration: 0.18, ease: "power2.out" }, t0 + a); tl.to(t, { opacity: 0, duration: 0.1 }, t0 + Math.max(a, b - 0.1));
+      });
+      rows(p.bubbles).forEach((r) => {
+        const a = num(r[0]), bb = num(r[1]), x = num(r[2]), y = num(r[3]), txt2 = r.slice(4).join(" | "), g = abs(st, { left: x * w + "px", top: y * sh + "px", opacity: 0, transform: "scale(1.7)" });
+        abs(g, { left: "-52px", top: "-40px", width: "104px", height: "34px", borderRadius: "18px", background: "rgba(255,255,255,0.92)" }); abs(g, sans({ left: "-52px", top: "-40px", width: "104px", height: "34px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", color: "#222" }), "◯ ▯");
+        abs(g, sans({ left: "-40px", top: "6px", width: "84px", height: "34px", borderRadius: "18px", background: "#2f6cf6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "22px", color: "#fff", letterSpacing: "0.1em" }), txt2);
+        tl.fromTo(g, { opacity: 0, scale: 1.3 }, { opacity: 1, scale: 1.7, duration: 0.2, ease: "back.out(2)" }, t0 + a); tl.to(g, { opacity: 0, duration: 0.15 }, t0 + Math.max(a, bb - 0.15));
       });
     },
   });

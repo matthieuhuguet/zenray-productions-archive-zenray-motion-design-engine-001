@@ -1,0 +1,27 @@
+"""Reproduction of the OneKey Pro 2 product film (whatships.com/videos/onekey-pro-2, 68.05 s), workflow Premier Plan Mesuré (16 October 2026).
+Foreground only: the title, the captions (read by OCR on the white text), the PRO letters and the key mark; the 3D renders and the footage are not reproduced. Usage: python3 motion/reproductions/onekey_pro_2.py"""
+import ppm
+from ppm import T
+
+SLUG = "onekey-pro-2"
+END = 68.05
+ITEMS = [
+    "3.0 | 5.0 | text | OneKey  Pro 2 | 0.5 | 0.55 | 112 | #d8d8d8 | center",
+    "5.0 | 6.5 | text | Beautifully powerful | 0.5 | 0.5 | 44 | #f4f4f4 | center", "6.5 | 8.75 | text | Aluminum unibody | 0.5 | 0.82 | 40 | #f4f4f4 | center", "10.25 | 11.9 | text | Mirror-polished aluminum | 0.5 | 0.5 | 38 | #f4f4f4 | center",
+    "13.25 | 14.6 | text | Ultra-crisp display | 0.5 | 0.5 | 38 | #f4f4f4 | center", "13.4 | 14.6 | text | with Corning® Gorilla® Glass | 0.5 | 0.92 | 12 | #bdbdbd | center", "16.0 | 17.2 | text | Quantum ready | 0.5 | 0.78 | 38 | #f4f4f4 | center",
+    "17.75 | 19.4 | text | Four secure elements | 0.5 | 0.78 | 40 | #f4f4f4 | center", "17.9 | 19.4 | text | EAL 6+ Certified | 0.5 | 0.9 | 12 | #bdbdbd | center", "20.5 | 22.6 | text | Unlock | 0.22 | 0.5 | 36 | #dfe5ee | center", "20.5 | 22.6 | text | with a touch | 0.78 | 0.5 | 36 | #dfe5ee | center",
+    "23.5 | 25.4 | text | Clear signing | 0.5 | 0.78 | 38 | #f4f4f4 | center", "25.5 | 27.0 | text | See exactly what you sign | 0.5 | 0.5 | 48 | #f4f4f4 | center", "27.5 | 28.5 | text | Can't find your wallet? | 0.5 | 0.5 | 42 | #f4f4f4 | center",
+    "28.5 | 29.6 | text | No worries. | 0.5 | 0.5 | 42 | #f4f4f4 | center", "29.75 | 31.5 | text | Works with Apple Find My | 0.5 | 0.82 | 44 | #f4f4f4 | center", "32.0 | 33.9 | text | Charge wirelessly | 0.5 | 0.86 | 36 | #f4f4f4 | center",
+    "37.0 | 39.2 | text | Backup with SeedCard | 0.5 | 0.8 | 38 | #f4f4f4 | center", "37.2 | 39.2 | text | Bundled with OneKey Pro 2 | 0.5 | 0.86 | 11 | #bdbdbd | center", "41.0 | 44.2 | text | Air-gap signing | 0.5 | 0.8 | 38 | #f4f4f4 | center",
+    "45.5 | 49.0 | text | NFC Passkey | 0.5 | 0.8 | 38 | #f4f4f4 | center", "51.75 | 55.0 | text | On-device portfolio | 0.5 | 0.82 | 38 | #f4f4f4 | center", "55.75 | 56.5 | text | Open source firmware | 0.5 | 0.5 | 44 | #a8a8a8 | center",
+    "57.0 | 58.0 | text | Smoother. Clearer. | 0.5 | 0.5 | 42 | #f4f4f4 | center", "58.4 | 62.0 | pro | PRO | 0.5 | 0.55 | 760 | #ffffff | center", "63.45 | 66.2 | mark | | 0.5 | 0.5 | 135 | #e6682a | center", "64.4 | 68.0 | mark | | 0.5 | 0.5 | 135 | #ffffff | center",
+]
+BEATS = [(0.0, "ok-film", {"items": ITEMS})]
+CONTROLS = [
+    {"id": "items", "label": "Titre, légendes, lettres PRO, marque", "type": "lines", "group": "Contenu", "targets": [T("b01", "items")]},
+    {"id": "accent", "label": "Couleur de la marque", "type": "color", "group": "Couleurs", "targets": [T("b01", "accent")]},
+    {"id": "ink", "label": "Encre", "type": "color", "group": "Couleurs", "targets": [T("b01", "ink")]},
+]
+
+if __name__ == "__main__":
+    ppm.run("onekey-pro-2-ppm", ppm.build("OneKey Pro 2, premier plan mesuré", SLUG, BEATS, END, CONTROLS, bg="#0a0b0d", ink="#f4f4f4", accent="#e6682a"))

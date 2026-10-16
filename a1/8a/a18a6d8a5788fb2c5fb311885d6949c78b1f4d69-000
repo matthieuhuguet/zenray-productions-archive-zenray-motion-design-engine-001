@@ -1,0 +1,26 @@
+// 16 October 2026: the closing titles of the Interface film (whatships.com/videos/interface, 90.1 s, 4K), measured on the reference. Workflow Premier Plan Mesuré (ppm).
+// FOREGROUND ONLY (Matthieu's rule): the italic titles and the waitlist line; the live-action footage behind them is NOT reproduced. FR : les titres de fin ; jamais les images filmees.
+(function () {
+  const ZS = window.ZS, h = ZS.h;
+  const P = (key, label, type, def, tier, extra) => Object.assign({ key, label, type, default: def, tier }, extra || {});
+  const N = (key, label, def, min, max, step, tier, unit) => ({ key, label, type: "number", default: def, min, max, step, tier, unit });
+  const abs = (parent, css, text) => { const e = h.css(h.el("div", "zs-abs", parent), css); if (text !== undefined) { if (/[<&]/.test(String(text))) e.innerHTML = text; else e.textContent = text; } return e; };
+  const rows = (lines) => lines.map((l) => l.split("|").map((s) => s.trim())).filter((r) => r.length >= 2);
+  ZS.register({
+    id: "if-title", label: "Interface : les titres de fin (italique)", group: "Texte", duration: 10.09,
+    params: [
+      P("titles", "Titres (début | fin | texte | taille | x | y)", "lines", ["0 | 1.75 | Introducing Interface | 172 | 0.5 | 0.47", "1.8 | 3.75 | for the agent era. | 172 | 0.5 | 0.47", "3.8 | 10.09 | join the waitlist at\nnatura.inc/interface | 92 | 0.5 | 0.5"], 1),
+      P("tone", "Fond avant le noir", "color", "#1a1511", 2), P("ink", "Encre", "color", "#f6f1e6", 2), N("blackAt", "Début du fond noir (s)", 8.4, 0, 20, 0.05, 3, "s"), N("fade", "Fondu des titres (s)", 0.35, 0, 2, 0.05, 3, "s"), N("film0", "Début dans le film (s)", 80, 0, 100, 0.01, 4, "s"),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx), k = tall ? 0.62 : 1;
+      h.css(el, { background: p.tone });
+      const dark = abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px", background: "#000", opacity: 0 }); tl.set(dark, { opacity: 1 }, t0 + p.blackAt);
+      rows(p.titles).forEach((r) => {
+        const a = Number(r[0]), b = Number(r[1]), size = Number(r[3]) * k, x = Number(r[4]), y = Number(r[5]);
+        const t = abs(st, { left: x * w + "px", top: y * sh + "px", transform: "translate(-50%,-50%)", fontFamily: h.font("AnthropicSerif"), fontStyle: "italic", fontWeight: 300, fontSize: size + "px", color: p.ink, whiteSpace: "pre", textAlign: "center", lineHeight: 1.08, letterSpacing: "-0.01em", opacity: 0, textShadow: "0 3px 24px rgba(0,0,0,0.45)" }, r[2]);
+        tl.fromTo(t, { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: Math.max(0.05, p.fade), ease: "power2.out" }, t0 + a); if (b < dur - 0.02) tl.to(t, { opacity: 0, duration: Math.max(0.05, p.fade) }, t0 + b - p.fade);
+      });
+    },
+  });
+})();

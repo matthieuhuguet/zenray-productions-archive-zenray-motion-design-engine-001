@@ -1,0 +1,55 @@
+// 16 October 2026: the templates of the Memo launch film (whatships.com/videos/memo, 44.5 s, 4K), measured on the reference. Workflow Premier Plan Mesuré (ppm).
+// FOREGROUND ONLY (Matthieu's rule): the orange kinetic words, the RADIO card, the small caption and the wordmark; the interview and the archive footage (black and white) are NOT reproduced.
+// FR : les mots orange, la carte RADIO, le petit texte et le logotype ; jamais les images filmees.
+(function () {
+  const ZS = window.ZS, h = ZS.h;
+  const P = (key, label, type, def, tier, extra) => Object.assign({ key, label, type, default: def, tier }, extra || {});
+  const N = (key, label, def, min, max, step, tier, unit) => ({ key, label, type: "number", default: def, min, max, step, tier, unit });
+  const abs = (parent, css, text) => { const e = h.css(h.el("div", "zs-abs", parent), css); if (text !== undefined) { if (/[<&]/.test(String(text))) e.innerHTML = text; else e.textContent = text; } return e; };
+  const rows = (lines) => lines.map((l) => l.split("|").map((s) => s.trim())).filter((r) => r.length >= 2);
+  const ORANGE = "#ef5e05";
+  const WORDS = ["0.1 | 0.8 | WHEN WE\\nSTARTED", "0.8 | 1.3 | THE\\nCOMPANY", "1.3 | 1.8 | WE\\nKNEW", "1.8 | 2.6 | TWO\\nTHINGS", "2.6 | 3.1 | BUILD", "3.1 | 4.3 | VOICE\\nINTERFACE", "4.3 | 5.1 | WORK\\nWITH", "5.1 | 5.7 | THE\\nBEST", "5.7 | 6.9 | IN THE\\nWORLD", "6.9 | 7.7 | ELITE\\nTEAMS", "7.7 | 8.7 | COMMUNICATE", "8.7 | 9.1 | WHEN\\nTHE", "9.1 | 10.2 | MISSION\\nCRITICAL", "10.2 | 11.6 | STAKES\\nARE THE\\nHIGHEST?", "11.6 | 13.0 | THEY\\nUSE"];
+
+  ZS.register({
+    id: "mm-slam", label: "Memo : les mots orange qui claquent (sans image filmée)", group: "Texte", duration: 13,
+    params: [
+      P("words", "Mots (début | fin | texte, \\n = ligne)", "lines", WORDS, 1), P("ink", "Encre", "color", ORANGE, 2), P("tone", "Teinte de la tuile", "color", "#131313", 2),
+      N("charEm", "Largeur d'une capitale (em)", 0.8, 0.4, 1.1, 0.01, 3), N("fill", "Part de la largeur remplie", 0.985, 0.5, 1, 0.005, 3), N("lineH", "Interligne", 0.84, 0.6, 1.3, 0.01, 3), N("cy", "Hauteur d'un mot seul (fraction)", 0.5, 0.2, 0.8, 0.005, 3), N("cyMulti", "Hauteur d'un bloc de lignes (fraction)", 0.33, 0.2, 0.8, 0.005, 3),
+      N("film0", "Début dans le film (s)", 0, 0, 50, 0.01, 4, "s"),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0 } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
+      h.css(el, { background: p.tone });
+      abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px", background: "radial-gradient(ellipse 70% 70% at 50% 45%, rgba(255,255,255,0.07), rgba(0,0,0,0.45))" });
+      rows(p.words).forEach((r) => {
+        const a = Number(r[0]), b = Number(r[1]), lines = r.slice(2).join(" | ").replace(/\\n/g, "\n").split("\n"), longest = Math.max(...lines.map((l) => l.length));
+        const size = Math.min((w * p.fill) / (longest * Math.min(p.charEm, 0.55)), sh * 0.6 / (lines.length * p.lineH));
+        const t = abs(st, { left: w * 0.006 + "px", top: sh * (lines.length > 1 ? p.cyMulti : p.cy) - (lines.length * size * p.lineH) / 2 + "px", fontFamily: h.font("Sora"), fontWeight: 800, fontSize: size + "px", lineHeight: p.lineH, color: p.ink, letterSpacing: "-0.03em", whiteSpace: "pre", opacity: 0, webkitTextStroke: size * 0.012 + "px " + p.ink }, lines.join("\n"));
+        ctx.fit(t, w * p.fill, 0); tl.set(t, { opacity: 1 }, t0 + a); tl.fromTo(t, { y: 18 }, { y: 0, duration: 0.12, ease: "power3.out" }, t0 + a); tl.set(t, { opacity: 0 }, t0 + b);
+      });
+    },
+  });
+
+  ZS.register({
+    id: "mm-card", label: "Memo : la carte RADIO et le logotype", group: "Marque", duration: 2,
+    params: [
+      { key: "kind", label: "Carte", type: "select", default: "radio", options: ["radio", "memo"], tier: 1 }, P("text", "Texte", "text", "RADIO", 1), P("small", "Petit texte du bas", "text", "FLASH", 2),
+      P("ink", "Encre", "color", ORANGE, 2), P("tone", "Fond", "color", "#000000", 2), N("size", "Taille (large)", 430, 40, 900, 1, 3, "px"), N("film0", "Début dans le film (s)", 13, 0, 50, 0.01, 4, "s"),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
+      h.css(el, { background: p.tone });
+      if (p.kind === "radio") {
+        const size = Math.min(p.size * 1.6, (w * 0.975) / (p.text.length * 0.55));
+        const t = abs(st, { left: "0", width: w + "px", textAlign: "center", top: sh * 0.5 - size * 0.55 + "px", fontFamily: h.font("Sora"), fontWeight: 800, fontSize: size + "px", color: p.ink, letterSpacing: "-0.03em", lineHeight: 1, webkitTextStroke: size * 0.012 + "px " + p.ink }, p.text); ctx.fit(t, w * 0.975, 0);
+        tl.fromTo(t, { scale: 1.06, opacity: 0.6 }, { scale: 1, opacity: 1, duration: 0.2, ease: "power3.out" }, t0);
+        abs(st, { left: "0", width: w + "px", textAlign: "center", top: sh * 0.945 + "px", fontFamily: h.font("InterVariable"), fontSize: 13 + "px", letterSpacing: "0.12em", color: "rgba(255,255,255,0.4)" }, p.small);
+        if (dur > 1.1) { const f = abs(st, { left: w * 0.84 + "px", top: sh * 0.42 + "px", width: w * 0.1 + "px", height: sh * 0.12 + "px", opacity: 0 }); f.innerHTML = `<svg viewBox="0 0 100 40" width="100%" height="100%"><path d="M5,36 L40,4 L95,4 L68,36 Z M22,28 L48,12 L72,12 L54,28 Z" fill="#fff"/></svg>`; tl.set(f, { opacity: 1 }, t0 + 1.0); }
+      } else {
+        const size = Math.min(p.size * 1.4, (w * 0.76) / (p.text.length * 0.45));
+        const t = abs(st, { left: "0", width: w + "px", textAlign: "center", top: sh * 0.5 - size * 0.62 + "px", fontFamily: h.font("Fraunces"), fontWeight: 500, fontSize: size + "px", color: p.ink, letterSpacing: "-0.02em", lineHeight: 1, whiteSpace: "nowrap" }, p.text); ctx.fit(t, w * 0.76, 0);
+        tl.fromTo(t, { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, t0);
+      }
+    },
+  });
+})();

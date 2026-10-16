@@ -1,0 +1,38 @@
+"""Reproduction of the Flora "agents on canvas" film (51.5 s, 1666x1080), workflow Premier Plan Mesuré (16 October 2026).
+Foreground only: the interface drawn in code (canvas, popup, desktop window, composer, chat log, node graph); the tulip is a flat vector, the wallpaper photograph is not reproduced.
+Cuts measured with Scripts/FindCuts.py. Usage: python3 motion/reproductions/flora_agents_on_canvas.py"""
+import ppm
+from ppm import T
+
+SLUG = "flora-agents-on-canvas"
+END = 51.45
+TILES1 = ["0.1 | tulip | 371 | 343 | 368 | 573 | Tulip", "0.45 | grad | 837 | 423 | 360 | 483 | Gradient 17 acid burst radial"]
+LOG = ["0.0 | The FLORA project is open and signed in. Let me verify the WebMCP tools are available in the page.", "0.6 | Used 4 tools", "1.5 | Put the pixel tulip on the gradient background, no text anywhere, 3:4, and animate it assembling pixel by pixel, locked camera, background static.",
+       "3.0 | Read flora-api.md, used a tool", "4.0 | The skill is loaded. Note the WebMCP tool names in the page map to this lane (flora_generate etc.). Let me check my memory notes and get the current canvas state.",
+       "6.0 | Chain built: n3 composite, n4 animation, n5 QA auditor, all wired. Generating the composite first, and checking that n4 resolved to first-frame→last-frame mode.", "8.0 | Used 2 tools", "9.0 | Composite is rendering, and n4 confirmed in firstFrameLastFrame mode (3:4, 5s, 1080p). Waiting on the composite now.",
+       "11.0 | Ran 2 commands, used 4 tools", "12.0 | Composite is done. Quick visual check before spending on the video generation.", "13.0 | Ran a command, read composit…", "14.0 | Composite looks right — tulip preserved exactly, gradient and cream border intact, no text, 3:4. Firing the video generation.",
+       "16.0 | Used 2 tools", "17.0 | Video is rendering (typically 3-6 minutes). Polling until it's done.", "19.0 | Ran 2 commands, used a tool", "20.5 | Generation and QA", "21.0 | Used 2 tools", "22.0 | Background shell completed 90s t…"]
+SPLIT_TILES = ["0 | tulip | 227 | 371 | 140 | 212 | ", "0.2 | grad | 404 | 400 | 137 | 183 | ", "6.5 | dark | 560 | 400 | 80 | 183 | ", "7.2 | dark | 660 | 400 | 75 | 183 | ", "8.2 | text | 760 | 380 | 150 | 230 | ", "14 | video | 560 | 400 | 80 | 183 | "]
+NODE_TILES = ["0.0 | tulip | 87 | 173 | 170 | 226 | Tulip on Gradient 3:4", "0.3 | video | 303 | 173 | 170 | 226 | Tulip Pixel Assem…", "0.6 | text | 504 | 173 | 90 | 226 | QA Au…"]
+BEATS = [
+    (0.00, "fl-scene", {"kind": "canvas", "cursor": ["0 760 700", "1.5 790 705", "2.9 800 700"], "cursorKind": "hand"}),
+    (2.95, "fl-scene", {"kind": "canvas", "tiles": TILES1, "cursor": ["0 1000 600", "1.4 1380 90", "2.9 1385 85"], "cursorKind": "hand", "chips": []}),
+    (5.85, "fl-scene", {"kind": "popup", "tiles": TILES1, "typeAt": 0.4, "cps": 70, "cursor": ["0 440 190", "2 480 200"]}),
+    (9.05, "fl-scene", {"kind": "desktop"}),
+    (11.95, "fl-scene", {"kind": "composer", "typeAt": 1.0, "cps": 2500, "tallZoom": 0.62, "zoom": ["0 1.85 -660 -375", "4.4 1.85 -660 -375"], "cursor": ["0 560 420", "2.5 900 560", "4.4 930 600"], "cursorKind": "ibeam"}),
+    (16.40, "fl-scene", {"kind": "chat", "log": ["0.0 | Open this link in a browser tab first, it signs you in and loads the FLORA project.", "0.8 | Using Flora WebMCP canvas integration", "1.4 | Ran a command", "2.0 | The FLORA project is open and signed in."]}),
+    (19.25, "fl-scene", {"kind": "split", "log": LOG, "tiles": SPLIT_TILES}),
+    (42.05, "fl-scene", {"kind": "nodes", "tiles": NODE_TILES, "log": LOG[-9:], "cursor": ["0 1100 820", "2 1180 880"], "cursorKind": "hand"}),
+    (44.80, "fl-scene", {"kind": "end", "text": "1.25"}),
+]
+CONTROLS = [
+    {"id": "popup", "label": "Texte du lien (popup)", "type": "text", "group": "Phrases", "targets": [T("b03", "text")]},
+    {"id": "prompt", "label": "Texte du compositeur", "type": "text", "group": "Phrases", "targets": [T("b05", "text")]},
+    {"id": "chat", "label": "Journal de l'agent", "type": "lines", "group": "Phrases", "targets": [T("b07", "log")]},
+    {"id": "chips", "label": "Boutons de suggestion", "type": "lines", "group": "Phrases", "targets": [T("b01", "chips")]},
+    {"id": "tiles", "label": "Cartes du canevas (écran 1)", "type": "lines", "group": "Canevas", "targets": [T("b02", "tiles")]},
+    {"id": "nodes", "label": "Cartes du graphe (écran final)", "type": "lines", "group": "Canevas", "targets": [T("b08", "tiles")]},
+]
+
+if __name__ == "__main__":
+    ppm.run("flora-agents-on-canvas-ppm", ppm.build("Flora, agents on canvas, premier plan mesuré", SLUG, BEATS, END, CONTROLS, bg="#050505", ink="#e8e8e8", accent="#7fe39a"))

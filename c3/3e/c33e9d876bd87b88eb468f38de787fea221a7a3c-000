@@ -40,3 +40,25 @@ def run(pid: str, project: dict) -> dict:
     out = {"id": pid, "scenes": len(project["scenes"]), "duration": round(sum(s["duration"] for s in project["scenes"]), 2)}
     print(json.dumps(out))
     return out
+
+
+def split_beats(template: str, items: list, end: float, base: "dict | None" = None, cut: float = 100.0, key: str = "items") -> list:
+    """A scene is at most 120 s: a long film made of timed items is cut in scenes of `cut` seconds, each item re-timed inside its scene (an item that crosses a cut is kept in both).
+    FR : une scene dure 120 s au plus ; un long film d'elements chronometres est coupe en scenes, chaque element recale."""
+    beats, lo = [], 0.0
+    while lo < end - 0.01:
+        hi = min(end, lo + cut)
+        part = []
+        for line in items:
+            f = [q.strip() for q in line.split("|")]
+            a, b = float(f[0]), float(f[1])
+            if b <= lo or a >= hi:
+                continue
+            f[0], f[1] = f"{max(a, lo) - lo:.2f}", f"{min(b, hi) - lo:.2f}"
+            part.append(" | ".join(f))
+        params = dict(base or {}); params[key] = part
+        if lo:
+            params["film0"] = lo
+        beats.append((lo, template, params))
+        lo = hi
+    return beats

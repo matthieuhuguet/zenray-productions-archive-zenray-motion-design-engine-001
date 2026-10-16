@@ -1,0 +1,29 @@
+"""Reproduction of the Paper Mono launch film (whatships.com/videos/paper-mono-code, 60.6 s, 1340x1080), workflow Premier Plan Mesuré (16 October 2026).
+A screen recording of a live-coding dashboard. Foreground only: the dashboard (layers, canvas, code, arrangement, sequencer) and the typography shown on its canvas, drawn in code; the photographs and
+page renders are not reproduced. Usage: python3 motion/reproductions/paper_mono_code.py"""
+import ppm
+from ppm import T
+
+SLUG = "paper-mono-code"
+END = 60.59
+CANVAS = [
+    "0 | 3.5 | ascii | | 30 | 70 | 1 |", "0 | 3.5 | text | ▣ | 180 | 168 | 26 | mono", "3.5 | 5.0 | text | introducing\\nintroducing\\nintroducing\\nintroducing\\nintroducing\\nintroducing | 120 | 40 | 10 | bold",
+    "5.0 | 7.0 | outline | paper\\nmono | 50 | 30 | 80 |", "5.0 | 7.0 | window | installer//30% | 160 | 55 | 120 |", "5.2 | 7.0 | window | hello.txt//go | 190 | 250 | 190 |", "6.0 | 7.0 | card | goooo | 40 | 290 | 300 |",
+    "7.0 | 10.4 | text | a a a a a | 20 | 140 | 38 | bold", "10.4 | 13.5 | text | O S\\nP Q | 120 | 130 | 40 | bold", "13.5 | 15.0 | text | a | 140 | 150 | 150 | bold",
+    "15.0 | 19.5 | text | P  e  r | 30 | 150 | 60 | mono", "16.5 | 19.5 | text | m | 50 | 280 | 70 | bold", "18.0 | 19.5 | text | variable | 160 | 170 | 28 | bold", "18.0 | 21.0 | text | mono | 120 | 260 | 90 | bold",
+    "21.0 | 22.5 | card | 0:30.80 | 40 | 60 | 300 |", "22.5 | 24.0 | text | hel | 120 | 220 | 40 | bold", "25.5 | 27.0 | text | D | 150 | 120 | 120 | bold", "27.0 | 28.5 | text | D e s g\\n n i | 60 | 100 | 60 | bold",
+    "28.5 | 30.0 | text | duospace | 110 | 180 | 30 | bold", "30.0 | 33.0 | text | w o w | 30 | 150 | 80 | sans", "33.0 | 33.4 | card | design incredible | 0 | 0 | 393 | full", "33.4 | 34.5 | eq | | 10 | 10 | 1 |",
+    "34.5 | 37.0 | card | $ pnpm dev  paper-mono | 10 | 10 | 373 | full", "37.0 | 45.0 | outline | a | 130 | 120 | 170 |", "45.0 | 46.5 | text | papi\\nmono | 20 | 100 | 110 | bold", "48.0 | 49.5 | text | paper\\nmono | 140 | 80 | 60 | bold",
+    "54.0 | 58.5 | text | paper\\n mono | 30 | 30 | 100 | mono", "54.6 | 58.5 | text | available now | 70 | 285 | 27 | mono", "55.4 | 58.5 | text | paper.design/mono | 45 | 325 | 25 | mono", "58.5 | 60.59 | ascii | | 30 | 70 | 2 |", "58.5 | 60.59 | text | ▣ | 180 | 168 | 26 | mono",
+]
+BEATS = [(0.0, "pm-dash", {"canvas": CANVAS})]
+CONTROLS = [
+    {"id": "title", "label": "Nom du projet", "type": "text", "group": "Tableau de bord", "targets": [T("b01", "title")]},
+    {"id": "canvas", "label": "Contenu du canevas (début | fin | type | texte | x | y | taille | style)", "type": "lines", "group": "Canevas", "targets": [T("b01", "canvas")]},
+    {"id": "shots", "label": "Plans (début | nom)", "type": "lines", "group": "Tableau de bord", "targets": [T("b01", "shots")]},
+    {"id": "sections", "label": "Sections (mesure | nom)", "type": "lines", "group": "Tableau de bord", "targets": [T("b01", "sections")]},
+    {"id": "accent", "label": "Couleur d'accent", "type": "color", "group": "Couleurs", "targets": [T("b01", "accent")]},
+]
+
+if __name__ == "__main__":
+    ppm.run("paper-mono-code-ppm", ppm.build("Paper Mono, premier plan mesuré", SLUG, BEATS, END, CONTROLS, fmt="16x9", bg="#f4f6fb", ink="#1d2330", accent="#4b78e6"))

@@ -1,0 +1,148 @@
+// 16 October 2026: the templates of the Flora "agents on canvas" film (51.5 s, 1666x1080), measured on the reference. Workflow Premier Plan Mesuré (ppm).
+// FOREGROUND ONLY (Matthieu's rule): the interface elements (canvas, toolbar, nodes, popup, composer, chat log) drawn in code; the tulip is a flat vector, the gradient card a CSS gradient;
+// the desktop wallpaper photograph is NOT reproduced. FR : l'interface en code ; jamais le fond d'ecran ni une photo.
+(function () {
+  const ZS = window.ZS, h = ZS.h;
+  const P = (key, label, type, def, tier, extra) => Object.assign({ key, label, type, default: def, tier }, extra || {});
+  const N = (key, label, def, min, max, step, tier, unit) => ({ key, label, type: "number", default: def, min, max, step, tier, unit });
+  const SEL = (key, label, def, options, tier) => ({ key, label, type: "select", default: def, options, tier });
+  const NS = "http://www.w3.org/2000/svg", SANS = "InterVariable", MONO = "JetBrainsMono";
+  const PW = 1666, PH = 1080;
+  const svgEl = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); Object.keys(attrs || {}).forEach((k) => e.setAttribute(k, attrs[k])); if (parent) parent.appendChild(e); return e; };
+  const abs = (parent, css, text) => { const e = h.css(h.el("div", "zs-abs", parent), css); if (text !== undefined) { if (/[<&]/.test(String(text))) e.innerHTML = text; else e.textContent = text; } return e; };
+  const rows = (lines) => lines.map((l) => l.split("|").map((s) => s.trim())).filter((r) => r.length >= 2);
+  const keys = (lines) => lines.map((l) => l.trim().split(/\s+/).map(Number)).filter((q) => q.length >= 2 && q.every((v) => !isNaN(v)));
+  const num = Number;
+  const lerpAt = (ks, t, i) => { if (t <= ks[0][0]) return ks[0][i]; for (let j = 1; j < ks.length; j++) if (t <= ks[j][0]) { const a = ks[j - 1], b = ks[j], u = (t - a[0]) / Math.max(1e-9, b[0] - a[0]), e = u * u * (3 - 2 * u); return a[i] + (b[i] - a[i]) * e; } return ks[ks.length - 1][i]; };
+  const sans = (css) => Object.assign({ fontFamily: h.font(SANS), whiteSpace: "nowrap", color: "#e8e8e8" }, css);
+  const BG = "#050505", GREY = "#8a8a8a";
+
+  // ---- vector pieces
+  const mark = (parent, x, y, s, col) => { const sv = svgEl("svg", { width: s, height: s, viewBox: "-12 -12 24 24", style: `position:absolute;left:${x}px;top:${y}px` }, parent);
+    [[-5.5, -5.5], [5.5, -5.5], [-5.5, 5.5], [5.5, 5.5]].forEach(([cx, cy]) => svgEl("circle", { cx, cy, r: 5, fill: col || "#fff" }, sv)); svgEl("rect", { x: -3, y: -3, width: 6, height: 6, fill: col === "#fff" || !col ? "#000" : "#fff", opacity: 0.0 }, sv); return sv; };
+  const tulip = (parent, W, H) => { const sv = svgEl("svg", { width: W, height: H, viewBox: "0 0 100 150", style: "position:absolute;left:0;top:0" }, parent);
+    svgEl("path", { d: "M48,150 C47,112 49,86 50,64 C52,86 53,112 52,150 Z", fill: "#2f8a3a" }, sv); svgEl("path", { d: "M50,128 C34,118 24,96 22,78 C34,92 44,108 50,122 Z", fill: "#39a047" }, sv); svgEl("path", { d: "M51,132 C66,124 76,104 78,88 C66,100 58,112 51,126 Z", fill: "#2a7a34" }, sv);
+    svgEl("path", { d: "M30,28 C26,48 34,66 50,70 C66,66 74,48 70,28 C62,36 56,26 50,18 C44,26 38,36 30,28 Z", fill: "#e0245e" }, sv); svgEl("path", { d: "M50,18 C56,26 62,36 70,28 C66,48 62,60 50,70 C54,52 54,34 50,18 Z", fill: "#b3144a" }, sv); svgEl("path", { d: "M30,28 C26,48 34,62 44,68 C40,54 40,38 44,24 Z", fill: "#f0568a" }, sv); return sv; };
+  const gradCard = (parent, css) => { const c = abs(parent, Object.assign({ background: "#f1e7c6", borderRadius: "4px", padding: "7px" }, css)); abs(c, { left: "7px", top: "7px", right: "7px", bottom: "7px", background: "radial-gradient(circle at 50% 38%, #e5f53a 0%, #cfee50 35%, #f0c15e 62%, #f08aa6 100%)" }); return c; };
+  const cursor = (parent, kind) => { const c = abs(parent, { left: "0", top: "0", width: "26px", height: "30px", zIndex: 9, pointerEvents: "none" }); const sv = svgEl("svg", { width: 26, height: 30, viewBox: "0 0 26 30" }, c);
+    if (kind === "hand") svgEl("path", { d: "M9,2 C10,2 11,3 11,4 L11,12 L12,12 C12,10 15,10 15,12 L16,12 C16,10 19,10 19,13 L20,13 C20,11 23,12 23,14 L23,21 C23,26 20,28 16,28 L12,28 C9,28 7,26 5,22 L2,16 C1,14 4,13 5,15 L8,18 L8,4 C8,3 8,2 9,2 Z", fill: "#fff", stroke: "#000", "stroke-width": 1.5 }, sv);
+    else if (kind === "ibeam") svgEl("path", { d: "M7,2 H19 M13,2 V28 M7,28 H19", fill: "none", stroke: "#000", "stroke-width": 3.4 }, sv);
+    else svgEl("path", { d: "M3,2 L3,22 L8,17 L12,26 L15,25 L11,16 L18,16 Z", fill: "#fff", stroke: "#000", "stroke-width": 1.4 }, sv); return c; };
+
+  // the canvas application (dark), drawn at its own size (W x H), reusable full screen or inside a browser window
+  function canvasApp(parent, W, H, o) {
+    const root = abs(parent, { left: "0", top: "0", width: W + "px", height: H + "px", background: BG, overflow: "hidden" });
+    abs(root, { left: "0", top: "0", width: W + "px", height: H + "px", backgroundImage: "radial-gradient(rgba(255,255,255,0.10) 1px, transparent 1.2px)", backgroundSize: `${34}px ${34}px`, opacity: 0.5 });
+    mark(root, 22, 44, 34, "#fff"); abs(root, sans({ left: "74px", top: "50px", fontSize: "17px", color: "#fff", fontWeight: 500 }), "Flora Pixels"); abs(root, sans({ left: "74px", top: "76px", fontSize: "12px", color: GREY }), "FLORA Team Workspace");
+    const btn = (x, w, label, bg, fg) => abs(root, sans({ left: x + "px", top: "52px", width: w + "px", height: "32px", borderRadius: "7px", background: bg, color: fg, fontSize: "13px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }), label);
+    btn(W - 490, 82, "100% ⌄", "#1b1b1b", "#aaa"); btn(W - 396, 118, "Open in Agent", "#1b1b1b", "#d8d8d8"); btn(W - 266, 124, "Build Technique", "#12301c", "#7fe39a"); btn(W - 130, 104, "Share Project", "#f4f4f4", "#111");
+    abs(root, { left: "18px", top: H * 0.32 - 8 + "px", width: "50px", height: H * 0.5 + "px", borderRadius: "16px", background: "#0c0c0c", border: "1px solid #1c1c1c" });
+    abs(root, { left: "22px", top: H * 0.32 + "px", width: "42px", height: "42px", borderRadius: "50%", background: "#fff", color: "#000", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "26px", fontFamily: h.font(SANS) }, "+");
+    for (let i = 0; i < 10; i++) abs(root, { left: "34px", top: H * 0.32 + 62 + i * 38 + "px", width: "18px", height: "18px", border: "2px solid #8a8a8a", borderRadius: i % 3 === 0 ? "3px" : "50%", opacity: 0.8 });
+    abs(root, { left: "26px", top: H * 0.32 + 62 + 10 * 38 + "px", width: "34px", height: "34px", borderRadius: "50%", background: "linear-gradient(135deg,#3c7a4a,#a8c470)" });
+    abs(root, sans({ left: W - 300 + "px", top: H - 62 + "px", width: "250px", height: "40px", borderRadius: "10px", border: "1px solid #222", background: "#0b0b0b", fontSize: "12px", color: "#aaa", display: "flex", alignItems: "center", paddingLeft: "14px" }), "Queue  <span style='color:#666'>0 active</span>");
+    return root;
+  }
+
+  ZS.register({
+    id: "fl-scene", label: "Flora : une scène d'interface (canevas, popup, compositeur, discussion, nœuds)", group: "Interface", duration: 6,
+    params: [
+      SEL("kind", "Scène", "canvas", ["canvas", "popup", "desktop", "composer", "chat", "split", "nodes", "end"], 1),
+      P("text", "Texte principal (selon la scène)", "text", "", 1), P("log", "Journal de l'agent (début | texte)", "lines", [], 1),
+      P("tiles", "Cartes du canevas (début | type | x | y | largeur | hauteur | étiquette)", "lines", [], 2), P("cursor", "Curseur : t x y (clés)", "lines", [], 2), P("cursorKind", "Forme du curseur", "select", "arrow", 3, { options: ["arrow", "hand", "ibeam"] }),
+      P("chips", "Boutons de suggestion", "lines", ["Describe an image", "Combine ideas", "Make a video from an image", "Explore Flows"], 3), P("zoom", "Zoom : t échelle x y (clés, pixels du plan)", "lines", ["0 1 0 0"], 3),
+      P("typeAt", "Début de la frappe (s)", "number", 0.3, 3, { min: 0, max: 20, step: 0.05 }), N("cps", "Caractères par seconde", 40, 1, 5000, 1, 3), N("fadeIn", "Entrée en fondu (s)", 0, 0, 3, 0.05, 3, "s"), N("fadeOut", "Sortie en fondu (s)", 0, 0, 3, 0.05, 3, "s"),
+      N("tallZoom", "Gros plan en format haut", 1.3, 1, 3, 0.05, 3), N("film0", "Début dans le film (s)", 0, 0, 60, 0.01, 4, "s"),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
+      const kfit = tall ? (w / PW) * p.tallZoom : Math.min(w / PW, sh / PH), kind = p.kind;
+      h.css(el, { background: kind === "composer" ? "#fbfbfb" : BG });
+      const plane = abs(st, { left: (w - PW * kfit) / 2 + "px", top: (sh - PH * kfit) / 2 + "px", width: PW + "px", height: PH + "px", transformOrigin: "0 0", transform: `scale(${kfit})`, overflow: "hidden" });
+      const cam = abs(plane, { left: "0", top: "0", width: PW + "px", height: PH + "px", transformOrigin: "0 0" });
+      const live = {}; let cur = null;
+      const typed = (node, full, a, cps) => { const pr = { n: 0 }; node.textContent = ""; tl.fromTo(pr, { n: 0 }, { n: full.length, duration: Math.max(0.05, full.length / cps), ease: "none", onUpdate: () => { node.textContent = full.slice(0, Math.round(pr.n)); } }, t0 + a); };
+      const tileBuild = (parent, W, H, sx, sy) => rows(p.tiles).forEach((r) => {
+        const a = num(r[0]), type = r[1], x = num(r[2]) * sx, y = num(r[3]) * sy, tw = num(r[4]) * sx, th = num(r[5]) * sy, label = r[6] || "";
+        const g = abs(parent, { left: x + "px", top: y + "px", width: tw + "px", height: th + "px", opacity: 0 });
+        if (label) abs(g, sans({ left: "0", top: -22 * sx + "px", fontSize: 12 * sx + "px", color: "#8a8a8a" }), label);
+        if (type === "tulip") { const t = abs(g, { left: "0", top: "0", width: tw + "px", height: th + "px", borderRadius: 14 * sx + "px", background: "linear-gradient(#0a0a0a,#121212)", overflow: "hidden" }); const f = abs(t, { left: tw * 0.12 + "px", top: th * 0.07 + "px", width: tw * 0.76 + "px", height: th * 0.88 + "px" }); tulip(f, tw * 0.76, th * 0.88); }
+        else if (type === "grad") gradCard(g, { left: 0, top: 0, width: tw + "px", height: th + "px", boxSizing: "border-box" });
+        else if (type === "video") abs(g, { left: 0, top: 0, width: tw + "px", height: th + "px", borderRadius: 4 * sx + "px", background: "linear-gradient(#b9e6a2,#8fd6a2)", border: `${6 * sx}px solid #3bb3b0`, boxSizing: "border-box" });
+        else if (type === "dark") abs(g, { left: 0, top: 0, width: tw + "px", height: th + "px", borderRadius: 8 * sx + "px", background: "#161616", border: "1px solid #2a2a2a" });
+        else if (type === "text") { const t = abs(g, sans({ left: 0, top: 0, width: tw + "px", height: th + "px", borderRadius: 8 * sx + "px", background: "#0f0f0f", border: "1px solid #262626", fontSize: 9 * sx + "px", color: "#9a9a9a", padding: 10 * sx + "px", whiteSpace: "normal", lineHeight: 1.4, overflow: "hidden", boxSizing: "border-box" }), label ? "" : "You are an expert operator. Compose the tulip on the gradient preserved exactly, no text, 3:4 portrait, watermark none. Frame assembly block: zero numbers on each frame, camera locked, background static."); void t; }
+        tl.fromTo(g, { opacity: 0, y: 8 * sy }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, t0 + a);
+      });
+
+      if (kind === "canvas" || kind === "popup") {
+        const app = canvasApp(cam, PW, PH, {});
+        if (kind === "canvas") {
+          abs(app, sans({ left: "0", width: PW + "px", top: PH * 0.485 + "px", textAlign: "center", fontSize: "12px", color: "#7a7a7a" }), "<b style='color:#ccc'>Double-click</b> anywhere to create a node or use <b style='color:#ccc'>⌘+/</b> for FAUNA");
+          p.chips.forEach((c, i) => abs(app, sans({ left: 430 + i * 220 + "px", top: PH * 0.535 + "px", fontSize: "13px", color: "#a8a8a8" }), c));
+          tileBuild(app, PW, PH, 1, 1);
+        } else {
+          app.style.filter = "blur(0px)";
+          tileBuild(app, PW, PH, 1, 1);
+          abs(app, { left: "0", top: "0", width: PW + "px", height: PH + "px", background: "rgba(0,0,0,0.86)" });
+          const card = abs(app, { left: "608px", top: "389px", width: "472px", height: "346px", borderRadius: "12px", background: "#101010", border: "1px solid #262626" });
+          abs(card, sans({ left: "22px", top: "20px", fontSize: "15px", fontWeight: 600, color: "#fff" }), "Open in Agent — Beta");
+          abs(card, sans({ left: "22px", top: "50px", width: "420px", fontSize: "12px", color: "#9a9a9a", whiteSpace: "normal", lineHeight: 1.45 }), "Generates a link that signs a browser-using agent into your account and opens this project with FLORA's in-page tools (WebMCP) enabled. Claude Code Desktop works best. It works once, the session lasts 24 hours and acts as you — don't share the link.");
+          abs(card, sans({ left: "22px", top: "152px", fontSize: "11px", color: "#8a8a8a" }), "Paste this to your agent"); abs(card, sans({ left: "384px", top: "146px", width: "60px", height: "24px", borderRadius: "6px", background: "#222", color: "#ddd", fontSize: "11px", display: "flex", alignItems: "center", justifyContent: "center" }), "✓ Copied");
+          const code = abs(card, { left: "22px", top: "182px", width: "428px", height: "140px", borderRadius: "8px", background: "#1b1b1b", overflow: "hidden" });
+          const ct = abs(code, { left: "12px", top: "10px", width: "404px", fontFamily: h.font(MONO), fontSize: "11px", color: "#cfcfcf", whiteSpace: "normal", wordBreak: "break-all", lineHeight: 1.5 }, "");
+          typed(ct, p.text || "Open this link in a browser tab first - it signs you in and loads the FLORA project with WebMCP enabled. The link works once, so don't reload it; navigate within the tab instead. https://clerk.flora.ai/v1/agents/tasks?ticket=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aXMiOiJ1c2VyIn0", p.typeAt, p.cps);
+        }
+      } else if (kind === "desktop") {
+        // a menu bar, a window that grows, a dock; the wallpaper photograph is not reproduced
+        abs(cam, { left: "0", top: "0", width: PW + "px", height: PH + "px", background: "linear-gradient(#10151c,#0a0d12)" });
+        abs(cam, sans({ left: "0", top: "0", width: PW + "px", height: "24px", background: "rgba(0,0,0,0.6)", fontSize: "12px", color: "#ddd", display: "flex", alignItems: "center", paddingLeft: "22px", gap: "26px" }), "<b>Chrome</b> File Edit View History Bookmarks Profiles Tab Window Help");
+        const win = abs(cam, { left: "400px", top: "150px", width: "880px", height: "560px", borderRadius: "14px", background: "#fafafa", boxShadow: "0 30px 80px rgba(0,0,0,0.6)", overflow: "hidden", transformOrigin: "50% 50%" });
+        abs(win, { left: "0", top: "0", width: "230px", height: "560px", background: "#f1f1f1" }); [0, 1, 2, 3, 4].forEach((i) => abs(win, { left: "30px", top: 80 + i * 36 + "px", width: 150 - i * 16 + "px", height: "10px", borderRadius: "5px", background: "#d7d7d7" }));
+        abs(win, sans({ left: "300px", top: "70px", fontSize: "22px", color: "#222", fontWeight: 500 }), "What's up next, James?");
+        for (let r = 0; r < 4; r++) for (let c = 0; c < 6; c++) abs(win, { left: 300 + c * 80 + "px", top: 140 + r * 40 + "px", width: "64px", height: "26px", borderRadius: "6px", background: r === 3 && c > 3 ? "#cfe0ff" : "#ececec" });
+        abs(win, { left: "300px", top: "440px", width: "540px", height: "70px", borderRadius: "14px", border: "1px solid #ddd", background: "#fff" });
+        tl.fromTo(win, { scale: 0.88, opacity: 0.6 }, { scale: 1.0, opacity: 1, duration: 1.2, ease: "power2.out" }, t0 + 0.05); tl.to(win, { scale: 2.1, duration: Math.max(0.5, dur - 1.4), ease: "power2.in" }, t0 + 1.4);
+        const dock = abs(cam, { left: "420px", top: "1000px", width: "820px", height: "62px", borderRadius: "16px", background: "rgba(255,255,255,0.18)" }); for (let i = 0; i < 13; i++) abs(dock, { left: 18 + i * 60 + "px", top: "10px", width: "42px", height: "42px", borderRadius: "10px", background: ["#8ab4f8", "#f28b82", "#fdd663", "#81c995", "#d7aefb", "#e6e6e6"][i % 6] });
+      } else if (kind === "composer") {
+        abs(cam, { left: "0", top: "0", width: PW + "px", height: PH + "px", background: "#fbfbfb" });
+        [["Local", 0], ["MCP", 1]].forEach(([t, i]) => abs(cam, sans({ left: 330 + i * 200 + "px", top: "280px", fontSize: "22px", color: "#333", height: "34px", border: "1px solid #ddd", borderRadius: "8px", padding: "0 16px", display: "flex", alignItems: "center" }), t));
+        const box = abs(cam, { left: "330px", top: "340px", width: "1000px", height: "330px", borderRadius: "16px", background: "#fff", border: "1px solid #e3e3e3" });
+        const tx = abs(box, sans({ left: "20px", top: "22px", width: "960px", fontSize: "22px", color: "#202020", whiteSpace: "normal", lineHeight: 1.45, letterSpacing: "-0.005em" }), "");
+        const full = p.text || "The Flora project is already open in a browser tab on app.flora.ai with ?webmcp_embed=1. If you reload or navigate, keep webmcp_embed=1 on the URL.\nCall tools directly in the page via the javascript tool using navigator.modelContext:\nList tools: navigator.modelContext.listTools().map(t => t.name)\nCalls are async; the JS tool can't await reliably, so stash results and poll:\nwindow.__r = {}; navigator.modelContext.callTool({name: \"flora_get_canvas\", arguments: {}}).then(x => window.__r.a = x)\nthen read window.__r.a in a follow-up call (structuredContent has the parsed result).\nTypical flow: flora_get_canvas → flora_add_nodes → flora_generate (pass expected_project_id) → flora_wait_for_generation.\nIf flora_generate returns spend_approval_pending, an approval dialog is open in the tab — ask me to approve it (or screenshot and click \"Allow for this session\" if I've already said yes), then retry.";
+        tx.style.whiteSpace = "pre-wrap"; typed(tx, full, p.typeAt, p.cps);
+        abs(cam, sans({ left: "330px", top: "700px", fontSize: "18px", color: "#777" }), "Auto &nbsp; + &nbsp; 🎙 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Fable 5 &nbsp; High");
+      } else if (kind === "split" || kind === "chat") {
+        abs(cam, { left: "0", top: "0", width: PW + "px", height: PH + "px", background: "#fafafa" });
+        abs(cam, { left: "0", top: "0", width: "400px", height: PH + "px", background: "#f1f0ee" });
+        ["New", "Artifacts", "Customize", "More"].forEach((t, i) => abs(cam, sans({ left: "24px", top: 150 + i * 28 + "px", fontSize: "13px", color: "#555" }), t));
+        ["FLORA project WebMCP setup", "FLORA project WebMCP setup", "Flora WebMCP canvas integration (fork)", "Flora WebMCP canvas integration", "Testing project (fork)", "25 gradients for Flora", "V2", "Flora WebMCP canvas integration"].forEach((t, i) => abs(cam, sans({ left: "24px", top: 300 + i * 26 + "px", fontSize: "12px", color: i === 0 ? "#111" : "#666", fontWeight: i === 0 ? 600 : 400 }), t));
+        const chat = abs(cam, { left: kind === "chat" ? "560px" : "410px", top: "0", width: kind === "chat" ? "560px" : "300px", height: PH + "px", overflow: "hidden" });
+        const col = abs(chat, { left: "0", top: "0", width: kind === "chat" ? "560px" : "300px" });
+        let y = 40; const lines = rows(p.log);
+        lines.forEach((r) => { const a = num(r[0]), text = r.slice(1).join(" | "), tool = /^(Used|Ran|Read|Generation)/.test(text) && text.length < 40; const n = abs(col, sans({ left: "0", top: y + "px", width: kind === "chat" ? "550px" : "290px", fontSize: kind === "chat" ? (tool ? "15px" : "17px") : tool ? "11px" : "12px", color: tool ? "#888" : "#222", whiteSpace: "normal", lineHeight: 1.4, opacity: 0, fontWeight: /^Generation/.test(text) ? 700 : 400 }), text); y += tool ? 26 : Math.ceil(text.length / 38) * 17 + 14; tl.fromTo(n, { opacity: 0, y: 6 }, { opacity: 1, y: 0, duration: 0.3 }, t0 + a); });
+        const scrollMax = Math.max(0, y - 900); tl.fromTo(col, { y: 0 }, { y: -scrollMax, duration: Math.max(0.5, dur * 0.9), ease: "none" }, t0);
+        if (kind === "split") {
+        const br = abs(cam, { left: "720px", top: "0", width: PW - 720 + "px", height: PH + "px", background: "#1e1e1e" });
+        abs(br, sans({ left: "20px", top: "12px", fontSize: "11px", color: "#aaa" }), "FLORA project We… &nbsp;&nbsp;&nbsp; FLORA - Flora Pix… &nbsp; + &nbsp; app.flora.ai/projects/ns7bptep3ftc0s24sy0s7dw87tdcz2ye?webmcp_embed=1");
+        const app = canvasApp(br, PW - 720, PH - 44, {}); app.style.top = "44px"; app.style.transformOrigin = "0 0"; app.style.transform = "scale(1)";
+        tileBuild(app, PW - 720, PH - 44, 1, 1);
+        }
+      } else if (kind === "nodes") {
+        // the node graph, zoomed about 2.3x on the canvas, with the end of the chat log as a white strip on the left
+        abs(cam, { left: "0", top: "0", width: PW + "px", height: PH + "px", background: BG });
+        const S = 2.28, strip = abs(cam, { left: "0", top: "0", width: "410px", height: PH + "px", background: "#fbfbfb", overflow: "hidden" });
+        let yy = 26; rows(p.log).forEach((r) => { const text = r.slice(1).join(" | "), tool = /^(Used|Ran|Generation|Background)/.test(text) && text.length < 40; abs(strip, sans({ left: "14px", top: yy + "px", width: "380px", fontSize: tool ? "17px" : "19px", color: tool ? "#888" : "#222", whiteSpace: "normal", lineHeight: 1.35, fontWeight: /^Generation/.test(text) ? 700 : 400 }), text); yy += tool ? 40 : Math.ceil(text.length / 36) * 26 + 20; });
+        const holder = abs(cam, { left: "410px", top: "-60px", width: (PW - 410) / S + "px", height: PH / S + "px", transformOrigin: "0 0", transform: `scale(${S})`, overflow: "visible" });
+        const app = canvasApp(holder, (PW - 410) / S, PH / S, {}); tileBuild(app, (PW - 410) / S, PH / S, 1, 1);
+      } else if (kind === "end") {
+        abs(cam, { left: "0", top: "0", width: PW + "px", height: PH + "px", background: "#000" }); const mk = mark(cam, PW / 2 - 45, PH * 0.5 - 45, 90, "#fff"); if (p.text) tl.set(mk, { opacity: 0 }, t0 + num(p.text));
+      }
+      // ---- the camera (zoom/pan keys) and the cursor
+      const zk = keys(p.zoom), pr = { t: 0 };
+      if (zk.length > 1 || (zk[0] && (zk[0][1] !== 1 || zk[0][2] || zk[0][3]))) { const apply = (t) => { cam.style.transform = `translate(${lerpAt(zk, t, 2)}px, ${lerpAt(zk, t, 3)}px) scale(${lerpAt(zk, t, 1)})`; }; apply(0); tl.fromTo(pr, { t: 0 }, { t: dur, duration: dur, ease: "none", onUpdate: () => apply(pr.t) }, t0); }
+      const ck = keys(p.cursor);
+      if (ck.length) { cur = cursor(plane, p.cursorKind); const place = (t) => { cur.style.transform = `translate(${lerpAt(ck, t, 1)}px, ${lerpAt(ck, t, 2)}px)`; }; place(0); const pc = { t: 0 }; tl.fromTo(pc, { t: 0 }, { t: dur, duration: dur, ease: "none", onUpdate: () => place(pc.t) }, t0); }
+      if (p.fadeIn > 0) tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: p.fadeIn }, t0); if (p.fadeOut > 0) tl.to(el, { opacity: 0, duration: p.fadeOut }, t0 + dur - p.fadeOut); void live;
+    },
+  });
+})();

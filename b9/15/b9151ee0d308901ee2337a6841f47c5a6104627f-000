@@ -100,6 +100,41 @@
       "id": "kardashev-0-7-ppm",
       "group": "Premier Plan Mesuré · première sélection",
       "reference": "kardashev-0-7"
+    },
+    {
+      "id": "claude-opus-5-5-ppm",
+      "group": "Premier Plan Mesuré · première sélection",
+      "reference": "claude-opus-5-5"
+    },
+    {
+      "id": "flora-agents-on-canvas-ppm",
+      "group": "Premier Plan Mesuré · première sélection",
+      "reference": "flora-agents-on-canvas"
+    },
+    {
+      "id": "paper-mono-code-ppm",
+      "group": "Premier Plan Mesuré · première sélection",
+      "reference": "paper-mono-code"
+    },
+    {
+      "id": "interface-ppm",
+      "group": "Premier Plan Mesuré · première sélection",
+      "reference": "interface"
+    },
+    {
+      "id": "memo-ppm",
+      "group": "Premier Plan Mesuré · première sélection",
+      "reference": "memo"
+    },
+    {
+      "id": "onekey-pro-2-ppm",
+      "group": "Premier Plan Mesuré · première sélection",
+      "reference": "onekey-pro-2"
+    },
+    {
+      "id": "x-anabology-2105325733312884869-ppm",
+      "group": "Premier Plan Mesuré · première sélection",
+      "reference": "x-anabology-2105325733312884869"
     }
   ],
   "formats": [

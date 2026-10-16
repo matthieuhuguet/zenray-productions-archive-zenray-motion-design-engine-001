@@ -1,0 +1,99 @@
+// 16 October 2026: the template of the "Paper Mono" launch film (whatships.com/videos/paper-mono-code, 60.6 s, 1340x1080), measured on the reference. Workflow Premier Plan Mesuré (ppm).
+// The film is a screen recording of a live-coding dashboard (arrangement timeline, sequencer, code, layers, canvas). FOREGROUND ONLY (Matthieu's rule): the dashboard and the typography shown on its
+// canvas are drawn in code; the photographs and 3D page renders shown on the canvas are NOT reproduced. FR : le tableau de bord en code, la typographie du canevas ; jamais les photos.
+(function () {
+  const ZS = window.ZS, h = ZS.h;
+  const P = (key, label, type, def, tier, extra) => Object.assign({ key, label, type, default: def, tier }, extra || {});
+  const N = (key, label, def, min, max, step, tier, unit) => ({ key, label, type: "number", default: def, min, max, step, tier, unit });
+  const MONO = "JetBrainsMono", SANS = "InterVariable";
+  const PW = 900, PH = 725, BLUE = "#4b78e6", PALE = "#dbe6fb", LINE = "#d9deea", INK = "#1d2330", GREY = "#8993a6";
+  const abs = (parent, css, text) => { const e = h.css(h.el("div", "zs-abs", parent), css); if (text !== undefined) { if (/[<&]/.test(String(text))) e.innerHTML = text; else e.textContent = text; } return e; };
+  const rows = (lines) => lines.map((l) => l.split("|").map((s) => s.trim())).filter((r) => r.length >= 2);
+  const num = Number;
+  const mono = (css) => Object.assign({ fontFamily: h.font(MONO), whiteSpace: "nowrap", color: INK }, css);
+  const sans = (css) => Object.assign({ fontFamily: h.font(SANS), whiteSpace: "nowrap", color: INK }, css);
+  const rnd = (n) => { const x = Math.sin(n * 91.3 + 17.7) * 43758.5453; return x - Math.floor(x); };
+
+  const CODE = ["following the mp3 - press L (or \"live\") to have Strudel play", "this code from the stems", "", "// hello mono: the song as Strudel loops of its own", "// stems", "// one cycle = one bar - each section plays its bars of", "// every stem that sounds in it", "setcps(92/60/4)", "samples({ drums: 'audio/stems/drums.mp3', perc: 'audio/stems/percussion.mp3', bass: 'audio/stems/bass.mp3', keys: 'audio/stems/keyboard.mp3', synth: 'audio/stems/synth.mp3', gtr: 'audio/stems/guitar.mp3', brass: 'audio/stems/brass.mp3', strings: 'audio/stems/strings.mp3', vox: 'audio/stems/lead-vocals.mp3', bvox: 'audio/stems/backing-vocals.mp3', other: 'audio/stems/other.mp3' })"];
+  const STEMS = ["drums", "perc", "bass", "keys", "synth", "gtr", "brass", "str", "vox", "bvox", "fx"];
+  const BLOCKS = [["riff", "<0.1517 0.1894 0.2271 0.26479>", "<0.1894 0.2271 0.26479 0.30249>"], ["groove", "<0.30249 0.34019 0.37789 0.41559>", "<0.34019 0.37789 0.41559 0.45328>"], ["lift", "<0.45328 0.49098 0.52868 0.56638>", "<0.49098 0.52868 0.56638 0.60408>"], ["drop", "<0.60408 0.64177 0.67947 0.71717>", "<0.64177 0.67947 0.71717 0.75487>"], ["break_", "<0.75487 0.79257 0.83026 0.86796>", "<0.79257 0.83026 0.86796 0.90566>"], ["finale", "<0.90566 0.94336 0.98105>", "<0.94336 0.98105 1>"]];
+  const codeLines = () => { const L = CODE.slice(); BLOCKS.forEach(([n, b, e]) => { L.push("", `const ${n} = stack(`); ["drums", "perc", "bass", "keys", "synth", "brass", "other"].forEach((s) => L.push(`  s("${s}"),`)); L.push(`).begin("${b}")`, `  .end("${e}")`); }); L.push("", "arrange([4, riff], [4, groove], [1, lift], [8, drop], [3, break_], [3, finale])"); return L; };
+
+  ZS.register({
+    id: "pm-dash", label: "Paper Mono : le tableau de bord (chronologie, séquenceur, code, canevas)", group: "Interface", duration: 60.59,
+    params: [
+      P("title", "Nom du projet", "text", "hello-mono", 1), P("canvas", "Canevas (début | fin | type | texte | x | y | taille | style)", "lines", [], 1), P("shots", "Plans (début | nom)", "lines", ["0 | grid", "3.5 | outline", "7 | mag", "10.4 | site", "13.5 | groove", "19.5 | lift", "22.5 | crowd", "27 | design", "30 | mixer", "33 | eq", "34.5 | code-ink", "36.8 | blue", "45 | pattern", "48 | break", "53.5 | home", "58.5 | grid"], 1),
+      P("sections", "Sections (mesure | nom)", "lines", ["4 | riff", "8.2 | groove", "12 | lift", "13.2 | drop", "21.5 | break", "24.2 | finale", "27 | riff"], 2), P("barRate", "Mesures par seconde", "number", 0.382, 2, { min: 0.1, max: 2, step: 0.001 }),
+      P("clockOffset", "Décalage de l'horloge (s)", "number", -0.65, 2, { min: -3, max: 3, step: 0.01 }), P("accent", "Couleur d'accent", "color", BLUE, 3), P("bg", "Fond", "color", "#f4f6fb", 3),
+      P("tallFocus", "Format haut : montrer", "select", "canevas", 3, { options: ["canevas", "tout"] }), N("film0", "Début dans le film (s)", 0, 0, 70, 0.01, 4, "s"),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
+      h.css(el, { background: p.bg });
+      const full = !tall || p.tallFocus === "tout";
+      const k = full ? Math.min(w / PW, sh / PH) : w / 420, ox = full ? (w - PW * k) / 2 : w / 2 - 388 * k, oy = full ? (sh - PH * k) / 2 : sh / 2 - 310 * k;
+      const plane = abs(st, { left: ox + "px", top: oy + "px", width: PW + "px", height: PH + "px", transformOrigin: "0 0", transform: `scale(${k})`, background: p.bg, overflow: "visible" });
+      const panel = (x, y, wd, ht, title, right) => { const d = abs(plane, { left: x + "px", top: y + "px", width: wd + "px", height: ht + "px", background: "#fbfcff", border: `1px solid ${LINE}`, borderRadius: "5px", overflow: "hidden" }); abs(d, mono({ left: "8px", top: "4px", fontSize: "7.2px", color: GREY }), title); if (right) abs(d, mono({ right: "8px", top: "4px", fontSize: "7.2px", color: GREY }), right); return d; };
+      // ---- browser chrome and header
+      abs(plane, { left: "0", top: "0", width: PW + "px", height: "50px", background: "#e8ecf6" });
+      ["#ff5f57", "#febc2e", "#28c840"].forEach((c, i) => abs(plane, { left: 14 + i * 12 + "px", top: "12px", width: "8px", height: "8px", borderRadius: "50%", background: c }));
+      abs(plane, sans({ left: "85px", top: "10px", fontSize: "7.5px", color: "#333" }), "Paper Mono — launch"); abs(plane, sans({ left: "76px", top: "34px", fontSize: "8px", color: "#444" }), "localhost:5179"); abs(plane, sans({ left: "820px", top: "12px", fontSize: "7.5px", color: "#333" }), "Ask Gemini"); abs(plane, sans({ left: "806px", top: "34px", fontSize: "7px", color: "#3a5ccc" }), "New Chrome available ⋮");
+      abs(plane, { left: "14px", top: "68px", width: "10px", height: "10px", border: "1px solid #889", borderRadius: "2px" }); const nameN = abs(plane, sans({ left: "32px", top: "66px", fontSize: "10px", fontWeight: 600 }), p.title); abs(plane, sans({ left: "92px", top: "67px", fontSize: "8.5px", color: GREY }), "/ v6 ⌄");
+      const btn = (x, wd, label, on, extra) => abs(plane, sans(Object.assign({ left: x + "px", top: "66px", width: wd + "px", height: "17px", borderRadius: "3px", fontSize: "8px", display: "flex", alignItems: "center", justifyContent: "center", background: on ? p.accent : "#fff", color: on ? "#fff" : INK, border: on ? "none" : `1px solid ${LINE}` }, extra || {})), label);
+      btn(138, 58, "film · mp3", true); btn(198, 72, "live · strudel", false); btn(282, 83, "❚❚ pause", true);
+      const timeN = abs(plane, mono({ left: "374px", top: "68px", fontSize: "9px" }), "0:00.00"), barN = abs(plane, mono({ left: "428px", top: "68px", fontSize: "9px", color: "#556" }), "bar 4.1"), chip = btn(482, 32, "riff", true, { fontSize: "8px" });
+      abs(plane, mono({ left: "532px", top: "64px", fontSize: "7px", color: GREY }), "92 ■□□□<br>138 □■□□□□"); btn(712, 68, "hold section", false); const hud = btn(790, 26, "hud", false); abs(plane, sans({ left: "830px", top: "70px", fontSize: "8px", color: GREY }), "classic player");
+      // ---- layers panel
+      const lay = panel(17, 98, 151, 417, "layers · paper", "×"); abs(lay, mono({ left: "8px", top: "24px", fontSize: "7px", color: GREY }), "SHOTS · 15");
+      const SH = rows(p.shots), names = ["grid", "outline", "mag", "site", "groove", "lift", "crowd", "design", "mixer", "eq", "code-ink", "blue", "pattern", "break", "home"], indent = [0, 1, 2, 2, 3, 4, 5, 6, 6, 6, 6, 6, 6, 0, 0];
+      const shotRows = names.map((n, i) => { const r = abs(lay, { left: "0", top: 38 + i * 15.2 + "px", width: "151px", height: "15px" }); abs(r, sans({ left: 10 + indent[i] * 10 + "px", top: "3px", fontSize: "7.5px", color: INK }), (indent[i] ? "└ " : "▢ ") + n); abs(r, mono({ right: "6px", top: "4px", fontSize: "6px", color: GREY }), "b" + (16 + i * 16)); return r; });
+      const note = abs(lay, { left: "7px", top: "274px", width: "136px", height: "38px", border: `1px solid ${LINE}`, borderRadius: "3px", background: "#fff" }); const noteT = abs(note, sans({ left: "6px", top: "5px", fontSize: "6.8px", color: "#556", lineHeight: 1.45, whiteSpace: "normal", width: "126px" }), "introducing<br><span style='color:#3a5ccc'>open the frame in Paper ↗</span>");
+      abs(lay, mono({ left: "8px", top: "330px", fontSize: "6.5px", color: GREY }), "OPEN NOW · 2"); ["c-blue-1", "c-black-1"].forEach((t, i) => abs(lay, sans({ left: "14px", top: 344 + i * 14 + "px", fontSize: "7px" }), "■ " + t));
+      // ---- canvas panel
+      const cv = panel(175, 98, 423, 417, "canvas · remotion 1080 × 1080 · 30 fps · frame 0", "paper"); const cvTitle = cv.firstChild;
+      const art = abs(cv, { left: "17px", top: "15px", width: "393px", height: "393px", background: "#f7f8fb", border: `1.5px solid ${p.accent}`, overflow: "hidden" });
+      // the typography of the canvas
+      const baseFont = (style, size) => ({ fontFamily: h.font(style === "sans" ? SANS : MONO), fontSize: size + "px", fontWeight: style === "bold" ? 800 : 400, color: style === "light" ? "#9aa" : INK });
+      rows(p.canvas).forEach((r) => {
+        const a = num(r[0]), b = num(r[1]), kind = r[2], text = r[3] || "", x = num(r[4] || 0), y = num(r[5] || 0), size = num(r[6] || 20), style = r[7] || "mono", g = abs(art, { left: "0", top: "0", width: "393px", height: "393px", opacity: 0 });
+        if (kind === "text") abs(g, Object.assign(baseFont(style, size), { left: x + "px", top: y + "px", whiteSpace: "pre", lineHeight: 1.05, letterSpacing: style === "wide" ? "0.4em" : "0" }), text.replace(/\\n/g, "\n"));
+        else if (kind === "outline") { const t = abs(g, Object.assign(baseFont("mono", size), { left: x + "px", top: y + "px", whiteSpace: "pre", lineHeight: 1.0, color: "transparent" }), text.replace(/\\n/g, "\n")); t.style.webkitTextStroke = "1.2px #555"; }
+        else if (kind === "card") { const c = abs(g, { left: x + "px", top: y + "px", width: size + "px", height: (style === "full" ? size : size * 0.62) + "px", background: "#050505", borderRadius: "3px", border: "1px solid #333" }); abs(c, mono({ left: "0", top: "0", width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.07 + "px", color: "#eee" }), text); }
+        else if (kind === "window") { const [tt, body] = text.split("//"); const c = abs(g, { left: x + "px", top: y + "px", width: size + "px", height: size * 0.5 + "px", background: "#fff", border: "1.5px solid #222" }); abs(c, mono({ left: "4px", top: "2px", fontSize: "5.5px", color: "#222" }), tt); abs(c, { left: "0", top: "11px", width: "100%", height: "1px", background: "#222" }); abs(c, Object.assign(baseFont("bold", size * 0.22), { left: "8px", top: size * 0.14 + "px" }), body || ""); }
+        else if (kind === "ascii") { const lines = []; for (let i = 0; i < 20; i++) { let s2 = ""; for (let j = 0; j < 44; j++) s2 += ["0", "1", "o", "+", "-", " ", " ", "l"][Math.floor(rnd(i * 44 + j + size) * 8)]; lines.push(s2); } abs(g, mono({ left: x + "px", top: y + "px", fontSize: "7px", lineHeight: 1.45, color: "#c9cfdc", whiteSpace: "pre" }), lines.join("\n")); }
+        else if (kind === "eq") { const c = abs(g, { left: x + "px", top: y + "px", width: "372px", height: "375px", background: "#050505", border: "1px solid #444" }); abs(c, mono({ left: "40px", top: "26px", fontSize: "9px", color: "#eee" }), "equalizer · night · drop"); const lv = [11, 9, 0, -2, -3, -4, -4, 2, 2, -1]; ["60", "170", "310", "600", "1k", "3k", "6k", "12k", "14k", "16k"].forEach((f, i) => { abs(c, { left: 62 + i * 30 + "px", top: 140 + 4 * (lv[i] > 0 ? -lv[i] : -lv[i]) * 2 + "px", width: "2px", height: 30 + Math.abs(lv[i]) * 7 + "px", background: "#ddd" }); abs(c, mono({ left: 54 + i * 30 + "px", top: "260px", fontSize: "6px", color: "#aaa" }), f); }); for (let i = 0; i < 24; i++) abs(c, { left: 40 + i * 12 + "px", top: 320 - 6 - Math.abs(Math.sin(i * 0.6)) * 30 + "px", width: "6px", height: 6 + Math.abs(Math.sin(i * 0.6)) * 30 + "px", background: "#6d9aff" }); }
+        tl.fromTo(g, { opacity: 0 }, { opacity: 1, duration: 0.2 }, t0 + a); if (b < dur - 0.02) tl.to(g, { opacity: 0, duration: 0.15 }, t0 + b - 0.15);
+      });
+      // ---- code panel
+      const cd = panel(608, 98, 279, 417, "hello-mono.strudel · strudel", "mp3"); const lines = codeLines(), blockStart = [], codeBox = abs(cd, { left: "0", top: "18px", width: "279px", height: "399px", overflow: "hidden" }), col = abs(codeBox, { left: "0", top: "0", width: "279px" });
+      lines.forEach((ln, i) => { abs(col, mono({ left: "6px", top: i * 12.2 + "px", fontSize: "6.7px", color: i < 9 ? GREY : "#2a3550", width: "270px", whiteSpace: "pre-wrap", overflow: "hidden" }), (i >= 9 ? String(i - 2).padStart(2, " ") + "  " : "") + ln); if (/^const /.test(ln)) blockStart.push(i); });
+      const band = abs(col, { left: "0", top: "0", width: "279px", height: "100px", background: "rgba(75,120,230,0.12)", opacity: 0 });
+      // ---- arrangement
+      const ar = panel(17, 521, 581, 185, "arrangement · 11 stems × 27 bars · click to seek, a section to jump", "×");
+      const secNames = ["intro", "riff", "groove", "lift", "drop", "break", "finale"], secX = [55, 137, 217, 295, 315, 472, 548, 580]; secNames.forEach((n, i) => abs(ar, mono({ left: secX[i] - 17 + 2 + "px", top: "24px", width: secX[i + 1] - secX[i] - 2 + "px", fontSize: "6.8px", color: INK, borderBottom: `1px solid ${LINE}` }), n));
+      const secBox = abs(ar, { left: secX[1] - 17 + "px", top: "24px", width: secX[2] - secX[1] + "px", height: "12px", background: p.accent, opacity: 0.85 });
+      STEMS.forEach((s2, i) => { abs(ar, mono({ left: "8px", top: 47 + i * 9.4 + "px", fontSize: "6.2px", color: "#556" }), s2); for (let b = 0; b < 56; b++) { const hh = 1 + rnd(i * 77 + b) * (i < 3 ? 5 : 3), on = rnd(i * 31 + b * 3.1) > (i === 8 || i === 9 ? 0.93 : 0.25); if (on) abs(ar, { left: 38 + b * 9.6 + "px", top: 47 + i * 9.4 + 4 - hh / 2 + "px", width: "6px", height: hh + "px", background: i === 8 || i === 9 ? "#d8b46a" : "#7f9be8", opacity: 0.8 }); } });
+      const head = abs(ar, { left: "0", top: "22px", width: "1.2px", height: "158px", background: "#111" });
+      abs(ar, mono({ left: "8px", top: "163px", fontSize: "6.2px", color: GREY }), "shots"); const shotStrip = names.map((n, i) => abs(ar, mono({ left: 38 + i * 36 + "px", top: "161px", width: "34px", height: "12px", fontSize: "5.8px", border: `1px solid ${LINE}`, textAlign: "center", color: "#445" }), n));
+      // ---- this bar
+      const tb = panel(608, 521, 279, 185, "this bar · 24 steps", "×"); const tbInfo = abs(tb, mono({ left: "8px", top: "22px", fontSize: "6.2px", color: GREY }), "bar 4 · step 4/24 · beat 1 of 4 · beat 1 of 6");
+      ["92", "138"].forEach((l, i) => { abs(tb, mono({ left: "6px", top: 38 + i * 17 + "px", fontSize: "7px" }), l); const n = i ? 6 : 4; for (let q = 0; q < n; q++) abs(tb, { left: 24 + q * (i ? 41 : 62) + "px", top: 36 + i * 17 + "px", width: (i ? 38 : 59) + "px", height: "13px", border: `1px solid ${LINE}`, background: "#fff" }); });
+      const stepRows = ["kick", "snare", "hats", "boss"]; const cells = []; stepRows.forEach((l, i) => { abs(tb, mono({ left: "6px", top: 80 + i * 18 + "px", fontSize: "6.8px", color: "#445" }), l); for (let q = 0; q < 24; q++) { const on = rnd(i * 13 + q * 2.3) > (i === 0 ? 0.7 : i === 1 ? 0.8 : i === 2 ? 0.45 : 0.78); cells.push(abs(tb, { left: 32 + q * 10.2 + "px", top: 80 + i * 18 + "px", width: "8px", height: "12px", background: on ? (i === 1 ? "#d8b46a" : "#7f9be8") : "#eef2fb", opacity: on ? 0.75 : 1 })); } });
+      const stepHead = abs(tb, { left: "32px", top: "78px", width: "10px", height: "74px", border: "1.4px solid #111" });
+      // ---- time-driven readouts (a tween: seek-safe)
+      const sections = rows(p.sections).map((r) => [num(r[0]), r[1]]), fmt = (t) => `${Math.floor(Math.max(0, t) / 60)}:${(Math.max(0, t) % 60).toFixed(2).padStart(5, "0")}`;
+      const pr = { t: 0 }, update = (tt) => {
+        const time = tt + p.clockOffset, bar = 4 + Math.max(0, time) * p.barRate; let sec = sections[0]; sections.forEach((s2) => { if (bar >= s2[0]) sec = s2; });
+        timeN.textContent = fmt(time); barN.textContent = `bar ${Math.floor(bar)}.${Math.floor((bar % 1) * 4) + 1}`; chip.textContent = sec[1]; hud.style.background = tt > 31 ? p.accent : "#fff"; hud.style.color = tt > 31 ? "#fff" : INK;
+        cvTitle.textContent = `canvas · remotion 1080 × 1080 · 30 fps · frame ${Math.floor(tt * 30)}`;
+        let si = 0; SH.forEach((r, i) => { if (tt >= num(r[0])) si = i; }); const cur = names.indexOf(SH[si][1]); shotRows.forEach((r, i) => { r.style.background = i === cur ? "rgba(75,120,230,0.85)" : "transparent"; r.firstChild.style.color = i === cur ? "#fff" : INK; }); shotStrip.forEach((s2, i) => { s2.style.background = i === cur ? p.accent : "transparent"; s2.style.color = i === cur ? "#fff" : "#445"; });
+        head.style.left = 38 + (bar - 4 + 4) / 31 * 540 - 0 + "px";
+        const bi = Math.max(0, BLOCKS.findIndex((b2) => b2[0].replace("_", "") === sec[1].replace("_", ""))), bs = blockStart[bi] || 0; col.style.top = -(bs * 12.2 - 150) + "px"; band.style.top = bs * 12.2 + "px"; band.style.opacity = 1;
+        const step = Math.floor((bar % 1) * 24); stepHead.style.left = 32 + step * 10.2 + "px"; tbInfo.textContent = `bar ${Math.floor(bar)} · step ${step + 1}/24 · beat ${Math.floor(step / 6) + 1} of 4 · beat ${Math.floor(step / 4) + 1} of 6`;
+        const sI = Math.max(0, secNames.indexOf(sec[1].replace("_", ""))); secBox.style.left = secX[sI] - 17 + "px"; secBox.style.width = secX[sI + 1] - secX[sI] + "px";
+        const noteN = (SH[si] || [0, "grid"])[1]; noteT.innerHTML = `${noteN}<br><span style='color:#3a5ccc'>open the frame in Paper ↗</span>`;
+      };
+      update(0); tl.fromTo(pr, { t: 0 }, { t: dur, duration: dur, ease: "none", onUpdate: () => update(pr.t) }, t0); void nameN;
+    },
+  });
+})();
