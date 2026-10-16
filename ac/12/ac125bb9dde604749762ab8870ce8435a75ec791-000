@@ -322,10 +322,41 @@ def trace_with_loops(video: str, low: np.ndarray, hz: float, t0: float, t1: floa
     return min(ok, key=lambda t: t["bytesTotal"]) if ok else best
 
 
+_CTX: dict = {}
+
+
+def _one_shot(s: dict) -> dict | None:
+    """One shot, in a worker process (the context is inherited at fork): its keys, files and result."""
+    c = _CTX
+    sid = s["id"]
+    t0, t1 = float(s["start"]), float(s["end"])
+    for old in c["assets_dir"].glob(f"{sid}-k*.svg"):
+        old.unlink()
+    ov = (c["recipe"].get("shots") or {}).get(sid, {})
+    tr = trace_with_loops(c["video"], c["low"], c["hz"], t0, t1, c["base"], ov | {k: v for k, v in c["recipe"].items() if k in ("potrace",) and k not in ov})
+    if not tr:
+        return None
+    files, size = [], 0
+    for k, svg in enumerate(tr["svgs"]):
+        name = f"{sid}-k{k:02d}.svg"
+        (c["assets_dir"] / name).write_text(svg, encoding="utf-8")
+        files.append({"t": round(tr["times"][k] - t0, 3), "file": name, "bytes": len(svg)})
+        size += len(svg)
+    (c["html_dir"] / f"{sid}.html").write_text(player_html(f"{c['slug']} {sid}", {"start": t0, "duration": round(t1 - t0, 4)}, tr, tr["times"]), encoding="utf-8")
+    m = {"id": sid, "start": t0, "end": t1, "duration": round(t1 - t0, 4), "family": s.get("family"), "keys": files, "palette": tr["palette"],
+         "colors": tr["colors"], "width": tr["width"], "height": tr["height"], "bytes": size, "rounds": tr["rounds"], "fast": bool(tr.get("fast")),
+         "fidelityShare": tr["share"], "meanDeltaE": round(float(np.mean([f["meanDeltaE"] for f in tr["fidelity"]])), 2), "temporal": tr["temporal"]}
+    (c["assets_dir"] / f"{sid}.json").write_text(json.dumps(m, ensure_ascii=False) + "\n", encoding="utf-8")
+    return m
+
+
 def run_video(slug: str, video: str, workshop: Path, assets_dir: Path, html_dir: Path, recipe: dict | None = None, only: list[str] | None = None, log=print) -> dict:
     """Every shot of the bible of `slug` (or the shots in `only`): keyframes, one palette, SVGs (written into assets_dir, flat names the
     project plays) and one standalone HTML per shot (html_dir). The recipe of the video holds the per-shot decisions (erase, width,
-    palette ladder, thresholds). Resumable: a shot whose result file exists is read back; delete it to measure the shot again."""
+    palette ladder, thresholds). Resumable: a shot whose result file exists is read back; delete it to measure the shot again.
+    The shots of one video are traced by several processes at once (the video is the sequential unit, never the corpus)."""
+    import concurrent.futures as cf
+    import multiprocessing as mp
     recipe = recipe or {}
     bible = json.loads((workshop / "references" / slug / "bible.json").read_text(encoding="utf-8"))
     info = probe(video)
@@ -336,33 +367,26 @@ def run_video(slug: str, video: str, workshop: Path, assets_dir: Path, html_dir:
     base = recipe.get("width") or (CFG["trace"]["width"] if info["width"] >= info["height"] else CFG["trace"]["widthVertical"])
     assets_dir.mkdir(parents=True, exist_ok=True)
     html_dir.mkdir(parents=True, exist_ok=True)
-    out = []
+    _CTX.update({"video": video, "low": low, "hz": hz, "base": base, "assets_dir": assets_dir, "html_dir": html_dir, "recipe": recipe, "slug": slug})
+    done_, todo = {}, []
     for s in shots:
-        sid = s["id"]
-        meta_file = assets_dir / f"{sid}.json"
-        if meta_file.is_file():
-            out.append(json.loads(meta_file.read_text(encoding="utf-8")))
-            continue
-        t0, t1 = float(s["start"]), float(s["end"])
-        for old in assets_dir.glob(f"{sid}-k*.svg"):
-            old.unlink()
-        tr = trace_with_loops(video, low, hz, t0, t1, base, (recipe.get("shots") or {}).get(sid, {}) | {k: v for k, v in recipe.items() if k in ("potrace",) and k not in (recipe.get("shots") or {}).get(sid, {})})
-        if not tr:
-            continue
-        files, size = [], 0
-        for k, svg in enumerate(tr["svgs"]):
-            name = f"{sid}-k{k:02d}.svg"
-            (assets_dir / name).write_text(svg, encoding="utf-8")
-            files.append({"t": round(tr["times"][k] - t0, 3), "file": name, "bytes": len(svg)})
-            size += len(svg)
-        shot = {"start": t0, "duration": round(t1 - t0, 4)}
-        (html_dir / f"{sid}.html").write_text(player_html(f"{slug} {sid}", shot, tr, tr["times"]), encoding="utf-8")
-        m = {"id": sid, "start": t0, "end": t1, "duration": round(t1 - t0, 4), "family": s.get("family"), "keys": files, "palette": tr["palette"],
-             "colors": tr["colors"], "width": tr["width"], "height": tr["height"], "bytes": size, "rounds": tr["rounds"],
-             "fidelityShare": tr["share"], "meanDeltaE": round(float(np.mean([f["meanDeltaE"] for f in tr["fidelity"]])), 2), "temporal": tr["temporal"]}
-        meta_file.write_text(json.dumps(m, ensure_ascii=False) + "\n", encoding="utf-8")
-        out.append(m)
-        log(f"{slug} {sid} {t0:.2f}s keys {len(files)} colours {tr['colors']} w{tr['width']} share {tr['share']:.3f} step-err max {tr['temporal']['max']:.1f}")
+        f = assets_dir / f"{s['id']}.json"
+        if f.is_file():
+            done_[s["id"]] = json.loads(f.read_text(encoding="utf-8"))
+        else:
+            todo.append(s)
+    # the longest shots first, so the pool never ends on one big shot alone
+    todo.sort(key=lambda s: -(float(s["end"]) - float(s["start"])))
+    if todo:
+        with cf.ProcessPoolExecutor(max_workers=CFG["workers"], mp_context=mp.get_context("fork")) as ex:
+            futs = {ex.submit(_one_shot, s): s for s in todo}
+            for fut in cf.as_completed(futs):
+                m = fut.result()
+                if m:
+                    done_[m["id"]] = m
+                    log(f"{slug} {m['id']} {m['start']:.2f}s keys {len(m['keys'])} colours {m['colors']} w{m['width']} share {m['fidelityShare']:.3f} "
+                        f"step-err max {m['temporal']['max']:.1f} area {m['temporal']['areaMax']:.3f}")
+    out = [done_[s["id"]] for s in shots if s["id"] in done_]
     return summarize(slug, out, info, assets_dir)
 
 

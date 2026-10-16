@@ -73,5 +73,6 @@
   "keysPerSecond": 8,
   "maxWidth": 960,
   "maxKeyBytes": 300000
- }
+ },
+ "workers": 8
 }
