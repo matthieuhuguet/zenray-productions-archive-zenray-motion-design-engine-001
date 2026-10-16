@@ -122,9 +122,10 @@ def potrace_mask(mask: np.ndarray, over: dict | None = None) -> tuple[str, str] 
     r = subprocess.run([POTRACE, "-b", "svg", "-t", str(p["speckle"]), "-a", str(p["cornerThreshold"]), "-O", str(p["curveTolerance"]),
                         "-o", "-", "-"], input=pbm, capture_output=True, timeout=120)
     txt = r.stdout.decode("utf-8", "replace")
-    d = re.search(r'<path d="([^"]+)"', txt)
+    # potrace writes one <path> per connected region (with its holes): all of them are one colour, so they are joined into one path
+    ds = re.findall(r'<path d="([^"]+)"', txt)
     tr = re.search(r'<g transform="([^"]+)"', txt)
-    return (d.group(1).replace("\n", " "), tr.group(1)) if d and tr else None
+    return (" ".join(d.replace("\n", " ") for d in ds), tr.group(1)) if ds and tr else None
 
 
 def key_svg(labels: np.ndarray, hexes: list[str], width: int, height: int, over: dict | None = None) -> str:
