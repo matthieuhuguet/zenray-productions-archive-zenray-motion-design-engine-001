@@ -248,6 +248,27 @@ def threads() -> dict:
     return {"rows": rows, "workflows": cfg["workflows"], "counts": counts}
 
 
+def _previous_mod():
+    sys.path.insert(0, str(MOTION))
+    import previous  # noqa: PLC0415  (lazy: the shelf is only read when its tab is opened)
+    return previous
+
+
+def _timelines_root() -> Path:
+    try:
+        from zrmd.app import timeline as TL  # noqa: PLC0415
+        return Path(TL.root())
+    except Exception:  # noqa: BLE001
+        return Path("/nonexistent")
+
+
+def previous_items() -> dict:
+    """The shelf of Previous Videos: exports of motion projects, exports of montages and appended videos, each with its edit link."""
+    pv = _previous_mod()
+    items = [pv.describe(i) for i in pv.scan(Path(_bank().WORKSHOP), projects_root(), _timelines_root())]
+    return {"items": items, "counts": {k: sum(1 for i in items if i["kind"] == k) for k in ("export", "montage", "upload")}}
+
+
 def presets() -> list[dict]:
     out = []
     for f in sorted((REPO / CFG["presets"]).glob("*.json")):
@@ -584,6 +605,16 @@ def handle(method: str, path: str, q: dict, read, length: int) -> dict:
             return J({"ok": True, **threads()})
         if p in ("/motion/validate", "/motion/validate/", "/motion/not-validate", "/motion/not-validate/"):
             return F(MOTION / "web" / "validate.html", "text/html; charset=utf-8")
+        if p == "/api/motion/previous":
+            return J({"ok": True, **previous_items()})
+        if p in ("/motion/previous", "/motion/previous/"):
+            return F(MOTION / "web" / "previous.html", "text/html; charset=utf-8")
+        m = re.fullmatch(r"/motion/previous/(video|thumb)/([a-z0-9]+)\.(mp4|jpg)", p)
+        if m:
+            pv = _previous_mod(); it = pv.find(Path(_bank().WORKSHOP), projects_root(), _timelines_root(), m.group(2))
+            if not it:
+                raise Refusal("no such video", 404)
+            return F(Path(it["path"]), "video/mp4") if m.group(1) == "video" else F(pv.thumb(Path(_bank().WORKSHOP), it), "image/jpeg")
         if p in ("/motion/threads", "/motion/threads/"):
             return F(MOTION / "web" / "threads.html", "text/html; charset=utf-8")
         if p == "/api/motion/banks/music":
@@ -633,6 +664,19 @@ def handle(method: str, path: str, q: dict, read, length: int) -> dict:
             else:
                 pr.pop("validation", None)
             return J({"ok": True, "validation": write_project(m.group(1), pr).get("validation")})
+        if p == "/api/motion/previous":
+            try:
+                return J({"ok": True, **_previous_mod().save_upload(Path(_bank().WORKSHOP), q.get("name", ""), q.get("title", ""), read, length)})
+            except ValueError as e:
+                raise Refusal(str(e), 400)
+        m = re.fullmatch(r"/api/motion/previous/([a-z0-9-]+)", p)
+        if m:
+            try:
+                return J({"ok": True, "meta": _previous_mod().update(Path(_bank().WORKSHOP), m.group(1), body_json())})
+            except ValueError as e:
+                raise Refusal(str(e), 400)
+            except LookupError as e:
+                raise Refusal(str(e), 404)
         if p == "/api/motion/projects":
             b = body_json()
             return J({"ok": True, "project": create_project(str(b.get("preset", "")), b.get("title"))})

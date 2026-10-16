@@ -1,0 +1,147 @@
+"""Previous Videos (16 October 2026): the shelf of the videos that exist, each as a tile with its mp4 stored in place and its procedural edit one click away.
+
+Three sources feed the shelf, nothing is copied twice:
+  - "export": every mp4 a motion project has exported (motion-projects/<id>/exports/<stamp>/*.mp4), linked to its project (the edit stays procedural: open the project, change a value, export again);
+  - "montage": every mp4 a montage timeline has exported (timelines/<id>/exports/<id>-<format>.mp4), linked to its montage;
+  - "upload": a video Matthieu appends (stored under previous-videos/<id>/video.mp4 with a meta.json), optionally linked to a motion project or a montage.
+FR : l'etagere des videos creees ; chaque tuile garde son mp4 sur place et son edition procedurale a un clic.
+"""
+import hashlib
+import json
+import os
+import re
+import subprocess
+import time
+from pathlib import Path
+
+ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,80}$")
+EXT = (".mp4", ".mov", ".webm", ".m4v")
+MAX_BYTES = 6 << 30
+
+
+def store(workshop: Path) -> Path:
+    d = workshop / "previous-videos"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _meta(d: Path) -> dict:
+    try:
+        return json.loads((d / "meta.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _key(path: Path) -> str:
+    return hashlib.sha1(str(path).encode()).hexdigest()[:16]
+
+
+_PROBES: dict = {}
+
+
+def _probe(path: Path) -> dict:
+    """ffprobe once per file version (path, size, mtime): the shelf opens in milliseconds after the first read."""
+    st = path.stat()
+    key = (str(path), st.st_size, st.st_mtime_ns)
+    if key in _PROBES:
+        return _PROBES[key]
+    out = _probe_now(path)
+    _PROBES[key] = out
+    return out
+
+
+def _probe_now(path: Path) -> dict:
+    try:
+        r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:format=duration", "-of", "json", str(path)], capture_output=True, text=True, timeout=20)
+        j = json.loads(r.stdout or "{}")
+        s = (j.get("streams") or [{}])[0]
+        return {"width": s.get("width"), "height": s.get("height"), "duration": round(float((j.get("format") or {}).get("duration") or 0), 2)}
+    except Exception:  # noqa: BLE001  a missing probe never hides a video
+        return {}
+
+
+def scan(workshop: Path, projects_root: Path, timelines_root: Path) -> list:
+    """Every video of the shelf, newest first. The key of an item is stable (a hash of its path or its id)."""
+    items = []
+    for f in sorted(projects_root.glob("*/exports/*/*.mp4")):
+        pid = f.parent.parent.parent.name
+        items.append({"key": "e" + _key(f), "kind": "export", "title": pid, "project": pid, "path": str(f), "created": f.stat().st_mtime, "bytes": f.stat().st_size, "stamp": f.parent.name})
+    if timelines_root.exists():
+        for f in sorted(timelines_root.glob("*/exports/*.mp4")):
+            tid = f.parent.parent.name
+            items.append({"key": "m" + _key(f), "kind": "montage", "title": f.stem, "timeline": tid, "path": str(f), "created": f.stat().st_mtime, "bytes": f.stat().st_size})
+    for d in sorted(store(workshop).iterdir()):
+        v = d / "video.mp4"
+        if d.is_dir() and v.is_file():
+            m = _meta(d)
+            items.append({"key": "u" + d.name, "kind": "upload", "title": m.get("title") or d.name, "project": m.get("project"), "timeline": m.get("timeline"), "note": m.get("note", ""), "path": str(v),
+                          "created": m.get("created") or v.stat().st_mtime, "bytes": v.stat().st_size})
+    items.sort(key=lambda x: -x["created"])
+    return items
+
+
+def find(workshop: Path, projects_root: Path, timelines_root: Path, key: str) -> dict | None:
+    return next((i for i in scan(workshop, projects_root, timelines_root) if i["key"] == key), None)
+
+
+def thumb(workshop: Path, item: dict) -> Path:
+    """A poster frame, made once and kept (previous-videos/_thumbs/<key>.jpg)."""
+    out = store(workshop) / "_thumbs" / f"{item['key']}.jpg"
+    if not out.is_file():
+        out.parent.mkdir(parents=True, exist_ok=True)
+        dur = _probe(Path(item["path"])).get("duration") or 2
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{min(dur * 0.3, 8):.2f}", "-i", item["path"], "-frames:v", "1", "-vf", "scale=640:-1", str(out)], capture_output=True, timeout=60)
+    return out
+
+
+def describe(item: dict) -> dict:
+    d = {k: v for k, v in item.items() if k != "path"}
+    d.update(_probe(Path(item["path"])))
+    d["video"] = f"/motion/previous/video/{item['key']}.mp4"
+    d["poster"] = f"/motion/previous/thumb/{item['key']}.jpg"
+    return d
+
+
+def save_upload(workshop: Path, name: str, title: str, read, length: int) -> dict:
+    ext = Path(name or "").suffix.lower()
+    if ext not in EXT:
+        raise ValueError(f"file type {ext or '?'} not accepted (mp4, mov, webm, m4v)")
+    if length <= 0 or length > MAX_BYTES:
+        raise ValueError("file too large or empty")
+    base = re.sub(r"[^a-z0-9]+", "-", (title or Path(name).stem).lower()).strip("-")[:60] or "video"
+    vid, n = base, 2
+    while (store(workshop) / vid).exists():
+        vid, n = f"{base}-{n}", n + 1
+    d = store(workshop) / vid
+    d.mkdir(parents=True)
+    dest = d / "video.mp4"
+    with open(dest, "wb") as f:
+        left = length
+        while left > 0:
+            block = read(min(1 << 20, left))
+            if not block:
+                break
+            f.write(block)
+            left -= len(block)
+    (d / "meta.json").write_text(json.dumps({"title": title or Path(name).stem, "original": name, "created": time.time(), "project": None, "timeline": None, "note": ""}, indent=1, ensure_ascii=False), encoding="utf-8")
+    return {"key": "u" + vid}
+
+
+def update(workshop: Path, key: str, body: dict) -> dict:
+    if not key.startswith("u") or not ID_RE.match(key[1:]):
+        raise ValueError("only an appended video can be edited here")
+    d = store(workshop) / key[1:]
+    if not (d / "video.mp4").is_file():
+        raise LookupError("no such video")
+    m = _meta(d)
+    for k in ("title", "note"):
+        if k in body:
+            m[k] = str(body[k])[:300]
+    for k in ("project", "timeline"):
+        if k in body:
+            v = body[k]
+            if v is not None and not ID_RE.match(str(v)):
+                raise ValueError(f"{k} is not a valid id")
+            m[k] = v or None
+    (d / "meta.json").write_text(json.dumps(m, indent=1, ensure_ascii=False), encoding="utf-8")
+    return m

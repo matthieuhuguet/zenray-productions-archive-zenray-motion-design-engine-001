@@ -43,7 +43,8 @@
   "fonts": [
    "InterVariable",
    "AnthropicSerif",
-   "AnthropicMono"
+   "AnthropicMono",
+   "VogunMedium"
   ],
   "weight": 600,
   "size": 0.06,
@@ -68,7 +69,9 @@
   "weightRange": [
    300,
    800
-  ]
+  ],
+  "accent": "#ffd400",
+  "accentDoc": "Words written *between stars* take the accent colour (the yellow/white subtitles of the zenray-edit shorts)."
  },
  "limits": {
   "tracks": 8,
@@ -107,7 +110,8 @@
  "fontFiles": {
   "InterVariable": "/Users/zenray/.claude/skills/zenray-edit/assets/ui/InterVariable.woff2",
   "AnthropicSerif": "/Users/zenray/.claude/skills/zenray-edit/assets/ui/AnthropicSerif-Romans.woff2",
-  "AnthropicMono": "/Users/zenray/.claude/skills/zenray-edit/assets/ui/AnthropicMono.woff2"
+  "AnthropicMono": "/Users/zenray/.claude/skills/zenray-edit/assets/ui/AnthropicMono.woff2",
+  "VogunMedium": "/Users/zenray/Library/Fonts/Vogun-Medium.ttf"
  },
  "render": {
   "quality": "looks",
@@ -121,5 +125,48 @@
   ],
   "doc": "A text-only overlay is the motion rendered with its background layers hidden and a transparent page, as an alpha WebM."
  },
- "fontFilesDoc": "woff2 files embedded by the zenray-edit skill (same faces as every ZenRay UI), copied into each cooked project."
+ "fontFilesDoc": "woff2 files embedded by the zenray-edit skill (same faces as every ZenRay UI), copied into each cooked project.",
+ "fade": {
+  "range": [
+   0,
+   5
+  ],
+  "doc": "fadeIn and fadeOut (seconds) on any clip: video, image, text, audio. Two clips on two tracks that overlap with a fade make a cross-dissolve."
+ },
+ "grade": {
+  "brightness": [
+   0,
+   2,
+   1
+  ],
+  "contrast": [
+   0,
+   2,
+   1
+  ],
+  "saturate": [
+   0,
+   2,
+   1
+  ],
+  "doc": "Colour grade of a video or image clip (CSS filter in the cooked page): [min, max, neutral]."
+ },
+ "export": {
+  "scales": [
+   1,
+   2
+  ],
+  "defaultScale": 1,
+  "containers": [
+   "mp4",
+   "mov"
+  ],
+  "defaultContainer": "mp4",
+  "doc": "scale 2 renders at twice the format size (9:16 becomes 2160x3840, the 4K master of the shorts); container mov also writes an H.264 avc1 .mov that Apple Photos imports."
+ },
+ "subtitles": {
+  "maxCues": 200,
+  "minSeconds": 0.3,
+  "doc": "srt_clips() turns an .srt into text clips on a text track, with the text style of the family (accent words in *stars* are kept)."
+ }
 }

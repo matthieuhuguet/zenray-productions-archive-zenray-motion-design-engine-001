@@ -7,7 +7,7 @@
   const el = (tag, cls, html) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html !== undefined) n.innerHTML = html; return n; };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const api = async (method, path, body) => {
-    const r = await fetch(path, { method, headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
+    const r = await fetch(path, { method, headers: method === "GET" ? undefined : { "Content-Type": "application/json", "x-zr-orchestrator-client": "1" }, body: body ? JSON.stringify(body) : undefined });
     const j = await r.json(); if (!j.ok) throw new Error(j.error || r.status); return j;
   };
   const LS = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };

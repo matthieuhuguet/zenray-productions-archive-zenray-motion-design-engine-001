@@ -170,12 +170,12 @@
    "background",
    "fps",
    "mute",
-   "maxWidth",
-   "popSeconds",
-   "blurPx",
-   "blurBrightness",
-   "imageSeconds",
-   "sizeRange"
+   "fadeIn",
+   "fadeOut",
+   "brightness",
+   "contrast",
+   "saturate",
+   "accent"
   ]
  },
  "includes": [

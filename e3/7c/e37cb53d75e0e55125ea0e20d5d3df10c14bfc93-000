@@ -192,7 +192,7 @@ def _route(method: str, path: str, q: dict, body: dict, raw) -> Reply:
         if path == "/api/v1/timeline/config":
             fam = TL.family()
             return ok({"ok": True, "formats": fam["formats"], "defaultFormat": fam["defaultFormat"], "fits": fam["fits"], "defaultFit": fam["defaultFit"],
-                       "text": fam["text"], "limits": fam["limits"], "fps": fam["fps"]})
+                       "text": fam["text"], "limits": fam["limits"], "fps": fam["fps"], "fade": fam["fade"], "grade": fam["grade"], "export": fam["export"]})
         if path == "/api/v1/timelines":
             return ok({"ok": True, "items": _timelines()})
         if path == "/api/v1/timeline":
@@ -298,6 +298,9 @@ def _route(method: str, path: str, q: dict, body: dict, raw) -> Reply:
                                    "items": [{"id": c["id"], "kind": c["kind"], "start": round(c["start_frame"] / p["fps"], 3), "duration": round(c["frames"] / p["fps"], 3),
                                               "name": Path(c["src"]).name if c.get("src") else None, "motion": (c.get("source") or {}).get("motion")} for c in t["clips"]]}
                                   for t in p["tracks"]]})
+        if path == "/api/v1/timeline/srt":
+            style = {k: v for k, v in (body.get("style") or {}).items() if k in ("size", "x", "y", "color", "accent", "font", "weight", "anim", "align", "wrap", "fadeIn", "fadeOut")}
+            return ok({"ok": True, "clips": TL.srt_clips(str(body.get("srt", "")), **style)})
         if path == "/api/v1/timeline/save":
             spec = body.get("spec") or {}
             p = TL.plan(spec)

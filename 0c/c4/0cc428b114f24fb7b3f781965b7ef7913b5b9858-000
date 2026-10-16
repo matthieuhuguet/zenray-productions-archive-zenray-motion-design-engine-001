@@ -17,7 +17,7 @@
 <body>
   <header class="top">
     <a class="brand" href="/#/">ZenRay Motion Design</a>
-    <nav class="appnav"><a href="/#/">Projets</a><a href="/#/music">Musique</a><a href="/#/montage">Montage</a><a class="on" href="/motion/">Motion</a><a href="/motion/validate">Validate</a><a href="/motion/not-validate">Not Validate</a><a href="/motion/threads">Threads</a></nav>
+    <nav class="appnav"><a href="/#/">Projets</a><a href="/#/music">Musique</a><a href="/#/montage">Montage</a><a class="on" href="/motion/">Motion</a><a href="/motion/validate">Validate</a><a href="/motion/not-validate">Not Validate</a><a href="/motion/threads">Threads</a><a href="/motion/previous">Previous Videos</a></nav>
     <div class="seg" id="modeSeg"><button data-mode="edit" class="on" type="button">Éditeur</button><button data-mode="gallery" type="button">Galerie</button></div>
     <select id="projectSel" title="Projet"></select>
     <button id="newBtn" class="ghost" type="button">Nouveau</button>

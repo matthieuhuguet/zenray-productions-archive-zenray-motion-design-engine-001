@@ -1,0 +1,30 @@
+<!doctype html>
+<!-- 16 October 2026: ZenRay Motion Design, Previous Videos. The shelf of the videos that exist: each tile keeps its mp4 in place and links to its procedural edit; Matthieu appends his own videos here. -->
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ZenRay Motion Design · Previous Videos</title>
+  <link rel="stylesheet" href="/motion/fonts.css" />
+  <link rel="stylesheet" href="/motion/web/app.css" />
+  <link rel="stylesheet" href="/motion/web/previous.css" />
+</head>
+<body class="pv">
+  <header class="top">
+    <a class="brand" href="/#/">ZenRay Motion Design</a>
+    <nav class="appnav"><a href="/#/">Projets</a><a href="/#/music">Musique</a><a href="/#/montage">Montage</a><a href="/motion/">Motion</a><a href="/motion/validate">Validate</a><a href="/motion/not-validate">Not Validate</a><a href="/motion/threads">Threads</a><a class="on" href="/motion/previous">Previous Videos</a></nav>
+    <div class="grow"></div>
+    <span class="hint" id="pvCount"></span>
+  </header>
+  <section class="pv-bar">
+    <input id="pvSearch" type="search" placeholder="Chercher une vidéo" />
+    <label class="inline">Source <select id="pvKind"><option value="">toutes</option><option value="export">Exports d'un motion</option><option value="montage">Montages</option><option value="upload">Ajoutées</option></select></label>
+    <label class="inline">Trier <select id="pvSort"><option value="new">les plus récentes</option><option value="old">les plus anciennes</option><option value="name">par nom</option><option value="size">par poids</option></select></label>
+    <button id="pvAdd" class="primary" type="button">+ Ajouter une vidéo</button>
+    <input id="pvFile" type="file" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v" multiple hidden />
+  </section>
+  <main id="pvDrop" class="pv-drop"><div id="pvGrid" class="pv-grid"></div><p class="pv-hint" id="pvEmpty" hidden>Aucune vidéo. Glisse un mp4 ici ou exporte un motion.</p></main>
+  <div id="pvToast" class="pv-toast" hidden></div>
+  <script src="/motion/web/previous.js"></script>
+</body>
+</html>

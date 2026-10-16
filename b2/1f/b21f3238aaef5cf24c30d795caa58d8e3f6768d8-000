@@ -1,0 +1,59 @@
+// ZenRay Motion Design Previous Videos (16 October 2026): the shelf of the videos that exist. Each tile plays its stored mp4 and opens its procedural edit (the motion project, or the montage);
+// a video can be appended by drop or by the button, then linked to the project or the montage it comes from. Data: /api/motion/previous. FR : l'etagere des videos creees.
+(function () {
+  "use strict";
+  const $ = (q, r) => (r || document).querySelector(q);
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const HDR = { "x-zr-orchestrator-client": "1" };
+  const LS = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
+  const KIND = { export: "Export d'un motion", montage: "Montage", upload: "Ajoutée" };
+  let data = { items: [] }, projects = [];
+  const fmtSize = (b) => (b > 1e9 ? (b / 1e9).toFixed(1) + " Go" : (b / 1e6).toFixed(b > 1e7 ? 0 : 1) + " Mo");
+  const fmtDur = (s) => (s ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}` : "");
+  const fmtDate = (t) => new Date(t * 1000).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
+  const toast = (m) => { const t = $("#pvToast"); t.textContent = m; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, 3500); };
+  const api = async (method, path, body, raw) => { const r = await fetch(path, { method, headers: method === "GET" ? undefined : Object.assign({}, HDR, raw ? {} : { "Content-Type": "application/json" }), body: raw || (body ? JSON.stringify(body) : undefined) }); const j = await r.json(); if (!j.ok) throw new Error(j.error || r.status); return j; };
+
+  function tile(it) {
+    const t = document.createElement("article"); t.className = "pv-tile"; t.dataset.key = it.key;
+    const edit = it.project ? `<a class="main" href="/motion/" data-edit="${esc(it.project)}">Éditer (motion)</a>` : "";
+    const mont = it.timeline ? `<a class="main" href="/#/montage/${esc(it.timeline)}">Éditer (montage)</a>` : "";
+    const link = it.kind === "upload" ? `<div class="pv-link"><label class="hint">lié à</label><select data-k="project"><option value="">aucun motion</option>${projects.map((p) => `<option value="${esc(p.id)}" ${p.id === it.project ? "selected" : ""}>${esc(p.id)}</option>`).join("")}</select><input data-k="timeline" placeholder="id du montage" value="${esc(it.timeline || "")}" /></div>` : "";
+    t.innerHTML = `<div class="pv-media"><img loading="lazy" src="${esc(it.poster)}" alt="" onerror="this.style.display='none'" /><button class="pv-play" type="button" aria-label="Lire"><span>▶</span></button></div>
+      <div class="pv-body"><div class="pv-title"><b>${esc(it.title)}</b><span class="pv-chip ${it.kind}">${KIND[it.kind]}</span></div>
+      <div class="pv-meta"><span>${fmtDate(it.created)}</span>${it.duration ? `<span>${fmtDur(it.duration)}</span>` : ""}${it.width ? `<span>${it.width}×${it.height}</span>` : ""}<span>${fmtSize(it.bytes)}</span>${it.stamp ? `<span>${esc(it.stamp)}</span>` : ""}</div>
+      <div class="pv-actions">${edit}${mont}<a href="${esc(it.video)}" download>Télécharger</a></div>${link}</div>`;
+    $(".pv-play", t).onclick = () => { const m = $(".pv-media", t); m.innerHTML = `<video src="${esc(it.video)}" controls autoplay playsinline></video>`; };
+    const ed = $("[data-edit]", t); if (ed) ed.onclick = () => { LS("zs-project", ed.dataset.edit); LS("zs-mode", "edit"); };
+    t.querySelectorAll(".pv-link [data-k]").forEach((f) => { f.onchange = async () => { try { await api("POST", `/api/motion/previous/${it.key}`, { [f.dataset.k]: f.value || null }); toast("Lien enregistré"); await load(); } catch (e) { toast("Échec : " + e.message); } }; });
+    return t;
+  }
+
+  function paint() {
+    const q = $("#pvSearch").value.trim().toLowerCase(), kind = $("#pvKind").value, sort = $("#pvSort").value;
+    let rows = data.items.filter((i) => (!kind || i.kind === kind) && (!q || (i.title + " " + (i.project || "") + " " + (i.timeline || "")).toLowerCase().includes(q)));
+    rows = rows.slice().sort((a, b) => (sort === "old" ? a.created - b.created : sort === "name" ? a.title.localeCompare(b.title) : sort === "size" ? b.bytes - a.bytes : b.created - a.created));
+    const g = $("#pvGrid"); g.replaceChildren(...rows.map(tile)); $("#pvEmpty").hidden = rows.length > 0;
+    $("#pvCount").textContent = `${rows.length} vidéo(s) sur ${data.items.length}`;
+  }
+  async function load() { const [d, p] = await Promise.all([api("GET", "/api/motion/previous"), api("GET", "/api/motion/projects")]); data = d; projects = p.projects || []; paint(); }
+
+  async function upload(files) {
+    for (const f of files) {
+      toast(`Envoi de ${f.name}…`);
+      try { await api("POST", `/api/motion/previous?name=${encodeURIComponent(f.name)}&title=${encodeURIComponent(f.name.replace(/\.[^.]+$/, ""))}`, null, f); } catch (e) { toast("Échec : " + e.message); return; }
+    }
+    toast("Vidéo ajoutée"); await load();
+  }
+
+  async function main() {
+    await load();
+    ["#pvSearch", "#pvKind", "#pvSort"].forEach((s) => $(s).addEventListener("input", paint));
+    $("#pvAdd").onclick = () => $("#pvFile").click(); $("#pvFile").onchange = (e) => { upload([...e.target.files]); e.target.value = ""; };
+    const drop = $("#pvDrop");
+    ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+    ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+    drop.addEventListener("drop", (e) => upload([...(e.dataTransfer.files || [])].filter((f) => /\.(mp4|mov|webm|m4v)$/i.test(f.name))));
+  }
+  main().catch((e) => { document.body.appendChild(Object.assign(document.createElement("p"), { className: "pv-hint", textContent: "Erreur : " + e.message })); });
+})();

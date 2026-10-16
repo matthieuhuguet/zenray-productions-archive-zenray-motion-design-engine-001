@@ -48,3 +48,20 @@ Toutes les valeurs par défaut, bornes et listes (formats, cadrages, polices, an
 - L'aperçu du texte seul est une approximation (mode de fusion « écran ») ; l'export est la vérité.
 - La lecture simultanée de beaucoup de vidéos dans l'aperçu dépend du navigateur ; l'export, lui, est exact à l'image.
 - Pas encore : transitions entre clips, étalonnage, ancrage d'un texte sur un élément d'une vidéo, plusieurs formats exportés d'un coup (un export par format). (14 October 2026)
+
+## 16 October 2026 : ce que le montage reprend du skill zenray-edit (audit puis ajouts)
+
+Audit fait le 16 October 2026 : le montage couvrait déjà les pistes, les formats 16:9, 9:16, 4:5 et 1:1, les titres animés avec ajustement automatique, le texte seul et l'export. Les shorts de zenray-edit (`legacy/ShortsPipeline.md`) demandaient en plus ce qui suit, désormais dans la famille `params/timeline.json` (seule interface de paramètres) :
+
+| Besoin du skill zenray-edit | Ce que le montage offre maintenant |
+|---|---|
+| Fondus entrant et sortant (audio de 1,0 s, images) | `fadeIn` et `fadeOut` (0 à 5 s) sur tout clip ; sur deux pistes qui se chevauchent, un fondu enchaîné ; l'audio est refait avec `afade` |
+| Sous-titres bicolores jaune et blanc | mots écrits `*entre étoiles*` en couleur d'accent (`accent`, jaune `#ffd400` par défaut), aperçu et rendu |
+| Sous-titres issus d'un fichier | bouton « Sous-titres (.srt) » ou `TL.srt_clips()` : une piste texte, un clip par réplique |
+| Étalonnage | `brightness`, `contrast`, `saturate` par clip vidéo ou image (aperçu et rendu) |
+| Master 4K vertical 2160 x 3840 | `scale: 2` dans le montage (liste « Taille ») |
+| MOV H.264 `avc1` pour la pellicule d'Apple Photos | `container: "mov"` (liste « Fichier ») écrit aussi un `.mov` |
+| Titre Vogun | police `VogunMedium` disponible dans les titres |
+| 60 images par seconde | `fps` 24, 25, 30, 50 ou 60 (déjà accepté) |
+
+Restent des outils à part, à lancer depuis le skill zenray-edit puis à déposer dans « Mes fichiers » : `UniformTurnWarp.py` (rotation à vitesse uniforme sans fantômes), `SoundF1.py` (traitement d'un effet sonore), `PatchFill.py` (effacer une marque d'une image), le gabarit de titre Vogun jaune animé en 4K transparent. Pas encore dans le montage : transitions autres que le fondu, ancrage d'un texte sur un élément filmé. Preuve : `tests/test_timeline.py` (rouge et vert, rendu 4K réel).

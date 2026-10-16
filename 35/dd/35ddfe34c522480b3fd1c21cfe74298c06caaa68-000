@@ -108,6 +108,12 @@ def plan(spec: dict, *, probe_fn=legacy.probe) -> dict:
     fps = int(spec.get("fps") or fam["fps"])
     if fps not in (24, 25, 30, 50, 60):
         raise SpecError(f"fps {fps} not in (24, 25, 30, 50, 60)")
+    scale = int(spec.get("scale") or fam["export"]["defaultScale"])
+    if scale not in fam["export"]["scales"]:
+        raise SpecError(f"scale {scale} not in {fam['export']['scales']}")
+    container = spec.get("container") or fam["export"]["defaultContainer"]
+    if container not in fam["export"]["containers"]:
+        raise SpecError(f"container {container!r} not in {fam['export']['containers']}")
     fit_default = spec.get("fit") or fam["defaultFit"]
     if fit_default not in fam["fits"]:
         raise SpecError(f"fit {fit_default!r} not in {fam['fits']}")
@@ -135,6 +141,7 @@ def plan(spec: dict, *, probe_fn=legacy.probe) -> dict:
                 raise SpecError(f"{where}: clip id {cid!r} invalid or repeated")
             seen_ids.add(cid)
             start = _num(c, "start", cursor, 0, fam["limits"]["seconds"], where)
+            fx = {"fade_in": _num(c, "fadeIn", 0.0, *fam["fade"]["range"], where), "fade_out": _num(c, "fadeOut", 0.0, *fam["fade"]["range"], where)}
             if kind == "text":
                 text = str(c.get("text", ""))
                 if not text.strip():
@@ -151,7 +158,10 @@ def plan(spec: dict, *, probe_fn=legacy.probe) -> dict:
                 if not re.match(r"^#[0-9a-fA-F]{6}$", color):
                     raise SpecError(f"{where}: color must be #rrggbb")
                 dur = _num(c, "duration", 2.0, 0.1, fam["limits"]["seconds"], where)
-                item = {"id": cid, "kind": "text", "text": text, "font": font, "anim": anim, "color": color.lower(),
+                accent = str(c.get("accent") or T["accent"])
+                if not re.match(r"^#[0-9a-fA-F]{6}$", accent):
+                    raise SpecError(f"{where}: accent must be #rrggbb")
+                item = {**fx, "accent": accent.lower(), "id": cid, "kind": "text", "text": text, "font": font, "anim": anim, "color": color.lower(),
                         "x": _num(c, "x", T["x"], 0, 1, where), "y": _num(c, "y", T["y"], 0, 1, where),
                         "size": _num(c, "size", T["size"], *T["sizeRange"], where),
                         "weight": int(_num(c, "weight", T["weight"], *T["weightRange"], where)),
@@ -179,7 +189,9 @@ def plan(spec: dict, *, probe_fn=legacy.probe) -> dict:
                 fit = c.get("fit") or fit_default
                 if fit not in fam["fits"]:
                     raise SpecError(f"{where}: fit {fit!r} not in {fam['fits']}")
-                item = {"id": cid, "kind": media if kind == "video" else "audio", "src": str(path), "source": c.get("source"),
+                G = fam["grade"]
+                grade = {k: _num(c, k, G[k][2], G[k][0], G[k][1], where) for k in ("brightness", "contrast", "saturate")}
+                item = {**fx, "grade": grade, "id": cid, "kind": media if kind == "video" else "audio", "src": str(path), "source": c.get("source"),
                         "textOnly": text_only, "fit": fit, "audio": has_audio, "volume": _num(c, "volume", 1.0, 0, 2, where),
                         "opacity": _num(c, "opacity", 1.0, 0, 1, where),
                         "start_frame": int(round(start * fps)), "frames": max(1, int(round(dur * fps))),
@@ -192,7 +204,7 @@ def plan(spec: dict, *, probe_fn=legacy.probe) -> dict:
         raise SpecError("the timeline is empty")
     if end_f / fps > fam["limits"]["seconds"]:
         raise SpecError(f"the timeline lasts {end_f / fps:.1f} s, above {fam['limits']['seconds']} s")
-    return {"id": tid, "fps": fps, "frames": end_f, "formats": formats, "background": spec.get("background") or fam["background"], "tracks": tracks}
+    return {"id": tid, "fps": fps, "frames": end_f, "formats": formats, "scale": scale, "container": container, "background": spec.get("background") or fam["background"], "tracks": tracks}
 
 
 # ------------------------------------------------------------------------------------------------ text-only overlay of a motion
@@ -256,11 +268,31 @@ def _t(frame: int, fps: int) -> str:
     return f"{frame / fps:.6f}"
 
 
+def _accent(text: str, accent: str) -> str:
+    """Words between stars take the accent colour; the rest is escaped text. FR : les mots entre etoiles prennent la couleur d'accent."""
+    return re.sub(r"\*([^*]+)\*", lambda m: f'<span style="color:{accent}">{m.group(1)}</span>', html.escape(text))
+
+
+def _faded_audio(path: str, c: dict, dest: Path, fps: int) -> bool:
+    """A copy of the audio with its fade in and out (ffmpeg afade), so the render does not depend on the page's volume model."""
+    if not (c["fade_in"] or c["fade_out"]):
+        return False
+    dur = c["frames"] / fps
+    filt = []
+    if c["fade_in"]:
+        filt.append(f"afade=t=in:st=0:d={min(c['fade_in'], dur):.3f}")
+    if c["fade_out"]:
+        filt.append(f"afade=t=out:st={max(0.0, dur - c['fade_out']):.3f}:d={min(c['fade_out'], dur):.3f}")
+    r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{c['media_start_frame'] / fps:.3f}", "-t", f"{dur:.3f}", "-i", path, "-af", ",".join(filt), str(dest)], capture_output=True, text=True)
+    return r.returncode == 0 and dest.exists()
+
+
 def cook(p: dict, out_dir: str | Path, fmt: str, *, overlays: dict | None = None) -> Path:
     """Write <out_dir>/<fmt>/ as a HyperFrames project from the plan. `overlays` maps clip id -> alpha WebM path (text-only motions)."""
     fam = family()
     size = fam["formats"][fmt]
-    w, h, fps, frames = size["width"], size["height"], p["fps"], p["frames"]
+    k = p.get("scale", 1)
+    w, h, fps, frames = size["width"] * k, size["height"] * k, p["fps"], p["frames"]
     T = fam["text"]
     project = Path(out_dir) / fmt
     if project.exists():
@@ -285,7 +317,7 @@ def cook(p: dict, out_dir: str | Path, fmt: str, *, overlays: dict | None = None
     css = ["html, body { margin: 0; padding: 0; background: #000; }",
            f"#root {{ position: relative; width: {w}px; height: {h}px; overflow: hidden; isolation: isolate; background: {p['background']}; }}",
            ".env { position: absolute; inset: 0; }", ".env video, .env img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }",
-           f".bgblur {{ object-fit: cover; filter: blur({fam['blur']['px']}px) brightness({fam['blur']['brightness']}); transform: scale({fam['blur']['scale']}); }}",
+           f".bgblur {{ object-fit: cover; filter: blur({fam['blur']['px'] * k}px) brightness({fam['blur']['brightness']}); transform: scale({fam['blur']['scale']}); }}",
            ".txt { position: absolute; white-space: pre; width: max-content; line-height: 1.15; will-change: transform, opacity; }"]
     for name in fam["fontFiles"]:
         ext = Path(fam["fontFiles"][name]).suffix
@@ -302,11 +334,17 @@ def cook(p: dict, out_dir: str | Path, fmt: str, *, overlays: dict | None = None
                            f"{ {'left': '0', 'center': '-50%', 'right': '-100%'}[c['align']] } -50%; text-align: {c['align']}; font-family: '{c['font']}'; "
                            f"font-weight: {c['weight']}; font-size: {px}px; color: {c['color']}; max-width: {T['maxWidth'] * 100:.1f}%;"
                            + (f" white-space: pre-wrap; width: {T['maxWidth'] * 100:.1f}%;" if c["wrap"] else "") + " }")
-                nodes.append(f'<div id="{c["id"]}" class="clip txt" {timing} data-track-index="{base_idx}"><span class="ink">{html.escape(c["text"])}</span></div>')
-                anims.append({"id": c["id"], "kind": "text", "anim": c["anim"], "t0": c["start_frame"] / fps, "dur": c["frames"] / fps, "basePx": px, "maxW": T["maxWidth"] * w, "wrap": c["wrap"]})
+                nodes.append(f'<div id="{c["id"]}" class="clip txt" {timing} data-track-index="{base_idx}"><span class="ink">{_accent(c["text"], c["accent"])}</span></div>')
+                if c["fade_in"] or c["fade_out"]:
+                    anims.append({"id": c["id"], "kind": "fade", "t0": c["start_frame"] / fps, "dur": c["frames"] / fps, "fadeIn": c["fade_in"], "fadeOut": c["fade_out"], "outer": True})
+                anims.append({"id": c["id"], "kind": "text", "anim": "none" if c["fade_in"] else c["anim"], "t0": c["start_frame"] / fps, "dur": c["frames"] / fps, "basePx": px, "maxW": T["maxWidth"] * w, "wrap": c["wrap"]})
                 continue
             if track["kind"] == "audio":
-                rel = media(c["src"])
+                fade_dest = project / "assets" / "clips" / f"{c['id']}-fade.wav"
+                faded = _faded_audio(c["src"], c, fade_dest, fps)
+                rel = f"assets/clips/{fade_dest.name}" if faded else media(c["src"])
+                if faded:
+                    c = {**c, "media_start_frame": 0}
                 nodes.append(f'<audio id="{c["id"]}" src="{html.escape(rel)}" {timing} data-media-start="{_t(c["media_start_frame"], fps)}" '
                              f'data-track-index="{base_idx}" data-volume="{c["volume"]}"></audio>')
                 continue
@@ -314,6 +352,11 @@ def cook(p: dict, out_dir: str | Path, fmt: str, *, overlays: dict | None = None
             rel = media(str(src))
             opacity = f" opacity: {c['opacity']};" if c["opacity"] < 1 else ""
             css.append(f"#{c['id']} {{ z-index: {z};{opacity} }}")
+            g = c["grade"]
+            if (g["brightness"], g["contrast"], g["saturate"]) != (1.0, 1.0, 1.0):
+                css.append(f"#{c['id']} video:not(.bgblur), #{c['id']} img:not(.bgblur) {{ filter: brightness({g['brightness']}) contrast({g['contrast']}) saturate({g['saturate']}); }}")
+            if c["fade_in"] or c["fade_out"]:
+                anims.append({"id": c["id"], "kind": "fade", "t0": c["start_frame"] / fps, "dur": c["frames"] / fps, "fadeIn": c["fade_in"], "fadeOut": c["fade_out"]})
             if c["kind"] == "image":
                 inner = f'<img id="{c["id"]}i" src="{html.escape(rel)}" style="object-fit: {"cover" if c["fit"] == "cover" else "contain"}">'
                 if c["fit"] == "blur":
@@ -376,6 +419,11 @@ def _timeline_script(anims: list[dict], seconds: float, T: dict) -> str:
     items.forEach(function (it) {{
       const el = document.getElementById(it.id);
       if (!el) return;
+      if (it.kind === 'fade') {{
+        if (it.fadeIn > 0) tl.fromTo(el, {{ opacity: 0 }}, {{ opacity: 1, duration: it.fadeIn, ease: 'none', immediateRender: false }}, it.t0);
+        if (it.fadeOut > 0) tl.to(el, {{ opacity: 0, duration: it.fadeOut, ease: 'none', immediateRender: false }}, it.t0 + it.dur - it.fadeOut);
+        return;
+      }}
       if (!it.wrap) fit(el, it.basePx, it.maxW);
       if (it.anim === 'pop') {{
         tl.fromTo(el, {{ opacity: 0, scale: FROM }}, {{ opacity: 1, scale: 1, duration: POP, ease: 'power2.out', immediateRender: false }}, it.t0);
@@ -407,5 +455,41 @@ def export(spec: dict, fmt: str | None = None, *, out_dir: str | Path | None = N
     out = base / "exports" / f"{p['id']}-{fmt}.mp4"
     (render_fn or _render)(project, out, fps=p["fps"], workers=fam["render"]["workers"], quality=fam["render"]["quality"], fmt="mp4")
     info = legacy.probe(out)
-    return {"id": p["id"], "format": fmt, "path": str(out), "project": str(project), "seconds": round(info["duration"], 3),
+    mov = None
+    if p["container"] == "mov":
+        mov = out.with_suffix(".mov")
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(out), "-c", "copy", "-tag:v", "avc1", str(mov)], capture_output=True, check=True)
+    return {"id": p["id"], "format": fmt, "path": str(out), "mov": str(mov) if mov else None, "scale": p["scale"], "project": str(project), "seconds": round(info["duration"], 3),
             "width": info["width"], "height": info["height"], "audio": info["audio"], "frames": p["frames"], "fps": p["fps"]}
+
+
+_SRT_TIME = re.compile(r"(\d+):(\d\d):(\d\d)[,.](\d{1,3})")
+
+
+def _srt_seconds(txt: str) -> float:
+    m = _SRT_TIME.search(txt)
+    if not m:
+        raise SpecError(f"bad subtitle time {txt!r}")
+    h, mi, se, ms = m.groups()
+    return int(h) * 3600 + int(mi) * 60 + int(se) + int(ms.ljust(3, "0")) / 1000
+
+
+def srt_clips(srt: str, **style) -> list[dict]:
+    """Text clips from an .srt: one clip per cue, the family's text style plus any style given (size, y, color, accent, font, anim). FR : les sous-titres d'un .srt deviennent des clips texte."""
+    fam = family()
+    cues, out = re.split(r"\n\s*\n", srt.replace("\r\n", "\n").strip()), []
+    for block in cues:
+        lines = [ln for ln in block.split("\n") if ln.strip()]
+        ti = next((i for i, ln in enumerate(lines) if "-->" in ln), None)
+        if ti is None:
+            continue
+        a, b = (_srt_seconds(x) for x in lines[ti].split("-->"))
+        text = " ".join(re.sub(r"<[^>]+>", "", ln).strip() for ln in lines[ti + 1:]).strip()
+        if not text:
+            continue
+        out.append({"id": f"s{len(out) + 1:03d}", "text": text[: fam["text"]["maxChars"]], "start": round(a, 3), "duration": round(max(b - a, fam["subtitles"]["minSeconds"]), 3), **style})
+        if len(out) >= fam["subtitles"]["maxCues"]:
+            break
+    if not out:
+        raise SpecError("no subtitle cue found in the .srt")
+    return out

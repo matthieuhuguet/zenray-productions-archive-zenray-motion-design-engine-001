@@ -229,3 +229,9 @@ button.toggled { background: var(--ink); color: var(--bg); border-color: var(--i
 .mp-srow .t small { color: var(--ink-2); font-size: 11.5px; }
 @media (max-width: 900px) { .mp { grid-template-columns: 1fr; } .mp-list { max-height: 320px; } }
 .tabs button[hidden] { display: none; }
+
+/* 16 October 2026: nine tabs never push the page sideways: the bar wraps, the tab list scrolls on its own */
+.top { flex-wrap: wrap; row-gap: 6px; }
+.appnav { display: flex; gap: 4px; flex-wrap: wrap; min-width: 0; max-width: 100%; }
+.appnav a { white-space: nowrap; }
+html, body { max-width: 100%; overflow-x: hidden; }

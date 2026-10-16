@@ -119,6 +119,9 @@ export async function montageView(root, { id, q, config }) {
     </div>
     <div class="panel" id="out" style="margin-top:var(--gap)">
       <div class="row"><strong>Exporter</strong><span class="note" id="outInfo"></span><span class="grow"></span>
+        <label class="note">Taille <select id="outScale"><option value="1">normale</option><option value="2">double (4K en 9:16)</option></select></label>
+        <label class="note">Fichier <select id="outContainer"><option value="mp4">mp4</option><option value="mov">mp4 + mov (Photos)</option></select></label>
+        <button class="btn" id="srtBtn" type="button" title="Ajoute une piste de sous-titres depuis un fichier .srt">Sous-titres (.srt)</button><input type="file" id="srtFile" accept=".srt" hidden />
         <button class="btn primary" id="export" type="button" data-testid="export">Exporter ce format</button></div>
       <div id="outStatus" class="note"></div><div id="outResult"></div>
     </div>`
@@ -411,7 +414,10 @@ export async function montageView(root, { id, q, config }) {
         { key: 'start', label: 'Début (s)', kind: 'number', input: 'number', min: 0, step: 0.05 },
         { key: 'duration', label: 'Durée (s)', kind: 'number', input: 'number', min: 0.1, step: 0.05 },
         { key: 'align', label: 'Alignement', kind: 'select', options: [{ value: 'left', label: 'Gauche' }, { value: 'center', label: 'Centre' }, { value: 'right', label: 'Droite' }] },
-        { key: 'wrap', label: 'Retour à la ligne', kind: 'bool' })
+        { key: 'wrap', label: 'Retour à la ligne', kind: 'bool' },
+        { key: 'accent', label: 'Couleur des mots *entre étoiles*', kind: 'color' },
+        { key: 'fadeIn', label: 'Fondu d\'entrée (s)', kind: 'number', min: 0, max: tcfg.fade.range[1], step: 0.05 },
+        { key: 'fadeOut', label: 'Fondu de sortie (s)', kind: 'number', min: 0, max: tcfg.fade.range[1], step: 0.05 })
     } else if (tr.kind === 'video') {
       defs.push({ key: 'start', label: 'Début (s)', kind: 'number', input: 'number', min: 0, step: 0.05 })
       if (c._kind === 'image') defs.push({ key: 'duration', label: 'Durée (s)', kind: 'number', input: 'number', min: 0.1, step: 0.05 })
@@ -419,15 +425,18 @@ export async function montageView(root, { id, q, config }) {
       defs.push({ key: 'fit', label: 'Cadrage', kind: 'select', options: tcfg.fits.map((f) => ({ value: f, label: { contain: 'Entier', cover: 'Remplir', blur: 'Flou' }[f] })) },
         { key: 'opacity', label: 'Opacité', kind: 'number', min: 0, max: 1, step: 0.01 })
       if (c._kind !== 'image') defs.push({ key: 'volume', label: 'Volume', kind: 'number', min: 0, max: 2, step: 0.05 }, { key: 'mute', label: 'Couper le son', kind: 'bool' })
+      defs.push({ key: 'fadeIn', label: 'Fondu d\'entrée (s)', kind: 'number', min: 0, max: tcfg.fade.range[1], step: 0.05 }, { key: 'fadeOut', label: 'Fondu de sortie (s)', kind: 'number', min: 0, max: tcfg.fade.range[1], step: 0.05 },
+        { key: 'brightness', label: 'Luminosité', kind: 'number', min: 0, max: 2, step: 0.05 }, { key: 'contrast', label: 'Contraste', kind: 'number', min: 0, max: 2, step: 0.05 }, { key: 'saturate', label: 'Saturation', kind: 'number', min: 0, max: 2, step: 0.05 })
       if (c.source?.kind === 'motion') defs.push({ key: 'textOnly', label: 'Texte seul (sans le fond)', kind: 'bool' })
     } else {
       defs.push({ key: 'start', label: 'Début (s)', kind: 'number', input: 'number', min: 0, step: 0.05 },
         { key: 'in', label: 'Entrée dans la source (s)', kind: 'number', input: 'number', min: 0, step: 0.05 },
         { key: 'out', label: 'Sortie de la source (s)', kind: 'number', input: 'number', min: 0.1, step: 0.05 },
-        { key: 'volume', label: 'Volume', kind: 'number', min: 0, max: 2, step: 0.05 })
+        { key: 'volume', label: 'Volume', kind: 'number', min: 0, max: 2, step: 0.05 },
+        { key: 'fadeIn', label: 'Fondu d\'entrée (s)', kind: 'number', min: 0, max: tcfg.fade.range[1], step: 0.05 }, { key: 'fadeOut', label: 'Fondu de sortie (s)', kind: 'number', min: 0, max: tcfg.fade.range[1], step: 0.05 })
     }
     const initial = (k) => (k === 'start' ? c.start ?? 0 : k === 'duration' ? clipDur(tr, c) : k === 'in' ? c.in ?? 0 : k === 'out' ? c.out ?? c._dur ?? 1
-      : k === 'fit' ? c.fit || spec.fit : k === 'opacity' ? c.opacity ?? 1 : k === 'volume' ? c.volume ?? 1 : k === 'mute' || k === 'textOnly' || k === 'wrap' ? !!c[k]
+      : k === 'fit' ? c.fit || spec.fit : k === 'opacity' ? c.opacity ?? 1 : k === 'volume' ? c.volume ?? 1 : k === 'fadeIn' || k === 'fadeOut' ? c[k] ?? 0 : k === 'brightness' || k === 'contrast' || k === 'saturate' ? c[k] ?? 1 : k === 'accent' ? c.accent ?? T.accent : k === 'mute' || k === 'textOnly' || k === 'wrap' ? !!c[k]
         : c[k] ?? T[k] ?? '')
     const groups = [[], [], []]
     defs.forEach((d) => groups[Math.min(tierOf(d.key), 2)].push(d))
@@ -515,7 +524,7 @@ export async function montageView(root, { id, q, config }) {
         n.box.style.display = active && tr.kind !== 'audio' ? 'block' : 'none'
         if (tr.kind === 'text') {
           const el = n.el
-          el.textContent = c.text || ''
+          el.innerHTML = esc(c.text || '').replace(/\*([^*]+)\*/g, (m, w) => `<span style="color:${c.accent || T.accent}">${w}</span>`)
           const fontPx = (c.size ?? T.size) * ph
           const origin = { left: '0', center: '-50%', right: '-100%' }[c.align || T.align]
           Object.assign(el.style, {
@@ -527,14 +536,16 @@ export async function montageView(root, { id, q, config }) {
           const age = t - s
           const anim = c.anim || T.defaultAnim
           const k = anim === 'none' ? 1 : clamp(age / T.popSeconds, 0, 1)
-          el.style.opacity = anim === 'none' ? '1' : String(k)
-          el.style.scale = anim === 'pop' ? String(T.popFromScale + (1 - T.popFromScale) * k) : '1'
+          const fin = c.fadeIn ? clamp(age / c.fadeIn, 0, 1) : 1, fout = c.fadeOut ? clamp((s + d - t) / c.fadeOut, 0, 1) : 1
+          el.style.opacity = String((c.fadeIn ? 1 : anim === 'none' ? 1 : k) * fin * fout)
+          el.style.scale = anim === 'pop' && !c.fadeIn ? String(T.popFromScale + (1 - T.popFromScale) * k) : '1'
           return
         }
         const media = n.el
         if (tr.kind === 'video' && c._kind !== 'image') {
           media.style.objectFit = (c.fit || spec.fit) === 'cover' ? 'cover' : 'contain'
-          media.style.opacity = String(c.opacity ?? 1)
+          media.style.opacity = String((c.opacity ?? 1) * (c.fadeIn ? clamp((t - s) / c.fadeIn, 0, 1) : 1) * (c.fadeOut ? clamp((s + d - t) / c.fadeOut, 0, 1) : 1))
+          media.style.filter = `brightness(${c.brightness ?? 1}) contrast(${c.contrast ?? 1}) saturate(${c.saturate ?? 1})`
           media.style.mixBlendMode = c.textOnly ? 'screen' : 'normal'
         } else if (c._kind === 'image') {
           media.style.objectFit = (c.fit || spec.fit) === 'cover' ? 'cover' : 'contain'
@@ -645,6 +656,23 @@ export async function montageView(root, { id, q, config }) {
     else if (e.key === 'd') duplicateSelected()
   }
   document.addEventListener('keydown', onKey)
+
+  // ------------------------------------------------------------------------------------------------- export options and subtitles (16 October 2026)
+  const syncOut = () => { $('#outScale', root).value = String(spec.scale || 1); $('#outContainer', root).value = spec.container || 'mp4' }
+  $('#outScale', root).addEventListener('change', (e) => { spec.scale = Number(e.target.value); if (spec.scale === 1) delete spec.scale; draft() })
+  $('#outContainer', root).addEventListener('change', (e) => { spec.container = e.target.value; if (spec.container === 'mp4') delete spec.container; draft() })
+  syncOut()
+  $('#srtBtn', root).addEventListener('click', () => $('#srtFile', root).click())
+  $('#srtFile', root).addEventListener('change', async (e) => {
+    const file = e.target.files[0]; e.target.value = ''
+    if (!file) return
+    try {
+      const r = await post('/api/v1/timeline/srt', { srt: await file.text(), style: { size: 0.05, y: 0.88, anim: 'fade' } })
+      if (spec.tracks.length >= tcfg.limits.tracks) return toast(`Maximum ${tcfg.limits.tracks} pistes.`, true)
+      spec.tracks.push({ id: uid('text'), kind: 'text', clips: r.clips.map((c) => ({ ...c, id: uid('s') })) })
+      redrawAll(); draft(); toast(`${r.clips.length} sous-titres ajoutés.`)
+    } catch (err) { toast(String(err.message || err), true) }
+  })
 
   // ------------------------------------------------------------------------------------------------- export
   $('#export', root).addEventListener('click', async () => {

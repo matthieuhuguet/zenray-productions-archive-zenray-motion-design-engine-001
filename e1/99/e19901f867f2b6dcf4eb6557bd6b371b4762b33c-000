@@ -39,6 +39,14 @@ def ff(*a):
     subprocess.run(["ffmpeg", "-v", "error", "-y", *a], check=True)
 
 
+def _raises(fn):
+    try:
+        fn()
+    except TL.SpecError:
+        return True
+    return False
+
+
 def run() -> int:
     a, b, snd, img = WORK / "a.mp4", WORK / "b.mp4", WORK / "s.wav", WORK / "i.png"
     ff("-f", "lavfi", "-i", "testsrc=s=320x180:r=30:d=1.0", "-f", "lavfi", "-i", "sine=f=330:d=1.0", "-shortest", "-pix_fmt", "yuv420p", str(a))
@@ -75,6 +83,30 @@ def run() -> int:
     r = TL.export(good, "4x5")
     check("GREEN: the export has the 4:5 size", (r["width"], r["height"]) == (1080, 1350), r)
     check("GREEN: the export lasts what the plan says (2.5 s) and carries sound", abs(r["seconds"] - 2.5) < 0.15 and r["audio"], r)
+    # ---- 16 October 2026: what the zenray-edit shorts had and the montage lacked (fades, grade, accent words, subtitles from an .srt, 4K master, avc1 .mov)
+    ext = {"id": "t-ext", "fps": 30, "formats": ["9x16"], "scale": 2, "container": "mov", "tracks": [
+        {"kind": "video", "clips": [{"id": "e1", "source": F(a), "fadeIn": 0.3, "fadeOut": 0.3, "brightness": 1.2, "contrast": 1.1, "saturate": 0.8}]},
+        {"kind": "text", "clips": [{"id": "e2", "text": "Un *mot* jaune", "start": 0.1, "duration": 0.8, "fadeIn": 0.2, "accent": "#ffd400"}]},
+        {"kind": "audio", "clips": [{"id": "e3", "source": F(snd), "out": 1.0, "fadeIn": 0.2, "fadeOut": 0.2}]}]}
+    pe = TL.plan(ext)
+    check("the plan keeps the fades, the grade, the accent, the scale and the container", pe["scale"] == 2 and pe["container"] == "mov" and pe["tracks"][0]["clips"][0]["fade_in"] == 0.3
+          and pe["tracks"][0]["clips"][0]["grade"]["brightness"] == 1.2 and pe["tracks"][1]["clips"][0]["accent"] == "#ffd400", pe)
+    pj = TL.cook(pe, WORK / "cook-ext", "9x16")
+    page = (pj / "index.html").read_text(encoding="utf-8"); css = (pj / "styles.css").read_text(encoding="utf-8")
+    check("the cooked page is 2160 x 3840 (4K master of a 9:16)", 'data-width="2160" data-height="3840"' in page)
+    check("the grade is a filter on the video and the accent word is coloured", "brightness(1.2) contrast(1.1) saturate(0.8)" in css and 'style="color:#ffd400">mot</span>' in page)
+    check("the fades are in the timeline script and the audio fade is a faded copy", '"kind": "fade"' in page and (pj / "assets" / "clips" / "e3-fade.wav").exists())
+    check("RED: a scale of 3 is refused", refuses({**ext, "scale": 3}, "scale"))
+    check("RED: a container of avi is refused", refuses({**ext, "container": "avi"}, "container"))
+    check("RED: a fade above 5 s is refused", refuses({**good, "tracks": [{"kind": "video", "clips": [{"source": F(a), "fadeIn": 9}]}]}, "fadeIn"))
+    check("RED: a brightness of 5 is refused", refuses({**good, "tracks": [{"kind": "video", "clips": [{"source": F(a), "brightness": 5}]}]}, "brightness"))
+    srt = "1\n00:00:00,500 --> 00:00:01,700\nHello *world*\n\n2\n00:00:02,000 --> 00:00:03,250\n<i>Second</i> line\nover two rows\n"
+    cl = TL.srt_clips(srt, size=0.05, y=0.9)
+    check("an .srt becomes text clips with its times and its style", len(cl) == 2 and cl[0]["start"] == 0.5 and abs(cl[0]["duration"] - 1.2) < 1e-6 and cl[1]["text"] == "Second line over two rows" and cl[1]["y"] == 0.9, cl)
+    check("those clips are a valid text track", TL.plan({"id": "t-srt", "fps": 30, "formats": ["9x16"], "tracks": [{"kind": "text", "clips": cl}]})["frames"] == 98)
+    check("RED: an .srt without cue is refused", (lambda: (_ for _ in ()).throw(AssertionError) if False else None)() is None and _raises(lambda: TL.srt_clips("nothing here")))
+    re_ = TL.export({**ext, "id": "t-ext-x"}, "9x16")
+    check("GREEN: the 4K master renders 2160 x 3840 and the avc1 .mov exists", (re_["width"], re_["height"]) == (2160, 3840) and re_["mov"] and Path(re_["mov"]).exists(), re_)
     # GREEN: text-only motion over another video (skipped when the motion is not on this machine)
     motion = Path("/Users/zenray/.claude/tmp/tmp-zenray-motion-design/motions/onekey-s02-caption-shine/V_045/16x9/index.html")
     if motion.exists():
