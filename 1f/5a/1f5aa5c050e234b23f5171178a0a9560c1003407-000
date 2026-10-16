@@ -1,9 +1,45 @@
 {
-  "_doc": "16 October 2026: per-video decisions for c065 (Mathijs Luijten, motion designer reel 2019): texts kept editable and the shots that need a finer trace.",
-  "shots": {
-    "S29": {"erase": [[8, 46, 33, 54], [65, 46, 92, 54]],
-            "overlays": [
-              {"t0": 0.0, "t1": 7.17, "x": 20.5, "y": 50, "size": 22, "weight": 500, "tracking": 0.18, "colour": "#adadad", "text": "MATHIJS LUIJTEN"},
-              {"t0": 0.0, "t1": 7.17, "x": 78.4, "y": 50, "size": 22, "weight": 500, "tracking": 0.18, "colour": "#adadad", "text": "MOTION DESIGNER"}]}
+ "_doc": "16 October 2026: per-video decisions for c065 (reel 2019 of a motion designer): the name card is real text, measured on the reference at 56 s (black, geometric sans, regular, wide tracking, cap height 26 px at 1920).",
+ "shots": {
+  "S29": {
+   "erase": [
+    [
+     8,
+     46,
+     36,
+     56
+    ],
+    [
+     64,
+     46,
+     94,
+     56
+    ]
+   ],
+   "overlays": [
+    {
+     "t0": 0.0,
+     "t1": 7.17,
+     "x": 21.1,
+     "y": 51.2,
+     "size": 34,
+     "weight": 400,
+     "tracking": 0.22,
+     "colour": "#0a0a0a",
+     "text": "MATHIJS LUIJTEN"
+    },
+    {
+     "t0": 0.0,
+     "t1": 7.17,
+     "x": 78.58,
+     "y": 51.2,
+     "size": 34,
+     "weight": 400,
+     "tracking": 0.24,
+     "colour": "#0a0a0a",
+     "text": "MOTION DESIGNER"
+    }
+   ]
   }
+ }
 }
