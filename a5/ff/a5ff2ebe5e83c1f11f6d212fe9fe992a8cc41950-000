@@ -1,30 +1,193 @@
 {
-  "doc": "16 October 2026: the page Threads lists every video Matthieu has given, with its links and where it stands. The videos of the first selection, of What Ships and the extra Motion Opus projects are listed here; the corpus of 102 is read from the workshop (corpus-102/items.json). Edit this file to add a video.",
-  "workflows": {
-    "ppm": {"name": "Premier Plan Mesuré", "short": "PPM", "note": "assets graphiques et textuels du premier plan, jamais le fond ni une image qui demanderait une génération ; une vidéo à la fois, mesurée, éditable"},
-    "m999": {"name": "Méthode 99,9 (Labs)", "short": "99,9", "note": "ancien workflow de reproduction au score, rangé dans Labs : expérimental, ne se relance pas sans demande"}
+ "doc": "16 October 2026: the page Threads lists every video Matthieu has given, with its links and where it stands. The videos of the first selection, of What Ships and the extra Motion Opus projects are listed here; the corpus of 102 is read from the workshop (corpus-102/items.json). Edit this file to add a video.",
+ "workflows": {
+  "ppm": {
+   "name": "Premier Plan Mesuré",
+   "short": "PPM",
+   "note": "assets graphiques et textuels du premier plan, jamais le fond ni une image qui demanderait une génération ; une vidéo à la fois, mesurée, éditable"
   },
-  "videos": [
-    {"slug": "onekey-pro-2", "group": "Première sélection", "title": "OneKey Pro 2", "url": "https://whatships.com/videos/onekey-pro-2/"},
-    {"slug": "paper-mono-code", "group": "Première sélection", "title": "Paper Mono Code", "url": "https://whatships.com/videos/paper-mono-code/"},
-    {"slug": "interface", "group": "Première sélection", "title": "Interface", "url": "https://whatships.com/videos/interface/"},
-    {"slug": "memo", "group": "Première sélection", "title": "Memo", "url": "https://whatships.com/videos/memo/"},
-    {"slug": "fin-4", "group": "Première sélection", "title": "Fin 4", "url": "https://whatships.com/videos/fin-4/"},
-    {"slug": "kardashev-0-7", "group": "Première sélection", "title": "Kardashev 0.7", "url": "https://whatships.com/videos/kardashev-0-7/"},
-    {"slug": "motion-opus-5-5", "group": "Première sélection", "title": "Motion Opus 5.5", "url": "https://whatships.com/videos/motion-opus-5-5/"},
-    {"slug": "claude-opus-5-5", "group": "Première sélection", "title": "Claude Opus 5.5", "url": "https://whatships.com/videos/claude-opus-5-5/"},
-    {"slug": "flora-agents-on-canvas", "group": "Première sélection", "title": "Flora, agents on canvas", "url": "https://whatships.com/videos/flora-agents-on-canvas/"},
-    {"slug": "x-anabology-2105325733312884869", "group": "Première sélection", "title": "Anabology, post 2105…", "url": "https://x.com/anabology/status/2105325733312884869"},
-    {"slug": "x-anabology-2106157622986748377", "group": "Première sélection", "title": "Anabology, post 2106…", "url": "https://x.com/anabology/status/2106157622986748377"},
-    {"slug": "yt-4Q-o_ylnVnc", "group": "Première sélection", "title": "Claude Opus 5.5, clip musical", "url": "https://www.youtube.com/watch?v=4Q-o_ylnVnc"},
-    {"slug": "agentplay", "group": "What Ships", "title": "AgentPlay", "url": "https://whatships.com/videos/agentplay/"},
-    {"slug": "claudia", "group": "What Ships", "title": "Claudia", "url": "https://whatships.com/videos/claudia/"},
-    {"slug": "factory-environments", "group": "What Ships", "title": "Factory Environments", "url": "https://whatships.com/videos/factory-environments/"},
-    {"slug": "cinematic-shot", "group": "What Ships", "title": "Cinematic Shot", "url": "https://whatships.com/videos/cinematic-shot/"}
-  ],
-  "extras": [
-    {"project": "motion-opus-5-5-preview", "group": "Motion Opus", "title": "Motion Opus 5.5, fenêtre d'aperçu", "reference": "motion-opus-5-5"},
-    {"project": "film-de-lancement-30-s", "group": "Motion Opus", "title": "Film de lancement 30 s", "reference": null},
-    {"project": "film-de-lancement-30-s-2", "group": "Motion Opus", "title": "Film de lancement 30 s (2)", "reference": null}
-  ]
+  "m999": {
+   "name": "Méthode 99,9 (Labs)",
+   "short": "99,9",
+   "note": "ancien workflow de reproduction au score, rangé dans Labs : expérimental, ne se relance pas sans demande"
+  }
+ },
+ "videos": [
+  {
+   "slug": "onekey-pro-2",
+   "group": "Première sélection",
+   "title": "OneKey Pro 2",
+   "url": "https://whatships.com/videos/onekey-pro-2/"
+  },
+  {
+   "slug": "paper-mono-code",
+   "group": "Première sélection",
+   "title": "Paper Mono Code",
+   "url": "https://whatships.com/videos/paper-mono-code/"
+  },
+  {
+   "slug": "interface",
+   "group": "Première sélection",
+   "title": "Interface",
+   "url": "https://whatships.com/videos/interface/"
+  },
+  {
+   "slug": "memo",
+   "group": "Première sélection",
+   "title": "Memo",
+   "url": "https://whatships.com/videos/memo/"
+  },
+  {
+   "slug": "fin-4",
+   "group": "Première sélection",
+   "title": "Fin 4",
+   "url": "https://whatships.com/videos/fin-4/"
+  },
+  {
+   "slug": "kardashev-0-7",
+   "group": "Première sélection",
+   "title": "Kardashev 0.7",
+   "url": "https://whatships.com/videos/kardashev-0-7/"
+  },
+  {
+   "slug": "motion-opus-5-5",
+   "group": "Première sélection",
+   "title": "Motion Opus 5.5",
+   "url": "https://whatships.com/videos/motion-opus-5-5/"
+  },
+  {
+   "slug": "claude-opus-5-5",
+   "group": "Première sélection",
+   "title": "Claude Opus 5.5",
+   "url": "https://whatships.com/videos/claude-opus-5-5/"
+  },
+  {
+   "slug": "flora-agents-on-canvas",
+   "group": "Première sélection",
+   "title": "Flora, agents on canvas",
+   "url": "https://whatships.com/videos/flora-agents-on-canvas/"
+  },
+  {
+   "slug": "x-anabology-2105325733312884869",
+   "group": "Première sélection",
+   "title": "Anabology, post 2105…",
+   "url": "https://x.com/anabology/status/2105325733312884869"
+  },
+  {
+   "slug": "x-anabology-2106157622986748377",
+   "group": "Première sélection",
+   "title": "Anabology, post 2106…",
+   "url": "https://x.com/anabology/status/2106157622986748377"
+  },
+  {
+   "slug": "yt-4Q-o_ylnVnc",
+   "group": "Première sélection",
+   "title": "Claude Opus 5.5, clip musical",
+   "url": "https://www.youtube.com/watch?v=4Q-o_ylnVnc"
+  },
+  {
+   "slug": "agentplay",
+   "group": "What Ships",
+   "title": "AgentPlay",
+   "url": "https://whatships.com/videos/agentplay/"
+  },
+  {
+   "slug": "claudia",
+   "group": "What Ships",
+   "title": "Claudia",
+   "url": "https://whatships.com/videos/claudia/"
+  },
+  {
+   "slug": "factory-environments",
+   "group": "What Ships",
+   "title": "Factory Environments",
+   "url": "https://whatships.com/videos/factory-environments/"
+  },
+  {
+   "slug": "cinematic-shot",
+   "group": "What Ships",
+   "title": "Cinematic Shot",
+   "url": "https://whatships.com/videos/cinematic-shot/"
+  },
+  {
+   "slug": "still-bleach-tybw",
+   "group": "Visuels fixes",
+   "title": "Bleach Thousand-Year Blood War, page de personnage (hAschwAlth)",
+   "url": ""
+  },
+  {
+   "slug": "still-ichiban-japan",
+   "group": "Visuels fixes",
+   "title": "Ichiban Japan, miniature « Redécouvrir Kyushu »",
+   "url": ""
+  },
+  {
+   "slug": "still-paget-character-concept",
+   "group": "Visuels fixes",
+   "title": "David Paget, Character Concept Art 01",
+   "url": ""
+  },
+  {
+   "slug": "still-fe-pale-ravens-perch",
+   "group": "Visuels fixes",
+   "title": "Fire Emblem Fortune's Weave, Pale Raven's Perch",
+   "url": ""
+  },
+  {
+   "slug": "still-fe-player-phase",
+   "group": "Visuels fixes",
+   "title": "Fire Emblem Fortune's Weave, Player Phase",
+   "url": ""
+  },
+  {
+   "slug": "still-fe-enemy-phase",
+   "group": "Visuels fixes",
+   "title": "Fire Emblem Fortune's Weave, Enemy Phase",
+   "url": ""
+  },
+  {
+   "slug": "still-fe-next-round",
+   "group": "Visuels fixes",
+   "title": "Fire Emblem Fortune's Weave, Next Round",
+   "url": ""
+  },
+  {
+   "slug": "still-yawen-visual-designer",
+   "group": "Visuels fixes",
+   "title": "Yawen, Visual Designer marketing 01",
+   "url": ""
+  },
+  {
+   "slug": "still-paget-indiana-jones",
+   "group": "Visuels fixes",
+   "title": "David Paget, Indiana Jones",
+   "url": ""
+  },
+  {
+   "slug": "still-zhong-kui",
+   "group": "Visuels fixes",
+   "title": "Black Myth: Wukong, Zhong Kui (fichier d'image non enregistré, voir note)",
+   "url": ""
+  }
+ ],
+ "extras": [
+  {
+   "project": "motion-opus-5-5-preview",
+   "group": "Motion Opus",
+   "title": "Motion Opus 5.5, fenêtre d'aperçu",
+   "reference": "motion-opus-5-5"
+  },
+  {
+   "project": "film-de-lancement-30-s",
+   "group": "Motion Opus",
+   "title": "Film de lancement 30 s",
+   "reference": null
+  },
+  {
+   "project": "film-de-lancement-30-s-2",
+   "group": "Motion Opus",
+   "title": "Film de lancement 30 s (2)",
+   "reference": null
+  }
+ ]
 }

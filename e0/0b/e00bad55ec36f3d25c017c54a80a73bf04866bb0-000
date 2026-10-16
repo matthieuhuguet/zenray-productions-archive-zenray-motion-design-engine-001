@@ -1,0 +1,211 @@
+// 16 October 2026: the templates of the "stills" workflow (workflow Premier Plan Mesuré, ppm): a static visual given by Matthieu becomes a procedural motion with THREE appearances.
+// One template, sv-visual: `layout` picks the visual (measured on the image), `appearance` picks how its foreground arrives (wipe, letters, rise, ink, drop, pop, typewriter, zoom, glitch).
+// A project is three scenes of the same layout with three different appearances. FOREGROUND ONLY (Matthieu's rule): the vector text, panels, buttons and ink drawn in code;
+// the pictures (illustration, photographs, game footage) are NOT reproduced (a flat tile stands for them), except the designed backdrop of Pale Raven's Perch, which Matthieu asked for.
+// FR : une image fixe devient un motion procedural a trois apparitions ; premier plan vectoriel seul.
+(function () {
+  const ZS = window.ZS, h = ZS.h;
+  const P = (key, label, type, def, tier, extra) => Object.assign({ key, label, type, default: def, tier }, extra || {});
+  const N = (key, label, def, min, max, step, tier, unit) => ({ key, label, type: "number", default: def, min, max, step, tier, unit });
+  const SEL = (key, label, def, options, tier) => ({ key, label, type: "select", default: def, options, tier });
+  const NS = "http://www.w3.org/2000/svg";
+  const svgEl = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); Object.keys(attrs || {}).forEach((k) => e.setAttribute(k, attrs[k])); if (parent) parent.appendChild(e); return e; };
+  const abs = (parent, css, text) => { const e = h.css(h.el("div", "zs-abs", parent), css); if (text !== undefined) { if (/[<&]/.test(String(text))) e.innerHTML = text; else e.textContent = text; } return e; };
+  const rnd = (seed) => () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+  const APPEARANCES = ["wipe", "letters", "rise", "ink", "drop", "pop", "typewriter", "zoom", "glitch"];
+  const LAYOUTS = ["bleach", "ichiban", "paget", "pale-raven", "phase", "yawen", "indy", "zhongkui"];
+
+  // ---- text pieces; `split` makes one span per character so an appearance can move the letters one by one
+  function T(parent, o) {
+    const css = Object.assign({ fontFamily: h.font(o.font || "InterVariable"), fontWeight: o.weight || 700, fontSize: o.size + "px", color: o.color || "#fff", whiteSpace: "pre", lineHeight: o.lh || 1.05,
+      letterSpacing: o.ls || "0", textAlign: o.align || "left", left: o.x + "px", top: o.y + "px", fontStyle: o.italic ? "italic" : "normal", textTransform: o.upper ? "uppercase" : "none" }, o.css || {});
+    if (o.align === "center") { css.transform = "translateX(-50%)"; css.left = o.x + "px"; }
+    if (o.sx) { css.transform = (css.transform ? css.transform + " " : "") + `scaleX(${o.sx})`; css.transformOrigin = o.align === "center" ? "50% 0" : "0 0"; }
+    const n = abs(parent, css, "");
+    const text = String(o.text).replace(/\\n/g, "\n");
+    if (o.split !== false) { n.innerHTML = ""; [...text].forEach((c, ci) => { const s = document.createElement("span"); s.className = "ch"; s.dataset.i = String(ci); s.textContent = c; s.style.display = "inline-block"; if (c === "\n") { s.style.display = "inline"; } if (c === " ") s.style.whiteSpace = "pre"; n.appendChild(s); }); } else n.textContent = text;
+    return n;
+  }
+  // a sticker word (white border, black outline, fill) made of three stacked copies
+  function sticker(parent, o) {
+    const g = abs(parent, { left: "0", top: "0", width: "0", height: "0" });
+    [[o.border, "#ffffff"], [o.outline, "#0b0b0b"], [o.fillStroke || 0, o.color]].forEach(([sw, col], i) => { const n = T(g, Object.assign({}, o, { color: col, css: Object.assign({ webkitTextStroke: sw ? sw + "px " + col : "0", paintOrder: "stroke fill", strokeLinejoin: "round" }, o.css || {}) })); n.dataset.layer = i; });
+    return g;
+  }
+  // the ragged black ink band of the Fire Emblem phase banners, drawn from a seed: edges, blots, smoke and coloured spatter
+  function inkBand(parent, o) {
+    const r = rnd(o.seed), W = o.w, H = o.h, sv = svgEl("svg", { width: W + 400, height: H + 400, viewBox: `${-200} ${-200} ${W + 400} ${H + 400}`, style: `position:absolute;left:${o.x - 200}px;top:${o.y - 200}px;overflow:visible` }, parent);
+    const fid = "ink" + o.seed, df = svgEl("defs", {}, sv), fl = svgEl("filter", { id: fid, x: "-20%", y: "-40%", width: "140%", height: "180%" }, df);
+    svgEl("feTurbulence", { type: "fractalNoise", baseFrequency: "0.018 0.045", numOctaves: 4, seed: o.seed % 97 }, fl); svgEl("feDisplacementMap", { in: "SourceGraphic", scale: o.rough, xChannelSelector: "R", yChannelSelector: "G" }, fl);
+    const gr = svgEl("linearGradient", { id: fid + "g", x1: "0", y1: "0", x2: "0", y2: "1" }, df); svgEl("stop", { offset: "0", "stop-color": "#04060c" }, gr); svgEl("stop", { offset: "0.55", "stop-color": "#08142a" }, gr); svgEl("stop", { offset: "1", "stop-color": "#0a1830" }, gr);
+    const g = svgEl("g", { filter: `url(#${fid})` }, sv), top = [], bot = [], n = 22;
+    for (let i = 0; i <= n; i++) { const t = i / n, bulge = Math.sin(Math.PI * t) ** 0.5; top.push([t * W, H * 0.5 - bulge * H * (0.27 + r() * 0.1)]); bot.push([t * W, H * 0.5 + bulge * H * (0.27 + r() * 0.12)]); }
+    svgEl("path", { d: "M" + top.map((p) => p.join(",")).join(" L") + " L" + bot.reverse().map((p) => p.join(",")).join(" L") + " Z", fill: `url(#${fid}g)`, opacity: 0.95 }, g);
+    svgEl("ellipse", { cx: W * 0.5, cy: H * 0.5, rx: W * 0.36, ry: H * 0.2, fill: o.color, opacity: 0.22, filter: "blur(40px)" }, sv);
+    for (let i = 0; i < (o.smoke ?? 16); i++) { const up = r() < 0.4; svgEl("ellipse", { cx: W * (0.04 + r() * 0.92), cy: H * (up ? 0.2 + r() * 0.1 : 0.72 + r() * 0.14), rx: 70 + r() * 160, ry: 28 + r() * 60, fill: "rgba(120,124,134,0.6)", filter: "blur(26px)" }, sv); }
+    for (let i = 0; i < o.dots; i++) { const px = W * (0.03 + r() * 0.94), spread = (r() + r() + r() - 1.5) / 1.5, py = H * 0.5 + spread * H * 0.46; svgEl("circle", { cx: px, cy: py, r: 0.8 + r() ** 4 * 7, fill: o.color, opacity: 0.4 + r() * 0.6 }, sv); }
+    return sv;
+  }
+
+  // ---- the layouts: each fills `plane` (1920 x 1080, or 1080 x 1080 for the square one) and returns its foreground items in reading order
+  const L = {
+    bleach(pl, p) {
+      const tw = p.tw;
+      abs(pl, { left: "0", top: "0", width: "1920px", height: "1080px", background: p.accent });
+      abs(pl, { left: "48px", top: "0", width: "828px", height: "1080px", background: p.tile });
+      const it = [];
+      const chip = abs(pl, { left: "1264px", top: "107px", width: "55px", height: "34px", background: "#0b0b0b" }); abs(chip, { left: "0", top: "8px", width: "55px", textAlign: "center", fontFamily: h.font("Syne"), fontWeight: 800, fontSize: "13px", color: "#fff" }, p.code); it.push({ n: chip, shape: true });
+      it.push({ n: T(pl, { text: p.kicker, x: 1334, y: 108, size: 11, font: "Fraunces", weight: 600, color: "#111", ls: "0.08em", upper: true }) });
+      it.push({ n: T(pl, { text: p.subtitle, x: 1334, y: 124, size: 17, font: "Fraunces", weight: 600, color: "#111", ls: "0.06em", upper: true }) });
+      it.push({ n: T(pl, { text: p.title, x: 1000, y: 230, size: tw("titleSize", 150), font: "PlayfairDisplay", weight: 600, color: "#0d0d0d", ls: "-0.02em", lh: 1 }) });
+      const jp = T(pl, { text: p.body, x: 1000, y: 418, size: tw("bodySize", 23), font: "Yu Mincho", weight: 700, color: "#111", ls: "0.02em", lh: 1.9, split: false, css: { fontFamily: "'Yu Mincho','Hiragino Mincho ProN',serif" } }); it.push({ n: jp, block: true });
+      const big = T(pl, { text: p.title, x: 896, y: 731, size: tw("bigSize", 520), font: "Sora", weight: 800, color: "#050505", ls: "-0.07em", lh: 1, sx: tw("bigScaleX", 0.332) }); it.push({ n: big });
+      return it;
+    },
+    ichiban(pl, p) {
+      const it = [], tw = p.tw;
+      it.push({ n: sticker(pl, { text: p.line1, x: 46, y: 52, size: tw("size1", 168), font: "Sora", weight: 800, color: "#ffffff", ls: "-0.03em", border: tw("border", 34), outline: tw("outline", 20), fillStroke: tw("fill", 8), sx: tw("sx1", 0.70), lh: 1 }) });
+      it.push({ n: sticker(pl, { text: p.line2, x: 41, y: 232, size: tw("size2", 250), font: "Sora", weight: 800, color: p.accent, ls: "-0.03em", border: tw("border", 36), outline: tw("outline2", 0), fillStroke: tw("fill", 8), sx: tw("sx2", 0.68), lh: 1 }) });
+      return it;
+    },
+    paget(pl, p) {
+      const it = [], tw = p.tw, K = tw("scale", 1);
+      const bar = svgEl("svg", { width: 1920, height: 1080, viewBox: "0 0 1920 1080", style: "position:absolute;left:0;top:0" }, pl); svgEl("polygon", { points: `0,0 ${tw("panelTop", 840)},0 ${tw("panelBottom", 540)},1080 0,1080`, fill: p.tile }, bar); it.push({ n: bar.parentNode === pl ? bar : bar, shape: true, svg: true });
+      const O = p.accent, W = "#f6f6f6", mk = (text, y, size, color, extra) => it.push({ n: T(pl, Object.assign({ text, x: 120, y, size: size * K, font: "Sora", weight: 800, color }, extra || {})) });
+      mk(p.l1, 225, 71, W); mk(p.l2, 292, 71, O); mk(p.l3, 368, 43, W); mk(p.l4, 452, 32, W, { weight: 700 }); mk(p.l5, 577, 32, W, { weight: 700 }); mk(p.l6, 696, 32, W, { weight: 700 }); mk(p.l7, 730, 75, O); mk(p.l8, 800, 75, O);
+      const btn = abs(pl, { left: "120px", top: "886px", width: "364px", height: "100px", borderRadius: "7px", background: O }); abs(btn, { left: "0", top: "22px", width: "364px", textAlign: "center", fontFamily: h.font("Sora"), fontWeight: 800, fontSize: "48px", color: "#1a1a1a" }, p.cta); it.push({ n: btn, shape: true });
+      it.push({ n: T(pl, { text: p.handle, x: 122, y: 1008, size: 21, font: "Sora", weight: 500, color: "#d8d8d8", ls: "0.1em", upper: false }) });
+      [337, 390, 443, 496].forEach((x, i) => { const c = abs(pl, { left: x - 15 + "px", top: "1008px", width: "30px", height: "30px", borderRadius: "50%", border: "2px solid #d8d8d8" }); abs(c, { left: "0", top: "3px", width: "26px", textAlign: "center", fontFamily: h.font("Sora"), fontSize: "13px", color: "#d8d8d8", fontWeight: 700 }, ["◎", "▲", "✦", "▶"][i]); it.push({ n: c, shape: true }); });
+      return it;
+    },
+    "pale-raven"(pl, p) {
+      const tw = p.tw;
+      abs(pl, { left: "0", top: "0", width: "1920px", height: "1080px", background: "#0c1011" });
+      const it = [], sv = svgEl("svg", { width: 1920, height: 1080, viewBox: "0 0 1920 1080", style: "position:absolute;left:0;top:0" }, pl), df = svgEl("defs", {}, sv);
+      const gr = svgEl("linearGradient", { id: "pr-g", x1: "0", y1: "0", x2: "1", y2: "1" }, df); svgEl("stop", { offset: "0", "stop-color": "#0f5560" }, gr); svgEl("stop", { offset: "1", "stop-color": "#0a3a42" }, gr);
+      const fl = svgEl("filter", { id: "pr-r", x: "-5%", y: "-5%", width: "110%", height: "110%" }, df); svgEl("feTurbulence", { type: "fractalNoise", baseFrequency: "0.02 0.05", numOctaves: 3, seed: 11 }, fl); svgEl("feDisplacementMap", { in: "SourceGraphic", scale: tw("edgeRough", 46), xChannelSelector: "R", yChannelSelector: "G" }, fl);
+      const g = svgEl("g", {}, sv);
+      svgEl("path", { d: (() => { const e = tw("panelWidth", 830) - 830; return `M0,0 L${820 + e},0 C${860 + e},160 ${780 + e},260 ${830 + e},420 C${870 + e},560 ${790 + e},700 ${850 + e},860 C${880 + e},960 ${830 + e},1020 ${860 + e},1080 L0,1080 Z`; })(), fill: "url(#pr-g)", filter: "url(#pr-r)" }, g);
+      const rose = (cx, cy, r) => { svgEl("circle", { cx, cy, r, fill: "none", stroke: "#8fc7c8", "stroke-opacity": 0.16, "stroke-width": 2 }, g); svgEl("circle", { cx, cy, r: r * 0.66, fill: "none", stroke: "#8fc7c8", "stroke-opacity": 0.14, "stroke-width": 1.5 }, g); svgEl("path", { d: `M${cx},${cy - r} L${cx + r * 0.1},${cy - r * 0.1} L${cx + r},${cy} L${cx + r * 0.1},${cy + r * 0.1} L${cx},${cy + r} L${cx - r * 0.1},${cy + r * 0.1} L${cx - r},${cy} L${cx - r * 0.1},${cy - r * 0.1} Z`, fill: "#8fc7c8", "fill-opacity": 0.12 }, g); };
+      rose(330, 210, 230); rose(520, 520, 200); rose(700, 960, 220);
+      it.push({ n: sv, shape: true, svg: true });
+      [p.l1, p.l2, p.l3].forEach((t, i) => it.push({ n: T(pl, { text: t, x: 112, y: tw("top", 240) + i * tw("pitch", 181), size: tw("size", 190), font: "PlayfairDisplay", weight: 700, italic: true, color: "#f7ecd3", ls: "-0.02em", lh: 1 }) }));
+      return it;
+    },
+    phase(pl, p) {
+      const it = [], tw = p.tw;
+      const band = abs(pl, { left: "0", top: "0", width: "1920px", height: "1080px" }); inkBand(band, { x: tw("bandX", 190), y: tw("bandY", 290), w: tw("bandW", 1560), h: tw("bandH", 540), seed: p.seed, rough: tw("rough", 60), color: p.accent, dots: tw("dots", 520), smoke: tw("smoke", 16) }); it.push({ n: band, shape: true, svgBand: true });
+      const word = T(pl, { text: p.text, x: 960, y: 462, size: tw("size", 134), font: "PlayfairDisplay", weight: 700, italic: true, color: p.accent, align: "center", ls: "0.01em", lh: 1, upper: true, css: { textShadow: `0 0 ${tw("glow", 18)}px ${p.accent}, 0 0 ${tw("glow", 18) * 2.2}px ${p.accent}88` } }); it.push({ n: word });
+      return it;
+    },
+    yawen(pl, p) {
+      const it = [], tw = p.tw;
+      it.push({ n: T(pl, { text: p.l1, x: 960, y: 348, size: tw("size1", 160), font: "InstrumentSerif", weight: 400, color: "#f4f6f8", align: "center", ls: tw("ls1", 0.05) + "em", lh: 1, css: { webkitTextStroke: tw("stroke1", 3) + "px #f4f6f8" } }) });
+      it.push({ n: T(pl, { text: p.l2, x: 960, y: 530, size: tw("size2", 44), font: "Fraunces", weight: 500, color: "#eef2f6", align: "center", ls: tw("ls2", 0.17) + "em", lh: 1 }) });
+      it.push({ n: T(pl, { text: "◉  " + p.l3, x: 130, y: 976, size: 19, font: "Geist", weight: 500, color: "#e6eaee", ls: "0.03em" }) });
+      it.push({ n: T(pl, { text: "✉  " + p.l4, x: 130, y: 1009, size: 19, font: "Geist", weight: 500, color: "#e6eaee", ls: "0.03em" }) });
+      return it;
+    },
+    // Black Myth: Wukong, Zhong Kui: red brush title over a huge grey ink glyph, a small seal above. The ink glyph is drawn procedurally (rough strokes, no picture).
+    zhongkui(pl, p) {
+      const tw = p.tw, it = [];
+      abs(pl, { left: "0", top: "0", width: "1600px", height: "668px", background: "#050405" });
+      abs(pl, { left: "0", top: "0", width: "1600px", height: "668px", background: "radial-gradient(ellipse 60% 70% at 78% 50%, rgba(60,56,56,0.35), rgba(0,0,0,0) 70%)" });
+      const r = rnd(p.seed), glyph = abs(pl, { left: "0", top: "0", width: "1600px", height: "668px", opacity: 0 });
+      const sv = svgEl("svg", { width: 1600, height: 668, viewBox: "0 0 1600 668", style: "position:absolute;left:0;top:0" }, glyph), df = svgEl("defs", {}, sv), fl = svgEl("filter", { id: "zk-r", x: "-10%", y: "-10%", width: "120%", height: "120%" }, df);
+      svgEl("feTurbulence", { type: "fractalNoise", baseFrequency: "0.035 0.06", numOctaves: 4, seed: p.seed % 89 }, fl); svgEl("feDisplacementMap", { in: "SourceGraphic", scale: tw("glyphRough", 26), xChannelSelector: "R", yChannelSelector: "G" }, fl);
+      const g = svgEl("g", { filter: "url(#zk-r)", fill: "none", stroke: "#4a4748", "stroke-linecap": "round", "stroke-linejoin": "round", opacity: tw("glyphOpacity", 0.85) }, sv);
+      const stroke = (pts, w) => svgEl("path", { d: "M" + pts.map((q) => q.join(",")).join(" L"), "stroke-width": w }, g);
+      stroke([[560, 110], [470, 250], [350, 470]], 46); stroke([[440, 150], [610, 160]], 26); stroke([[600, 130], [640, 270]], 30); stroke([[690, 230], [760, 150], [850, 220]], 34); stroke([[780, 300], [740, 480], [790, 560]], 40);
+      stroke([[880, 560], [1010, 500], [1130, 520]], 52); stroke([[1150, 190], [1190, 330], [1120, 470]], 48); stroke([[960, 250], [1060, 260]], 28); stroke([[900, 300], [900, 420]], 36);
+      for (let i = 0; i < 26; i++) svgEl("circle", { cx: 380 + r() * 820, cy: 120 + r() * 440, r: 2 + r() * 7, fill: "#4a4748", stroke: "none", opacity: 0.6 }, g);
+      it.push({ n: glyph, shape: true, fadeOnly: true });
+      const red = p.accent, rough = (n) => { n.style.filter = "url(#zk-b)"; return n; };
+      const sv2 = svgEl("svg", { width: 0, height: 0, style: "position:absolute" }, pl), df2 = svgEl("defs", {}, sv2), f2 = svgEl("filter", { id: "zk-b" }, df2);
+      svgEl("feTurbulence", { type: "fractalNoise", baseFrequency: "0.09", numOctaves: 2, seed: 4 }, f2); svgEl("feDisplacementMap", { in: "SourceGraphic", scale: tw("brushRough", 4) }, f2);
+      const seal = abs(pl, { left: "782px", top: "112px", width: "26px", height: "78px", background: red, borderRadius: "5px", display: "grid", placeItems: "center", color: "#1a0808", fontFamily: h.font("Sora"), fontWeight: 800, fontSize: "14px", lineHeight: 1.05, textAlign: "center" }, "黑<br>神<br>話"); it.push({ n: seal, shape: true });
+      it.push({ n: rough(T(pl, { text: p.l1, x: 800, y: tw("y1", 240), size: tw("size1", 98), font: "Unbounded", weight: 500, color: red, align: "center", ls: "0.05em", lh: 1, sx: tw("sx1", 1) })) });
+      it.push({ n: T(pl, { text: p.l2, x: 800, y: tw("y2", 343), size: tw("size2", 21), font: "Sora", weight: 600, color: "#a73238", align: "center", ls: tw("ls2", 1.1) + "em", lh: 1 }) });
+      it.push({ n: rough(T(pl, { text: p.l3, x: 800, y: tw("y3", 372), size: tw("size3", 108), font: "Unbounded", weight: 500, color: red, align: "center", ls: "0.06em", lh: 1, sx: tw("sx3", 1) })) });
+      return it;
+    },
+    indy(pl, p) { const tw = p.tw; return [{ n: T(pl, { text: p.l1, x: 540, y: tw("y", 872), size: tw("size", 88), font: "PlayfairDisplay", weight: 400, color: "#dde1ec", align: "center", ls: tw("ls", 0.25) + "em", lh: 1 }) }]; },
+  };
+  const DEFAULTS = {
+    bleach: { l: { code: "#43", kicker: "Episode 43", subtitle: "Blood for my bone", title: "hAschwAlth", body: "眠りについたユーハバッハから『全知全能』を託されたハッシュヴァルトが、\nその力を解放し依代と化した姿。眼球から溢れ出すユーハバッハの力は、\n彼の身を纏い、姿までも変貌を遂げる。その強大な力は精神にまで影響を\n及ぼし、普段の冷静沈着な様子からは想像もできぬほど、好戦的な態度\nと口調を見せるようになる。" }, bg: "#f26207", accent: "#f26207", tile: "#2a2a2a" },
+    ichiban: { l: { line1: "REDÉCOUVRIR", line2: "KYUSHU" }, bg: "#8b8f93", accent: "#ff7b7b", tile: "#555" },
+    paget: { l: { l1: "CHARACTER", l2: "CONCEPT ART", l3: "FOR FILM AND GAMES", l4: "WITH DAVID PAGET", l5: "8 WEEK COURSE", l6: "LIVE CLASSES BEGIN", l7: "JANUARY", l8: "2027", cta: "NOW OPEN", handle: "@davepageart" }, bg: "#2a2420", accent: "#ff9d1f", tile: "#181818" },
+    "pale-raven": { l: { l1: "Pale", l2: "Raven's", l3: "Perch" }, bg: "#0c1011", accent: "#f7ecd3", tile: "#0f5560" },
+    phase: { l: { text: "ENEMY PHASE" }, bg: "#9a8878", accent: "#f2555a", tile: "#000", seed: 7 },
+    yawen: { l: { l1: "VISUAL·DESIGNER", l2: "MARKETING·GAMES·DIGITAL", l3: "Yawen | Marketing Visual Designer (Games / Digital)", l4: "lyw19837059505@gmail.com" }, bg: "#1c2f38", accent: "#ffffff", tile: "#000" },
+    indy: { l: { l1: "INDIANA JONES" }, bg: "#17233a", accent: "#dde1ec", tile: "#000" },
+    zhongkui: { l: { l1: "ZHONG", l2: "BLACK MYTH", l3: "KUI" }, bg: "#050405", accent: "#d94a4e", tile: "#000", seed: 5 },
+  };
+  const SIZE = { indy: [1080, 1080], zhongkui: [1600, 668] };
+
+  // ---- the appearances (seek-safe tweens only). Every effect reads its numbers from `o`: distance, blur, scale, rotation, per-letter stagger, direction, ease, glitch amplitude.
+  const WIPE = { left: "inset(0 100% 0 0)", right: "inset(0 0 0 100%)", up: "inset(100% 0 0 0)", down: "inset(0 0 100% 0)", center: "inset(0 50% 0 50%)" };
+  function appear(tl, items, kind, t0, o) {
+    items.forEach((it, i) => {
+      const t = t0 + o.delay + i * o.stagger, n = it.n, chars = [...n.querySelectorAll(".ch")], shape = !!it.shape, d = o.dur, E = (def) => (o.ease && o.ease !== "auto" ? o.ease : def);
+      const perChar = chars.length && !shape, targets = perChar ? chars : [n];
+      const each = (from, to, ease, mult) => { if (perChar) chars.forEach((c) => tl.fromTo(c, from, Object.assign({ ease }, to), t + Number(c.dataset.i || 0) * o.charStagger * (mult || 1))); else tl.fromTo(n, from, Object.assign({ ease }, to), t); };
+      if (it.fadeOnly) { tl.fromTo(n, { opacity: 0, scale: 1.06, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, duration: d * 1.8, ease: "power2.out" }, t); return; }
+      if (kind === "wipe" || (shape && kind !== "ink")) {
+        tl.fromTo(n, { clipPath: WIPE[o.direction] || WIPE.left }, { clipPath: "inset(0 0% 0 0%)", duration: d, ease: E("power3.inOut") }, t);
+      } else if (kind === "letters") {
+        each({ opacity: 0, y: o.distance, rotation: o.rotate, filter: `blur(${o.blur}px)` }, { opacity: 1, y: 0, rotation: 0, filter: "blur(0px)", duration: d * 0.7 }, E("power3.out"));
+      } else if (kind === "rise") {
+        tl.fromTo(n, { opacity: 0, y: o.distance * 2, scaleY: 1.12, rotation: o.rotate, filter: `blur(${o.blur / 2}px)`, transformOrigin: "50% 100%" }, { opacity: 1, y: 0, scaleY: 1, rotation: 0, filter: "blur(0px)", duration: d, ease: E("power4.out") }, t);
+      } else if (kind === "ink") {
+        tl.fromTo(n, { opacity: 0, scale: shape ? Math.min(o.scaleFrom, 0.5) : Math.max(o.scaleFrom, 1.1), filter: `blur(${o.blur * 1.6}px)`, rotation: o.rotate / 2, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, filter: "blur(0px)", rotation: 0, duration: d * 1.1, ease: E(shape ? "back.out(1.6)" : "power3.out") }, t);
+      } else if (kind === "drop") {
+        each({ opacity: 0, y: -o.distance * 3.5, rotation: o.rotate }, { opacity: 1, y: 0, rotation: 0, duration: d * 0.8 }, E("bounce.out"), 1.4);
+      } else if (kind === "pop") {
+        each({ opacity: 0, scale: Math.min(o.scaleFrom, 0.9), rotation: o.rotate }, { opacity: 1, scale: 1, rotation: 0, duration: d * 0.6 }, E("back.out(2.4)"));
+      } else if (kind === "typewriter") {
+        if (perChar) { chars.forEach((c) => { tl.set(c, { opacity: 0 }, t0); tl.set(c, { opacity: 1 }, t + Number(c.dataset.i || 0) * o.charStagger * 1.3); }); } else tl.fromTo(n, { opacity: 0 }, { opacity: 1, duration: 0.25 }, t);
+      } else if (kind === "zoom") {
+        tl.fromTo(n, { opacity: 0, scale: Math.max(o.scaleFrom, 1.2), rotation: o.rotate, filter: `blur(${o.blur / 2}px)`, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, rotation: 0, filter: "blur(0px)", duration: d, ease: E("power3.out") }, t);
+      } else if (kind === "glitch") {
+        targets.forEach((c, j) => { const dx = (((j * 37) % 11) - 5) * o.glitch, dy = (((j * 53) % 7) - 3) * o.glitch * 0.55; tl.fromTo(c, { opacity: 0, x: dx, y: dy, skewX: dx > 0 ? 18 : -18 }, { opacity: 1, x: 0, y: 0, skewX: 0, duration: d * 0.5, ease: E("steps(4)") }, t + (perChar ? Number(c.dataset.i || j) * 0.02 : 0)); });
+      }
+      void targets;
+    });
+  }
+
+  const BOXES = { bleach: [880, 90, 1920, 1080], ichiban: [30, 20, 960, 480], paget: [90, 190, 700, 1050], "pale-raven": [90, 250, 900, 1010], phase: [90, 300, 1830, 840], yawen: [110, 330, 1560, 1030], indy: [40, 780, 1040, 990], zhongkui: [330, 90, 1230, 580] };
+  const TALLBOXES = { zhongkui: [470, 100, 1130, 490] };
+  const EASES = ["auto", "power3.out", "power4.out", "expo.out", "back.out(1.7)", "back.out(3)", "elastic.out(1,0.4)", "bounce.out", "sine.inOut", "power2.inOut", "steps(6)"];
+  const parseTweaks = (lines) => { const m = {}; (lines || []).forEach((l) => { const q = String(l).trim().split(/\s+/); if (q.length >= 2 && !isNaN(Number(q[q.length - 1]))) m[q.slice(0, -1).join(" ")] = Number(q[q.length - 1]); }); return m; };
+
+  ZS.register({
+    id: "sv-visual", label: "Visuel fixe : une mise en page, trois apparitions", group: "Visuels fixes", duration: 4,
+    params: [
+      SEL("layout", "Visuel", "ichiban", LAYOUTS, 1), SEL("appearance", "Apparition", "letters", APPEARANCES, 1), P("lines", "Textes (un par ligne, dans l'ordre du visuel)", "lines", [], 1), P("accent", "Couleur d'accent", "color", "", 1),
+      P("bg", "Fond de la tuile", "color", "", 2), P("tile", "Couleur du panneau", "color", "", 2),
+      N("stagger", "Décalage entre éléments (s)", 0.18, 0, 1.5, 0.01, 2, "s"), N("dur", "Durée d'une apparition (s)", 0.7, 0.1, 3, 0.05, 2, "s"), N("delay", "Attente avant la première (s)", 0.15, 0, 3, 0.05, 2, "s"),
+      N("charStagger", "Décalage entre lettres (s)", 0.035, 0, 0.3, 0.005, 3, "s"), N("distance", "Distance du mouvement (px)", 46, 0, 400, 1, 3, "px"), N("blur", "Flou au départ (px)", 9, 0, 60, 1, 3, "px"),
+      N("scaleFrom", "Échelle au départ", 0.4, 0.1, 3, 0.05, 3), N("rotate", "Rotation au départ (°)", 0, -90, 90, 1, 3, "°"), SEL("ease", "Courbe", "auto", EASES, 3), SEL("direction", "Sens du balayage", "left", ["left", "right", "up", "down", "center"], 3),
+      N("glitch", "Amplitude du glitch (px)", 14, 0, 80, 1, 3, "px"), N("seed", "Graine de l'encre", 7, 1, 999, 1, 3),
+      P("tweaks", "Réglages du visuel (nom valeur) : ichiban size1 size2 sx1 sx2 border outline fill ; bleach titleSize bodySize bigSize bigScaleX ; paget scale panelTop panelBottom ; pale-raven size top pitch panelWidth edgeRough ; phase size bandX bandY bandW bandH rough dots smoke glow ; yawen size1 size2 ls2 ; indy size y ls", "lines", [], 3),
+      P("tallBox", "Cadrage en format haut (x0 y0 x1 y1, vide = défaut du visuel)", "text", "", 3), N("film0", "Début dans le film (s)", 0, 0, 60, 0.01, 4, "s"),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0 } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
+      const D = DEFAULTS[p.layout] || DEFAULTS.ichiban, sz = SIZE[p.layout] || [1920, 1080], tws = parseTweaks(p.tweaks);
+      const keys = Object.keys(D.l), params = { accent: p.accent || D.accent, tile: p.tile || D.tile, seed: p.seed || D.seed || 7, tw: (k, def) => (tws[k] !== undefined ? tws[k] : def) };
+      keys.forEach((k, i) => { params[k] = p.lines && p.lines[i] !== undefined && p.lines[i] !== "" ? p.lines[i] : D.l[k]; });
+      h.css(el, { background: p.bg || D.bg });
+      let k, ox, oy;
+      if (tall || sz[0] / sz[1] > 2) {
+        const bx = String(p.tallBox || "").trim().split(/\s+/).map(Number), box = bx.length === 4 && bx.every((v) => !isNaN(v)) ? bx : (tall && TALLBOXES[p.layout]) || BOXES[p.layout] || [0, 0, sz[0], sz[1]];
+        const bw = box[2] - box[0], bh = box[3] - box[1]; k = Math.min((w * (tall ? 0.94 : 0.9)) / bw, (sh * 0.94) / bh); ox = w / 2 - ((box[0] + box[2]) / 2) * k; oy = sh / 2 - ((box[1] + box[3]) / 2) * k;
+      } else { k = Math.min(w / sz[0], sh / sz[1]); ox = (w - sz[0] * k) / 2; oy = (sh - sz[1] * k) / 2; }
+      const plane = abs(st, { left: ox + "px", top: oy + "px", width: sz[0] + "px", height: sz[1] + "px", transformOrigin: "0 0", transform: `scale(${k})`, overflow: tall ? "visible" : "hidden" });
+      const items = (L[p.layout] || L.ichiban)(plane, params);
+      appear(tl, items, p.appearance, t0, { stagger: p.stagger, dur: p.dur, delay: p.delay, charStagger: p.charStagger, distance: p.distance, blur: p.blur, scaleFrom: p.scaleFrom, rotate: p.rotate, ease: p.ease, direction: p.direction, glitch: p.glitch });
+    },
+  });
+  ZS.stills = { LAYOUTS, APPEARANCES, DEFAULTS };
+})();

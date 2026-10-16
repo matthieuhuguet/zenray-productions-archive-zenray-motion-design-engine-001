@@ -143,6 +143,11 @@ def validate_set() -> dict:
     return {"items": out, "formats": cfg.get("formats", [])}
 
 
+STILL_PROJECTS = {"still-bleach-tybw": ["bleach-tybw-ppm"], "still-ichiban-japan": ["ichiban-japan-ppm"], "still-paget-character-concept": ["paget-character-concept-ppm"], "still-fe-pale-ravens-perch": ["fe-pale-ravens-perch-ppm"],
+                  "still-fe-player-phase": ["fe-phases-ppm"], "still-fe-enemy-phase": ["fe-phases-ppm"], "still-fe-next-round": ["fe-phases-ppm"], "still-yawen-visual-designer": ["yawen-visual-designer-ppm"],
+                  "still-paget-indiana-jones": ["paget-indiana-jones-ppm"], "still-zhong-kui": ["bmw-zhong-kui-ppm"]}
+
+
 def _norm_id(slug: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", slug.lower()).strip("-")
 
@@ -207,7 +212,7 @@ def threads() -> dict:
 
     for v in cfg["videos"]:
         slug = v["slug"]
-        pids = [_norm_id(slug) + "-ppm", _norm_id(slug) + "-motion"]
+        pids = [_norm_id(slug) + "-ppm", _norm_id(slug) + "-motion"] + STILL_PROJECTS.get(slug, [])
         pl = place(slug, pids)
         loc = local_of(slug)
         rows.append({"id": slug, "group": v["group"], "title": v["title"], "url": v["url"], "backup": [], "local": loc, "localUrl": f"/motion/bank/ref/{slug}" if loc else None,

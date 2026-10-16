@@ -1,0 +1,72 @@
+"""The stills of Matthieu as procedural motions with three appearances each (16 October 2026), workflow Premier Plan Mesuré (ppm).
+
+A static visual becomes one project of three scenes: the same layout, three different appearances (how the foreground arrives). Foreground only: vector text, panels, buttons and ink drawn in code;
+the pictures are not reproduced. One layout = one measured function of the template sv-visual (runtime/zs-templates-stills-1.js). Usage: python3 motion/reproductions/stills.py [id ...]
+"""
+import sys
+
+import ppm
+from ppm import T
+
+SCENE = 4.2
+# id -> (title, slug of the reference still, layout, format, the three appearances, per-scene extras)
+STILLS = {
+    "bleach-tybw": ("Bleach Thousand-Year Blood War, page de personnage", "still-bleach-tybw", "bleach", "16x9", ["wipe", "letters", "zoom"], {}),
+    "ichiban-japan": ("Ichiban Japan, miniature Redécouvrir Kyushu", "still-ichiban-japan", "ichiban", "16x9", ["pop", "drop", "ink"], {}),
+    "paget-character-concept": ("David Paget, Character Concept Art 01", "still-paget-character-concept", "paget", "16x9", ["wipe", "rise", "typewriter"], {}),
+    "fe-pale-ravens-perch": ("Fire Emblem Fortune's Weave, Pale Raven's Perch", "still-fe-pale-ravens-perch", "pale-raven", "16x9", ["wipe", "letters", "ink"], {}),
+    "yawen-visual-designer": ("Yawen, Visual Designer marketing 01", "still-yawen-visual-designer", "yawen", "16x9", ["letters", "glitch", "rise"], {}),
+    "bmw-zhong-kui": ("Black Myth: Wukong, Zhong Kui", "still-zhong-kui", "zhongkui", "16x9", ["ink", "letters", "zoom"], {}),
+    "paget-indiana-jones": ("David Paget, Indiana Jones", "still-paget-indiana-jones", "indy", "1x1", ["letters", "zoom", "typewriter"], {}),
+}
+PHASES = [("Player Phase", "still-fe-player-phase", "PLAYER PHASE", "#3fb8ff", 5), ("Enemy Phase", "still-fe-enemy-phase", "ENEMY PHASE", "#f2555a", 7), ("Next Round", "still-fe-next-round", "NEXT ROUND", "#f4e27a", 3)]
+
+
+def controls(n: int, apps: "list | None" = None) -> list:
+    ids = [f"b{i + 1:02d}" for i in range(n)]
+    allt = lambda k: [T(i, k) for i in ids]  # noqa: E731
+    c = [
+        {"id": "lines", "label": "Textes du visuel (un par ligne)", "type": "lines", "group": "Phrases", "targets": allt("lines")},
+        {"id": "accent", "label": "Couleur d'accent", "type": "color", "group": "Couleurs", "targets": allt("accent")},
+        {"id": "bg", "label": "Fond de la tuile", "type": "color", "group": "Couleurs", "targets": allt("bg")},
+        {"id": "dur", "label": "Durée d'une apparition (s)", "type": "number", "group": "Mouvement", "min": 0.1, "max": 3, "step": 0.05, "targets": allt("dur")},
+        {"id": "stagger", "label": "Décalage entre éléments (s)", "type": "number", "group": "Mouvement", "min": 0, "max": 1.5, "step": 0.01, "targets": allt("stagger")},
+        {"id": "charStagger", "label": "Décalage entre lettres (s)", "type": "number", "group": "Mouvement", "min": 0, "max": 0.3, "step": 0.005, "targets": allt("charStagger")},
+        {"id": "distance", "label": "Distance du mouvement (px)", "type": "number", "group": "Mouvement", "min": 0, "max": 400, "step": 1, "targets": allt("distance")},
+        {"id": "blur", "label": "Flou au départ (px)", "type": "number", "group": "Mouvement", "min": 0, "max": 60, "step": 1, "targets": allt("blur")},
+        {"id": "rotate", "label": "Rotation au départ (°)", "type": "number", "group": "Mouvement", "min": -90, "max": 90, "step": 1, "targets": allt("rotate")},
+        {"id": "ease", "label": "Courbe", "type": "select", "group": "Mouvement", "options": ["auto", "power3.out", "power4.out", "expo.out", "back.out(1.7)", "back.out(3)", "elastic.out(1,0.4)", "bounce.out", "sine.inOut", "power2.inOut", "steps(6)"], "targets": allt("ease")},
+        {"id": "tweaks", "label": "Réglages du visuel (nom valeur)", "type": "lines", "group": "Visuel", "targets": allt("tweaks")},
+    ]
+    for i, a in enumerate(apps or []):
+        c.append({"id": f"appearance{i + 1}", "label": f"Apparition de la scène {i + 1}", "type": "select", "group": "Apparitions", "options": ["wipe", "letters", "rise", "ink", "drop", "pop", "typewriter", "zoom", "glitch"], "targets": [T(ids[i], "appearance")]})
+    return c
+
+
+def build_one(pid: str, title: str, slug: str, layout: str, fmt: str, apps: list, extra: dict) -> dict:
+    beats = [(i * SCENE, "sv-visual", dict({"layout": layout, "appearance": a}, **extra)) for i, a in enumerate(apps)]
+    return ppm.build(title + ", trois apparitions", slug, beats, SCENE * len(apps), controls(len(apps), apps), fmt=fmt, bg="#101010", ink="#ffffff", accent="#ff9d1f",
+                     doc=f"16 October 2026: {title}. Three appearances of the same visual ({', '.join(apps)}); foreground only.")
+
+
+def phases_project() -> dict:
+    apps = ["ink", "letters", "zoom"]
+    beats = []
+    for pi, (name, slug, text, col, seed) in enumerate(PHASES):
+        for ai, a in enumerate(apps):
+            beats.append(((pi * 3 + ai) * 3.2, "sv-visual", {"layout": "phase", "appearance": a, "lines": [text], "accent": col, "seed": seed, "bg": "#8f7e6e", "dur": 0.8, "stagger": 0.1}))
+    p = ppm.build("Fire Emblem Fortune's Weave, bandeaux de phase, trois couleurs et trois apparitions", "still-fe-player-phase", beats, 3.2 * 9, controls(9, ['ink', 'letters', 'zoom'] * 3), fmt="16x9", bg="#101010", ink="#ffffff", accent="#3fb8ff",
+                  doc="16 October 2026: the ink banner of the Player Phase, Enemy Phase and Next Round (same effect, the colour changes); three appearances each; foreground only.")
+    for i, (pi, ai) in enumerate((pi, ai) for pi in range(3) for ai in range(3)):
+        p["scenes"][i]["ref"] = {"start": 0, "note": PHASES[pi][0]}
+    return p
+
+
+if __name__ == "__main__":
+    want = sys.argv[1:] or list(STILLS) + ["fe-phases"]
+    for pid in want:
+        if pid == "fe-phases":
+            ppm.run("fe-phases-ppm", phases_project())
+        else:
+            t, slug, layout, fmt, apps, extra = STILLS[pid]
+            ppm.run(f"{pid}-ppm", build_one(pid, t, slug, layout, fmt, apps, extra))

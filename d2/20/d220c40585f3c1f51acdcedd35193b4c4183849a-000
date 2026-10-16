@@ -1,0 +1,28 @@
+"""Zoom on one region of a CompareReference sheet (16 October 2026): crops the same box (fractions x0 y0 x1 y1 of one frame) from the reference half and the motion half, side by side.
+Usage: python3 Scripts/CropCompare.py <sheet.png> --box 0 0 0.6 0.5 --row 0 --out out.png (a sheet has one row per instant)."""
+import argparse
+from PIL import Image
+
+ap = argparse.ArgumentParser()
+ap.add_argument("sheet")
+ap.add_argument("--box", nargs=4, type=float, default=[0, 0, 1, 1])
+ap.add_argument("--row", type=int, default=0)
+ap.add_argument("--out", required=True)
+a = ap.parse_args()
+im = Image.open(a.sheet).convert("RGB")
+W = im.width
+half = (W - 6) // 2
+head = 18
+rows = (im.height) // (im.height // max(1, round(im.height / (half * 9 / 16 + head))))
+fh = round(half * 9 / 16 + head)
+# frame height is derived from the width of one half and the aspect of the reference (taken from the first column)
+n = max(1, round(im.height / fh))
+fh = im.height // n
+y0 = a.row * fh + head
+x0, y0f, x1, y1f = a.box
+ref = im.crop((int(x0 * half), y0 + int(y0f * (fh - head)), int(x1 * half), y0 + int(y1f * (fh - head))))
+mine = im.crop((half + 6 + int(x0 * half), y0 + int(y0f * (fh - head)), half + 6 + int(x1 * half), y0 + int(y1f * (fh - head))))
+o = Image.new("RGB", (ref.width * 2 + 6, ref.height), "#222")
+o.paste(ref, (0, 0)); o.paste(mine, (ref.width + 6, 0))
+o.save(a.out)
+print(o.size)

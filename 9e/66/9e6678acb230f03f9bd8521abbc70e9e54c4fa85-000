@@ -1,0 +1,47 @@
+"""Ingest static images as references of the stills workflow (16 October 2026).
+
+A still image given by Matthieu is cropped to its picture (black bars and browser chrome removed), stored under <refcache>/_stills/<slug>.png and turned into a 40 s mp4
+<refcache>/<slug>/video.mp4, so every tool that compares a motion with its reference (CompareReference, FormatSheet, the Validate page, Threads) works on a still unchanged.
+Nothing is archived or published (references stay local). FR : une image fixe devient une reference comme une video.
+Usage: python3 Scripts/IngestStills.py --list stills.json   (items: slug, src, crop x,y,w,h)
+"""
+import argparse
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+from PIL import Image
+
+REFCACHE = Path("~/.claude/tmp/tmp-zenray-motion-design-refcache").expanduser()
+
+
+def ingest(slug: str, src: str, crop: list | None) -> dict:
+    im = Image.open(src).convert("RGB")
+    if crop:
+        x, y, w, h = crop
+        im = im.crop((x, y, x + w, y + h))
+    W = 1920 if im.width >= im.height else 1080
+    W = min(W, im.width) if im.width < 800 else W
+    k = W / im.width
+    size = (round(im.width * k) // 2 * 2, round(im.height * k) // 2 * 2)
+    im = im.resize(size, Image.LANCZOS)
+    still = REFCACHE / "_stills" / f"{slug}.png"
+    still.parent.mkdir(parents=True, exist_ok=True)
+    im.save(still)
+    out = REFCACHE / slug / "video.mp4"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-loop", "1", "-i", str(still), "-t", "40", "-r", "30", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", "12", str(out)], check=True)
+    return {"slug": slug, "still": str(still), "video": str(out), "size": list(size)}
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--list", required=True)
+    a = ap.parse_args()
+    items = json.loads(Path(a.list).read_text(encoding="utf-8"))
+    print(json.dumps([ingest(i["slug"], i["src"], i.get("crop")) for i in items], indent=1))
+
+
+if __name__ == "__main__":
+    sys.exit(main())
