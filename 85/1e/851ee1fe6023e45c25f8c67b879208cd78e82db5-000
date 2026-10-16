@@ -203,7 +203,34 @@
     if (sc.template === "media-text") { const pa = sc.params || {}; return (pa.style || "sous-titre") !== "aucun" && !!(pa.text || pa.text2); }
     return sc.template !== "media-showcase";
   };
-  const observer = new IntersectionObserver((entries) => entries.forEach((e) => { if (e.isIntersecting && e.target.zsBuild) { e.target.zsBuild(); e.target.zsBuild = null; } }), { rootMargin: "200px" });
+  // 16 October 2026: the miniatures stay light however many cards there are. A card is built only near the screen, one build per frame
+  // (the page never freezes), and torn down again once it is far away (its timeline and its DOM are freed), so memory does not grow
+  // while scrolling. A build in "thumb" mode never loads more than one picture of a vector scene.
+  const buildQueue = [];
+  let pumping = false;
+  const pump = () => {
+    if (pumping) return;
+    pumping = true;
+    const step = () => {
+      const job = buildQueue.shift();
+      if (job) job();
+      if (buildQueue.length) requestAnimationFrame(step); else pumping = false;
+    };
+    requestAnimationFrame(step);
+  };
+  const observer = new IntersectionObserver((entries) => entries.forEach((e) => {
+    const pic = e.target;
+    if (e.isIntersecting) {
+      if (pic.zsWanted) return;
+      pic.zsWanted = true;
+      buildQueue.push(() => { if (pic.zsWanted && pic.zsBuild) pic.zsBuild(); });
+      pump();
+    } else {
+      pic.zsWanted = false;
+      if (pic.zsTear) pic.zsTear();
+    }
+  }), { rootMargin: "400px" });
+  const REST = (built) => Math.min(built.duration * 0.6, Math.max(0.5, built.duration - 0.3));
   function mini(pic, project, w) {
     const [W, H] = ZS.size(project), k = w / W;
     pic.style.background = "#0f0f0e";
@@ -212,20 +239,27 @@
     pic.appendChild(inner);
     let built = null;
     pic.zsBuild = () => {
+      if (built) return;
       inner.style.transform = `scale(${(pic.clientWidth || w) / W})`;   // the card's real width
       const keep = window.__timelines && window.__timelines.main;
-      try { built = ZS.build(project, inner, { hideRefs: true, assetBase: project.__assetBase || "" }); } catch (e) { inner.textContent = e.message; return; }
+      try { built = ZS.build(project, inner, { hideRefs: true, thumb: true, assetBase: project.__assetBase || "" }); } catch (e) { inner.textContent = e.message; return; }
       if (window.__timelines) window.__timelines.main = keep;
-      built.tl.seek(Math.min(built.duration * 0.6, Math.max(0.5, built.duration - 0.3)), false);
-      document.fonts && document.fonts.ready.then(() => ZS.refit(built));
+      built.tl.seek(REST(built), false);
+      document.fonts && document.fonts.ready.then(() => { if (built) ZS.refit(built); });
+    };
+    pic.zsTear = () => {
+      if (!built) return;
+      try { built.tl.kill(); } catch (e) { /* already gone */ }
+      inner.innerHTML = ""; built = null;
     };
     observer.observe(pic);
     const card = pic.closest(".card") || pic;
-    card.addEventListener("mouseenter", () => { if (!built) { pic.zsBuild && pic.zsBuild(); pic.zsBuild = null; } if (built) { built.tl.eventCallback("onComplete", () => built.tl.restart()); built.tl.restart(); } });
-    card.addEventListener("mouseleave", () => { if (built) { built.tl.pause(); built.tl.seek(Math.min(built.duration * 0.6, Math.max(0.5, built.duration - 0.3)), false); } });
+    card.addEventListener("mouseenter", () => { pic.zsBuild(); if (built) { built.tl.eventCallback("onComplete", () => built && built.tl.restart()); built.tl.restart(); } });
+    card.addEventListener("mouseleave", () => { if (built) { built.tl.pause(); built.tl.seek(REST(built), false); } });
   }
   const one = (project, scene) => ({ ...project, scenes: [{ ...JSON.parse(JSON.stringify(scene)), id: "g" }], __assetBase: `/motion/files/${project.id}/` });
 
+  let renderToken = 0;   // a new render of the Animations page stops the packets of the previous one
   async function anim(body) {
     const { projects: list } = await A().api("GET", "/api/motion/projects");
     const full = await Promise.all(list.map((p) => A().api("GET", `/api/motion/projects/${p.id}`).then((j) => j.project).catch(() => null)));
@@ -249,7 +283,17 @@
     });
     body.append(f1, f2);
     const grid = el("div", "cards");
-    items.filter((x) => (!G.proj || x.pr.id === G.proj) && (!G.tpl || x.sc.template === G.tpl)).forEach((x) => {
+    const shown = items.filter((x) => (!G.proj || x.pr.id === G.proj) && (!G.tpl || x.sc.template === G.tpl));
+    // the cards arrive by packets, one packet per frame: hundreds of cards never block the page
+    const PACKET = 48, token = ++renderToken;
+    let at = 0;
+    const fill = () => {
+      if (token !== renderToken) return;
+      shown.slice(at, at + PACKET).forEach(addCard);
+      at += PACKET;
+      if (at < shown.length) requestAnimationFrame(fill);
+    };
+    const addCard = (x) => {
       const c = el("div", "card"), pic = el("div", "pic");
       const pa = x.sc.params || {}, word = pa.text || pa.title || pa.word || pa.prompt || pa.name || pa.sentence || pa.tokens || "";
       const b = el("div", "body");
@@ -261,8 +305,9 @@
         await A().openProject(x.pr.id);
         const S = A().S; S.sel = x.i; S.child = x.k; window.ZS_MODE("edit"); A().renderScenes(); A().setTab("scene"); A().renderTrack(); A().seek(x.start + Math.min(0.6, Number(x.sc.duration) / 2));
       };
-    });
+    };
     body.appendChild(grid);
+    fill();
   }
 
   async function models(body) {

@@ -71,8 +71,22 @@ def _music_state(slug: str) -> dict:
     return {"score": (bench / "score.json").exists(), "versions": len(versions), "best": best}
 
 
-def status(slug: str) -> dict:
-    """What exists on disk for a slug, right now."""
+def motions_by_source() -> dict[str, int]:
+    """How many motions came from each reference: ONE scan of the motion cards (the table used to rescan them for every reference)."""
+    ws = settings.path("workshop")
+    counts: dict[str, int] = {}
+    for m in (ws / "motions").glob("*/motion.json"):
+        try:
+            src = json.loads(m.read_text()).get("source", {}).get("slug")
+        except Exception:  # noqa: BLE001
+            continue
+        if src:
+            counts[src] = counts.get(src, 0) + 1
+    return counts
+
+
+def status(slug: str, motions: dict[str, int] | None = None) -> dict:
+    """What exists on disk for a slug, right now. `motions` is the result of motions_by_source() when many slugs are read at once."""
     ws = settings.path("workshop")
     ref = reference_file(slug)
     cache = settings.path("refcache") / slug
@@ -82,13 +96,7 @@ def status(slug: str) -> dict:
         shots = len(json.loads(bible.read_text(encoding="utf-8")).get("shots", []))
     sound = settings.path("sound_out") / slug
     sfx = sorted(p.name for p in sound.glob("V_*")) if sound.exists() else []
-    motions = 0
-    for m in (ws / "motions").glob("*/motion.json"):
-        try:
-            if json.loads(m.read_text()).get("source", {}).get("slug") == slug:
-                motions += 1
-        except Exception:  # noqa: BLE001
-            pass
+    motions = (motions if motions is not None else motions_by_source()).get(slug, 0)
     return {"slug": slug, "file": str(ref) if ref else None, "bible": bible.exists(), "shots": shots,
             "stems": (cache / "stems" / "out" / "htdemucs" / "mix" / "drums.wav").exists(),
             "music": _music_state(slug), "sfx_versions": len(sfx), "motions": motions}
@@ -98,8 +106,9 @@ def table() -> list[dict]:
     d = load()
     by = {r["slug"]: r for r in d["references"]}
     out = []
+    motions = motions_by_source()
     for s in slugs():
-        out.append({**by[s], "status": status(s)})
+        out.append({**by[s], "status": status(s, motions)})
     return out
 
 

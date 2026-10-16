@@ -187,7 +187,7 @@
       } else {
         const p = ZS.resolve(tpl, sc.params || {}, theme);
         const ctx = { el, p, theme, W, H: H_, u, dur, seam, tl, t0: t, project, cue: (at, type, params) => cues.push({ t: t + at, type, params: params || {}, scene: sc.id }),
-                      asset: (name) => ZS.assetUrl(name, opts), videos, preview: !!opts.preview, safe,
+                      asset: (name) => ZS.assetUrl(name, opts), videos, preview: !!opts.preview, thumb: !!opts.thumb, safe,
                       fit: (node, mw, mh, hooks) => fits.push([node, mw === undefined ? safe.w : mw, mh === undefined ? safe.h : mh, hooks]), scene: sc };
         ctx.buildChildren = (container, W2, H2) => ZS.buildChildren(ctx, sc.children || [], container, W2, H2);
         try { tpl.build(ctx); } catch (e) {

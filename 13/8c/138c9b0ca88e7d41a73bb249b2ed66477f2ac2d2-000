@@ -37,7 +37,8 @@
     build(ctx) {
       const { el, p, W, H, u, tl, t0, dur, preview, asset, fit, safe } = ctx;
       h.css(el, { background: p.bg });
-      const keys = keysOf(p.keys);
+      // a thumbnail (gallery card) shows one picture of the scene and never loads the other keyframes
+      const keys = ctx.thumb ? keysOf(p.keys).slice(0, 1) : keysOf(p.keys);
       const stage = h.css(h.el("div", "zs-abs", el), { inset: "0", overflow: "hidden", transformOrigin: "50% 50%",
         filter: `saturate(${p.sat}) brightness(${p.lum}) contrast(${p.contrast}) hue-rotate(${p.hue}deg)${p.blur ? ` blur(${p.blur * u}px)` : ""}`, opacity: p.opacity });
       const imgs = keys.map((k, i) => {
