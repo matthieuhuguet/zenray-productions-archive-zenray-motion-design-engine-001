@@ -1,15 +1,101 @@
 {
   "doc": "16 October 2026: the projects shown by the page Motion Design Validate, in this order. A project that does not exist yet shows as 'pas encore commencé'. Edit this list to change the page.",
   "set": [
-    {"id": "motion-opus-5-5-motion", "group": "Motion Opus"},
-    {"id": "motion-opus-5-5-preview", "group": "Motion Opus"},
-    {"id": "claude-opus-5-5-motion", "group": "Motion Opus"},
-    {"id": "film-de-lancement-30-s", "group": "Motion Opus"},
-    {"id": "film-de-lancement-30-s-2", "group": "Motion Opus"},
-    {"id": "agentplay-motion", "group": "What Ships", "reference": "agentplay"},
-    {"id": "claudia-motion", "group": "What Ships", "reference": "claudia"},
-    {"id": "factory-environments-motion", "group": "What Ships", "reference": "factory-environments"},
-    {"id": "cinematic-shot-motion", "group": "What Ships", "reference": "cinematic-shot"}
+    {
+      "id": "motion-opus-5-5-motion",
+      "group": "Motion Opus"
+    },
+    {
+      "id": "motion-opus-5-5-preview",
+      "group": "Motion Opus"
+    },
+    {
+      "id": "claude-opus-5-5-motion",
+      "group": "Motion Opus"
+    },
+    {
+      "id": "film-de-lancement-30-s",
+      "group": "Motion Opus"
+    },
+    {
+      "id": "film-de-lancement-30-s-2",
+      "group": "Motion Opus"
+    },
+    {
+      "id": "agentplay-motion",
+      "group": "What Ships",
+      "reference": "agentplay"
+    },
+    {
+      "id": "claudia-motion",
+      "group": "What Ships",
+      "reference": "claudia"
+    },
+    {
+      "id": "factory-environments-motion",
+      "group": "What Ships",
+      "reference": "factory-environments"
+    },
+    {
+      "id": "cinematic-shot-motion",
+      "group": "What Ships",
+      "reference": "cinematic-shot"
+    },
+    {
+      "id": "onekey-pro-2-motion",
+      "group": "Première sélection (à refaire en premier plan seul)",
+      "reference": "onekey-pro-2"
+    },
+    {
+      "id": "paper-mono-code-motion",
+      "group": "Première sélection (à refaire en premier plan seul)",
+      "reference": "paper-mono-code"
+    },
+    {
+      "id": "interface-motion",
+      "group": "Première sélection (à refaire en premier plan seul)",
+      "reference": "interface"
+    },
+    {
+      "id": "memo-motion",
+      "group": "Première sélection (à refaire en premier plan seul)",
+      "reference": "memo"
+    },
+    {
+      "id": "fin-4-motion",
+      "group": "Première sélection (à refaire en premier plan seul)",
+      "reference": "fin-4"
+    },
+    {
+      "id": "kardashev-0-7-motion",
+      "group": "Première sélection (à refaire en premier plan seul)",
+      "reference": "kardashev-0-7"
+    },
+    {
+      "id": "flora-agents-on-canvas-motion",
+      "group": "Première sélection (à refaire en premier plan seul)",
+      "reference": "flora-agents-on-canvas"
+    },
+    {
+      "id": "x-anabology-2105325733312884869-motion",
+      "group": "Première sélection (à refaire en premier plan seul)",
+      "reference": "x-anabology-2105325733312884869"
+    },
+    {
+      "id": "x-anabology-2106157622986748377-motion",
+      "group": "Première sélection (à refaire en premier plan seul)",
+      "reference": "x-anabology-2106157622986748377"
+    },
+    {
+      "id": "yt-4q-o-ylnvnc-motion",
+      "group": "Première sélection (à refaire en premier plan seul)",
+      "reference": "yt-4Q-o_ylnVnc"
+    }
   ],
-  "formats": ["16x9", "9x16", "1x1", "4x5"]
+  "formats": [
+    "16x9",
+    "9x16",
+    "1x1",
+    "4x5"
+  ]
 }
