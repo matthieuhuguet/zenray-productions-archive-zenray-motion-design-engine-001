@@ -163,7 +163,7 @@ def rendered_share(img: np.ndarray | None, frame: np.ndarray) -> dict:
     return {"share": round(float((de <= CFG["fidelity"]["toleranceDeltaE"]).mean()), 4), "meanDeltaE": round(float(de.mean()), 2)}
 
 
-def trace_shot(frames: list[np.ndarray], over: dict | None = None, ladder: list[int] | None = None) -> dict:
+def trace_shot(frames: list[np.ndarray], over: dict | None = None, ladder: list[int] | None = None, cap: int | None = None) -> dict:
     """Palette and SVGs of the keyframes of one shot, at the least detail that reaches the target (or the cap)."""
     q, fcfg = CFG["quantize"], CFG["fidelity"]
     ladder = ladder or q["colorLadder"]
@@ -181,7 +181,7 @@ def trace_shot(frames: list[np.ndarray], over: dict | None = None, ladder: list[
     hexes = [hexof(c) for c in best["centers"]]
     svgs = [key_svg(lb, hexes, w, h, over) for lb in best["labels"]]
     # size cap: a keyframe over the cap is traced again with a coarser palette (never silently truncated)
-    cap = CFG["potrace"]["maxKeyBytes"]
+    cap = cap or CFG["potrace"]["maxKeyBytes"]
     lad = [n for n in ladder if n < best["n"]]
     coarse = [dict(c) for c in CFG["potrace"]["coarsen"]]
     while max(len(s) for s in svgs) > cap and not lad and coarse:
@@ -289,7 +289,12 @@ def trace_with_loops(video: str, low: np.ndarray, hz: float, t0: float, t1: floa
         if not keep:
             return best or {}
         times, frames = [k[0] for k in keep], [erase_boxes(k[1], ov["erase"]) if ov.get("erase") else k[1] for k in keep]
-        tr = trace_shot(frames, over, ov.get("ladder"))
+        # fast sequences: every keyframe is on screen for a few frames only, so each one is traced lighter and the time resolution goes first
+        fast = len(times) / max(0.1, t1 - t0) > CFG["fast"]["keysPerSecond"]
+        if fast and width > CFG["fast"]["maxWidth"]:
+            frames = [cv2.resize(f, (CFG["fast"]["maxWidth"], int(round(f.shape[0] * CFG["fast"]["maxWidth"] / f.shape[1]))), interpolation=cv2.INTER_AREA) for f in frames]
+        tr = trace_shot(frames, over, ov.get("ladder"), CFG["fast"]["maxKeyBytes"] if fast else None)
+        tr["fast"] = fast
         tr["times"] = times
         tr["temporal"] = temporal_error(low, hz, t0, t1, times, tr["rasters"])
         tr["share"] = min(f["share"] for f in tr["fidelity"])
