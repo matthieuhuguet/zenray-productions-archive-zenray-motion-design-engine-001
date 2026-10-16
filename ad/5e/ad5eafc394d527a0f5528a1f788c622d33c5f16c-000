@@ -16,7 +16,7 @@ import server  # noqa: E402
 # (start in the reference, template, params): the start instants read on the 3 fps sheets
 BEATS = [
     (0.00, "ap-matrix", {}),
-    (3.95, "ap-cards", {}),
+    (3.75, "ap-cards", {}),
     (6.95, "ap-heat", {}),
     (8.95, "ap-ring", {}),
     (10.95, "ap-approaches", {}),

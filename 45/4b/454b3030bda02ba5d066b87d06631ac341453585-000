@@ -198,8 +198,10 @@
         "5.65 1.019 0.612 0.664", "5.85 1.092 0.605 0.585", "6.25 1.364 0.584 0.332", "6.45 1.409 0.581 0.296", "6.65 1.422 0.58 0.285", "7.25 1.421 0.58 0.285", "7.45 1.381 0.575 0.294", "7.65 1.209 0.555 0.331", "7.85 0.934 0.517 0.405",
         "8.05 0.851 0.502 0.432", "8.25 0.837 0.5 0.437", "12.3 0.837 0.5 0.437"], 1),
       P("bg", "Fond", "color", "#ffffff", 2), P("ink", "Texte des titres", "color", INK, 2), P("accent", "Rouge de la piste", "color", "#a6452f", 2),
+      P("pill", "Pastille « You » mesurée (temps x y, pixels de la fenêtre d'origine)", "lines", ["1.05 552 344", "1.25 492 325", "1.65 503 335", "1.85 517 346", "2.05 517 347", "2.45 848 425", "2.65 970 500", "2.85 984 510", "3.05 954 542", "3.25 824 714", "3.45 706 862", "3.65 683 888", "3.85 681 888", "4.05 692 890", "4.25 709 899", "4.45 713 900", "4.65 714 900", "4.85 732 880", "5.05 795 812", "5.25 932 661", "5.45 1087 510", "5.65 1157 466", "5.85 1180 440", "6.25 1188 453", "6.45 1197 512", "6.65 1218 683", "8.05 1223 1001", "8.25 1223 1001", "8.45 1257 996", "8.65 1309 1001", "8.85 1307 999", "9.05 1315 1000", "9.25 1326 998", "9.45 1342 999", "9.65 1350 1001", "9.85 1352 1001", "10.05 1351 992", "10.25 1382 888", "10.45 1508 548", "10.65 1582 425", "10.85 1585 409", "11.05 1588 412", "11.25 1588 412", "11.45 1588 412", "11.65 1588 413"], 1),
+      P("playhead", "Tête de lecture (temps x)", "lines", ["0 657", "3.6 657", "8.05 1158", "12.3 1430"], 2),
       N("size", "Taille des titres (large)", 64, 16, 140, 1, 2, "px"), N("sizeTall", "Taille des titres (haut)", 56, 16, 140, 1, 2, "px"), N("seed", "Graine de la frise", 5, 1, 99, 1, 3),
-      N("playAt", "Instant du clic sur Lire", 3.4, 0, 8, 0.05, 3, "s"), N("entry", "Entrée de la fenêtre", 0.5, 0.1, 2, 0.05, 3, "s"), N("playSpeed", "Vitesse de la tête de lecture (px de référence par s)", 104, 0, 400, 1, 3),
+      N("entry", "Entrée de la fenêtre", 0.5, 0.1, 2, 0.05, 3, "s"),
     ],
     build(ctx) {
       const { el, p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
@@ -235,11 +237,13 @@
         const y3 = tlPos[1] + rs(194) * tlK + 16, sc = 0.94, lw = mk(win, { left: "20px", top: y3 + "px", transform: `scale(${sc})`, height: "560px", overflow: "hidden" }); buildLeft(lw);
         const rw = mk(win, { left: 20 + rs(284) * sc + 18 + "px", top: y3 + "px", transform: `scale(${sc})` }); right = buildRight(rw);
       }
-      // ---- the playhead (reference px 657 -> 1668): it waits at the start, then moves from the click on Play at a measured speed
-      const refX = (rel) => 657 + Math.max(0, rel - p.playAt) * p.playSpeed, label = (x) => { const f = Math.max(0, Math.min(1, (x - 657) / 1013)), s = 14 * 3600 + 5 * 60 + f * 250; return `${Math.round(f * 55) + 1}/56 · ${Math.floor(s / 3600)}:${String(Math.floor(s % 3600 / 60)).padStart(2, "0")}`; };
+      // ---- the playhead (reference px 657 -> 1668): measured keys, linear between them; the counter follows it
+      const phKeys = p.playhead.map((l) => l.trim().split(/\s+/).map(Number)).filter((q) => q.length === 2);
+      const phAt = (rel) => { if (rel <= phKeys[0][0]) return phKeys[0][1]; for (let i = 1; i < phKeys.length; i++) if (rel <= phKeys[i][0]) { const a0 = phKeys[i - 1], b0 = phKeys[i], u = (rel - a0[0]) / Math.max(1e-9, b0[0] - a0[0]); return a0[1] + (b0[1] - a0[1]) * u; } return phKeys[phKeys.length - 1][1]; };
+      const label = (x) => { const f = Math.max(0, Math.min(1, (x - 657) / 1013)), s = 14 * 3600 + 5 * 60 + f * 250; return `${Math.round(f * 55) + 1}/56 · ${Math.floor(s / 3600)}:${String(Math.floor(s % 3600 / 60)).padStart(2, "0")}`; };
       const proxy = { t: 0 };
-      const place = () => { const x = Math.min(1668, refX(proxy.t)); line.head.style.left = rs(x - 546) + "px"; line.counter.textContent = label(x); if (pill) pill.style.display = "none"; };
-      let pill = null;
+      const place = () => { const x = phAt(proxy.t); line.head.style.left = rs(x - 546) + "px"; line.counter.textContent = label(x); };
+      place();
       tl.to(proxy, { t: dur, duration: dur, ease: "none", onUpdate: place }, t0);
       // ---- tab and event state of the right panel, map focus, retry bracket
       right.schedule(tl, t0, [[0, "details"], [7.4, "fail"], [9.0, "retry"], [10.2, "final"]]);
@@ -252,18 +256,24 @@
       focus(FOCUS.explored, 5.2, 0.22); focus(FOCUS.failed, 7.3, 0.22); focus(null, 8.4, 1); focus(FOCUS.final, 9.5, 0.22);
       const showRoute = (name, a, b) => map.routes[name].forEach((r) => { tl.fromTo(r, { opacity: 0 }, { opacity: 1, duration: 0.4 }, t0 + a); tl.to(r, { opacity: 0, duration: 0.3 }, t0 + b); });
       showRoute("explored", 5.5, 7.35); showRoute("failed", 7.5, 8.4); showRoute("final", 9.7, dur);
-      // ---- the blue "You" pill: it waits over the sessions, clicks Play, then rides the playhead
-      const cur = abs(cam, { left: winX + "px", top: winY + "px", padding: `${rs(6)}px ${rs(14)}px`, borderRadius: rs(16) + "px", background: "#2f6bd6", color: "#fff", fontFamily: h.font(SANS), fontSize: rs(14) + "px", fontWeight: 500, boxShadow: "0 8px 20px -8px rgba(47,107,214,0.7)", whiteSpace: "nowrap", zIndex: 5 }, "", "✦ You");
-      const pos = (x, y) => (tall ? { x: 20 + (x - 546) * mapK * 0.5 + 200, y: 300 } : { x: rx(x), y: ry(y) });
-      const way = [[0.9, 235, 330], [1.6, 262, 332], [2.6, 330, 445], [p.playAt - 0.1, 612, 868]];
+      // ---- the blue "You" pill, tracked on the reference (Scripts/TrackPill.py): its centre in the original window's pixels, linear between samples
+      const cur = abs(cam, { left: "0", top: "0", padding: `${rs(6)}px ${rs(14)}px`, borderRadius: rs(16) + "px", background: "#2f6bd6", color: "#fff", fontFamily: h.font(SANS), fontSize: rs(14) + "px", fontWeight: 500, boxShadow: "0 8px 20px -8px rgba(47,107,214,0.7)", whiteSpace: "nowrap", zIndex: 5 }, "", "✦ You");
+      const pw = rs(70) / 2, ph = rs(24) / 2;
+      const pts = p.pill.map((l) => l.trim().split(/\s+/).map(Number)).filter((q) => q.length === 3);
+      const pos = (x, y) => (tall ? { x: 20 + (x - 546) * mapK * 0.5 + 300, y: 420 + (y - 242) * 0.5 } : { x: winX + rx(x) - pw, y: winY + ry(y) - ph });
       tl.set(cur, { autoAlpha: 0 }, 0);
-      tl.fromTo(cur, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.3 }, t0 + 0.9);
-      way.forEach(([rel, x, y], i) => { const q = pos(x, y); if (i === 0) tl.set(cur, { x: q.x, y: q.y }, t0 + rel); else tl.to(cur, { x: q.x, y: q.y, duration: Math.max(0.2, rel - way[i - 1][0]), ease: "power2.inOut" }, t0 + way[i - 1][0]); });
-      const ride = { t: 0 };
-      tl.to(ride, { t: dur - p.playAt, duration: dur - p.playAt, ease: "none", onUpdate: () => { const x = Math.min(1668, 657 + ride.t * p.playSpeed) + 34, q = pos(x, 1001); cur.style.transform = `translate(${q.x}px, ${q.y}px)`; } }, t0 + p.playAt);
+      if (pts.length) {
+        const q0 = pos(pts[0][1], pts[0][2]);
+        tl.set(cur, { x: q0.x, y: q0.y }, 0);
+        tl.fromTo(cur, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.25 }, t0 + pts[0][0] - 0.2);
+        pts.forEach(([rel, x, y], i) => { if (!i) return; const q = pos(x, y); tl.to(cur, { x: q.x, y: q.y, duration: Math.max(0.05, rel - pts[i - 1][0]), ease: "none" }, t0 + pts[i - 1][0]); });
+        tl.to(cur, { autoAlpha: 0, duration: 0.25 }, t0 + pts[pts.length - 1][0] + 0.15);
+      }
       tl.fromTo(win, { autoAlpha: 0, y: 60, scale: 0.97 }, { autoAlpha: 1, y: 0, scale: 1, duration: p.entry, ease: "power3.out" }, t0);
-      // the dark end card the window comes out of: the frame's background goes from dark to white while the window arrives (22.0 s is grey)
-      tl.fromTo(el, { backgroundColor: "#0b0d0a" }, { backgroundColor: p.bg, duration: 0.6, ease: "power2.out" }, t0);
+      // the window comes out of the dark end card: a dark veil over everything fades with the measured curve (the reference's corner reads 28, 57, 119, 192, 231
+      // at 22.0, 22.1, 22.2, 22.3, 22.4 s: a sine ease over 0.6 s)
+      const veil = abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px", background: "#0b0d0a", zIndex: 9, pointerEvents: "none" });
+      tl.fromTo(veil, { opacity: 0.93 }, { opacity: 0, duration: 0.6, ease: "sine.inOut" }, t0);
       // the changing title
       p.titles.forEach((l, i) => {
         const [tm, tx2] = l.split("|").map((s) => s.trim()), nxt = p.titles[i + 1] ? Number(p.titles[i + 1].split("|")[0]) : dur, a = Number(tm);

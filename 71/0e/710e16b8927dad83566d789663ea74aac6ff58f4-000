@@ -1,0 +1,42 @@
+"""Track a coloured cursor pill (the blue "You" label) through a moving camera (16 October 2026): its centroid is found by colour on each frame, then moved
+into the window's own coordinates with the camera keys of TrackWindow.py. FR : suivre la pastille bleue a travers la camera, en coordonnees de la fenetre.
+Usage: python3 Scripts/TrackPill.py <video> --camera keys.json --rect x0,y0,x1,y1 --design-w 1796 [--color 47,107,214] [--tol 40]  (keys.json = TrackWindow output)"""
+import argparse
+import json
+import subprocess
+
+import numpy as np
+
+
+def frame(video, t):
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{t:.3f}", "-i", video, "-frames:v", "1", "-vf", "scale=1920:1080", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                         capture_output=True, check=True).stdout
+    return np.frombuffer(raw, np.uint8).reshape(1080, 1920, 3).astype(int)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("video"); ap.add_argument("--camera", required=True); ap.add_argument("--rect", required=True)
+    ap.add_argument("--design-w", type=float, required=True); ap.add_argument("--t0", type=float, required=True)
+    ap.add_argument("--color", default="47,107,214"); ap.add_argument("--tol", type=int, default=45); ap.add_argument("--min", type=int, default=250)
+    a = ap.parse_args()
+    x0, y0, x1, y1 = (float(v) for v in a.rect.split(","))
+    col = np.array([int(v) for v in a.color.split(",")])
+    cam = [r for r in json.load(open(a.camera)) if "z" in r and np.isfinite(r["z"]) and r["z"] > 0.2]
+    out = []
+    for r in cam:
+        t = r["t"] + a.t0
+        f = frame(a.video, t)
+        m = np.abs(f - col).sum(2) < a.tol * 2
+        if m.sum() < a.min:
+            out.append({"t": r["t"], "seen": False}); continue
+        ys, xs = np.nonzero(m)
+        sx, sy = float(xs.mean()), float(ys.mean())
+        s = r["z"] * a.design_w / (x1 - x0)
+        cx, cy = x0 + r["u"] * (x1 - x0), y0 + r["v"] * (y1 - y0)
+        out.append({"t": r["t"], "seen": True, "x": round(cx + (sx - 960) / s, 1), "y": round(cy + (sy - 540) / s, 1), "px": int(m.sum())})
+    print(json.dumps(out))
+
+
+if __name__ == "__main__":
+    main()
