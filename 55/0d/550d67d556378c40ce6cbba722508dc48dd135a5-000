@@ -86,14 +86,15 @@ export async function montageView(root, { id, q, config }) {
   // ------------------------------------------------------------------------------------------------- layout
   root.innerHTML = `<h1 class="title">Montage</h1>
     <div class="row toolbar" style="margin:6px 0 14px">
-      <label class="note">Nom <input id="tid" type="text" value="${esc(spec.id)}" style="width:170px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg)"></label>
-      <select id="open" aria-label="Ouvrir un montage enregistré"><option value="">Ouvrir…</option></select>
+      <label class="note" data-adv>Nom <input id="tid" type="text" value="${esc(spec.id)}" style="width:170px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg)"></label>
+      <select id="open" data-adv aria-label="Ouvrir un montage enregistré"><option value="">Ouvrir…</option></select>
       <button class="btn" id="new" type="button">Nouveau</button>
       <button class="btn" id="save" type="button" data-testid="save">Enregistrer</button>
-      <button class="btn" id="delmont" type="button" data-testid="delete-montage" title="Supprime ce montage enregistré (tes fichiers et tes motions restent)">Supprimer</button>
+      <button class="btn" id="delmont" data-adv type="button" data-testid="delete-montage" title="Supprime ce montage enregistré (tes fichiers et tes motions restent)">Supprimer</button>
       <span class="grow"></span>
       <div class="seg" id="formats" role="group" aria-label="Format"></div>
-      <div class="seg" id="fits" role="group" aria-label="Cadrage"></div>
+      <div class="seg" id="fits" data-adv role="group" aria-label="Cadrage"></div>
+      <button class="btn" id="simpleBtn" type="button" title="Basculer entre le mode simple (l'essentiel) et le mode avancé (tout)">Mode avancé</button>
     </div>
     <div class="mont">
       <aside class="panel" id="lib"></aside>
@@ -101,16 +102,16 @@ export async function montageView(root, { id, q, config }) {
         <div class="pvwrap"><div class="pv" id="pv" data-testid="preview"></div></div>
         <div class="row transport" style="margin-top:10px">
           <button class="icon-btn" id="play" type="button" aria-label="Lecture" data-testid="play">▶</button>
-          <button class="btn" id="prevF" type="button" title="Image précédente (←), une seconde avec Maj">⏮︎</button>
+          <button class="btn" id="prevF" data-adv type="button" title="Image précédente (←), une seconde avec Maj">⏮︎</button>
           <input class="num timeIn" id="clockIn" type="text" value="0:00.00" title="Tape un instant (1:23.5 ou 83.5) puis Entrée" />
           <span class="num note" id="clock">/ 0:00.0</span>
-          <button class="btn" id="nextF" type="button" title="Image suivante (→), une seconde avec Maj">⏭︎</button>
-          <span class="note" title="Espace : lecture · glisser dans la règle ou la tête de lecture : parcourir · ← → : une image · Maj + ← → : une seconde · Cmd + molette : zoom · Début / Fin" style="cursor:help">Raccourcis ⓘ</span>
+          <button class="btn" id="nextF" data-adv type="button" title="Image suivante (→), une seconde avec Maj">⏭︎</button>
+          <span class="note" data-adv title="Espace : lecture · glisser dans la règle ou la tête de lecture : parcourir · ← → : une image · Maj + ← → : une seconde · Cmd + molette : zoom · Début / Fin" style="cursor:help">Raccourcis ⓘ</span>
           <span class="grow"></span>
           <button class="btn" id="split" type="button" title="Couper le clip sélectionné à la tête de lecture (S)">Couper</button>
-          <button class="btn" id="dup" type="button" title="Dupliquer (D)">Dupliquer</button>
+          <button class="btn" id="dup" data-adv type="button" title="Dupliquer (D)">Dupliquer</button>
           <button class="btn" id="del" type="button" title="Supprimer (Suppr)">Supprimer</button>
-          <button class="btn" id="zout" type="button" aria-label="Zoom arrière" title="Dézoomer (Cmd + molette)">−</button><button class="btn" id="zfit" type="button" title="Tout le montage dans la piste">Ajuster</button><button class="btn" id="zin" type="button" aria-label="Zoom avant" title="Zoomer (Cmd + molette)">+</button>
+          <button class="btn" id="zout" data-adv type="button" aria-label="Zoom arrière" title="Dézoomer (Cmd + molette)">−</button><button class="btn" id="zfit" type="button" title="Tout le montage dans la piste">Ajuster</button><button class="btn" id="zin" data-adv type="button" aria-label="Zoom avant" title="Zoomer (Cmd + molette)">+</button>
         </div>
         <div class="tl" id="tl" data-testid="timeline"></div>
       </section>
@@ -122,6 +123,10 @@ export async function montageView(root, { id, q, config }) {
       <div id="outStatus" class="note"></div><div id="outResult"></div>
     </div>`
 
+  // 16 October 2026: the simple mode (default) shows the essentials only: the library, the film, the preview, play / cut / delete,
+  // the main values of a clip and export. The advanced mode brings everything back. Kept in the browser.
+  const simpleMode = () => { try { return localStorage.getItem('zs-montage-mode') !== 'advanced' } catch { return true } }
+  const applyMode = () => { root.classList.toggle('m-simple', simpleMode()); const b = $('#simpleBtn', root); if (b) b.textContent = simpleMode() ? 'Mode avancé' : 'Mode simple' }
   const pv = $('#pv', root), tl = $('#tl', root), insp = $('#insp', root), lib = $('#lib', root), playBtn = $('#play', root)
 
   // ------------------------------------------------------------------------------------------------ toolbar
@@ -438,6 +443,16 @@ export async function montageView(root, { id, q, config }) {
     const first = document.createElement('div'); first.className = 'group'
     groups[0].forEach((d) => first.append(mk(d)))
     insp.append(first)
+    if (simpleMode()) {
+      const rest = [...groups[1], ...groups[2]]
+      if (rest.length) {
+        const more = document.createElement('details'); more.className = 'more-params'
+        more.innerHTML = '<summary>Plus de réglages</summary>'
+        rest.forEach((d) => more.append(mk(d)))
+        insp.append(more)
+      }
+      return
+    }
     const second = document.createElement('div'); second.className = 'group'
     groups[1].forEach((d) => second.append(mk(d)))
     insp.append(second)
@@ -687,12 +702,18 @@ export async function montageView(root, { id, q, config }) {
   }
 
   function redrawAll() {
+    applyMode()
     drawToolbar()
     drawTimeline()
     drawInspector()
     drawPreviewShell()
     renderPreview()
   }
+
+  $('#simpleBtn', root).addEventListener('click', () => {
+    try { localStorage.setItem('zs-montage-mode', simpleMode() ? 'advanced' : 'simple') } catch { /* private window */ }
+    drawInspector(); applyMode()
+  })
 
   // ------------------------------------------------------------------------------------------------- boot
   try {

@@ -1,28 +1,45 @@
-# Corpus de références et calcul de nuit (16 October 2026)
+# Corpus de références : une vidéo à la fois, reproduite et mesurée (16 October 2026)
 
-Ce document fait foi pour les corpus de vidéos de référence calculées en lot (corpus de 102, 16 October 2026). Règle épinglée :
-`/Users/zenray/.claude/Memory1/Projects/zenray-motion-design/Rules.md`.
+Ce document fait foi pour les corpus de vidéos de référence (corpus de 102, `/Users/zenray/Downloads/Corpus.md`, copie dans
+`<atelier>/corpus-102/`). Règles épinglées : `/Users/zenray/.claude/Memory1/Projects/zenray-motion-design/Rules.md`.
 
-## Le workflow, toujours dans cet ordre (16 October 2026)
+## Décision de Matthieu (16 October 2026)
 
-| Étape | Commande interne | Résultat |
+Une vidéo à la fois, en séquence, chacune reproduite précisément avec sa propre boucle de mesure, sans limite de temps ; quand le
+résultat est excellent on passe à la suivante. Ordre : reels d'artistes et de studios (65 à 80), jeux vidéo (09 à 16), puis le reste.
+Aucun lot parallèle sur les 102. L'animation est du HTML (une page par coupe), jamais des calques séparés à éditer.
+
+## Le workflow d'une vidéo (16 October 2026)
+
+| Étape | Outil | Résultat |
 |---|---|---|
-| 1. Télécharger | yt-dlp, 1080p au plus, 240 s au plus, lien principal puis liens de secours | `<refcache>/_corpus/<slug>/` (jamais archivé) |
+| 1. Télécharger | `motion/corpus.py` (yt-dlp, 1080p et 240 s au plus ; Vimeo par son lecteur public, ArtStation par le JSON du projet) | `<refcache>/_corpus/<slug>/video.mp4`, jamais archivé |
 | 2. Couper au rythme | `zrmd.cli shots` | `references/<slug>/analysis/shots.json` |
 | 3. Bible et storyboard | `Scripts/BuildReferenceBook.py` | `bible.json`, `bible.md`, `storyboard.html` |
-| 4. Analyser les images | `Scripts/VisionFrames.swift` (Apple Vision) | classes de scène, texte (géométrie et nombre de caractères), visages, personnes |
-| 5. Calculer l'animation | `motion/corpus.py` | un projet Motion par vidéo, plans illustrés, textes de remplacement, réglages exposés |
-| 6. Style maison et formats | `motion/house.py`, `ZS.cropCheck` | polices du trio, tailles lisibles, quatre formats |
-| 7. Musique | `motion/corpus.py music` | piste rangée dans la banque de l'app (usage local) |
+| 4. Voir | `Scripts/ContactSheet.py <slug>` | planche contact des plans, regardée avant toute décision |
+| 5. Reproduire | `motion/reproduce.py <slug>` (`motion/htmlvec.py`) | un projet Motion `<slug>-motion`, une scène `vector-shot` par coupe |
+| 6. Mesurer | `Scripts/VectorSheet.py <slug> S06,S08` et `Scripts/CompareReference.py` | planches référence contre reproduction, avec les écarts |
+| 7. Corriger | `motion/reproductions/data/<slug>.json` puis `reproduce.py --again S06` | seuls les plans à reprendre sont retracés |
+| 8. Musique | `motion/corpus.py music` | piste rangée dans la banque de l'app (locale) |
 
-## Lancer, reprendre, suivre (16 October 2026)
+## Comment une coupe devient du mouvement vectoriel (16 October 2026)
 
-- Tout lancer : `python3 Scripts/CorpusNight.py run` (reprenable : une vidéo finie n'est pas refaite ; `--only <numéro>` pour une seule).
-- État : `python3 Scripts/CorpusNight.py status` ; fichier `<atelier>/corpus-102/state.json`, journal `<atelier>/corpus-102/night.log`.
-- Une vidéo qui échoue (lien mort, page protégée) est notée avec sa cause et ne bloque jamais les suivantes.
-- Tous les réglages (durée maximale, résolution, parallélisme, durée minimale d'un plan) : `motion/params/corpus.json`.
+- Les images clés sont choisies là où l'image change vraiment (sondage à 12 par seconde, seuil de variation, jamais une cadence fixe).
+- Une palette par coupe (k-means en Lab, 12 à 48 couleurs) : les couleurs sont des variables CSS `--c0` à `--cN`.
+- Chaque image clé est UN SVG empilé (potrace, toutes les régions d'une couleur jointes) : pas de calques à éditer.
+- Deux boucles de mesure par coupe : la fidélité de l'image **rendue** (le SVG est rastérisé par librsvg puis comparé à l'image, part de
+  pixels à moins de ΔE 4) fait monter la précision du tracé et la palette ; l'erreur de pas dans le temps (l'image de la référence contre
+  l'image clé affichée) fait ajouter des images clés. Chaque coupe consigne ses nombres dans `assets/S<nn>.json` du projet.
+- Le texte lisible reste du vrai texte : la recette de la vidéo efface sa zone avant le tracé et le pose en calque texte modifiable.
+- Un HTML autonome par coupe (lecteur, palette modifiable) : `<atelier>/corpus-102/html/<slug>/S<nn>.html`.
+
+## Limites honnêtes (16 October 2026)
+
+- C'est le mouvement tracé, pas l'animation recomposée : un personnage qui marche est une suite d'images vectorielles, pas un rig.
+- Le grain et la texture de papier ne sont pas du mouvement : ils font monter la taille des fichiers et plafonnent la fidélité ΔE 4.
+- Les plans photographiques ou rendus 3D restent des aplats tracés (la précision monte avec la palette, jamais à 100 %).
 
 ## Droits (16 October 2026)
 
-- On mesure, on ne copie pas : les mots de la référence ne sont jamais repris, seul leur nombre de caractères et leur géométrie le sont ; le texte d'un plan est un paramètre dont la valeur par défaut est un texte ZenRay de même longueur.
-- Les vidéos téléchargées restent dans le cache local, hors Assets. La musique rangée dans la banque est locale : elle n'est pas publiée sur ZenRayProgress sans décision de Matthieu.
+Les vidéos téléchargées restent dans le cache local, hors Assets. La musique rangée dans la banque est locale et n'est pas publiée sur
+ZenRayProgress sans décision de Matthieu. Le texte d'un plan est un paramètre.

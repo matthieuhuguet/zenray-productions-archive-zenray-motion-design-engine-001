@@ -422,6 +422,9 @@ def handle(method: str, path: str, q: dict, read, length: int) -> dict:
         m = re.fullmatch(r"/motion/gallery/wave/([A-Za-z0-9._-]+)\.png", p)
         if m:
             return F(_bank().waveform(m.group(1)), "image/png")
+        m = re.fullmatch(r"/motion/bank/stored/([A-Za-z0-9._-]+\.mp3)", p)
+        if m:
+            return F(_bank().BANK / "corpus-music" / m.group(1), "audio/mpeg")
         m = re.fullmatch(r"/motion/bank/(music|sfx|synth|ref)/(.+)", p)
         if m:
             # ?from=&to= (seconds) returns only that excerpt of a music stem: a 30 s film never decodes a 3 min track in the browser

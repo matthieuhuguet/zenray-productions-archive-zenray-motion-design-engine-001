@@ -181,6 +181,11 @@ def trace_shot(frames: list[np.ndarray], over: dict | None = None, ladder: list[
     # size cap: a keyframe over the cap is traced again with a coarser palette (never silently truncated)
     cap = CFG["potrace"]["maxKeyBytes"]
     lad = [n for n in ladder if n < best["n"]]
+    coarse = [dict(c) for c in CFG["potrace"]["coarsen"]]
+    while max(len(s) for s in svgs) > cap and not lad and coarse:
+        over = {**(over or {}), **coarse.pop(0)}
+        hexes = [hexof(c) for c in best["centers"]]
+        svgs = [key_svg(lb, hexes, w, h, over) for lb in best["labels"]]
     while max(len(s) for s in svgs) > cap and lad:
         n = lad.pop()
         centers = fit_palette(labs, n)
@@ -293,6 +298,10 @@ def trace_with_loops(video: str, low: np.ndarray, hz: float, t0: float, t1: floa
         if weak_pic:
             width = min(rc["maxWidth"], int(width * rc["widthStep"]))
             over = {**over, **rc["finePotrace"]}
+            lad_all = ov.get("ladder") or CFG["quantize"]["colorLadder"]
+            nxt = [c for c in lad_all if c > tr["colors"]]
+            if nxt:
+                ov = {**ov, "ladder": nxt}
         if weak_time:
             thr = max(rc["minThreshold"], thr * rc["thresholdStep"])
     return best

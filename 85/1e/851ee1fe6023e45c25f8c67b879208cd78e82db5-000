@@ -133,6 +133,33 @@
       b.appendChild(acts); c.append(w, b); grid.appendChild(c);
     });
     body.appendChild(grid);
+    // the audio of the references, stored for editing (local, never published): listen, or put it under the project's film
+    const st = j.stored || [];
+    if (st.length) {
+      body.appendChild(el("h3", "", `Pistes des références rangées pour le montage (${st.length})`));
+      body.appendChild(el("p", "hint", "Le son d'origine de chaque vidéo du corpus, gardé en local pour monter dessus. « Utiliser » l'importe dans le projet comme fichier audio."));
+      const g2 = el("div", "cards");
+      st.forEach((m) => {
+        const on = cur.mode === "file" && (cur.file || {}).file === m.file;
+        const c = el("div", "card" + (on ? " on" : ""));
+        const b = el("div", "body");
+        b.appendChild(el("div", "title", `${String(m.n).padStart(3, "0")} ${A().esc(m.title)}`));
+        b.appendChild(el("div", "meta", `${A().esc(m.category)} · ${m.tempoBpm ? Math.round(m.tempoBpm) + " bpm · " : ""}${m.duration ? Math.round(m.duration) + " s" : ""}`));
+        const acts = el("div", "acts");
+        acts.appendChild(btn("▶", (bb) => listen(m.url, bb), "Écouter la piste"));
+        acts.appendChild(btn(on ? "Dans le projet" : "Utiliser", async () => {
+          try {
+            const blob = await (await fetch(m.url)).blob();
+            await A().upload([new File([blob], m.file, { type: "audio/mpeg" })]);
+            const name = (A().S.assets.find((a) => a.name.startsWith(m.file.replace(/\.mp3$/, ""))) || {}).name || m.file;
+            A().change((p) => { p.music = { mode: "file", file: { file: name } }; });
+            A().loadBank(); A().toast("Musique du projet : " + m.title); render();
+          } catch (e) { A().toast(e.message, true); }
+        }));
+        b.appendChild(acts); c.appendChild(b); g2.appendChild(c);
+      });
+      body.appendChild(g2);
+    }
   }
 
   async function sfx(body) {

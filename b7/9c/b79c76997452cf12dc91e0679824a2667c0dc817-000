@@ -126,3 +126,8 @@ a { color: var(--accent-ink); }
 .tl .hoverLine { position: absolute; top: 0; bottom: 0; width: 1px; background: color-mix(in srgb, var(--ink) 35%, transparent); pointer-events: none; z-index: 3; }
 .tl .hoverLine b { position: absolute; top: 2px; left: 5px; background: var(--ink); color: var(--bg); font: 400 11px var(--zr-police-serif); padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
 .tl .hoverLine[hidden] { display: none; }
+
+/* 16 October 2026: the simple mode of the Montage hides everything that is not essential (data-adv); the advanced mode shows it all. */
+.m-simple [data-adv] { display: none !important; }
+.m-simple .tl .row { display: none; }
+.m-simple .toolbar .btn#simpleBtn { margin-left: 8px; }

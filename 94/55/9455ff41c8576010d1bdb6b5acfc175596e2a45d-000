@@ -84,7 +84,17 @@ def music_bank() -> dict:
             "bpm": round(float(tempo.get("bpm") or 0), 2), "key": key.get("name", ""), "duration": float(tempo.get("duration") or 0),
             "fidelity": _fidelity(v), "variations": var.get(member.name) or var.get("_default", []),
         })
-    return {"music": out, "count": len(out), "root": str(SOUND)}
+    return {"music": out, "count": len(out), "root": str(SOUND), "stored": stored_music()}
+
+
+def stored_music() -> list[dict]:
+    """The audio of the references stored for editing (16 October 2026): local tracks, not reproductions, never published."""
+    idx = _json(BANK / "corpus-music" / "index.json", {}) or {}
+    out = []
+    for t in idx.get("tracks", []):
+        if (BANK / "corpus-music" / t["file"]).is_file():
+            out.append({**t, "url": f"/motion/bank/stored/{t['file']}"})
+    return out
 
 
 def _cut(src: Path, dst: Path, a: float, b: float) -> bool:

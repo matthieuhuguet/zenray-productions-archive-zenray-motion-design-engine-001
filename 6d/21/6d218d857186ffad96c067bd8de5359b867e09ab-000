@@ -1,0 +1,71 @@
+#!/usr/bin/env python3
+# 16 October 2026: the vector keyframes of a cut, proven in both directions on synthetic pictures (no video needed).
+# GREEN: a picture with two separate shapes and a hole is traced to ONE stacked SVG whose rendering matches the picture;
+#        the keyframe choice gives one key for a still picture and several for a moving one.
+# RED: a blank SVG scores low against the same picture; a trace that keeps only the first region of a colour (the bug of
+#      16 October 2026: potrace writes one <path> per region) would score low, and this test would catch it.
+#   python3 motion/tests/test_htmlvec.py
+# FR : les images cles vectorielles d'une coupe, verifiees dans les deux sens sur des images synthetiques.
+import sys
+from pathlib import Path
+
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import htmlvec as H  # noqa: E402
+
+FAIL = []
+
+
+def check(name, ok, extra=""):
+    print(("ok   " if ok else "FAIL ") + name + (f"  {extra}" if extra and not ok else ""))
+    if not ok:
+        FAIL.append(name)
+
+
+def picture() -> np.ndarray:
+    img = np.full((180, 320, 3), (230, 240, 250), np.uint8)       # light ground
+    img[20:70, 20:120] = (40, 60, 200)                              # a red rectangle (BGR)
+    img[100:160, 180:300] = (60, 160, 40)                           # a green rectangle, far from the first
+    img[120:140, 220:260] = (230, 240, 250)                         # a hole in it
+    return img
+
+
+frame = picture()
+tr = H.trace_shot([frame], over=None, ladder=[4, 6])
+svg = tr["svgs"][0]
+check("one stacked SVG with the palette as CSS variables", svg.count("<svg") == 1 and "var(--c0" in svg)
+check("both separate regions of a colour are in the trace", svg.count(" M") + svg.count('d="M') >= 3, f"paths {svg.count('M')}")
+share = H.rendered_share(tr["rasters"][0], frame)
+check("the rendered SVG matches the picture (>= 97 % of pixels within the tolerance)", share["share"] >= 0.97, str(share))
+blank = H.render_svg('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180"><rect width="320" height="180" fill="#ffffff"/></svg>', 320, 180)
+check("RED a blank SVG does not match the picture", H.rendered_share(blank, frame)["share"] < 0.6)
+only_first = svg.replace(svg[svg.index('<g ', svg.index('<g ') + 1):svg.index('</svg>')], "")   # drop all groups after the first
+check("RED a trace without its later regions scores lower", H.rendered_share(H.render_svg(only_first, 320, 180), frame)["share"] < share["share"])
+
+# the bug of 16 October 2026: only the first <path> of potrace's output was kept (it writes one per region)
+import re as _re  # noqa: E402
+import subprocess as _sp  # noqa: E402
+_orig = H.potrace_mask
+
+
+def _first_path_only(mask, over=None):
+    h, w = mask.shape
+    pbm = b"P4\n%d %d\n" % (w, h) + np.packbits(mask.astype(np.uint8), axis=1).tobytes()
+    txt = _sp.run([H.POTRACE, "-b", "svg", "-t", "4", "-o", "-", "-"], input=pbm, capture_output=True).stdout.decode()
+    d, tr_ = _re.search(r'<path d="([^"]+)"', txt), _re.search(r'<g transform="([^"]+)"', txt)
+    return (d.group(1), tr_.group(1)) if d and tr_ else None
+
+
+H.potrace_mask = _first_path_only
+bad = H.trace_shot([frame], over=None, ladder=[4, 6])
+H.potrace_mask = _orig
+check("RED the old first-path-only trace is caught by the rendered fidelity", H.rendered_share(bad["rasters"][0], frame)["share"] < share["share"] - 0.02,
+      str(H.rendered_share(bad["rasters"][0], frame)))
+
+still = np.stack([np.full((36, 64), 90, np.uint8)] * 24)
+moving = np.stack([np.full((36, 64), 20 * (i % 10), np.uint8) for i in range(24)])
+check("a still shot is one keyframe", len(H.pick_keys(still, 12, 0.0, 2.0)) == 1)
+check("a moving shot gets several keyframes", len(H.pick_keys(moving, 12, 0.0, 2.0)) >= 5)
+print(f"{len(FAIL)} failure(s)")
+sys.exit(1 if FAIL else 0)
