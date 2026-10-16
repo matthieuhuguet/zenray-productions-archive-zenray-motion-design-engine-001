@@ -17,12 +17,14 @@ Aucun lot parallèle sur les 102. L'animation est du HTML (une page par coupe), 
 | 2. Couper au rythme | `zrmd.cli shots` | `references/<slug>/analysis/shots.json` |
 | 3. Bible et storyboard | `Scripts/BuildReferenceBook.py` | `bible.json`, `bible.md`, `storyboard.html` |
 | 4. Voir | `Scripts/ContactSheet.py <slug>` | planche contact des plans, regardée avant toute décision |
-| 5. Reproduire | `motion/reproduce.py <slug>` (`motion/htmlvec.py`) | un projet Motion `<slug>-motion`, une scène `vector-shot` par coupe |
+| 5. Reproduire | par la mesure, visuels originaux (motion-opus) ; `motion/reproduce.py` ne s'applique qu'au matériel de Matthieu | un projet Motion modifiable |
 | 6. Mesurer | `Scripts/VectorSheet.py <slug> S06,S08` et `Scripts/CompareReference.py` | planches référence contre reproduction, avec les écarts |
 | 7. Corriger | `motion/reproductions/data/<slug>.json` puis `reproduce.py --again S06` | seuls les plans à reprendre sont retracés |
 | 8. Musique | `motion/corpus.py music` | piste rangée dans la banque de l'app (locale) |
 
-## Comment une coupe devient du mouvement vectoriel (16 October 2026)
+## Outil de tracé : pour le matériel de Matthieu seulement (16 October 2026, corrigé le même jour)
+
+Correction : le tracé image par image d'une vidéo de référence est une copie de ses images, pas une mesure ; il est abandonné pour les vidéos du corpus (doctrine : `docs/ARCHITECTURE.md`, section 2). `motion/htmlvec.py` reste un outil pour les propres images de Matthieu. Les références se reproduisent par la mesure (coupes, rythme, palette, caméra, géométrie du texte, tempo) avec des visuels originaux de même géométrie. Aucune référence, image ou audio, n'entre dans une sauvegarde cloud. Description de l'outil :
 
 - Les images clés sont choisies là où l'image change vraiment (sondage à 12 par seconde, seuil de variation, jamais une cadence fixe).
 - Une palette par coupe (k-means en Lab, 12 à 48 couleurs) : les couleurs sont des variables CSS `--c0` à `--cN`.
