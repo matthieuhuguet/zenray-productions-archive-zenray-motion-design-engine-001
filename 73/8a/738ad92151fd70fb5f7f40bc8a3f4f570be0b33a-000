@@ -1,0 +1,188 @@
+// 16 October 2026: the templates of the Cinematic Shot film (whatships.com/videos/cinematic-shot, 51.4 s), measured on the reference.
+// ONE template, cs-shot: a flat interface plane (1920x1080 design) seen by a moving 3D camera with a depth-of-field falloff and a vignette.
+// FOREGROUND ONLY (Matthieu's rule): the prism, the titles, the panels, the lists, the cube are drawn in code; the magician photo is a flat tile.
+// FR : un seul gabarit, une scene = un plan d'interface vu par une camera 3D (cles t rx ry rz x y s flou) ; jamais de photo.
+(function () {
+  const ZS = window.ZS, h = ZS.h;
+  const P = (key, label, type, def, tier, extra) => Object.assign({ key, label, type, default: def, tier }, extra || {});
+  const SEL = (key, label, def, options, tier) => ({ key, label, type: "select", default: def, options, tier });
+  const N = (key, label, def, min, max, step, tier, unit) => ({ key, label, type: "number", default: def, min, max, step, tier, unit });
+  const NS = "http://www.w3.org/2000/svg", SANS = "InterVariable", SERIF = "AnthropicSerif", MONO = "JetBrainsMono";
+  const svgEl = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); Object.keys(attrs || {}).forEach((k) => e.setAttribute(k, attrs[k])); if (parent) parent.appendChild(e); return e; };
+  const abs = (parent, css, text) => { const e = h.css(h.el("div", "zs-abs", parent), css); if (text !== undefined) { if (/[<&]/.test(String(text))) e.innerHTML = text; else e.textContent = text; } return e; };
+  const keys = (lines) => lines.map((l) => l.trim().split(/\s+/).map(Number)).filter((q) => q.length >= 2 && q.every((v) => !isNaN(v)));
+  const lerpAt = (ks, t, i) => { if (t <= ks[0][0]) return ks[0][i]; for (let j = 1; j < ks.length; j++) if (t <= ks[j][0]) { const a = ks[j - 1], b = ks[j], u = (t - a[0]) / Math.max(1e-9, b[0] - a[0]), e = u * u * (3 - 2 * u); return a[i] + (b[i] - a[i]) * e; } return ks[ks.length - 1][i]; };
+  const WHITE = "#f4f4f4", GREY = "#7d7d7d", DIM = "#4a4a4a";
+  const txt = (parent, css, text) => abs(parent, Object.assign({ fontFamily: h.font(SANS), color: WHITE, whiteSpace: "nowrap", lineHeight: 1.08, letterSpacing: "-0.03em" }, css), text);
+  const pill = (parent, css, label, light) => { const b = abs(parent, Object.assign({ borderRadius: "999px", fontFamily: h.font(SANS), fontWeight: 500, fontSize: "25px", display: "flex", alignItems: "center", justifyContent: "center", whiteSpace: "nowrap",
+    background: light ? "linear-gradient(#f0f0f0,#bdbdbd)" : "rgba(255,255,255,0.05)", color: light ? "#111" : "#d8d8d8", border: light ? "none" : "1px solid rgba(255,255,255,0.14)" }, css), label); return b; };
+  const icon = (parent, x, y, kind, col, s) => { const sv = svgEl("svg", { width: s || 26, height: s || 26, viewBox: "0 0 24 24", fill: "none", stroke: col || "#a8a8a8", "stroke-width": 1.8, "stroke-linecap": "round" }, abs(parent, { left: x + "px", top: y + "px", width: (s || 26) + "px", height: (s || 26) + "px" }));
+    if (kind === "circle") svgEl("circle", { cx: 12, cy: 12, r: 8 }, sv); else if (kind === "search") { svgEl("circle", { cx: 10.5, cy: 10.5, r: 6.5 }, sv); svgEl("path", { d: "M16 16 L21 21" }, sv); } else if (kind === "dots") { [5, 12, 19].forEach((cx) => svgEl("circle", { cx, cy: 12, r: 1.4, fill: col || "#a8a8a8" }, sv)); }
+    else if (kind === "ring") { svgEl("circle", { cx: 12, cy: 12, r: 8 }, sv); svgEl("circle", { cx: 12, cy: 12, r: 3, fill: col || "#a8a8a8" }, sv); } else if (kind === "check") svgEl("path", { d: "M5 12.5 L10 17 L19 7" }, sv); else svgEl("rect", { x: 5, y: 5, width: 14, height: 14, rx: 3 }, sv); return sv; };
+
+  // ---- the contents, each drawn on a 1920x1080 plane; `p` are the scene's params, `tl`/`t0` allow content animation (typing, states) in the layer that is `live`
+  const kinds = {
+    prism(pl, p, f) {
+      const sv = svgEl("svg", { width: 1920, height: 1080, viewBox: "0 0 1920 1080", style: "position:absolute;left:0;top:0;overflow:visible" }, pl);
+      const A = "888,419", B = "720,752", C = "1176,690";
+      const g = svgEl("g", {}, sv), glow = svgEl("g", { filter: "url(#cs-bl-" + f.id + ")" }, g), col = svgEl("g", { filter: "url(#cs-bl2-" + f.id + ")", opacity: 0 }, g);
+      const df = svgEl("defs", {}, sv); [["cs-bl-" + f.id, 22], ["cs-bl2-" + f.id, 30], ["cs-bh-" + f.id, 70]].forEach(([id, sd]) => { const fl = svgEl("filter", { id, x: "-60%", y: "-60%", width: "220%", height: "220%" }, df); svgEl("feGaussianBlur", { stdDeviation: sd }, fl); });
+      const halo = svgEl("polygon", { points: `${A} ${B} ${C}`, fill: "none", stroke: "#fff", "stroke-width": 70, "stroke-linejoin": "round", filter: "url(#cs-bh-" + f.id + ")", opacity: 0.3 }, g);
+      const white = svgEl("polygon", { points: `${A} ${B} ${C}`, fill: "none", stroke: "#fff", "stroke-width": 14, "stroke-linejoin": "round", opacity: 0.8 }, glow);
+      const L = svgEl("line", { x1: 888, y1: 419, x2: 720, y2: 752, stroke: p.leftColor, "stroke-width": 34, "stroke-linecap": "round", opacity: 0.55 }, col), R = svgEl("line", { x1: 888, y1: 419, x2: 1176, y2: 690, stroke: p.rightColor, "stroke-width": 24, "stroke-linecap": "round" }, col), Bt = svgEl("line", { x1: 720, y1: 752, x2: 1176, y2: 690, stroke: p.bottomColor, "stroke-width": 24, "stroke-linecap": "round" }, col);
+      void L; void R; void Bt;
+      svgEl("polygon", { points: `${A} ${B} ${C}`, fill: "#000", stroke: "#000", "stroke-width": 6, "stroke-linejoin": "round" }, g);
+      f.live.push({ white, col, glow, halo });
+    },
+    hero(pl, p) {
+      const z = p.size; txt(pl, { left: "470px", top: "380px", fontSize: z + "px", fontWeight: 500 }, p.lines.join("<br>"));
+      pill(pl, { left: "470px", top: 380 + z * 2.4 + "px", width: z * 1.9 + "px", height: z * 0.55 + "px", fontSize: z * 0.17 + "px" }, p.buttons[0], true); pill(pl, { left: 470 + z * 2.1 + "px", top: 380 + z * 2.4 + "px", width: z * 1.9 + "px", height: z * 0.55 + "px", fontSize: z * 0.17 + "px" }, p.buttons[1], false);
+    },
+    chat(pl, p) {
+      txt(pl, { left: "294px", top: "190px", fontSize: "76px", fontWeight: 600, color: "#6a6a6a", letterSpacing: "-0.04em", opacity: 0.45, filter: "blur(5px)" }, p.behind.join("<br>"));
+      const bx = abs(pl, { left: "790px", top: "330px", width: "680px", height: "560px", borderRadius: "20px", background: "linear-gradient(#101012,#09090a)", border: "1px solid rgba(255,255,255,0.08)" });
+      txt(bx, { left: "34px", top: "26px", fontSize: "20px", fontWeight: 500, color: "#bbb", letterSpacing: 0 }, "New AI chat &nbsp;⌄");
+      abs(bx, { left: "34px", top: "86px", width: "74px", height: "74px", borderRadius: "50%", background: "#ececec" }); txt(bx, { left: "52px", top: "92px", fontSize: "52px", fontWeight: 600, color: "#222", letterSpacing: 0 }, "ʓ");
+      txt(bx, { left: "34px", top: "200px", fontSize: "38px", fontWeight: 500 }, p.question);
+      p.items.forEach((it, i) => { icon(bx, 36, 290 + i * 70, i === 0 ? "rect" : i === 1 ? "search" : "ring", "#8a8a8a", 28); txt(bx, { left: "84px", top: 290 + i * 70 + "px", fontSize: "27px", fontWeight: 400, color: "#d0d0d0", letterSpacing: 0 }, it); });
+      abs(bx, { left: "30px", top: "500px", width: "620px", height: "70px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.1)" }); txt(bx, { left: "92px", top: "519px", fontSize: "24px", color: "#8a8a8a", letterSpacing: 0 }, "Strategy doc");
+    },
+    product(pl, p) {
+      txt(pl, { left: "330px", top: "350px", fontSize: p.size + "px", fontWeight: 500 }, p.lines.join("<br>"));
+      txt(pl, { left: "334px", top: (350 + p.size * 2.45) + "px", fontSize: "24px", fontWeight: 400, color: GREY, letterSpacing: 0 }, p.sub.join("<br>"));
+    },
+    sidebar(pl, p) {
+      const bx = abs(pl, { left: "560px", top: "-260px", width: "560px", height: "1600px", borderRadius: "24px", background: "linear-gradient(#0e0e10,#0a0a0b)", border: "1px solid rgba(255,255,255,0.06)" });
+      txt(bx, { left: "50px", top: "290px", fontSize: "30px", color: "#cfcfcf", fontWeight: 500, letterSpacing: 0 }, "Linear &nbsp;⌄"); icon(bx, 420, 288, "search", "#8a8a8a", 28); icon(bx, 470, 288, "rect", "#8a8a8a", 28);
+      let y = 380; const row = (label, kind, col, sel) => { if (sel) abs(bx, { left: "24px", top: y - 12 + "px", width: "512px", height: "62px", borderRadius: "12px", background: "rgba(255,255,255,0.05)" }); icon(bx, 52, y, kind, col || "#8a8a8a", 28); txt(bx, { left: "104px", top: y + 1 + "px", fontSize: "34px", color: sel ? "#f2f2f2" : "#d0d0d0", fontWeight: sel ? 600 : 400, letterSpacing: 0 }, label); y += 70; };
+      const head = (label) => { y += 18; txt(bx, { left: "50px", top: y + "px", fontSize: "28px", color: "#6f6f6f", letterSpacing: 0 }, label + " &nbsp;▾"); y += 56; };
+      p.top.forEach((l, i) => row(l, ["circle", "rect", "dots", "ring"][i % 4], null, i === 2)); head("Workspace"); p.work.forEach((l, i) => row(l, ["ring", "circle", "dots"][i % 3])); head("Favorites");
+      p.fav.forEach((l, i) => row(l, ["ring", "circle", "rect", "rect"][i % 4], ["#e0b82c", "#8a8a8a", "#5b78e8", "#e0553c"][i % 4]));
+    },
+    shortcut(pl, p) {
+      const bands = abs(pl, { left: "380px", top: "250px", width: "1160px", height: "640px", overflow: "hidden" });
+      for (let i = 0; i < 4; i++) abs(bands, { left: 150 + i * 250 + "px", top: "-120px", width: "170px", height: "980px", transform: "skewX(-40deg)", background: `linear-gradient(90deg, rgba(200,10,30,${0.5 - i * 0.08}), rgba(255,70,80,${0.95 - i * 0.14}))`, filter: "blur(14px)" });
+      txt(pl, { left: "470px", top: "430px", fontSize: p.size + "px", fontWeight: 600 }, p.lines.join("<br>"));
+      txt(pl, { left: "475px", top: (430 + p.size * 2.5) + "px", fontSize: "21px", fontWeight: 400, color: "#e8b0b4", letterSpacing: 0 }, p.sub.join("<br>"));
+    },
+    dialog(pl, p, f) {
+      abs(pl, { left: "300px", top: "180px", width: "1500px", height: "800px", background: "radial-gradient(ellipse 60% 55% at 40% 50%, rgba(150,18,28,0.7), rgba(40,4,8,0.5) 55%, rgba(0,0,0,0) 80%)" });
+      txt(pl, { left: "560px", top: "345px", fontSize: "22px", color: "#7a4a4c", letterSpacing: 0 }, "Image PNG 842 × 420"); txt(pl, { left: "560px", top: "395px", fontSize: "22px", color: "#7a4a4c", letterSpacing: 0 }, "Image 842 × 420");
+      for (let i = 0; i < 9; i++) abs(pl, { left: 700 + i * 120 + "px", top: "205px", width: "70px", height: "12px", borderRadius: "6px", background: "rgba(255,255,255,0.10)" });
+      for (let i = 0; i < 4; i++) abs(pl, { left: "540px", top: 470 + i * 60 + "px", width: "190px", height: "14px", borderRadius: "7px", background: "rgba(150,60,60,0.22)" });
+      const dot = abs(pl, { left: "780px", top: "470px", width: "130px", height: "130px", borderRadius: "50%", background: "#ec6a66" });
+      const dd = abs(pl, { left: "925px", top: "385px", width: "380px", height: "540px", borderRadius: "16px", background: "#0c0c0d", border: "1px solid rgba(255,255,255,0.1)" });
+      txt(pl, { left: "950px", top: "325px", fontSize: "28px", fontWeight: 500, color: "#d8d8d8", letterSpacing: 0 }, "All Types &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;⌃");
+      ["Search...", "All Types", "Text Only", "Images Only", "Files Only", "Links Only", "Videos Only"].forEach((l, i) => txt(dd, { left: "28px", top: 24 + i * 72 + "px", fontSize: "27px", color: i === 3 ? "#fff" : "#9a9a9a", letterSpacing: 0, fontWeight: i === 3 ? 600 : 400 }, l));
+      const tile = abs(pl, { left: "880px", top: "290px", width: "990px", height: "470px", borderRadius: "8px", background: "#050609", opacity: 0, overflow: "hidden" });
+      const photo = abs(tile, { left: 0, top: 0, width: "990px", height: "470px", background: "radial-gradient(ellipse 55% 60% at 50% 40%, #2c8fb0, #0f4a73 55%, #08172c)", opacity: 0 });
+      const ring = abs(pl, { left: "1010px", top: "350px", width: "480px", height: "330px", borderRadius: "50%", border: "30px solid rgba(255,255,255,0.85)", filter: "blur(9px)", opacity: 0 });
+      const card = abs(pl, { left: "880px", top: "290px", width: "990px", height: "470px", borderRadius: "8px", background: "linear-gradient(120deg,#0b0c10,#10131c)", opacity: 0 });
+      txt(card, { left: "70px", top: "60px", fontSize: "112px", fontWeight: 600, textAlign: "center", width: "850px", lineHeight: 1.05 }, p.magic.join("<br>")); txt(card, { left: "170px", top: "330px", fontSize: "25px", color: "#8c8c96", letterSpacing: 0, textAlign: "center", width: "650px", whiteSpace: "normal", lineHeight: 1.3 }, p.magicSub);
+      f.live.push({ dd, dot, tile, ring, card, photo, ddTxt: pl });
+    },
+    next(pl, p) {
+      txt(pl, { left: "330px", top: "110px", fontSize: "420px", fontWeight: 800, color: "transparent", letterSpacing: "-0.02em" }, "NEXT").style.webkitTextStroke = "3px rgba(40,70,170,0.2)";
+      txt(pl, { left: "330px", top: "395px", fontSize: p.size + "px", fontWeight: 500 }, p.lines.join("<br>"));
+      txt(pl, { left: "334px", top: (395 + p.size * 2.5) + "px", fontSize: "23px", color: GREY, letterSpacing: 0 }, p.sub.join("<br>"));
+    },
+    command(pl, p, f) {
+      const bx = abs(pl, { left: "560px", top: "470px", width: "880px", height: "96px", borderRadius: "999px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)" });
+      txt(bx, { left: "50px", top: "26px", fontSize: "34px", fontFamily: h.font(MONO), color: "#d6d6d6", letterSpacing: 0 }, "<span style='color:#666'>$</span> " + p.command);
+      const ck = icon(bx, 785, 28, "check", "#bdbdbd", 40); ck.parentNode.style.opacity = 0; f.live.push({ check: ck.parentNode });
+    },
+    search(pl, p, f) {
+      txt(pl, { left: "330px", top: "150px", fontSize: "420px", fontWeight: 800, color: "transparent" }, "NEXT").style.webkitTextStroke = "3px rgba(40,70,170,0.12)";
+      const bx = abs(pl, { left: "540px", top: "340px", width: "900px", height: "86px", borderRadius: "16px", background: "#0e0e10", border: "1px solid rgba(255,255,255,0.1)" });
+      icon(bx, 28, 28, "search", "#d0d0d0", 30); const ph = txt(bx, { left: "80px", top: "26px", fontSize: "29px", letterSpacing: 0, color: "#777" }, "Search"); const typed = txt(bx, { left: "80px", top: "26px", fontSize: "29px", letterSpacing: 0, color: "#eee" }, ""); const cur = abs(bx, { left: "82px", top: "24px", width: "3px", height: "36px", background: "#fff" });
+      const res = abs(pl, { left: "540px", top: "450px", width: "900px", height: "420px", opacity: 0 });
+      abs(res, { left: "0", top: "0", width: "900px", height: "86px", borderRadius: "12px", background: "rgba(255,255,255,0.07)" }); txt(res, { left: "22px", top: "10px", fontSize: "18px", color: "#8a8a8a", letterSpacing: 0 }, "App Router"); txt(res, { left: "22px", top: "38px", fontSize: "26px", fontWeight: 600, letterSpacing: 0 }, "serverActions");
+      ["Options for configuring Server Actions behavior in your Next.js application.", "Enabling Server Actions (v13)", "bodySizeLimit", "allowedOrigins"].forEach((l, i) => txt(res, { left: i ? "60px" : "22px", top: 112 + i * 72 + "px", fontSize: i ? "24px" : "22px", color: i ? "#cfcfcf" : "#8a8a8a", fontWeight: i === 1 ? 500 : 400, letterSpacing: 0 }, l));
+      f.live.push({ typed, cur, res, ph });
+    },
+    email(pl, p) {
+      txt(pl, { left: "440px", top: "340px", fontFamily: h.font(SERIF), fontSize: p.size + "px", fontWeight: 400, letterSpacing: "-0.025em" }, p.lines.join("<br>"));
+      txt(pl, { left: "446px", top: (340 + p.size * 2.3) + "px", fontSize: "26px", color: GREY, letterSpacing: 0 }, p.sub.join("<br>"));
+      pill(pl, { left: "446px", top: (340 + p.size * 2.3 + 130) + "px", width: "190px", height: "66px", borderRadius: "14px" }, p.buttons[0], true); pill(pl, { left: "664px", top: (340 + p.size * 2.3 + 130) + "px", width: "250px", height: "66px", borderRadius: "14px", border: "none", background: "transparent" }, p.buttons[1], false);
+    },
+    resend(pl, p, f) {
+      const pg = abs(pl, { left: "420px", top: "150px", width: "1080px", height: "720px", background: "radial-gradient(ellipse 60% 60% at 68% 45%, #232325, #0b0b0c 70%)", borderRadius: "6px" });
+      txt(pg, { left: "40px", top: "26px", fontSize: "15px", fontWeight: 600, letterSpacing: 0 }, "Resend"); txt(pg, { left: "318px", top: "28px", fontSize: "11px", color: "#8a8a8a", letterSpacing: 0 }, "Features &nbsp;&nbsp; Company &nbsp;&nbsp; Resources &nbsp;&nbsp; Help &nbsp;&nbsp; Docs &nbsp;&nbsp; Pricing"); pill(pg, { left: "930px", top: "20px", width: "86px", height: "28px", borderRadius: "6px", fontSize: "11px" }, "Get started", false);
+      pill(pg, { left: "70px", top: "170px", width: "170px", height: "22px", fontSize: "10px", borderRadius: "999px" }, "Join us at Resend Forward ›", false);
+      txt(pg, { left: "70px", top: "210px", fontFamily: h.font(SERIF), fontSize: "70px", fontWeight: 400, letterSpacing: "-0.02em" }, "Email for<br>developers"); txt(pg, { left: "72px", top: "380px", fontSize: "13px", color: "#9a9a9a", letterSpacing: 0 }, "The best way to reach humans instead of spam folders.<br>Deliver transactional and marketing emails at scale.");
+      pill(pg, { left: "72px", top: "450px", width: "74px", height: "28px", borderRadius: "6px", fontSize: "11px" }, "Get started", true); txt(pg, { left: "170px", top: "457px", fontSize: "11px", color: "#cfcfcf", letterSpacing: 0 }, "Documentation");
+      const CS = 210, sc = abs(pg, { left: "560px", top: "130px", width: "460px", height: "460px", perspective: "1400px" }), cube = abs(sc, { left: (460 - CS) / 2 + "px", top: (460 - CS) / 2 + "px", width: CS + "px", height: CS + "px", transformStyle: "preserve-3d", transform: "rotateX(-24deg) rotateY(30deg)" });
+      const faces = [["rotateY(0deg)", 0.9], ["rotateY(90deg)", 0.55], ["rotateY(180deg)", 0.75], ["rotateY(-90deg)", 1.1], ["rotateX(90deg)", 1.4], ["rotateX(-90deg)", 0.4]], T3 = CS / 3;
+      faces.forEach(([tr, br], fi) => { const fc = abs(cube, { left: 0, top: 0, width: CS + "px", height: CS + "px", transform: `${tr} translateZ(${CS / 2}px)`, background: "#030304", backfaceVisibility: "hidden" });
+        for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) { const lum = Math.round((14 + ((fi * 7 + r * 5 + c * 3) % 5) * 9) * br); abs(fc, { left: c * T3 + 4 + "px", top: r * T3 + 4 + "px", width: T3 - 8 + "px", height: T3 - 8 + "px", borderRadius: "4px", background: `linear-gradient(135deg, rgb(${lum + 30},${lum + 30},${lum + 34}), rgb(${lum},${lum},${lum + 2}) 55%, #050506)` }); } });
+      f.live.push({ cube });
+    },
+    end(pl, p, f) {
+      const t = txt(pl, { left: "312px", top: "496px", fontSize: p.size + "px", fontFamily: h.font(MONO), fontWeight: 500, letterSpacing: 0, color: "#fff" }, "");
+      const cur = abs(pl, { left: "312px", top: "505px", width: p.size * 0.6 + "px", height: p.size * 0.95 + "px", background: "#e8e8e8", opacity: 0 }); f.live.push({ typed: t, cur });
+    },
+  };
+
+  ZS.register({
+    id: "cs-shot", label: "Cinematic : un plan, une caméra 3D", group: "Plans", duration: 4,
+    params: [
+      SEL("kind", "Plan", "hero", ["prism", "hero", "chat", "product", "sidebar", "shortcut", "dialog", "next", "command", "search", "email", "resend", "end"], 1),
+      P("lines", "Titre (lignes)", "lines", ["Agentic", "Infrastructure"], 1), P("sub", "Sous-titre (lignes)", "lines", [], 1), P("buttons", "Boutons", "lines", ["Deploy now", "Talk to sales"], 2),
+      P("cam", "Caméra : t rx ry rz x y échelle flou inclinaison", "lines", ["0 6 -22 4 60 0 1 7", "3 6 -22 4 -110 10 1.05 5"], 2),
+      N("edgeDim", "Luminosité hors zone nette", 0.7, 0, 1.2, 0.01, 3), P("focus", "Zone nette : centre x y, rayon x y, doux", "text", "0.45 0.5 0.3 0.28 0.6", 3), P("vignette", "Vignette (0 à 1)", "number", 0.85, 3, { min: 0, max: 1, step: 0.01 }),
+      N("tallZoom", "Gros plan en format haut (0 = aucun)", 0.3, 0, 1, 0.01, 3), N("tallX", "Décalage horizontal en format haut", 0, -600, 600, 1, 3, "px"), N("persp", "Perspective (px)", 1500, 400, 6000, 10, 3, "px"), N("size", "Taille du titre", 112, 30, 400, 1, 2, "px"),
+      N("fadeIn", "Entrée en fondu (s)", 0.5, 0, 3, 0.05, 3, "s"), N("fadeOut", "Sortie en fondu (s)", 0.45, 0, 3, 0.05, 3, "s"), N("dim", "Luminosité d'ensemble", 1, 0, 1.5, 0.01, 3),
+      P("behind", "Texte flou en arrière (chat)", "lines", ["Agents on infrastructure", "that works like them"], 4), P("question", "Question (chat)", "text", "How can I help you today?", 4),
+      P("items", "Lignes du chat", "lines", ["Translate this page", "Analyze for insights", "Create a task tracker"], 4), P("top", "Liste du haut (barre latérale)", "lines", ["Pulse", "Inbox", "My issues", "Reviews"], 4),
+      P("work", "Espace de travail", "lines", ["Initiatives", "Projects", "More"], 4), P("fav", "Favoris", "lines", ["Faster app launch", "Agent tasks", "Agent Insights", "UI Refresh"], 4),
+      P("magic", "Carte magique (lignes)", "lines", ["Magic at", "your fingertips"], 4), P("magicSub", "Carte magique : sous-texte", "text", "Unlock the power of AI at your fingertips. Create faster, ship sooner, and keep your focus.", 4),
+      P("command", "Commande (pastille)", "text", "npx create-next-app@latest", 2), P("query", "Recherche (frappe)", "text", "server actions", 2),
+      P("leftColor", "Prisme : arête gauche", "color", "#ff3d6e", 4), P("rightColor", "Prisme : arête droite", "color", "#3d7dff", 4), P("bottomColor", "Prisme : arête basse", "color", "#41e08a", 4),
+      N("typeAt", "Début de la frappe (s)", 0.4, 0, 8, 0.05, 3, "s"), N("cursorAt", "Apparition du curseur (s)", 0, 0, 8, 0.05, 3, "s"), N("cps", "Caractères par seconde", 12, 1, 60, 0.5, 3), N("film0", "Début dans le film (s)", 0, 0, 60, 0.01, 3, "s"),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx), kt = tall ? (w / 1920) * (1 + p.tallZoom * (sh / w)) : 1;
+      h.css(el, { background: "#000" });
+      const ks = keys(p.cam), fz = p.focus.trim().split(/\s+/).map(Number), id = Math.random().toString(36).slice(2, 7);
+      const kind = kinds[p.kind] || kinds.hero, layers = [];
+      const makeLayer = (blurred) => {
+        const root = abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px", overflow: "hidden" }), per = abs(root, { left: "0", top: "0", width: w + "px", height: sh + "px", perspective: p.persp * kt + "px", perspectiveOrigin: "50% 50%" });
+        const cam = abs(per, { left: w / 2 + "px", top: sh / 2 + "px", width: "0px", height: "0px", transformStyle: "preserve-3d" });
+        const pl = abs(cam, { left: "-960px", top: "-540px", width: "1920px", height: "1080px", transform: `scale(${kt})`, transformOrigin: "960px 540px" }), f = { live: [], id: id + (blurred ? "b" : "s") };
+        kind(pl, p, f); layers.push({ root, cam, f, blurred }); return layers[layers.length - 1];
+      };
+      const blurL = makeLayer(true), sharpL = makeLayer(false);
+      // the sharp layer is masked by an ellipse: sharp in the focus zone, the blurred copy shows outside it
+      const mask = `radial-gradient(ellipse ${fz[2] * 100}% ${fz[3] * 100}% at ${fz[0] * 100}% ${fz[1] * 100}%, #000 ${(1 - fz[4]) * 100}%, transparent 100%)`;
+      h.css(sharpL.root, { webkitMaskImage: mask, maskImage: mask });
+      const vig = abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px", background: `radial-gradient(ellipse 70% 70% at 50% 50%, rgba(0,0,0,0) 30%, rgba(0,0,0,${p.vignette}) 100%)`, pointerEvents: "none" });
+      void vig;
+      const pr = { t: 0 };
+      const pose = (t) => { const g = (i) => lerpAt(ks, t, i), tr = `translate3d(${(g(4) + (tall ? p.tallX : 0)) * kt}px, ${g(5) * kt}px, 0px) scale(${g(6)}) rotateX(${g(1)}deg) rotateY(${g(2)}deg) rotateZ(${g(3)}deg) skewX(${ks[0].length > 8 ? g(8) : 0}deg)`; layers.forEach((l) => { l.cam.style.transform = tr; }); blurL.root.style.filter = `blur(${Math.max(0, g(7)) * kt}px) brightness(${p.edgeDim})`; };
+      pose(0);
+      tl.fromTo(pr, { t: 0 }, { t: dur, duration: dur, ease: "none", onUpdate: () => pose(pr.t) }, t0);
+      // the scene fades in from black and out to black
+      tl.fromTo(el, { opacity: 0 }, { opacity: p.dim, duration: Math.max(0.01, p.fadeIn), ease: "power1.out" }, t0);
+      if (p.fadeOut > 0) tl.to(el, { opacity: 0, duration: p.fadeOut, ease: "power1.in" }, t0 + dur - p.fadeOut);
+      // the content's own motion lives in both layers (they stay identical)
+      layers.forEach((l) => l.f.live.forEach((o) => {
+        if (o.col) { const g = pr; void g; tl.fromTo(o.white, { opacity: 0.8 }, { opacity: 0.0, duration: 1.2, ease: "power1.inOut" }, t0 + 1.1); tl.fromTo(o.halo, { opacity: 0.3 }, { opacity: 0.0, duration: 1.4, ease: "power1.inOut" }, t0 + 1.1); tl.fromTo(o.col, { opacity: 0 }, { opacity: 1, duration: 1.1, ease: "power1.inOut" }, t0 + 1.3); }
+        if (o.check) tl.fromTo(o.check, { opacity: 0 }, { opacity: 1, duration: 0.25 }, t0 + 0.9);
+        if (o.cube) tl.fromTo(o.cube, { rotateY: 35, rotateX: -24, rotateZ: 0 }, { rotateY: 215, rotateX: -42, rotateZ: 18, duration: dur, ease: "none" }, t0);
+        if (o.res) {
+          const q = p.query, cp = { n: 0 }; tl.fromTo(cp, { n: 0 }, { n: q.length, duration: q.length / p.cps, ease: "none", onUpdate: () => { o.typed.textContent = q.slice(0, Math.round(cp.n)); o.ph.style.opacity = cp.n > 0 ? 0 : 1; o.cur.style.left = 82 + o.typed.offsetWidth + 3 + "px"; } }, t0 + p.typeAt);
+          tl.fromTo(o.res, { opacity: 0 }, { opacity: 1, duration: 0.4 }, t0 + p.typeAt + q.length / p.cps + 0.2);
+        }
+        if (o.ddTxt) {
+          tl.fromTo(o.dd, { opacity: 0 }, { opacity: 1, duration: 0.3 }, t0 + 0.05); tl.to(o.dd, { opacity: 0, duration: 0.25 }, t0 + 0.65); tl.to(o.dot, { opacity: 0, duration: 0.25 }, t0 + 0.65);
+          tl.fromTo(o.tile, { opacity: 0 }, { opacity: 1, duration: 0.3 }, t0 + 0.65); tl.fromTo(o.ring, { opacity: 0 }, { opacity: 0.9, duration: 0.3 }, t0 + 0.65); tl.to(o.ring, { opacity: 0, duration: 0.2 }, t0 + 1.7); tl.fromTo(o.photo, { opacity: 0 }, { opacity: 1, duration: 0.25 }, t0 + 1.7);
+          tl.fromTo(o.card, { opacity: 0 }, { opacity: 1, duration: 0.3 }, t0 + 3.3);
+        }
+        if (o.typed && !o.res && o.cur) {
+          const q = (p.lines && p.lines[0]) || "", cp = { n: 0 }; tl.fromTo(cp, { n: 0 }, { n: q.length, duration: q.length / p.cps, ease: "none", onUpdate: () => { o.typed.textContent = q.slice(0, Math.round(cp.n)); o.cur.style.left = 312 + Math.round(cp.n) * p.size * 0.6 + "px"; } }, t0 + p.typeAt);
+          const end = p.typeAt + q.length / p.cps; tl.set(o.cur, { opacity: 1 }, t0 + p.cursorAt); tl.set(o.cur, { opacity: 0 }, t0 + p.typeAt - 0.1); tl.set(o.cur, { opacity: 1 }, t0 + p.typeAt); tl.set(o.cur, { opacity: 0 }, t0 + end + 0.05); for (let b = 0; b < 4; b++) { tl.set(o.cur, { opacity: 1 }, t0 + end + 1.5 + b * 1.0); tl.set(o.cur, { opacity: 0 }, t0 + end + 2.0 + b * 1.0); }
+        }
+      }));
+    },
+  });
+})();

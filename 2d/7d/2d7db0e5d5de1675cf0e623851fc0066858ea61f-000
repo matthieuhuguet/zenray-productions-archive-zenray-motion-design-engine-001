@@ -1,0 +1,71 @@
+"""Reproduction of the Cinematic Shot film (whatships.com/videos/cinematic-shot, 51.4 s) as an editable motion project (16 October 2026).
+
+FOREGROUND ONLY (Matthieu's rule): prism, titles, panels, lists, cube drawn in code; the magician photo is a flat tile. FR : premier plan seul, jamais de photo.
+Every scene is the cs-shot template: a 1920x1080 interface plane seen by a moving 3D camera (keys "t rx ry rz x y scale blur") with a depth-of-field falloff.
+Usage: python3 motion/reproductions/cinematic_shot.py
+"""
+import json
+import sys
+from pathlib import Path
+
+MOTION = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(MOTION))
+import server  # noqa: E402
+
+SUB_PRODUCT = ["Linear is a purpose-built tool for planning and building products.", "Designed for the AI era."]
+BEATS = [
+    (0.00, {"kind": "prism", "cam": ["0 4 -8 2 0 0 1 4", "3.9 4 -8 2 -20 0 1.04 3"], "focus": "0.5 0.5 0.9 0.9 0.5", "fadeIn": 0.6, "fadeOut": 0.2}),
+    (4.00, {"kind": "hero", "size": 150, "focus": "0.5 0.52 0.34 0.3 0.7", "edgeDim": 0.6, "cam": ["0 8 -12 6 40 0 1 9 -14", "2.4 8 -12 6 -120 14 1.05 7 -14"], "fadeIn": 0.03, "fadeOut": 0.05}),
+    (6.60, {"kind": "chat", "cam": ["0 8 -20 -5 -22 100 1.25 6", "3.6 8 -20 -5 -50 -30 1.25 6"], "focus": "0.45 0.62 0.3 0.34 0.6", "edgeDim": 0.55, "fadeIn": 0.03, "fadeOut": 0.5}),
+    (10.00, {"kind": "product", "size": 100, "edgeDim": 0.4, "lines": ["The product development", "system for teams and agents"], "sub": SUB_PRODUCT, "cam": ["0 14 -12 -8 -30 40 1.15 9", "2.95 14 -12 -8 -190 60 1.25 8"], "focus": "0.28 0.5 0.26 0.24 0.8", "fadeIn": 0.5, "fadeOut": 0.2}),
+    (13.00, {"kind": "sidebar", "cam": ["0 28 -30 -3 0 160 1.25 8", "4.5 28 -30 -3 0 -330 1.25 8"], "focus": "0.45 0.55 0.22 0.3 0.8", "edgeDim": 0.3, "fadeIn": 0.03, "fadeOut": 0.5}),
+    (17.45, {"kind": "shortcut", "size": 124, "edgeDim": 0.4, "lines": ["Your shortcut to", "everything."], "sub": ["A collection of powerful productivity tools all within the", "convenience of Raycast. Fast, ergonomic, and keyboard-friendly."], "cam": ["0 8 -14 -9 0 0 1.1 7", "3.0 8 -14 -9 40 0 1.08 7"], "focus": "0.45 0.5 0.22 0.25 0.8", "fadeIn": 0.5, "fadeOut": 0.0}),
+    (20.70, {"kind": "dialog", "tallX": -300, "cam": ["0 14 -18 -3 140 40 1.0 5", "1.0 14 -18 -3 120 50 1.0 5", "2.4 14 -18 -3 -110 200 1.0 5", "3.8 14 -18 -3 -120 200 1.0 5", "5.5 14 -18 -3 -130 210 1.0 5"], "edgeDim": 0.35, "focus": "0.55 0.5 0.35 0.35 0.7", "fadeIn": 0.03, "fadeOut": 0.5}),
+    (26.20, {"kind": "next", "size": 126, "lines": ["The React Framework", "for the Web"], "sub": ["Used by some of the world's largest companies, Next.js enables you to create", "high-quality web applications with the power of React components."], "cam": ["0 12 -16 -5 0 170 1 9", "2.7 12 -16 -5 -90 190 1.06 9"], "focus": "0.45 0.55 0.28 0.25 0.7", "dim": 0.75, "fadeIn": 0.6, "fadeOut": 0.1}),
+    (28.80, {"kind": "command", "cam": ["0 14 -14 4 60 50 1.4 6", "2.4 14 -14 4 -60 50 1.45 6"], "focus": "0.55 0.5 0.3 0.2 0.7", "dim": 0.75, "fadeIn": 0.2, "fadeOut": 0.3}),
+    (31.45, {"kind": "search", "cam": ["0 8 -10 -2 170 0 1.4 6", "4.6 14 -14 -3 120 -40 1.4 6"], "focus": "0.5 0.5 0.35 0.3 0.7", "fadeIn": 0.3, "fadeOut": 0.5, "typeAt": 0.45, "cps": 11.5}),
+    (36.00, {"kind": "email", "size": 150, "lines": ["Email for", "developers"], "sub": ["The best way to reach humans instead of spam folders.", "Deliver transactional and marketing emails at scale."], "cam": ["0 8 -10 -5 180 -10 1.05 12", "3.0 8 -10 -5 120 -20 1.12 11"], "focus": "0.5 0.5 0.22 0.22 0.8", "edgeDim": 0.45, "fadeIn": 0.4, "fadeOut": 0.1, "buttons": ["Get started", "Documentation"]}),
+    (39.00, {"kind": "resend", "cam": ["0 4 -8 0 10 0 1.12 0", "4.6 4 -8 0 -10 0 1.2 0"], "focus": "0.5 0.5 0.9 0.9 0.5", "fadeIn": 0.03, "fadeOut": 0.6, "persp": 2200}),
+    (44.00, {"kind": "end", "size": 60, "lines": ["npx skills add 1weiho/cinematic-shot"], "cam": ["0 0 0 0 0 0 1 0", "7 0 0 0 0 0 1 0"], "focus": "0.5 0.5 0.9 0.9 0.5", "fadeIn": 0.05, "fadeOut": 0, "typeAt": 1.05, "cursorAt": 0.6, "cps": 11.5, "vignette": 0}),
+]
+END = 51.38
+
+
+def T(scene: str, key: str) -> dict:
+    return {"scene": scene, "key": key}
+
+
+def project() -> dict:
+    scenes = []
+    for i, (t, params) in enumerate(BEATS):
+        nxt = BEATS[i + 1][0] if i + 1 < len(BEATS) else END
+        scenes.append({"id": f"b{i + 1:02d}", "template": "cs-shot", "duration": round(nxt - t, 4), "params": dict(params, film0=t), "ref": {"start": t}})
+    ids = {b[1]["kind"]: f"b{i + 1:02d}" for i, b in enumerate(BEATS)}
+    controls = [
+        {"id": "hero", "label": "Titre d'ouverture", "type": "lines", "group": "Phrases", "targets": [T(ids["hero"], "lines")]},
+        {"id": "buttons", "label": "Boutons du premier titre", "type": "lines", "group": "Phrases", "targets": [T(ids["hero"], "buttons")]},
+        {"id": "chat", "label": "Question du chat", "type": "text", "group": "Phrases", "targets": [T(ids["chat"], "question")]},
+        {"id": "product", "label": "Phrase produit", "type": "lines", "group": "Phrases", "targets": [T(ids["product"], "lines")]},
+        {"id": "shortcut", "label": "Phrase du raccourci", "type": "lines", "group": "Phrases", "targets": [T(ids["shortcut"], "lines")]},
+        {"id": "magic", "label": "Carte magique", "type": "lines", "group": "Phrases", "targets": [T(ids["dialog"], "magic")]},
+        {"id": "next", "label": "Phrase du framework", "type": "lines", "group": "Phrases", "targets": [T(ids["next"], "lines")]},
+        {"id": "command", "label": "Commande de la pastille", "type": "text", "group": "Commandes", "targets": [T(ids["command"], "command")]},
+        {"id": "query", "label": "Recherche tapée", "type": "text", "group": "Commandes", "targets": [T(ids["search"], "query")]},
+        {"id": "email", "label": "Titre serif", "type": "lines", "group": "Phrases", "targets": [T(ids["email"], "lines")]},
+        {"id": "final", "label": "Commande finale", "type": "lines", "group": "Commandes", "targets": [T(ids["end"], "lines")]},
+        {"id": "prism", "label": "Couleurs du prisme (gauche)", "type": "color", "group": "Prisme", "targets": [T(ids["prism"], "leftColor")]},
+        {"id": "prismR", "label": "Couleurs du prisme (droite)", "type": "color", "group": "Prisme", "targets": [T(ids["prism"], "rightColor")]},
+    ]
+    return {"schema": "zrmd/motion-project@1", "title": "Cinematic Shot reproduit", "format": "16x9", "fps": 30, "reference": "cinematic-shot",
+            "doc": "16 October 2026: Cinematic Shot film, foreground only (no photograph).",
+            "theme": {"bg": "#000000", "ink": "#f4f4f4", "accent": "#ff3d6e", "fontTitle": "InterVariable", "fontBody": "InterVariable"},
+            "music": {"mode": "none"}, "sfx": {"enabled": False}, "controls": controls, "scenes": scenes}
+
+
+if __name__ == "__main__":
+    pid = "cinematic-shot-motion"
+    if (server.project_dir(pid) / "project.json").is_file():
+        server.save_version(pid, "avant une nouvelle passe de reproduction")
+    p = project()
+    server.write_project(pid, p)
+    print(json.dumps({"id": pid, "scenes": len(p["scenes"]), "duration": round(sum(s["duration"] for s in p["scenes"]), 2)}))

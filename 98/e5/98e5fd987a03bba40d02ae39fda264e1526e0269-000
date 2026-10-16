@@ -108,7 +108,7 @@
   ZS.register({
     id: "cl-output", label: "Claudia : une sortie (STILL, CLIP, SONG, MUSIC VIDEO)", group: "Texte", duration: 1.0,
     params: [
-      P("kind", "Genre", "select", "still", ["still", "clip", "song", "video"], 1), P("word", "Mot géant", "text", "STILL", 1), P("source", "Source", "text", "STILL — MIDJOURNEY", 1), P("output", "Numéro de sortie", "text", "OUTPUT 01 / 04", 1),
+      ({ key: "kind", label: "Genre", type: "select", default: "still", options: ["still", "clip", "song", "video"], tier: 1 }), P("word", "Mot géant", "text", "STILL", 1), P("source", "Source", "text", "STILL — MIDJOURNEY", 1), P("output", "Numéro de sortie", "text", "OUTPUT 01 / 04", 1),
       P("coral", "Corail", "color", CORAL, 2), P("cream", "Crème", "color", CREAM, 2), P("bg", "Fond (vide = selon le genre)", "text", "", 2), P("tag", "Étiquette de repère", "text", "STAR CLIP ↗", 2),
       P("checks", "Pastilles de contrôle", "text", "CANON ✓   ONE STREAK ✓   STAR CLIP ✓   MIC ✓", 3), P("page", "Section", "text", "06 / EVERYTHING", 3), N("film0", "Début dans le film (s)", 10.8, 0, 30, 0.01, 3, "s"),
       N("size", "Taille du mot (large)", 224, 40, 600, 1, 3, "px"),

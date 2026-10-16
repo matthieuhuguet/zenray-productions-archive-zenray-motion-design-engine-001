@@ -74,7 +74,7 @@
   ZS.register({
     id: "fa-card", label: "Factory : une carte d'interface", group: "Interface", duration: 2.6,
     params: [
-      P("kind", "Carte", "select", "env", ["env", "steps", "terminal", "building", "ready", "linter", "instances"], 1), P("title", "Titre (selon la carte)", "text", "", 1), P("bg", "Fond", "color", GREY, 2),
+      ({ key: "kind", label: "Carte", type: "select", default: "env", options: ["env", "steps", "terminal", "building", "ready", "linter", "instances"], tier: 1 }), P("title", "Titre (selon la carte)", "text", "", 1), P("bg", "Fond", "color", GREY, 2),
       P("project", "Projet", "text", "acme-web", 2), P("lines", "Lignes (selon la carte)", "lines", [], 2), N("hold", "Instant du changement d'état", 1.2, 0, 8, 0.05, 3, "s"),
       N("cardY", "Position verticale de la carte (large)", 590, 100, 1000, 1, 3, "px"), N("film0", "Début dans le film (s)", 0, 0, 40, 0.01, 3, "s"),
     ],
