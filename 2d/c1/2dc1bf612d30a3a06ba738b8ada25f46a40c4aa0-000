@@ -4,14 +4,7 @@
   const ZS = window.ZS, h = ZS.h, K = ZS.claudiaKit, { hud, giant, svgEl, abs, keysOf, lerpKeys, P, N, BG, CREAM, CORAL, MONO } = K;
   const lines = (a) => a;
 
-  // the characters a decoding label goes through before it settles ("GRU%" then "GROK")
-  const GLYPHS = "ABCDEFGHJKLMNPQRSTUVWXYZ0123456789%&#@$";
-  function scramble(tl, node, final, at, dur, seed) {
-    const rnd = h.rand(seed || 7), pr = { u: 0 };
-    const upd = () => { const n = Math.floor(pr.u * final.length), s = final.slice(0, n) + (n < final.length ? GLYPHS[Math.floor(rnd() * GLYPHS.length)] : ""); node.textContent = s; };
-    node.textContent = ""; tl.to(pr, { u: 1, duration: dur, ease: "none", onUpdate: upd }, at);
-    tl.call(() => {}, null, at + dur);
-  }
+  const scramble = K.scramble;
 
   ZS.register({
     id: "cl-relay", label: "Claudia : le relais GROK vers OPUS", group: "Données", duration: 2.35,
@@ -57,9 +50,9 @@
       const label = (parentX, txt, sub, at, seed) => {
         const g = abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px" }), tx = abs(g, { left: parentX - 220 * k + "px", top: cy + 100 * k + "px", width: 440 * k + "px", textAlign: "center", fontFamily: "InterVariable", fontWeight: 900, fontSize: 125 * k + "px", color: p.cream, letterSpacing: "-0.02em", lineHeight: 1, transform: "scaleX(0.8)", whiteSpace: "nowrap" });
         const sb = abs(g, { left: parentX - 300 * k + "px", top: cy + 250 * k + "px", width: 600 * k + "px", textAlign: "center", fontFamily: h.font(MONO), fontSize: 22 * k + "px", color: p.coral, letterSpacing: "0.04em", whiteSpace: "nowrap" });
-        scramble(tl, tx, txt, t0 + at, 0.25, seed); scramble(tl, sb, sub, t0 + at + 0.1, 0.3, seed + 3); return { g, tx, sb };
+        scramble(tl, tx, txt, t0 + at, 0.12); scramble(tl, sb, sub, t0 + at + 0.05, 0.3); return { g, tx, sb };
       };
-      const la = label(gx, p.a, p.aSub, 0.05, 11);
+      const la = label(gx, p.a, p.aSub, 0.0, 11);
       tl.to([la.tx, la.sb], { x: 0, duration: 0.01 }, t0); tl.set([la.tx, la.sb], { x: startX - gx }, t0); tl.to([la.tx, la.sb], { x: 0, duration: 0.3, ease: "power2.inOut" }, t0 + 0.45);
       // the dotted line and the coral square travelling to OPUS
       const line = abs(st, { left: gx + 84 * k + "px", top: cy - 1 + "px", height: "2px", width: ox - gx - 84 * k - 60 * k + "px", backgroundImage: `linear-gradient(90deg, ${p.cream} 0 8px, transparent 8px 16px)`, backgroundSize: "16px 2px", opacity: 0.8, transformOrigin: "0 50%" });
@@ -69,13 +62,13 @@
       const sqr = abs(st, { left: ox - 60 * k + "px", top: cy - 60 * k + "px", width: 120 * k + "px", height: 120 * k + "px", border: `${3 * k}px solid ${p.cream}`, background: "#0e0e0e" });
       abs(sqr, { left: "50%", top: "50%", width: 52 * k + "px", height: 52 * k + "px", marginLeft: -26 * k + "px", marginTop: -26 * k + "px", background: p.coral });
       tl.fromTo(sqr, { scale: 0.2, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: 0.25, ease: "back.out(1.8)" }, t0 + 0.85);
-      const lb = label(ox, p.b, p.bSub, 0.9, 23);
+      const lb = label(ox, p.b, p.bSub, 0.95, 23);
       // a coral dash keeps travelling to the right of OPUS, towards the star
       const dash = abs(st, { left: ox + 90 * k + "px", top: cy - 3 + "px", width: 36 * k + "px", height: "6px", background: p.coral, opacity: 0 });
       tl.fromTo(dash, { autoAlpha: 0, x: 0 }, { autoAlpha: 1, x: 640 * k, duration: 0.8, ease: "power1.in" }, t0 + 1.5);
       const tail = abs(st, { left: ox + 70 * k + "px", top: cy - 1 + "px", width: 640 * k + "px", height: "2px", backgroundImage: `linear-gradient(90deg, ${p.cream} 0 8px, transparent 8px 16px)`, backgroundSize: "16px 2px", opacity: 0.55, transformOrigin: "0 50%" });
       tl.fromTo(tail, { scaleX: 0 }, { scaleX: 1, duration: 0.6 }, t0 + 1.4);
-      hud(ctx, st, w, sh, { page: p.page, dark: true, film0: p.film0 });
+      hud(ctx, st, w, sh, { pages: [[0, "02 / THE RELAY"], [0.95, p.page]], dark: true, film0: p.film0 });
       void lines; void lerpKeys; void keysOf; void dur; void lb;
     },
   });

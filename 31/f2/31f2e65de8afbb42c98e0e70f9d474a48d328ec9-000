@@ -25,7 +25,12 @@
     abs(g, Object.assign({ right: m + 41 + "px", top: m + 6 + "px", fontSize: "13px", fontWeight: 700, color: ink, textAlign: "right" }, mono), "", "134.7 BPM");
     const sq = [0, 1, 2, 3].map((i) => abs(g, { right: m + 41 - 118 + 18 * (3 - i) + "px", top: m + 7 + "px", width: "12px", height: "12px", background: dim }));
     const tc = abs(g, Object.assign({ left: m + 41 + "px", top: sh - m - 14 + "px", fontSize: "12px", color: dim }, mono), "", "00:00:00:00");
-    const pg = abs(g, Object.assign({ right: m + 41 + "px", top: sh - m - 14 + "px", fontSize: "12px", fontWeight: 700, color: ink, textAlign: "right" }, mono), "", o.page || "");
+    // the section label bottom right can change inside a scene: o.pages = [[relative time, text], ...] (one element per text, shown by the timeline)
+    const pgs = (o.pages || [[0, o.page || ""]]).map(([rel, txt], i, all) => {
+      const e = abs(g, Object.assign({ right: m + 41 + "px", top: sh - m - 14 + "px", fontSize: "12px", fontWeight: 700, color: ink, textAlign: "right" }, mono), "", txt);
+      tl.set(e, { autoAlpha: 0 }, 0); tl.set(e, { autoAlpha: 1 }, t0 + rel); if (all[i + 1]) tl.set(e, { autoAlpha: 0 }, t0 + all[i + 1][0]); return e;
+    });
+    const pg = pgs[0];
     // beat squares: the coral one moves at 134.7 bpm (seek-safe: a set per beat)
     const beat = 60 / 134.7, nb = Math.ceil(ctx.dur / beat);
     for (let b = 0; b < nb; b++) sq.forEach((e, i) => tl.set(e, { background: i === b % 4 ? CORAL : dim }, t0 + b * beat));
@@ -115,5 +120,12 @@
       hud(ctx, st, w, sh, { page: p.page, dark: true, film0: 0 });
     },
   });
-  ZS.claudiaKit = { hud, giant, svgEl, abs, keysOf, lerpKeys, P, N, BG, CREAM, CORAL, BAR, SANS, MONO };
+  // a decoding label: the characters settle one by one from left to right, the unsettled one is a pseudo-random glyph (a pure function of the time: seek-safe)
+  const GLYPHS = "ABCDEFGHJKLMNPQRSTUVWXYZ0123456789%&#@$*+<>/";
+  function scramble(tl, node, final, at, dur) {
+    const pr = { u: 0 }, hsh = (n, f) => { let x = (n * 374761393 + f * 668265263) >>> 0; x = (x ^ (x >>> 13)) * 1274126177 >>> 0; return x; };
+    const upd = () => { const n = Math.floor(pr.u * final.length), f = Math.floor(pr.u * 24); node.textContent = final.slice(0, n) + (n < final.length ? GLYPHS[hsh(n, f) % GLYPHS.length] : ""); };
+    node.textContent = ""; tl.to(pr, { u: 1, duration: dur, ease: "none", onUpdate: upd }, at);
+  }
+  ZS.claudiaKit = { scramble, hud, giant, svgEl, abs, keysOf, lerpKeys, P, N, BG, CREAM, CORAL, BAR, SANS, MONO };
 })();
