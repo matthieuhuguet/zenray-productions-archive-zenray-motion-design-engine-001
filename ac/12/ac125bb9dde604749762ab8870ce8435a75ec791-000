@@ -268,7 +268,9 @@ def temporal_error(low: np.ndarray, hz: float, t0: float, t1: float, times: list
         t = i / hz
         k = max(j for j, kt in enumerate(times) if kt <= t + 1e-6) if any(kt <= t + 1e-6 for kt in times) else 0
         if grey[k] is not None:
-            d = np.abs(low[i].astype(np.int16) - grey[k])
+            # the probe and the exact grab of a keyframe can differ by one source frame: the nearest of three neighbouring samples is judged
+            cands = [np.abs(low[j].astype(np.int16) - grey[k]) for j in (i - 1, i, i + 1) if 0 <= j < len(low)]
+            d = min(cands, key=lambda c: float(c.mean()))
             errs.append(float(d.mean()))
             fracs.append(float((d > CFG["sampling"]["pixelDelta"]).mean()))
     return {"mean": round(float(np.mean(errs)), 2) if errs else 0.0, "max": round(float(np.max(errs)), 2) if errs else 0.0, "samples": len(errs),
