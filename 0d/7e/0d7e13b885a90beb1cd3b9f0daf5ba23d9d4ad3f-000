@@ -1,0 +1,47 @@
+// ZenRay Motion Design Threads (16 October 2026): every video given so far, with its source link, its local link, the method that made it and the tab
+// it is in (Validate, Not Validate, Labs, or not started). The data comes from /api/motion/threads. FR : la liste de toutes les videos et ou elles en sont.
+(function () {
+  "use strict";
+  const $ = (q) => document.querySelector(q);
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const slug = (t) => String(t).replace(/\s+/g, "");
+  let data = null;
+
+  const wfName = (id) => (id && data.workflows[id] ? data.workflows[id].name : "");
+  function fill(sel, values, all) { sel.innerHTML = `<option value="">${all}</option>` + values.map((v) => `<option>${esc(v)}</option>`).join(""); }
+
+  function row(r, i) {
+    const tabCls = slug(r.tab);
+    const src = r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a>` + (r.backup && r.backup.length ? `<div class="hint">secours : ${r.backup.map((b) => `<a href="${esc(b.url)}" target="_blank" rel="noopener">${esc(b.title || b.url)}</a>`).join(" · ")}</div>` : "") : "<span class=\"hint\">aucun lien (projet de Matthieu)</span>";
+    const loc = r.local ? `<a href="${esc(r.localUrl)}" target="_blank">ouvrir</a><br><code>${esc(r.local)}</code>` : "<span class=\"hint\">pas de fichier local</span>";
+    const wf = r.workflow ? `<span class="th-tag ${esc(r.workflow)}">${esc(wfName(r.workflow))}</span>` : "<span class=\"hint\">—</span>";
+    const proj = r.project ? `<div class="th-actions"><a href="/motion/${r.tab === "Not Validate" ? "not-validate" : "validate"}">${esc(r.project)}</a></div>` : "";
+    const tr = document.createElement("tr");
+    tr.dataset.q = (r.title + " " + (r.url || "") + " " + r.id + " " + (r.urlTitle || "")).toLowerCase();
+    tr.dataset.tab = r.tab; tr.dataset.wf = r.workflow || ""; tr.dataset.group = r.group;
+    tr.innerHTML = `<td class="n">${r.n || i + 1}</td><td class="t"><b>${esc(r.title)}</b><small>${esc(r.group)}${r.found ? " · " + esc(r.found) : ""}</small>${r.urlTitle ? `<small>${esc(r.urlTitle)}</small>` : ""}</td><td>${src}</td><td>${loc}</td><td>${wf}</td><td><span class="th-tag ${tabCls}">${esc(r.tab)}</span></td><td>${esc(r.status)}${proj}</td>`;
+    return tr;
+  }
+
+  function filter() {
+    const q = $("#thSearch").value.trim().toLowerCase(), tab = $("#thTab").value, wf = $("#thWf").value, group = $("#thGroup").value;
+    let shown = 0;
+    document.querySelectorAll("#thBody tr").forEach((tr) => {
+      const ok = (!q || tr.dataset.q.includes(q)) && (!tab || tr.dataset.tab === tab) && (!wf || tr.dataset.wf === wf || (wf === "none" && !tr.dataset.wf)) && (!group || tr.dataset.group.startsWith(group));
+      tr.classList.toggle("hide", !ok); if (ok) shown++;
+    });
+    $("#thCount").textContent = `${shown} vidéo(s) sur ${data.rows.length}`;
+  }
+
+  async function main() {
+    const r = await fetch("/api/motion/threads"); data = await r.json(); if (!data.ok) throw new Error(data.error || r.status);
+    const body = $("#thBody"); data.rows.forEach((x, i) => body.appendChild(row(x, i)));
+    fill($("#thTab"), ["Validate", "Not Validate", "Labs", "—"], "tous");
+    const wfs = Object.keys(data.workflows); $("#thWf").innerHTML = `<option value="">toutes</option>` + wfs.map((k) => `<option value="${k}">${esc(data.workflows[k].name)}</option>`).join("") + `<option value="none">pas commencée</option>`;
+    const groups = [...new Set(data.rows.map((x) => x.group.split(" · ")[0]))]; fill($("#thGroup"), groups, "tous");
+    $("#thLegend").innerHTML = Object.keys(data.counts).map((k) => `<span class="th-tag ${slug(k)}">${esc(k)} · ${data.counts[k]}</span>`).join("") + wfs.map((k) => `<span class="hint" title="${esc(data.workflows[k].note)}"><b>${esc(data.workflows[k].name)}</b> : ${esc(data.workflows[k].note)}</span>`).join(" ");
+    ["#thSearch", "#thTab", "#thWf", "#thGroup"].forEach((s) => $(s).addEventListener("input", filter));
+    filter();
+  }
+  main().catch((e) => { document.body.appendChild(Object.assign(document.createElement("p"), { className: "hint", textContent: "Erreur : " + e.message })); });
+})();

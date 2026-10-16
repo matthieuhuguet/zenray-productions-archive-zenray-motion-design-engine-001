@@ -12,6 +12,8 @@
   };
   const LS = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
   const FORMAT_LABEL = { "16x9": "16:9", "9x16": "9:16", "1x1": "1:1", "4x5": "4:5" };
+  const MODE = location.pathname.indexOf("/motion/not-validate") === 0 ? "not" : "ok"; // 16 October 2026: Validate shows what is not sent back, Not Validate what is
+  const WF = { ppm: "Premier Plan Mesuré", m999: "Méthode 99,9 (Labs)" };
   const state = { items: [], cards: new Map(), format: LS("vd-format") || "16x9", ref: LS("vd-ref") === "1" };
   const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
@@ -33,7 +35,7 @@
       body.appendChild(el("div", "hint", it.reference ? "La reproduction arrive ici dès qu'elle existe." : ""));
       return c;
     }
-    body.innerHTML = `<div class="vd-title"><b>${esc(it.title)}</b><small>${it.scenes} scènes · ${it.duration} s</small><span class="vd-chip" data-k="fmt"></span></div>
+    body.innerHTML = `<div class="vd-title"><b>${esc(it.title)}</b><small>${it.scenes} scènes · ${it.duration} s</small><span class="vd-chip" data-k="fmt"></span><span class="vd-chip wf-${esc(it.workflow || "m999")}">${esc(WF[it.workflow || "m999"])}</span></div>
       <div class="vd-bar"><button class="round primary" data-k="play" type="button">▶</button><input type="range" min="0" max="1000" value="0" data-k="seek" /><span class="t" data-k="time">0:00</span></div>
       <div class="vd-verdict"><button data-k="ok" type="button">✓ Valider</button><button data-k="redo" type="button">↻ À refaire</button><input type="text" data-k="note" placeholder="Remarque" />
       <button class="ghost" data-k="edit" type="button">Ouvrir dans l'éditeur</button></div>`;
@@ -110,7 +112,7 @@
       if (v && v.note !== undefined && document.activeElement !== q("note")) q("note").value = v.note || "";
       q("note").title = v && v.at ? `Dernier avis : ${v.at}` : "";
     };
-    const send = async (st) => { try { const j = await api("POST", `/api/motion/validate/${it.id}`, { state: st, note: q("note").value }); it.validation = j.validation; paintVerdict(j.validation); updateCount(); } catch (e) { alert(e.message); } };
+    const send = async (st) => { try { const j = await api("POST", `/api/motion/validate/${it.id}`, { state: st, note: q("note").value }); it.validation = j.validation; paintVerdict(j.validation); const moved = (MODE === "ok" && st === "redo") || (MODE === "not" && st !== "redo"); if (moved) { c.hide(); root.remove(); state.cards.delete(it.id); state.items = state.items.filter((x) => x.id !== it.id); } updateCount(); } catch (e) { alert(e.message); } };
     q("ok").onclick = () => send(it.validation && it.validation.state === "validated" ? "" : "validated");
     q("redo").onclick = () => send(it.validation && it.validation.state === "redo" ? "" : "redo");
     q("note").onchange = () => { const st = it.validation && it.validation.state; if (st) send(st); };
@@ -123,12 +125,15 @@
 
   function updateCount() {
     const ok = state.items.filter((i) => i.validation && i.validation.state === "validated").length;
-    $("#vdCount").textContent = `${ok} validé(s) sur ${state.items.length}`;
+    $("#vdCount").textContent = MODE === "not" ? `${state.items.length} à refaire` : `${ok} validé(s) sur ${state.items.length}`;
   }
 
   async function main() {
-    const j = await api("GET", "/api/motion/validate");
-    state.items = j.items;
+    const j = await api("GET", MODE === "not" ? "/api/motion/not-validated" : "/api/motion/validate");
+    state.items = MODE === "not" ? j.items : j.items.filter((i) => !(i.validation && i.validation.state === "redo"));
+    j.items = state.items;
+    document.title = MODE === "not" ? "ZenRay Motion Design · Not Validate" : "ZenRay Motion Design · Validate";
+    const navOn = document.querySelector(`.appnav [data-nav="${MODE}"]`); navOn && navOn.classList.add("on");
     const sel = $("#vdFormat");
     sel.innerHTML = (j.formats.length ? j.formats : ["16x9"]).map((f) => `<option value="${f}">${FORMAT_LABEL[f] || f}</option>`).join("");
     sel.value = state.format; $("#vdRef").checked = state.ref;
@@ -139,6 +144,7 @@
       const grid = el("div", "vd-grid"); sec.appendChild(grid); main.appendChild(sec);
       its.forEach((it) => card(it, grid));
     });
+    if (!j.items.length) main.appendChild(el("p", "vd-empty", MODE === "not" ? "Rien à refaire pour le moment." : "Aucun motion à juger."));
     updateCount();
     sel.onchange = () => { state.format = sel.value; LS("vd-format", state.format); state.cards.forEach((c) => c.rebuild && c.rebuild()); };
     $("#vdRef").onchange = (e) => { state.ref = e.target.checked; LS("vd-ref", state.ref ? "1" : ""); state.cards.forEach((c) => c.rebuild && c.rebuild()); };

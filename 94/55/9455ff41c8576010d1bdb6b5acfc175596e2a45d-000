@@ -200,6 +200,8 @@ def reference_video(slug: str) -> Path | None:
     if not SAFE.match(slug or ""):
         return None
     d = REFCACHE / slug
+    if not d.is_dir() and (REFCACHE / "_corpus" / slug).is_dir():
+        d = REFCACHE / "_corpus" / slug  # 16 October 2026: the corpus of 102 is cached under _corpus
     vids = sorted([p for p in d.glob("*") if p.suffix.lower() in VIDEO_EXT and p.is_file()], key=lambda p: -p.stat().st_size) if d.is_dir() else []
     return vids[0] if vids else None
 

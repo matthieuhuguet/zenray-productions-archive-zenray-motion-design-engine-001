@@ -1,0 +1,22 @@
+/* 16 October 2026: the page Threads. Tokens come from app.css. */
+.th-bar { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 12px 18px 4px; }
+.th-bar input[type=search] { flex: 1; min-width: 240px; max-width: 520px; }
+.th-legend { padding: 4px 18px 10px; display: flex; gap: 8px; flex-wrap: wrap; color: var(--ink-2); font-size: 13px; }
+.th-wrap { padding: 0 18px 60px; overflow-x: auto; }
+.th-table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 980px; }
+.th-table th { text-align: left; font-weight: 400; color: var(--ink-2); font-size: 12px; padding: 8px 10px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg, #fff); }
+.th-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.th-table td.n { color: var(--ink-2); font-variant-numeric: tabular-nums; font-family: var(--f-serif); width: 44px; }
+.th-table .t b { font-family: var(--f-serif); font-weight: 400; font-size: 16px; display: block; }
+.th-table .t small { color: var(--ink-2); }
+.th-table a { color: inherit; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; word-break: break-all; }
+.th-table code { font-family: var(--f-mono); font-size: 11.5px; color: var(--ink-2); word-break: break-all; }
+.th-tag { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; font-size: 12px; white-space: nowrap; }
+.th-tag.Validate { color: #2f7a12; border-color: #4f9d2a; }
+.th-tag.NotValidate { color: var(--accent); border-color: var(--accent); }
+.th-tag.Labs { color: #8a6a12; border-color: #b8921f; }
+.th-tag.ppm { color: #2f7a12; border-color: #4f9d2a; }
+.th-tag.m999 { color: var(--ink-2); }
+.th-table tr.hide { display: none; }
+.th-actions { display: flex; gap: 6px; margin-top: 4px; }
+.th-actions button { font-size: 11px; padding: 1px 8px; }

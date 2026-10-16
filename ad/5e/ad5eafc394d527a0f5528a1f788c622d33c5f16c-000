@@ -65,7 +65,7 @@ def project() -> dict:
     for i, (t, tpl, params) in enumerate(BEATS):
         nxt = BEATS[i + 1][0] if i + 1 < len(BEATS) else END
         scenes.append({"id": f"b{i + 1:02d}", "template": tpl, "duration": round(nxt - t, 4), "params": params, "ref": {"start": t, "note": "instant read on the reference"}})
-    return {"schema": "zrmd/motion-project@1", "title": "AgentPlay reproduit", "format": "16x9", "fps": 30, "reference": "agentplay",
+    return {"schema": "zrmd/motion-project@1", "workflow": {"id": "ppm", "name": "Premier Plan Mesuré"}, "title": "AgentPlay reproduit", "format": "16x9", "fps": 30, "reference": "agentplay",
             "doc": "16 October 2026: AgentPlay launch film, foreground assets only (no background image, no face); every text and colour is a value.",
             "theme": {"bg": "#ffffff", "ink": "#1b1b19", "accent": "#80c22a", "fontTitle": "InterVariable", "fontBody": "InterVariable"},
             "music": {"mode": "none"}, "sfx": {"enabled": False}, "controls": CONTROLS, "scenes": scenes}
@@ -76,5 +76,10 @@ if __name__ == "__main__":
     if (server.project_dir(pid) / "project.json").is_file():
         server.save_version(pid, "avant une nouvelle passe de reproduction")
     p = project()
+    old = (server.project_dir(pid) / "project.json")
+    if old.is_file():  # the verdict of Matthieu survives a rebuild
+        p["validation"] = (json.loads(old.read_text(encoding="utf-8")).get("validation") or None) or p.get("validation")
+        if not p["validation"]:
+            p.pop("validation")
     server.write_project(pid, p)
     print(json.dumps({"id": pid, "scenes": len(p["scenes"]), "duration": round(sum(s["duration"] for s in p["scenes"]), 2)}))

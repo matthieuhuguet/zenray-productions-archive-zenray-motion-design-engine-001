@@ -17,7 +17,7 @@
 <body class="vd">
   <header class="top">
     <a class="brand" href="/#/">ZenRay Motion Design</a>
-    <nav class="appnav"><a href="/#/">Projets</a><a href="/#/music">Musique</a><a href="/#/montage">Montage</a><a href="/motion/">Motion</a><a class="on" href="/motion/validate">Validate</a></nav>
+    <nav class="appnav"><a href="/#/">Projets</a><a href="/#/music">Musique</a><a href="/#/montage">Montage</a><a href="/motion/">Motion</a><a data-nav="ok" href="/motion/validate">Validate</a><a data-nav="not" href="/motion/not-validate">Not Validate</a><a href="/motion/threads">Threads</a></nav>
     <div class="grow"></div>
     <span class="hint" id="vdCount"></span>
     <label class="inline">Format <select id="vdFormat"></select></label>

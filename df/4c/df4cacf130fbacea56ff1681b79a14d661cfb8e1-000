@@ -24,3 +24,6 @@
 .vd-verdict button.on-redo { background: var(--accent); border-color: var(--accent); color: #fff; }
 .vd-verdict input { flex: 1; min-width: 180px; }
 .vd-chip { font-size: 11.5px; color: var(--ink-2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+.vd-chip.wf-ppm { color: #2f7a12; border-color: #4f9d2a; }
+.vd-chip.wf-m999 { color: var(--ink-2); }
+.vd-empty { padding: 40px 20px; color: var(--ink-2); text-align: center; }

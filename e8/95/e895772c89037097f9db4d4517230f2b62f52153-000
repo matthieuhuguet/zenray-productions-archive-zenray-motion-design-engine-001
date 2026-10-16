@@ -136,11 +136,116 @@ def validate_set() -> dict:
                 pr = json.loads(f.read_text(encoding="utf-8"))
                 row.update({"title": pr.get("title") or it["id"], "format": pr.get("format"), "reference": pr.get("reference") or it.get("reference"),
                             "scenes": len(pr.get("scenes", [])), "duration": round(sum(sc.get("duration", 0) for sc in pr.get("scenes", [])), 2),
-                            "validation": pr.get("validation")})
+                            "validation": pr.get("validation"), "workflow": (pr.get("workflow") or {}).get("id", "m999")})
             except (OSError, json.JSONDecodeError):
                 row["exists"] = False
         out.append(row)
     return {"items": out, "formats": cfg.get("formats", [])}
+
+
+def _norm_id(slug: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", slug.lower()).strip("-")
+
+
+def _project_light(pid: str) -> dict | None:
+    f = projects_root() / pid / "project.json"
+    if not f.is_file():
+        return None
+    try:
+        pr = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return {"id": pid, "title": pr.get("title") or pid, "validation": pr.get("validation"), "workflow": (pr.get("workflow") or {}).get("id", "m999"),
+            "scenes": len(pr.get("scenes", [])), "duration": round(sum(sc.get("duration", 0) for sc in pr.get("scenes", [])), 2)}
+
+
+def not_validated() -> dict:
+    """16 October 2026: every project Matthieu sent back (state redo), whatever list it came from. FR : tout ce qui est a refaire."""
+    cfg = json.loads((MOTION / "params" / "validate.json").read_text(encoding="utf-8"))
+    out, seen = [], set()
+    for f in sorted(projects_root().glob("*/project.json")):
+        try:
+            pr = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        v = pr.get("validation")
+        if not v or v.get("state") != "redo":
+            continue
+        pid = f.parent.name
+        seen.add(pid)
+        out.append({"id": pid, "group": "À refaire", "reference": pr.get("reference"), "exists": True, "title": pr.get("title") or pid, "format": pr.get("format"),
+                    "scenes": len(pr.get("scenes", [])), "duration": round(sum(sc.get("duration", 0) for sc in pr.get("scenes", [])), 2), "validation": v,
+                    "workflow": (pr.get("workflow") or {}).get("id", "m999")})
+    return {"items": out, "formats": cfg.get("formats", [])}
+
+
+def threads() -> dict:
+    """16 October 2026: every video listed so far (first selection, What Ships, corpus of 102, extra Motion Opus) with its links and its place:
+    which method made it (Premier Plan Mesuré or the Labs method), which tab it is in (Validate, Not Validate, Labs) and its status. FR : la liste Threads."""
+    cfg = json.loads((MOTION / "params" / "threads.json").read_text(encoding="utf-8"))
+    rows = []
+
+    def local_of(slug):
+        b = _bank().reference_video(slug)
+        return str(b) if b else None
+
+    def place(slug, pids):
+        """The best project of a video: the new method first, then the old ones. Returns (tab, workflow, status, project)."""
+        light = [x for x in (_project_light(p) for p in pids) if x]
+        light.sort(key=lambda x: (x["workflow"] != "ppm", 0))
+        for pr in light:
+            v = pr["validation"] or {}
+            st = v.get("state")
+            if st == "validated":
+                return "Validate", pr["workflow"], "validé", pr
+            if st == "redo":
+                return "Not Validate", pr["workflow"], "à refaire", pr
+            if pr["workflow"] == "ppm":
+                return "Validate", "ppm", "à valider", pr
+            return "Labs", "m999", "ancien essai, à juger", pr
+        return None
+
+    for v in cfg["videos"]:
+        slug = v["slug"]
+        pids = [_norm_id(slug) + "-ppm", _norm_id(slug) + "-motion"]
+        pl = place(slug, pids)
+        loc = local_of(slug)
+        rows.append({"id": slug, "group": v["group"], "title": v["title"], "url": v["url"], "backup": [], "local": loc, "localUrl": f"/motion/bank/ref/{slug}" if loc else None,
+                     "project": pl[3]["id"] if pl else None, "tab": pl[0] if pl else "—", "workflow": pl[1] if pl else None,
+                     "status": pl[2] if pl else ("vidéo téléchargée, pas commencée" if loc else "pas commencée")})
+    for e in cfg.get("extras", []):
+        pr = _project_light(e["project"])
+        v = (pr or {}).get("validation") or {}
+        tab = "Validate" if v.get("state") == "validated" else "Not Validate" if v.get("state") == "redo" else "Labs"
+        rows.append({"id": e["project"], "group": e["group"], "title": e["title"], "url": None, "backup": [], "local": None, "localUrl": None, "project": e["project"] if pr else None,
+                     "tab": tab if pr else "—", "workflow": (pr or {}).get("workflow"), "status": {"validated": "validé", "redo": "à refaire"}.get(v.get("state"), "à juger")})
+    items = MOTION.parent.parent
+    ci = Path(_bank().WORKSHOP) / "corpus-102" / "items.json"
+    if ci.is_file():
+        try:
+            corpus = json.loads(ci.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            corpus = []
+        for it in corpus:
+            slug = it["slug"]
+            main = next((l for l in it["links"] if l.get("role") == "main"), it["links"][0] if it["links"] else {})
+            loc = local_of(slug)
+            traced = (Path(_bank().WORKSHOP) / "corpus-102" / "html" / slug).is_dir()
+            pl = place(slug, [_norm_id(slug) + "-ppm"])
+            if pl:
+                tab, wf, st, pid = pl[0], pl[1], pl[2], pl[3]["id"]
+            elif traced:
+                tab, wf, st, pid = "Labs", "m999", "tracé image par image, abandonné", None
+            else:
+                tab, wf, st, pid = "—", None, "vidéo téléchargée, pas commencée" if loc else "pas commencée", None
+            rows.append({"id": slug, "n": it["n"], "group": "Corpus de 102 · " + it["category"], "title": it["title"], "url": main.get("url"), "urlTitle": main.get("title"),
+                         "backup": [l for l in it["links"] if l.get("role") != "main"], "found": it.get("status"), "local": loc, "localUrl": f"/motion/bank/ref/{slug}" if loc else None,
+                         "project": pid, "tab": tab, "workflow": wf, "status": st})
+    del items
+    counts = {}
+    for r in rows:
+        counts[r["tab"]] = counts.get(r["tab"], 0) + 1
+    return {"rows": rows, "workflows": cfg["workflows"], "counts": counts}
 
 
 def presets() -> list[dict]:
@@ -473,8 +578,14 @@ def handle(method: str, path: str, q: dict, read, length: int) -> dict:
             return J({"ok": True, "projects": list_projects(), "presets": presets()})
         if p == "/api/motion/validate":
             return J({"ok": True, **validate_set()})
-        if p in ("/motion/validate", "/motion/validate/"):
+        if p == "/api/motion/not-validated":
+            return J({"ok": True, **not_validated()})
+        if p == "/api/motion/threads":
+            return J({"ok": True, **threads()})
+        if p in ("/motion/validate", "/motion/validate/", "/motion/not-validate", "/motion/not-validate/"):
             return F(MOTION / "web" / "validate.html", "text/html; charset=utf-8")
+        if p in ("/motion/threads", "/motion/threads/"):
+            return F(MOTION / "web" / "threads.html", "text/html; charset=utf-8")
         if p == "/api/motion/banks/music":
             return J({"ok": True, **_bank().music_bank()})
         if p == "/api/motion/banks/sfx":
