@@ -1,0 +1,428 @@
+// 16 October 2026: the templates of the AgentPlay launch film (whatships.com/videos/agentplay), measured on the reference at 3 images per second and on
+// full frames. FOREGROUND ASSETS ONLY (Matthieu's rule of 16 October 2026): headline words, cards, charts, rings, trees, node maps, the product window;
+// never a background image, never a face. Every visible value is a parameter or a theme token. Every template lays itself out for the FORMAT it is given
+// (ZS.stageAdaptive): a wide frame uses a 1920 x 1080 design, a tall or square frame a 1080-wide design as tall as the frame, so a format change reflows.
+// FR : les modeles du film AgentPlay ; seulement le premier plan ; chaque modele se met en page pour le format recu (large ou haut).
+(function () {
+  const ZS = window.ZS, h = ZS.h;
+  const P = (key, label, type, def, tier, extra) => Object.assign({ key, label, type, default: def, tier }, extra || {});
+  const N = (key, label, def, min, max, step, tier, unit) => ({ key, label, type: "number", default: def, min, max, step, tier, unit });
+  const GREEN = "#80c22a", RED = "#dc344f", INK = "#1b1b19", SANS = "InterVariable", MONO = "JetBrainsMono";
+  const NS = "http://www.w3.org/2000/svg";
+  const svgEl = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); Object.keys(attrs || {}).forEach((k) => e.setAttribute(k, attrs[k])); if (parent) parent.appendChild(e); return e; };
+  const abs = (parent, css, cls, text) => h.css(h.el("div", "zs-abs" + (cls ? " " + cls : ""), parent, text), css);
+  const SHADOW = "0 24px 60px -24px rgba(20,30,10,0.22), 0 0 0 1px rgba(0,0,0,0.035)";
+
+  // ------------------------------------------------------------------------------------------------ the headline
+  // lines: one string per line; [word] takes the accent colour. Words come in one after the other, sharpening out of a blur (measured: "coding" is
+  // blurred a third of a second before it is sharp). o.times gives each word's instant; o.wrap lets the words flow in a box of width o.w (tall formats).
+  function headline(parent, o) {
+    const lh = o.lineHeight || 1.08, top = o.cy !== undefined ? o.cy - o.size * lh / 2 : o.y;
+    const box = abs(parent, { left: o.x + "px", top: top + "px", width: o.w + "px", textAlign: o.align, color: o.ink, fontFamily: h.font(SANS),
+      fontSize: o.size + "px", fontWeight: o.weight || 500, letterSpacing: (o.tracking !== undefined ? o.tracking : -0.025) + "em", lineHeight: lh, transform: o.align === "center" ? "translateX(-50%)" : "none" });
+    const words = [], lines = o.wrap ? [o.lines.join(" ")] : o.lines;
+    lines.forEach((line, li) => {
+      const row = h.css(h.el("div", "", box), { whiteSpace: o.wrap ? "normal" : "nowrap", marginLeft: (o.indent && li > 0 && !o.wrap ? o.indent : 0) + "px" });
+      line.split(/(\[[^\]]+\])|\s+/).filter((s) => s !== undefined && s !== "").forEach((w, wi) => {
+        const acc = /^\[.*\]$/.test(w), txt = acc ? w.slice(1, -1) : w;
+        if (wi) row.appendChild(document.createTextNode(" "));
+        words.push(h.css(h.el("span", "", row, txt), { display: "inline-block", color: acc ? o.accent : o.ink, opacity: "0" }));
+      });
+    });
+    const tm = String(o.times || "").trim().split(/\s+/).map(Number).filter((v) => isFinite(v));
+    words.forEach((w, i) => {
+      const at = o.at + (tm.length > i ? tm[i] : i * o.step);
+      o.tl.fromTo(w, { opacity: 0, y: 16, filter: "blur(14px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: o.enter || 0.3, ease: "power2.out" }, at);
+    });
+    return { box, words };
+  }
+  // a layout taller than a short frame (1:1) shrinks about its own centre and is centred in the frame, so nothing is cropped
+  function fitFrame(node, w, sh, topY, botY) {
+    const k = Math.min(1, (sh - 60) / Math.max(1, botY - topY)), cy = (topY + botY) / 2;
+    if (k < 1) h.css(node, { transformOrigin: `${w / 2}px ${cy}px`, transform: `translateY(${sh / 2 - cy}px) scale(${k})` });
+    return k;
+  }
+  const HEAD = (def) => [P("title", "Titre (un texte par ligne, [mot] en couleur)", "lines", def, 1)];
+  const TIMES = (def) => P("times", "Instants des mots (secondes, séparés par des espaces)", "text", def, 3);
+  const logoMark = (parent, size, bg, css) => {
+    const l = abs(parent, Object.assign({ width: size + "px", height: size + "px", borderRadius: size * 0.24 + "px", background: bg, boxShadow: "0 6px 16px -6px rgba(110,200,0,0.6)" }, css || {}));
+    h.css(h.el("div", "", l, "e"), { position: "absolute", inset: "0", textAlign: "center", lineHeight: size * 0.92 + "px", fontSize: size * 0.77 + "px", fontWeight: 800, color: "#111", fontFamily: h.font(SANS) });
+    return l;
+  };
+
+  // ================================================================================================ 1. ap-matrix
+  ZS.register({
+    id: "ap-matrix", label: "AgentPlay : phrase sur fond sombre qui s'ouvre", group: "Texte", duration: 3.9,
+    params: [
+      ...HEAD("The [future] of coding\nisn't just the [code.]"),
+      P("bg", "Fond", "color", "#0a0d09", 1), P("ink", "Texte", "color", "#f1f2ed", 2), P("accent", "Mot en couleur", "color", GREEN, 2),
+      N("step", "Écart entre les mots", 0.3, 0.05, 1, 0.01, 2, "s"), N("size", "Taille du texte (large)", 114, 20, 200, 1, 2, "px"), N("sizeTall", "Taille du texte (haut)", 92, 20, 200, 1, 2, "px"),
+      N("wipeAt", "Début de l'ouverture blanche", 3.55, 0.5, 8, 0.05, 2, "s"), N("wipe", "Durée de l'ouverture", 0.45, 0.1, 3, 0.05, 2, "s"),
+      P("wipeColor", "Couleur qui s'ouvre", "color", "#ffffff", 3), N("y", "Centre de la première ligne (large)", 449, 100, 900, 1, 3, "px"),
+      N("fade", "Fondu du texte avant l'ouverture", 0.5, 0.1, 2, 0.05, 3, "s"), N("lineGap", "Interligne", 1.09, 0.9, 2, 0.01, 3), TIMES("0 0.28 0.5 0.62 0.95 1.62 1.95 2.3"),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0 } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
+      h.css(el, { background: p.bg });
+      const hd = headline(st, { x: w / 2, cy: tall ? sh * 0.5 - 40 : p.y, w: tall ? 980 : 1700, align: "center", size: tall ? p.sizeTall : p.size, ink: p.ink, accent: p.accent, lines: p.title,
+        at: t0, step: p.step, times: p.times, tl, lineHeight: p.lineGap });
+      tl.to(hd.box, { opacity: 0, filter: "blur(10px)", duration: p.fade, ease: "power1.in" }, t0 + p.wipeAt - 1.0);
+      // the white circle that grows from the centre until it covers the frame; the next scene starts on white
+      const disc = abs(st, { left: w / 2 + "px", top: sh / 2 + "px", width: "40px", height: "40px", marginLeft: "-20px", marginTop: "-20px", borderRadius: "50%", background: p.wipeColor });
+      tl.fromTo(disc, { scale: 0, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: 0.05 }, t0 + p.wipeAt);
+      tl.to(disc, { scale: Math.hypot(w, sh) / 20, duration: p.wipe, ease: "power3.in" }, t0 + p.wipeAt);
+      ctx.cue(p.wipeAt, "whoosh", { length: 0.7, brightness: 0.6 });
+    },
+  });
+
+  // ================================================================================================ 2. ap-cards
+  // card text language: "# title | right text | kind | icon" starts a card; the following lines are its rows "status text | right"
+  // (status: ok, err, warn, idle, none). kind: list (default), bars, line.
+  const CARDS = [
+    "# agent session | Claude Code | list | doc", "ok Read routes/orders.ts | 4s", "ok Write rateLimit.ts | 11s", "err Run npm test | 14s", "ok Edit rateLimit.ts | 6s", "ok Run npm test | 12s", "ok Open PR #142 | ",
+    "# review feedback | PR #142 | list | chat", "ok Clean fix, reuses the existing bucket | 3m", "warn Handle Retry-After in the client | 8m", "err Missing test for burst traffic | 12m",
+    "# learned rules | acme/api | list | rules", "ok Run tsc before npm test", "ok Reuse lib/tokenBucket", "ok Never edit generated clients", "ok Keep each PR under 400 lines",
+    "# incidents | 3 open | list | alert", "err 429 storm on /orders | 2m", "warn Flaky test: refill timing | 12m", "idle Billing worker timeout | 1h",
+    "# tests | 26 / 26 passing | bars | flask", "# first-try pass rate | 82% | line | chart",
+  ];
+  // wide design (x, y, width, height, tilt around the vertical axis, rotation) read on the frame at 5.67 s; tall design: two columns under the headline
+  const CARD_WIDE = [[92, 108, 462, 322, 7, 2.5], [102, 466, 452, 200, 6, 1.6], [152, 700, 436, 260, 5, -1.2], [1358, 106, 432, 240, -7, -2.4], [1398, 380, 460, 300, -7, -1.4], [1332, 706, 452, 238, -6, 1.8]];
+  const CARD_TALL = [[40, 0, 480, 322, 3, 1.4], [40, 346, 480, 200, 3, 0.8], [40, 570, 480, 262, 3, -0.8], [560, 0, 480, 240, -3, -1.4], [560, 264, 480, 300, -3, -0.8], [560, 588, 480, 244, -3, 1]];
+  const TILE = { doc: "#e3f2d0", chat: "#ece3fa", rules: "#e3ecfa", alert: "#fde3e6", flask: "#e3f2d0", chart: "#fbeed5" };
+  const DOT = { ok: GREEN, err: RED, warn: "#e7a53b", idle: "#c9c9c4" };
+  function parseCards(lines) {
+    const cards = [];
+    lines.forEach((l) => {
+      if (l[0] === "#") { const [t, r, k, ic] = l.slice(1).split("|").map((s) => s.trim()); cards.push({ title: t, right: r || "", kind: k || "list", icon: ic || "doc", rows: [] }); }
+      else if (cards.length) {
+        const m = /^(ok|err|warn|idle|none)\s+(.*)$/.exec(l), body = m ? m[2] : l, [txt, rt] = body.split("|").map((s) => s.trim());
+        cards[cards.length - 1].rows.push({ st: m ? m[1] : "none", text: txt, right: rt || "" });
+      }
+    });
+    return cards;
+  }
+  function iconTile(parent, kind, size) {
+    const t = h.css(h.el("div", "", parent), { position: "relative", width: size + "px", height: size + "px", borderRadius: size * 0.27 + "px", background: TILE[kind] || "#eee", flex: "none" });
+    const s = svgEl("svg", { viewBox: "0 0 24 24", width: size * 0.56, height: size * 0.56, fill: "none", stroke: { rules: "#4a76b8", chat: "#7a52c4", alert: RED, chart: "#c8902c" }[kind] || "#5a8d1e", "stroke-width": 1.8, "stroke-linecap": "round", "stroke-linejoin": "round" }, t);
+    h.css(s, { position: "absolute", left: "22%", top: "22%" });
+    svgEl("path", { d: { doc: "M6 3h9l4 4v14H6zM9 12h7M9 16h7", chat: "M4 5h16v11H9l-5 4z", rules: "M5 7h14M5 12h14M5 17h9", alert: "M12 8v5M12 16.5v.5M4 20h16L12 4z", flask: "M9 3h6M10 3v6l-5 10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1l-5-10V3", chart: "M4 19V5M4 19h16M8 15l4-4 3 3 5-6" }[kind] || "M6 6h12v12H6z" }, s);
+    return t;
+  }
+  ZS.register({
+    id: "ap-cards", label: "AgentPlay : phrase et cartes d'interface qui flottent", group: "Interface", duration: 3.0,
+    params: [
+      ...HEAD("It's making sure [agents]\nget [better] at writing it."), P("cards", "Cartes (# titre | droite | genre | icône, puis les lignes)", "lines", CARDS, 1),
+      P("bg", "Fond", "color", "#ffffff", 2), P("ink", "Texte", "color", INK, 2), P("accent", "Mot en couleur", "color", GREEN, 2),
+      N("step", "Écart entre les mots", 0.33, 0.05, 1, 0.01, 2, "s"), N("cardStep", "Écart entre les cartes", 0.12, 0, 0.6, 0.01, 2, "s"),
+      N("size", "Taille du titre (large)", 72, 24, 140, 1, 2, "px"), N("sizeTall", "Taille du titre (haut)", 70, 24, 140, 1, 2, "px"), N("barsFrom", "Début de la croissance des barres", 0.6, 0, 4, 0.05, 3, "s"),
+      N("tilt", "Inclinaison des cartes", 1, 0, 2, 0.05, 3), TIMES("-0.1 -0.1 0.23 0.57 0.9 1.23 1.57 1.9 2.23"), N("endFade", "Fondu de fin", 0.3, 0.05, 1, 0.05, 3, "s"),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
+      h.css(el, { background: p.bg });
+      const wrap = abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px" });
+      const boxes = tall ? CARD_TALL : CARD_WIDE, topCards = tall ? Math.max(sh < 1300 ? 330 : 430, (sh - 840 + 260) / 2 + 150) : 0;
+      // a frame too short for the two columns (1:1) shrinks the whole block of cards, never crops it
+      const gk = tall ? Math.min(1, (sh - topCards - 40) / 840) : 1;
+      headline(wrap, { x: w / 2, cy: tall ? topCards - (sh < 1300 ? 120 : 150) : 500, w: tall ? 980 : 900, align: "center", size: tall ? p.sizeTall : p.size, ink: p.ink, accent: p.accent, lines: p.title, at: t0, step: p.step, times: p.times, tl });
+      const grp = abs(wrap, { left: "0", top: topCards + "px", width: w + "px", height: "840px", transformOrigin: "50% 0", transform: `scale(${gk})` });
+      parseCards(p.cards).forEach((c, i) => {
+        const b = boxes[i]; if (!b) return;
+        const [x, y, cw, hh, ry, rz] = b;
+        const card = abs(tall ? grp : wrap, { left: x + "px", top: y + "px", width: cw + "px", height: hh + "px", background: "#fff", borderRadius: "26px", padding: "22px 28px", boxShadow: SHADOW, fontFamily: h.font(SANS), color: INK, transformOrigin: "50% 50%" });
+        const head = h.css(h.el("div", "", card), { display: "flex", alignItems: "center", gap: "16px", marginBottom: "16px" });
+        iconTile(head, c.icon, 42);
+        h.css(h.el("div", "", head, c.title), { fontSize: "22px", fontWeight: 600, letterSpacing: "-0.02em" });
+        h.css(h.el("div", "", head, c.right), { marginLeft: "auto", fontSize: "15px", fontFamily: h.font(MONO), color: c.icon === "alert" ? RED : (c.icon === "flask" ? GREEN : "#9a9a95") });
+        if (c.kind === "list") c.rows.forEach((r) => {
+          const row = h.css(h.el("div", "", card), { display: "flex", alignItems: "center", gap: "14px", height: hh > 260 ? "34px" : "32px", fontSize: "17px", color: "#2f2f2c" });
+          h.css(h.el("span", "", row), { width: "14px", height: "14px", borderRadius: "50%", background: DOT[r.st] || "#ddd", flex: "none", display: r.st === "none" ? "none" : "block" });
+          h.css(h.el("span", "", row, r.text), { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" });
+          h.css(h.el("span", "", row, r.right), { marginLeft: "auto", fontFamily: h.font(MONO), fontSize: "15px", color: "#a8a8a2" });
+        });
+        if (c.kind === "bars") {
+          const g = h.css(h.el("div", "", card), { position: "relative", height: "120px", display: "flex", alignItems: "flex-end", gap: "9px", marginTop: "30px", padding: "0 4px" });
+          const n = 20, bars = [];
+          for (let k = 0; k < n; k++) bars.push(h.css(h.el("div", "", g), { flex: "1", height: 22 + k * 5 + (k === n - 1 ? -20 : 0) + "px", background: "#9fd85a", borderRadius: "4px", transformOrigin: "50% 100%" }));
+          bars.forEach((b, k) => tl.fromTo(b, { scaleY: 0 }, { scaleY: 1, duration: 0.5, ease: "power3.out" }, t0 + p.barsFrom + k * 0.04));
+          h.css(h.el("div", "", card, "● passing 26"), { fontSize: "14px", color: "#6c6c68", marginTop: "10px" });
+        }
+        if (c.kind === "line") {
+          const lw = cw - 190, pts = [0.35, 0.18, 0.32, 0.2, 0.3, 0.26, 0.5, 0.58, 0.9], svg = svgEl("svg", { width: lw, height: 110, viewBox: `0 0 ${lw} 110` }, card);
+          h.css(svg, { position: "absolute", left: "26px", top: "88px" });
+          const X = (k) => k * lw / (pts.length - 1), Y = (v) => 100 - v * 100, d = pts.map((v, k) => `${k ? "L" : "M"}${X(k)},${Y(v)}`).join(" ");
+          svgEl("path", { d: d + ` L${lw},110 L0,110 Z`, fill: "#fbf1e1" }, svg);
+          const line = svgEl("path", { d, fill: "none", stroke: "#e3a63d", "stroke-width": 3, "stroke-linecap": "round", "stroke-linejoin": "round" }, svg);
+          pts.forEach((v, k) => svgEl("circle", { cx: X(k), cy: Y(v), r: 5, fill: "#fff", stroke: "#e3a63d", "stroke-width": 2.5 }, svg));
+          const L = lw * 2.3; line.setAttribute("stroke-dasharray", L);
+          tl.fromTo(line, { attr: { "stroke-dashoffset": L } }, { attr: { "stroke-dashoffset": 0 }, duration: 1.2, ease: "power2.inOut" }, t0 + 0.5);
+          h.css(h.el("div", "", card, c.right), { position: "absolute", right: "30px", top: "100px", fontSize: "50px", fontWeight: 500, letterSpacing: "-0.04em", color: INK });
+          h.css(h.el("div", "", card, "▲ +18 pts"), { position: "absolute", right: "30px", top: "168px", fontSize: "14px", color: GREEN });
+          head.lastChild.textContent = "";
+        }
+        const t = tall ? 0.7 : 1;
+        tl.fromTo(card, { opacity: 0, y: 40, scale: 0.94, rotationY: ry * p.tilt * 1.8 * t, rotationZ: rz * p.tilt * 1.5 * t, transformPerspective: 1500, filter: "blur(10px)" },
+          { opacity: 1, y: 0, scale: 1, rotationY: ry * p.tilt * t, rotationZ: rz * p.tilt * t, transformPerspective: 1500, filter: "blur(0px)", duration: 0.7, ease: "power3.out" }, t0 + i * p.cardStep);
+        tl.to(card, { rotationZ: rz * p.tilt * 0.7 * t, y: -6, duration: Math.max(0.2, dur - 1.2), ease: "none" }, t0 + 0.9);
+      });
+      tl.to(wrap, { opacity: 0, duration: p.endFade, ease: "power1.in" }, t0 + dur - p.endFade);
+    },
+  });
+
+  // ================================================================================================ 3. ap-heat
+  ZS.register({
+    id: "ap-heat", label: "AgentPlay : grille de séances (échecs répétés)", group: "Données", duration: 2.0,
+    params: [
+      ...HEAD("Fewer repeated [failures.]"), P("caption", "Légende de la grille", "text", "steps per session", 1),
+      P("rule", "Étiquette de la règle apprise", "text", "rule learned: run tsc before npm test", 1), P("unit", "Légende du compteur", "text", "repeated failures per session", 1),
+      P("bg", "Fond", "color", "#ffffff", 2), P("accent", "Mot et cases en échec", "color", RED, 2), P("good", "Après la règle", "color", GREEN, 2),
+      N("size", "Taille du titre (large)", 95, 30, 200, 1, 2, "px"), N("sizeTall", "Taille du titre (haut)", 80, 30, 200, 1, 2, "px"), N("ruleAt", "Position de la règle (0 à 1)", 0.527, 0.1, 0.9, 0.005, 3),
+      N("from", "Début de la grille", 0.25, 0, 2, 0.05, 3, "s"), N("build", "Durée de la montée", 0.9, 0.2, 3, 0.05, 3, "s"), N("seed", "Graine du hasard", 11, 1, 99, 1, 3),
+      N("countAt", "Début du compteur", 1.3, 0, 3, 0.05, 3, "s"), TIMES("0.38 0.72 1.05"),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0 } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
+      h.css(el, { background: p.bg });
+      // grid geometry per format: wide 56 columns of 21 px from x 330; tall 36 columns of 27 px from x 54
+      const nC = tall ? 36 : 56, nR = 18, pitch = tall ? 27 : 21, cell = pitch, gx = tall ? 54 : 330;
+      const block = nR * pitch + 560, y0 = tall ? Math.max(120, (sh - block) / 2) : 0, titleCy = tall ? y0 + 70 : 203, baseY = tall ? y0 + 330 + (nR - 1) * pitch : 837;
+      headline(st, { x: w / 2, cy: titleCy, w: tall ? 1000 : 1500, align: "center", size: tall ? p.sizeTall : p.size, ink: INK, accent: p.accent, lines: p.title, at: t0, step: 0.33, times: p.times, tl });
+      const rnd = h.rand(p.seed), cut = Math.round(nC * p.ruleAt), mono = (px) => ({ fontFamily: h.font(MONO), fontSize: px + "px" });
+      abs(st, Object.assign({ left: gx + "px", top: baseY - (nR - 1) * pitch - 100 + "px", color: "#7d7d78" }, mono(18)), "", p.caption);
+      abs(st, Object.assign({ left: gx + "px", top: baseY + 39 + "px", color: INK }, mono(18)), "", "session 1");
+      abs(st, Object.assign({ left: gx + nC * pitch - 120 + "px", top: baseY + 39 + "px", width: "120px", textAlign: "right", color: INK }, mono(18)), "", "session 889");
+      // each column: a grey base that thins from left to right, sparse grey spikes above it, a red base (repeated failures) that fades out past the rule, green cells at the end
+      const cells = [];
+      for (let c = 0; c < nC; c++) {
+        const f = c / (nC - 1), base = Math.round(10 - 7 * f), spike = rnd() < 0.4 ? Math.round(rnd() * (nR - 1 - base) * (1 - 0.85 * f)) : 0, total = Math.min(nR, base + spike);
+        const redH = Math.max(0, Math.round(10 * (1 - f / 0.68) * (0.78 + rnd() * 0.44)));
+        for (let r = 0; r < total; r++) {
+          const isRed = r < redH, isGreen = c >= nC - 6 && r >= 1 && r <= (c >= nC - 3 ? 2 : 1) && rnd() > 0.15 && r < base;
+          cells.push({ d: abs(st, { left: gx + c * pitch + "px", top: baseY - r * pitch + "px", width: cell - 3 + "px", height: cell - 3 + "px", borderRadius: "4px", background: isRed ? p.accent : (isGreen ? p.good : "#dcddd6") }), c, r });
+        }
+      }
+      cells.forEach(({ d, c, r }) => tl.fromTo(d, { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.18, ease: "back.out(2)" }, t0 + p.from + (c / nC) * p.build * 0.7 + r * 0.012));
+      const x = gx + cut * pitch, line = abs(st, { left: x + "px", top: baseY - 292 + "px", width: "2px", height: "310px", background: p.good, transformOrigin: "50% 100%" });
+      tl.fromTo(line, { scaleY: 0 }, { scaleY: 1, duration: 0.4, ease: "power2.out" }, t0 + p.from + p.build * 0.75);
+      const tag = abs(st, { left: x - 2 + "px", top: baseY - 338 + "px", padding: "9px 18px", borderRadius: "10px", background: "#eef9dd", border: "1px solid #cfe9a8", color: "#3f6b10", fontFamily: h.font(SANS), fontSize: "19px", fontWeight: 500, whiteSpace: "nowrap" }, "", "✓  " + p.rule);
+      if (tall) h.css(tag, { left: Math.min(x - 2, w - 560) + "px" });
+      tl.fromTo(tag, { autoAlpha: 0, y: 8 }, { autoAlpha: 1, y: 0, duration: 0.3 }, t0 + p.from + p.build * 0.85);
+      const lg = abs(st, { left: (tall ? gx : 414) + "px", top: baseY + 83 + "px", display: "flex", alignItems: "center", gap: "10px", fontFamily: h.font(SANS), fontSize: "20px", color: "#444", whiteSpace: "nowrap" });
+      h.css(h.el("span", "", lg), { width: "14px", height: "14px", background: p.accent, borderRadius: "3px" }); h.el("span", "", lg, "repeated failure ("); h.css(h.el("span", "", lg, "npm test · exit 1"), mono(20)); h.el("span", "", lg, ")");
+      h.css(h.el("span", "", lg), { width: "14px", height: "14px", background: "#dcddd6", borderRadius: "3px", marginLeft: "22px" }); h.el("span", "", lg, "other steps");
+      tl.fromTo(lg, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.3 }, t0 + p.from + 0.3);
+      const nx = tall ? gx : 1546, ny = tall ? baseY + 170 : 608;
+      abs(st, Object.assign({ left: nx + "px", top: ny + "px", color: "#7d7d78" }, mono(18)), "", p.unit);
+      const num = abs(st, { left: nx + "px", top: ny + 22 + "px", fontFamily: h.font(SANS), fontSize: "70px", fontWeight: 500, letterSpacing: "-0.04em", color: p.accent, whiteSpace: "nowrap" });
+      h.el("span", "", num, "10"); const arrow = h.css(h.el("span", "", num, " → "), { color: "#555", fontSize: "44px" }), b = h.css(h.el("span", "", num, "0"), { color: p.good });
+      tl.fromTo(num, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.3 }, t0 + p.countAt - 0.3);
+      tl.fromTo([arrow, b], { opacity: 0.1, x: -6 }, { opacity: 1, x: 0, duration: 0.35, ease: "power2.out" }, t0 + p.countAt);
+    },
+  });
+
+  // ================================================================================================ 4. ap-ring
+  ZS.register({
+    id: "ap-ring", label: "AgentPlay : anneau de test et compteurs", group: "Données", duration: 2.0,
+    params: [
+      ...HEAD("[Less] wasted\ntime and tokens."), P("command", "Commande dans l'anneau", "text", "npm test", 1), P("result", "Résultat", "text", "✓ 26 passed", 1),
+      P("tag", "Étiquette", "text", "rule: tsc first", 1), P("bg", "Fond", "color", "#ffffff", 2), P("accent", "Vert", "color", GREEN, 2), P("fail", "Rouge de l'échec", "color", RED, 2),
+      N("size", "Taille du titre (large)", 95, 30, 200, 1, 2, "px"), N("sizeTall", "Taille du titre (haut)", 88, 30, 200, 1, 2, "px"), N("step", "Écart entre les mots", 0.3, 0.05, 1, 0.01, 2, "s"),
+      N("failAt", "Début de l'échec (anneau rouge)", 0, 0, 3, 0.05, 3, "s"), N("okAt", "Passage au vert", 1.05, 0, 3, 0.05, 3, "s"), N("t1", "Temps final (secondes)", 24, 5, 600, 1, 3),
+      N("tok1", "Jetons finaux", 12586, 100, 999999, 1, 3), N("t0s", "Temps de départ (secondes)", 134, 5, 600, 1, 3), N("tok0", "Jetons de départ", 184600, 100, 999999, 1, 3), TIMES("0 0.2 0.5 0.85"),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0 } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
+      h.css(el, { background: p.bg });
+      const top = tall ? Math.max(80, (sh - 1180) / 2) : 0, cx = tall ? w / 2 : 1342, cy = tall ? top + 560 : 380, bx = tall ? 70 : 998, by = tall ? cy + 360 : 714, bw = tall ? 940 : 688;
+      headline(st, { x: tall ? 70 : 82, cy: tall ? top + 70 : 416, w: tall ? 940 : 900, align: "left", size: tall ? p.sizeTall : p.size, ink: INK, accent: p.accent, lines: p.title, at: t0, step: p.step, times: p.times, tl, lineHeight: tall ? 1.1 : 1.01 });
+      // the ring: starts red and open (the attempt that failed), becomes a closed green ring with the result
+      const r = 175, C = 2 * Math.PI * r, svg = svgEl("svg", { width: 480, height: 480, viewBox: "0 0 480 480" }, st);
+      h.css(svg, { position: "absolute", left: cx - 240 + "px", top: cy - 240 + "px" });
+      svgEl("circle", { cx: 240, cy: 240, r, fill: "none", stroke: "#f3f3f0", "stroke-width": 14 }, svg);
+      const ring = svgEl("circle", { cx: 240, cy: 240, r, fill: "none", stroke: p.fail, "stroke-width": 14, "stroke-linecap": "round", transform: "rotate(-90 240 240)", "stroke-dasharray": C, "stroke-dashoffset": C }, svg);
+      tl.to(ring, { attr: { "stroke-dashoffset": C * 0.32 }, duration: p.okAt - 0.1, ease: "power1.out" }, t0 + p.failAt);
+      tl.to(ring, { attr: { stroke: p.accent, "stroke-dashoffset": 0 }, duration: 0.25, ease: "power2.out" }, t0 + p.okAt);
+      const lab = (css, txt) => abs(st, Object.assign({ left: cx - 150 + "px", width: "300px", textAlign: "center", fontFamily: h.font(MONO) }, css), "", txt);
+      lab({ top: cy - 40 + "px", fontSize: "30px", color: "#222" }, p.command);
+      const bad = lab({ top: cy + 2 + "px", fontSize: "26px", fontWeight: 600, color: p.fail }, "✗ exit 1"), res = lab({ top: cy + 2 + "px", fontSize: "26px", fontWeight: 600, color: p.accent }, p.result);
+      tl.set(res, { autoAlpha: 0 }, 0); tl.set(bad, { autoAlpha: 0 }, 0);
+      tl.to(bad, { autoAlpha: 1, duration: 0.2 }, t0 + 0.5); tl.to(bad, { autoAlpha: 0, duration: 0.15 }, t0 + p.okAt);
+      tl.to(res, { autoAlpha: 1, duration: 0.25 }, t0 + p.okAt + 0.1);
+      abs(st, { left: cx - 150 + "px", top: cy + 204 + "px", width: "300px", textAlign: "center", fontFamily: h.font(SANS), fontSize: "22px", color: "#8b8b86" }, "", "first try · attempt 1");
+      const tg = abs(st, { left: cx + 134 + "px", top: cy - 242 + "px", padding: "10px 20px", borderRadius: "12px", background: "#eef9dd", border: "1px solid #d6ebb4", fontFamily: h.font(SANS), fontSize: "22px", color: "#3f6b10", boxShadow: "0 8px 24px -12px rgba(100,160,30,0.4)" }, "", "⚡ " + p.tag);
+      tl.fromTo(tg, { autoAlpha: 0, y: -12 }, { autoAlpha: 1, y: 0, duration: 0.3 }, t0 + p.okAt);
+      // the two counters: the failed attempt first (both climb in red), then the rule works and both fall in green to the first-try cost
+      const box = abs(st, { left: bx + "px", top: by + "px", width: bw + "px", height: "196px", background: "#fff", borderRadius: "26px", boxShadow: SHADOW });
+      const mk = (x, label, tint) => {
+        abs(box, { left: x + 32 + "px", top: "28px", width: "40px", height: "40px", borderRadius: "11px", background: tint });
+        abs(box, { left: x + 88 + "px", top: "34px", fontFamily: h.font(SANS), fontSize: "22px", color: "#555" }, "", label);
+        return abs(box, { left: x + 32 + "px", top: "96px", fontFamily: h.font(SANS), fontSize: "58px", fontWeight: 500, letterSpacing: "-0.03em", color: p.fail, whiteSpace: "nowrap" });
+      };
+      const tNode = mk(0, "time on this task", "#fde3e6"), kNode = mk(bw / 2 - 4, "tokens spent", "#fbeed5");
+      abs(box, { left: bw / 2 - 3 + "px", top: "30px", width: "1px", height: "140px", background: "#eee" });
+      const fmtT = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`, fmtK = (n) => Math.round(n).toLocaleString("en-US"), pr = { a: 0.37, k: 0 };
+      const upd = () => {
+        const s = pr.k > 0 ? p.t0s + (p.t1 - p.t0s) * pr.k : p.t0s * pr.a, n = pr.k > 0 ? p.tok0 + (p.tok1 - p.tok0) * pr.k : p.tok0 * pr.a;
+        tNode.textContent = fmtT(s); kNode.textContent = fmtK(n); const c = pr.k > 0.45 ? p.accent : p.fail; tNode.style.color = c; kNode.style.color = c;
+      };
+      upd();
+      tl.to(pr, { a: 1, duration: p.okAt - 0.05, ease: "none", onUpdate: upd }, t0);
+      tl.to(pr, { k: 1, duration: 0.9, ease: "power3.out", onUpdate: upd }, t0 + p.okAt);
+      tl.fromTo(box, { autoAlpha: 0, y: 30 }, { autoAlpha: 1, y: 0, duration: 0.5, ease: "power3.out" }, t0 + 0.1);
+    },
+  });
+
+  // ================================================================================================ 5. ap-approaches
+  ZS.register({
+    id: "ap-approaches", label: "AgentPlay : une tâche, cinq approches", group: "Interface", duration: 2.8,
+    params: [
+      ...HEAD("[Better] approaches\nto the same task."), P("rows", "Approches (nom | durée | jetons)", "lines", ["Approach 1 | 10m | 7.1K", "Approach 2 | 8m | 5.1K", "Approach 3 | 2m | 1.2K", "Approach 4 | 6m | 4.8K", "Approach 5 | 10m | 6.8K"], 1),
+      P("picked", "Approche retenue (numéro)", "text", "3", 1), P("bg", "Fond", "color", "#ffffff", 2), P("accent", "Vert", "color", GREEN, 2),
+      N("size", "Taille du titre (large)", 76, 30, 160, 1, 2, "px"), N("sizeTall", "Taille du titre (haut)", 70, 30, 160, 1, 2, "px"), N("step", "Écart entre les mots", 0.2, 0.05, 1, 0.01, 2, "s"),
+      N("pickAt", "Moment du choix", 1.3, 0, 4, 0.05, 2, "s"), N("rowStep", "Écart entre les lignes", 0.1, 0, 0.5, 0.01, 3, "s"), N("endFade", "Fondu de fin", 0.3, 0.05, 1, 0.05, 3, "s"),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
+      h.css(el, { background: p.bg });
+      const wrap = abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px" });
+      const rows = p.rows.map((l) => l.split("|").map((s) => s.trim())), pick = Number(p.picked) - 1;
+      // wide: task card on the left, five rows on the right; tall: the task card on top, the five rows stacked under it, a curved connector to each
+      const rowW = tall ? 940 : 990, rowH = tall ? 118 : 115, gap = tall ? 18 : 19, rx = tall ? 70 : 790;
+      const stackH = 5 * rowH + 4 * gap, y0 = tall ? Math.max(430, (sh - stackH - 380) / 2 + 380) : 325;
+      if (tall) fitFrame(wrap, w, sh, y0 - 400, y0 + stackH + 20);
+      headline(wrap, { x: tall ? 70 : 150, cy: tall ? y0 - 330 : 160, w: tall ? 940 : 900, align: "left", size: tall ? p.sizeTall : p.size, ink: INK, accent: p.accent, lines: p.title, at: t0, step: p.step, tl, lineHeight: tall ? 1.1 : 1.13 });
+      const taskX = tall ? 70 : 150, taskY = tall ? y0 - 210 : 543, taskW = tall ? 470 : 475, taskH = tall ? 170 : 214;
+      const task = abs(wrap, { left: taskX + "px", top: taskY + "px", width: taskW + "px", height: taskH + "px", background: "#fff", borderRadius: "22px", boxShadow: SHADOW });
+      abs(task, { left: "34px", top: "30px", width: "48px", height: "48px", borderRadius: "12px", background: "#f3f4f6" });
+      abs(task, { left: "100px", top: "38px", fontFamily: h.font(SANS), fontSize: "26px", color: INK }, "", "Task");
+      [[34, 98, taskW - 70], [34, 128, taskW - 125], [34, 158, 180]].forEach(([x, y, ww]) => { if (y + 13 <= taskH) abs(task, { left: x + "px", top: y + "px", width: ww + "px", height: "13px", borderRadius: "7px", background: "#ececec" }); });
+      tl.fromTo(task, { autoAlpha: 0, x: -40 }, { autoAlpha: 1, x: 0, duration: 0.6, ease: "power3.out" }, t0 + 0.2);
+      const svg = svgEl("svg", { width: w, height: sh, viewBox: `0 0 ${w} ${sh}` }, wrap); h.css(svg, { position: "absolute", left: "0", top: "0" });
+      rows.forEach((r, i) => {
+        const y = y0 + i * (rowH + gap), on = i === pick;
+        const row = abs(wrap, { left: rx + "px", top: y + "px", width: rowW + "px", height: rowH + "px", background: "#fff", borderRadius: "20px", boxShadow: SHADOW, border: "1px solid rgba(0,0,0,0.03)" });
+        abs(row, { left: "31px", top: "26px", width: "64px", height: "64px", borderRadius: "16px", background: "#f3f4f6" });
+        const ttl = abs(row, { left: "125px", top: "20px", fontFamily: h.font(SANS), fontSize: "25px", color: "#9b9b97", whiteSpace: "nowrap" }, "", r[0]);
+        [[66, 300], [92, 220]].forEach(([yy, ww]) => abs(row, { left: "125px", top: yy + "px", width: ww + "px", height: "13px", borderRadius: "7px", background: "#eceeef" }));
+        abs(row, { left: rowW - 202 + "px", top: "22px", width: "1px", height: "72px", background: "#ececec" });
+        const t = abs(row, { left: rowW - 168 + "px", top: "17px", fontFamily: h.font(SANS), fontSize: "23px", color: "#a0a09c" }, "", "◷  " + r[1]);
+        const k = abs(row, { left: rowW - 168 + "px", top: "58px", fontFamily: h.font(SANS), fontSize: "23px", color: "#a0a09c" }, "", "▤  " + r[2]);
+        tl.fromTo(row, { autoAlpha: 0, x: 60 }, { autoAlpha: 1, x: 0, duration: 0.5, ease: "power3.out" }, t0 + 0.5 + i * p.rowStep);
+        // the connector from the task card to the row (wide: from its right edge; tall: from its bottom edge)
+        const ex = rx, ey = y + rowH / 2;
+        const d = tall ? `M ${taskX + 60} ${taskY + taskH} C ${taskX + 60} ${ey}, ${taskX + 20} ${ey}, ${ex} ${ey}` : `M ${taskX + taskW} ${taskY + taskH / 2} C ${taskX + taskW + 75} ${taskY + taskH / 2}, ${ex - 90} ${ey}, ${ex} ${ey}`;
+        const path = svgEl("path", { d, fill: "none", stroke: on ? p.accent : "#d3d3d3", "stroke-width": on ? 3 : 2, "stroke-linecap": "round" }, svg);
+        path.setAttribute("stroke-dasharray", 1400);
+        tl.fromTo(path, { attr: { "stroke-dashoffset": 1400 } }, { attr: { "stroke-dashoffset": 0 }, duration: 0.6, ease: "power2.out" }, t0 + 0.5 + i * p.rowStep);
+        if (on) {
+          const badge = abs(row, { left: "283px", top: "17px", padding: "5px 16px", borderRadius: "12px", background: "#e8f6d4", color: p.accent, fontFamily: h.font(SANS), fontSize: "19px", fontWeight: 500 }, "", "✔ Selected");
+          tl.set(badge, { autoAlpha: 0 }, 0); tl.fromTo(badge, { autoAlpha: 0, scale: 0.8 }, { autoAlpha: 1, scale: 1, duration: 0.3, ease: "back.out(2)" }, t0 + p.pickAt);
+          tl.to(row, { background: "#f7fdf0", borderColor: "#cdee8f", boxShadow: "0 0 0 2px #cdee8f, 0 18px 50px -22px rgba(100,160,30,0.35)", duration: 0.4 }, t0 + p.pickAt);
+          tl.to(ttl, { color: INK, fontWeight: 600, duration: 0.3 }, t0 + p.pickAt);
+          tl.to([t, k], { color: p.accent, fontSize: "27px", duration: 0.3 }, t0 + p.pickAt);
+        }
+      });
+      tl.to(wrap, { opacity: 0, duration: p.endFade, ease: "power1.in" }, t0 + dur - p.endFade);
+    },
+  });
+
+  // ================================================================================================ 6. ap-map
+  ZS.register({
+    id: "ap-map", label: "AgentPlay : carte de produits autour d'un nœud", group: "Données", duration: 5.4,
+    params: [
+      ...HEAD("At [Entelligence,] we're opening up a first step\ntoward [self-improving] coding agents."),
+      P("brand", "Marque en haut", "text", "Entelligence", 1), P("centre", "Nœud du centre", "lines", ["self-improving", "coding agents"], 1),
+      P("nodes", "Nœuds (titre | sous-titre)", "lines", ["Agent Insights | Attributes every session to its outcome", "Code Review | Catches bugs before they ship twice", "agentplay | Replays every coding-agent session", "World Model | Sessions, PRs and incidents in one graph", "Model Router | Routes each turn to the most efficient model", "MCP and Plugins | Rules load before the agent writes"], 1),
+      P("bg", "Fond", "color", "#ffffff", 2), P("accent", "Vert", "color", GREEN, 2), N("size", "Taille du titre (large)", 56, 24, 120, 1, 2, "px"), N("sizeTall", "Taille du titre (haut)", 50, 24, 120, 1, 2, "px"),
+      N("step", "Écart entre les mots", 0.39, 0.05, 1, 0.01, 2, "s"), N("nodeAt", "Arrivée des nœuds", 0.35, 0, 4, 0.05, 3, "s"), N("nodeStep", "Écart entre nœuds", 0.12, 0, 1, 0.01, 3, "s"),
+      P("outro", "Mot final sur fond blanc", "text", "agentplay", 3),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
+      h.css(el, { background: p.bg });
+      const wrap = abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px" });
+      const top = tall ? Math.max(70, (sh - 1500) / 2) : 0;
+      const logo = logoMark(wrap, 44, "#87f300", { left: (tall ? w / 2 - 100 : 872) + "px", top: (tall ? top : 54) + "px" });
+      const bn = abs(wrap, { left: (tall ? w / 2 - 44 : 928) + "px", top: (tall ? top + 4 : 58) + "px", fontFamily: h.font(SANS), fontSize: "26px", fontWeight: 500, letterSpacing: "-0.03em", color: INK }, "", p.brand);
+      tl.fromTo([logo, bn], { autoAlpha: 0, y: -10 }, { autoAlpha: 1, y: 0, duration: 0.4 }, t0);
+      headline(wrap, { x: w / 2, cy: tall ? top + 150 : 160, w: tall ? 960 : 1300, align: "center", size: tall ? p.sizeTall : p.size, ink: INK, accent: p.accent, lines: p.title, at: t0 + 0.25, step: p.step, tl, lineHeight: 1.12, indent: 40, wrap: tall });
+      const svg = svgEl("svg", { width: w, height: sh, viewBox: `0 0 ${w} ${sh}` }, wrap); h.css(svg, { position: "absolute", left: "0", top: "0" });
+      const nodes = p.nodes.map((l) => l.split("|").map((s) => s.trim()));
+      // wide: the centre in the middle of a dashed orbit, three cards each side; tall: the centre under the headline, the cards in three rows of two under it
+      let POS, centre;
+      if (!tall) { POS = [[432, 366, 391, 93], [1097, 366, 391, 93], [122, 558, 421, 121], [1392, 572, 391, 93], [432, 778, 391, 93], [1097, 778, 391, 93]]; centre = [772, 560, 378, 118]; }
+      else { const y1 = top + 520; centre = [w / 2 - 190, y1, 380, 118]; POS = [[40, y1 + 230, 480, 100], [560, y1 + 230, 480, 100], [40, y1 + 380, 480, 100], [560, y1 + 380, 480, 100], [40, y1 + 530, 480, 100], [560, y1 + 530, 480, 100]]; }
+      if (tall) fitFrame(wrap, w, sh, top - 20, POS[5][1] + POS[5][3] + 30);
+      const cxm = centre[0] + centre[2] / 2, cym = centre[1] + centre[3] / 2;
+      if (!tall) svgEl("ellipse", { cx: 960, cy: 618, rx: 600, ry: 240, fill: "none", stroke: "#d9d9d9", "stroke-width": 1.6, "stroke-dasharray": "6 6" }, svg);
+      POS.forEach((b) => svgEl("line", { x1: cxm, y1: tall ? centre[1] + centre[3] : cym, x2: b[0] + b[2] / 2, y2: tall ? b[1] : b[1] + b[3] / 2, stroke: "#d9d9d9", "stroke-width": 1.6, "stroke-dasharray": "6 6" }, svg));
+      const ICON = ["#fbeed5", "#ece3fa", "#eef7e3", "#e3ecfa", "#dff4ef", "#eeeeee"];
+      const card = (x, y, cw, hh, ttl, sub, tint, big) => {
+        const c = abs(wrap, { left: x + "px", top: y + "px", width: cw + "px", height: hh + "px", background: "#fff", borderRadius: "20px", boxShadow: "0 20px 48px -24px rgba(20,30,10,0.25), 0 0 0 1px rgba(0,0,0,0.04)" });
+        abs(c, { left: "20px", top: big ? "30px" : "20px", width: "48px", height: "48px", borderRadius: "12px", background: tint });
+        abs(c, { left: "88px", top: big ? "26px" : "17px", fontFamily: h.font(SANS), fontSize: big ? "28px" : "22px", fontWeight: 500, color: INK, whiteSpace: "nowrap", letterSpacing: "-0.02em" }, "", ttl);
+        abs(c, { left: big ? "22px" : "88px", top: big ? "82px" : "50px", fontFamily: h.font(SANS), fontSize: tall ? "15px" : "17px", color: "#8c8c88", whiteSpace: "nowrap" }, "", sub);
+        return c;
+      };
+      const cards = nodes.map((n, i) => { const b = POS[i]; return card(b[0], b[1], b[2], b[3], n[0], n[1], ICON[i], !tall && i === 2); });
+      const ag = cards[2]; h.css(ag, { boxShadow: "0 0 0 3px #e9f8cf, 0 0 40px 6px rgba(150,230,60,0.35)" });
+      abs(ag, { left: (tall ? 330 : 296) + "px", top: "26px", padding: "4px 14px", borderRadius: "12px", background: "#e8f6d4", color: p.accent, fontFamily: h.font(SANS), fontSize: "15px", fontWeight: 500 }, "", "open source");
+      const mid = abs(wrap, { left: centre[0] + "px", top: centre[1] + "px", width: centre[2] + "px", height: centre[3] + "px", background: "#fff", borderRadius: "20px", boxShadow: "0 0 0 3px #e9f8cf, 0 0 36px 4px rgba(150,230,60,0.30)" });
+      abs(mid, { left: "24px", top: "30px", width: "54px", height: "54px", borderRadius: "14px", background: "#87f300" });
+      p.centre.forEach((t, i) => abs(mid, { left: "98px", top: 30 + i * 28 + "px", fontFamily: h.font(SANS), fontSize: "24px", color: INK, letterSpacing: "-0.01em" }, "", t));
+      tl.fromTo(mid, { autoAlpha: 0, scale: 0.85 }, { autoAlpha: 1, scale: 1, duration: 0.5, ease: "back.out(1.7)" }, t0 + 0.4);
+      cards.forEach((c, i) => tl.fromTo(c, { autoAlpha: 0, scale: 0.9, y: 14 }, { autoAlpha: 1, scale: 1, y: 0, duration: 0.5, ease: "power3.out" }, t0 + p.nodeAt + i * p.nodeStep));
+      tl.fromTo(svg, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.8 }, t0 + p.nodeAt);
+      tl.to(wrap, { opacity: 0, duration: 0.3, ease: "power1.in" }, t0 + dur - 0.6);
+      if (p.outro) {   // the product name comes in blurred on the white, just before the dark card
+        const o = abs(st, { left: w / 2 + "px", top: sh / 2 - 95 + "px", transform: "translateX(-50%)", fontFamily: h.font(SANS), fontSize: (tall ? 100 : 121) + "px", fontWeight: 500, letterSpacing: "-0.04em", color: "#2a2a28", whiteSpace: "nowrap" }, "", p.outro);
+        tl.fromTo(o, { autoAlpha: 0, filter: "blur(22px)" }, { autoAlpha: 0.9, filter: "blur(14px)", duration: 0.35, ease: "power1.out" }, t0 + dur - 0.5);
+      }
+    },
+  });
+
+  // ================================================================================================ 7. ap-brand
+  ZS.register({
+    id: "ap-brand", label: "AgentPlay : nom du produit sur fond sombre", group: "Marque", duration: 3.0,
+    params: [
+      P("name", "Nom", "text", "agentplay", 1), P("by", "Signature", "text", "by", 1), P("maker", "Éditeur", "text", "Entelligence", 1), P("command", "Commande (laisser vide pour aucune)", "text", "", 1),
+      P("bg", "Fond", "color", "#0b0d0a", 2), P("ink", "Texte", "color", "#f1f2ed", 2), P("accent", "Vert", "color", "#87f300", 2), P("tags", "Mentions (séparées par une barre)", "text", "Free|Local|Open source", 2),
+      N("size", "Taille du nom", 121, 40, 220, 1, 3, "px"), N("y", "Position verticale du nom (large)", 505, 100, 900, 1, 3, "px"), N("cmdAt", "Début de la frappe", 0.45, 0, 5, 0.05, 3, "s"),
+      N("cps", "Caractères par seconde", 13, 4, 40, 1, 3), N("tagAt", "Première mention", 0.9, 0, 6, 0.05, 3, "s"), N("tagStep", "Écart entre mentions", 0.67, 0.05, 1.5, 0.01, 3, "s"),
+      N("endFade", "Fondu de fin", 0, 0, 1, 0.05, 3, "s"),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
+      h.css(el, { background: p.bg });
+      const hasCmd = !!p.command, sz = tall ? Math.round(p.size * 0.88) : p.size;
+      // wide: the name's centre at p.y; tall: at 44 % of the frame (30 % with a command, which needs more room below)
+      const cy = tall ? Math.round(sh * (hasCmd ? 0.3 : 0.44)) : p.y, boxW = tall ? 520 : 452;
+      const name = abs(st, { left: w / 2 + "px", top: cy - sz * 0.5 + "px", transform: "translateX(-50%)", fontFamily: h.font(SANS), fontSize: sz + "px", fontWeight: 500, letterSpacing: "-0.04em", color: p.ink, whiteSpace: "nowrap", lineHeight: 1 }, "", p.name);
+      tl.fromTo(name, { autoAlpha: 0, filter: "blur(16px)", scale: 1.04 }, { autoAlpha: 1, filter: "blur(0px)", scale: 1, duration: 0.5, ease: "power2.out" }, t0);
+      const by = abs(st, { left: w / 2 + "px", top: cy + sz * 0.5 + 12 + "px", transform: "translateX(-50%)", display: "flex", alignItems: "center", gap: "14px", fontFamily: h.font(SANS), fontSize: "30px", color: "#9a9b95", whiteSpace: "nowrap" });
+      h.el("span", "", by, p.by);
+      const lg = logoMark(by, 46, p.accent); h.css(lg, { position: "relative", display: "inline-block", boxShadow: "none" });
+      h.css(h.el("span", "", by, p.maker), { color: p.ink, fontWeight: 500, letterSpacing: "-0.03em" });
+      tl.fromTo(by, { autoAlpha: 0, y: 10 }, { autoAlpha: 1, y: 0, duration: 0.5 }, t0 + 0.6);
+      if (hasCmd) {
+        // the command is typed in a dark terminal pill, then the tags come in one by one
+        const box = abs(st, { left: w / 2 - boxW / 2 + "px", top: cy + 212 + "px", width: boxW + "px", height: "86px", borderRadius: "16px", background: "#161814", border: "1px solid #272a24", fontFamily: h.font(MONO), fontSize: "40px", color: p.ink });
+        abs(box, { left: "36px", top: "16px", color: "#808279" }, "", "$");
+        const txt = abs(box, { left: "80px", top: "16px", whiteSpace: "pre" }), cur = abs(box, { left: "80px", top: "21px", width: "20px", height: "44px", background: "#9cf040" });
+        tl.fromTo(box, { autoAlpha: 0, y: 14 }, { autoAlpha: 1, y: 0, duration: 0.4 }, t0 + p.cmdAt - 0.3);
+        const pr = { n: 0 };
+        tl.to(pr, { n: p.command.length, duration: p.command.length / p.cps, ease: "none", onUpdate: () => { txt.textContent = p.command.slice(0, Math.round(pr.n)); cur.style.left = 80 + Math.round(pr.n) * 24.5 + "px"; } }, t0 + p.cmdAt);
+        for (let k = 0; k < 8; k++) tl.set(cur, { autoAlpha: k % 2 ? 1 : 0.15 }, t0 + p.cmdAt + p.command.length / p.cps + k * 0.25);
+        const tags = p.tags.split("|").map((s) => s.trim()).filter(Boolean);
+        const row = abs(st, { left: w / 2 + "px", top: cy + 356 + "px", transform: "translateX(-50%)", display: "flex", gap: tall ? "30px" : "42px", alignItems: "center", whiteSpace: "nowrap", fontFamily: h.font(SANS), fontSize: (tall ? 40 : 44) + "px", letterSpacing: "-0.03em" });
+        tags.forEach((t, i) => {
+          const s = h.css(h.el("span", "", row, t), { color: i === tags.length - 1 ? p.accent : p.ink });
+          tl.fromTo(s, { autoAlpha: 0, filter: "blur(10px)", y: 10 }, { autoAlpha: 1, filter: "blur(0px)", y: 0, duration: 0.4, ease: "power2.out" }, t0 + p.tagAt + i * p.tagStep);
+        });
+      }
+      if (p.endFade > 0) tl.to(st, { opacity: 0, duration: p.endFade }, t0 + dur - p.endFade);
+    },
+  });
+  // 8. ap-product lives in zs-templates-agentplay-product.js (the product window, drawn in detail)
+  ZS.agentplayKit = { headline, abs, svgEl, P, N, SANS, MONO, INK, GREEN, RED, SHADOW };
+})();

@@ -311,7 +311,17 @@ window.ZS_BUILT = ZS.build(window.ZS_PROJECT, document.getElementById("root"), {
 if (document.fonts) document.fonts.ready.then(() => ZS.refit(window.ZS_BUILT));</script>
 </body></html>
 """
-RUNTIME_SCRIPTS = ["zs-core.js", "zs-post.js", "zs-templates.js", "zs-templates-extra.js", "zs-templates-app.js", "zs-illustrate.js", "zs-vector.js", "zs-templates-kit.js", "zs-templates-agentplay.js"]
+_BASE_TEMPLATES = ["zs-templates.js", "zs-templates-extra.js", "zs-templates-app.js", "zs-illustrate.js", "zs-vector.js", "zs-templates-kit.js"]
+
+
+def runtime_scripts() -> list[str]:
+    """The runtime files in load order (16 October 2026): the core, the post-process, the base templates, then EVERY other zs-templates-*.js by name
+    (one file per reproduced motion: zs-templates-agentplay-1.js, -2.js ...), so a new motion needs no list to edit."""
+    extra = sorted(f.name for f in (MOTION / "runtime").glob("zs-templates-*.js") if f.name not in _BASE_TEMPLATES)
+    return ["zs-core.js", "zs-post.js", *[s for s in _BASE_TEMPLATES if (MOTION / "runtime" / s).is_file()], *extra]
+
+
+RUNTIME_SCRIPTS = runtime_scripts()
 
 
 def code_version() -> str:
@@ -332,7 +342,7 @@ def cook(pid: str, out: Path) -> Path:
     if out.exists():
         shutil.rmtree(out)
     (out / "fonts").mkdir(parents=True)
-    scripts = [s for s in RUNTIME_SCRIPTS if (MOTION / "runtime" / s).is_file()]
+    scripts = [s for s in runtime_scripts() if (MOTION / "runtime" / s).is_file()]
     for name in [*scripts, "zs-runtime.css", "gsap.min.js"]:
         shutil.copy(MOTION / "runtime" / name, out / name)
     for fam, spec in CFG["fonts"].items():
@@ -418,6 +428,9 @@ def handle(method: str, path: str, q: dict, read, length: int) -> dict:
     if method == "GET":
         if p in ("/motion", "/motion/"):
             return F(MOTION / "web" / "index.html", "text/html; charset=utf-8")
+        if p == "/motion/runtime/templates.js":
+            # every template file in load order, as one script: the pages need no list of files to edit when a motion adds its own
+            return B(b"\n".join((MOTION / "runtime" / f).read_bytes() for f in runtime_scripts() if f not in ("zs-core.js", "zs-post.js")), "text/javascript; charset=utf-8")
         m = re.fullmatch(r"/motion/(web|runtime)/([A-Za-z0-9._-]+)", p)
         if m:
             return F(MOTION / m.group(1) / m.group(2))
