@@ -195,7 +195,7 @@
       P("bg", "Fond", "color", "#ffffff", 2), P("accent", "Mot et cases en échec", "color", RED, 2), P("good", "Après la règle", "color", GREEN, 2),
       N("size", "Taille du titre (large)", 95, 30, 200, 1, 2, "px"), N("sizeTall", "Taille du titre (haut)", 80, 30, 200, 1, 2, "px"), N("ruleAt", "Position de la règle (0 à 1)", 0.527, 0.1, 0.9, 0.005, 3),
       N("from", "Début de la grille", 0.25, 0, 2, 0.05, 3, "s"), N("build", "Durée de la montée", 0.9, 0.2, 3, 0.05, 3, "s"), N("seed", "Graine du hasard", 11, 1, 99, 1, 3),
-      N("countAt", "Début du compteur", 1.3, 0, 3, 0.05, 3, "s"), TIMES("0.38 0.72 1.05"),
+      N("countAt", "Début du compteur", 1.3, 0, 3, 0.05, 3, "s"), TIMES("0.25 0.55 0.9"),
     ],
     build(ctx) {
       const { el, p, tl, t0 } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
@@ -221,7 +221,7 @@
       cells.forEach(({ d, c, r }) => tl.fromTo(d, { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.18, ease: "back.out(2)" }, t0 + p.from + (c / nC) * p.build * 0.7 + r * 0.012));
       const x = gx + cut * pitch, line = abs(st, { left: x + "px", top: baseY - 292 + "px", width: "2px", height: "310px", background: p.good, transformOrigin: "50% 100%" });
       tl.fromTo(line, { scaleY: 0 }, { scaleY: 1, duration: 0.4, ease: "power2.out" }, t0 + p.from + p.build * 0.75);
-      const tag = abs(st, { left: x - 2 + "px", top: baseY - 338 + "px", padding: "9px 18px", borderRadius: "10px", background: "#eef9dd", border: "1px solid #cfe9a8", color: "#3f6b10", fontFamily: h.font(SANS), fontSize: "19px", fontWeight: 500, whiteSpace: "nowrap" }, "", "✓  " + p.rule);
+      const tag = abs(st, { left: x - 2 + "px", top: baseY - 338 + "px", padding: "9px 18px", borderRadius: "10px", background: "#eef9dd", border: "1px solid #cfe9a8", color: "#3f6b10", fontFamily: h.font(SANS), fontSize: "19px", fontWeight: 500, whiteSpace: "nowrap" }, "", `<span style="display:inline-block;width:17px;height:17px;border-radius:50%;background:#4f8f1d;color:#fff;font-size:12px;line-height:17px;text-align:center;margin-right:10px;vertical-align:1px">✓</span>` + p.rule.replace(/\b(tsc|npm test)\b/g, '<b style="font-family:JetBrainsMono,monospace;font-weight:700">$1</b>'));
       if (tall) h.css(tag, { left: Math.min(x - 2, w - 560) + "px" });
       tl.fromTo(tag, { autoAlpha: 0, y: 8 }, { autoAlpha: 1, y: 0, duration: 0.3 }, t0 + p.from + p.build * 0.85);
       const lg = abs(st, { left: (tall ? gx : 414) + "px", top: baseY + 83 + "px", display: "flex", alignItems: "center", gap: "10px", fontFamily: h.font(SANS), fontSize: "20px", color: "#444", whiteSpace: "nowrap" });
@@ -242,7 +242,7 @@
     id: "ap-ring", label: "AgentPlay : anneau de test et compteurs", group: "Données", duration: 2.0,
     params: [
       ...HEAD("[Less] wasted\ntime and tokens."), P("command", "Commande dans l'anneau", "text", "npm test", 1), P("result", "Résultat", "text", "✓ 26 passed", 1),
-      P("tag", "Étiquette", "text", "rule: tsc first", 1), P("bg", "Fond", "color", "#ffffff", 2), P("accent", "Vert", "color", GREEN, 2), P("fail", "Rouge de l'échec", "color", RED, 2),
+      P("tag", "Étiquette", "text", "rule: tsc first", 1), P("counters", "Compteurs de la tentative ratée (temps secondes jetons, par ligne)", "lines", ["0 50 60939", "0.33 80 104696", "0.5 83 109863", "0.67 110 169998", "1.0 134 184600"], 2), P("bg", "Fond", "color", "#ffffff", 2), P("accent", "Vert", "color", GREEN, 2), P("fail", "Rouge de l'échec", "color", RED, 2),
       N("size", "Taille du titre (large)", 95, 30, 200, 1, 2, "px"), N("sizeTall", "Taille du titre (haut)", 88, 30, 200, 1, 2, "px"), N("step", "Écart entre les mots", 0.3, 0.05, 1, 0.01, 2, "s"),
       N("failAt", "Début de l'échec (anneau rouge)", 0, 0, 3, 0.05, 3, "s"), N("okAt", "Passage au vert", 1.05, 0, 3, 0.05, 3, "s"), N("t1", "Temps final (secondes)", 24, 5, 600, 1, 3),
       N("tok1", "Jetons finaux", 12586, 100, 999999, 1, 3), N("t0s", "Temps de départ (secondes)", 134, 5, 600, 1, 3), N("tok0", "Jetons de départ", 184600, 100, 999999, 1, 3), TIMES("0 0.2 0.5 0.85"),
@@ -255,17 +255,23 @@
       // the ring: starts red and open (the attempt that failed), becomes a closed green ring with the result
       const r = 175, C = 2 * Math.PI * r, svg = svgEl("svg", { width: 480, height: 480, viewBox: "0 0 480 480" }, st);
       h.css(svg, { position: "absolute", left: cx - 240 + "px", top: cy - 240 + "px" });
-      svgEl("circle", { cx: 240, cy: 240, r, fill: "none", stroke: "#f3f3f0", "stroke-width": 14 }, svg);
+      const track = svgEl("circle", { cx: 240, cy: 240, r, fill: "none", stroke: "#f6d3d8", "stroke-width": 14 }, svg);
       const ring = svgEl("circle", { cx: 240, cy: 240, r, fill: "none", stroke: p.fail, "stroke-width": 14, "stroke-linecap": "round", transform: "rotate(-90 240 240)", "stroke-dasharray": C, "stroke-dashoffset": C }, svg);
       tl.to(ring, { attr: { "stroke-dashoffset": C * 0.32 }, duration: p.okAt - 0.1, ease: "power1.out" }, t0 + p.failAt);
-      tl.to(ring, { attr: { stroke: p.accent, "stroke-dashoffset": 0 }, duration: 0.25, ease: "power2.out" }, t0 + p.okAt);
+      tl.to(ring, { attr: { stroke: p.accent, "stroke-dashoffset": 0 }, duration: 0.25, ease: "power2.out" }, t0 + p.okAt); tl.to(track, { attr: { stroke: "#f3f3f0" }, duration: 0.25 }, t0 + p.okAt);
       const lab = (css, txt) => abs(st, Object.assign({ left: cx - 150 + "px", width: "300px", textAlign: "center", fontFamily: h.font(MONO) }, css), "", txt);
       lab({ top: cy - 40 + "px", fontSize: "30px", color: "#222" }, p.command);
       const bad = lab({ top: cy + 2 + "px", fontSize: "26px", fontWeight: 600, color: p.fail }, "✗ exit 1"), res = lab({ top: cy + 2 + "px", fontSize: "26px", fontWeight: 600, color: p.accent }, p.result);
       tl.set(res, { autoAlpha: 0 }, 0); tl.set(bad, { autoAlpha: 0 }, 0);
       tl.to(bad, { autoAlpha: 1, duration: 0.2 }, t0 + 0.5); tl.to(bad, { autoAlpha: 0, duration: 0.15 }, t0 + p.okAt);
       tl.to(res, { autoAlpha: 1, duration: 0.25 }, t0 + p.okAt + 0.1);
-      abs(st, { left: cx - 150 + "px", top: cy + 204 + "px", width: "300px", textAlign: "center", fontFamily: h.font(SANS), fontSize: "22px", color: "#8b8b86" }, "", "first try · attempt 1");
+      // "attempt N" counts while the test fails, then "first try · attempt 1" (one element per state, shown by the timeline: seek-safe)
+      const attCss = { left: cx - 150 + "px", top: cy + 204 + "px", width: "300px", textAlign: "center", fontFamily: h.font(SANS), fontSize: "22px", color: "#8b8b86" };
+      const att = [1, 2, 3, 4].map((n) => abs(st, attCss, "", `attempt <b style="color:#222">${n}</b>`));
+      const first = abs(st, attCss, "", `first try · attempt <b style="color:#222">1</b>`);
+      const stamps = [0, 0.28, 0.55, 0.8, p.okAt];
+      att.forEach((e, i) => { tl.set(e, { autoAlpha: 0 }, 0); tl.set(e, { autoAlpha: 1 }, t0 + stamps[i]); tl.set(e, { autoAlpha: 0 }, t0 + stamps[i + 1]); });
+      tl.set(first, { autoAlpha: 0 }, 0); tl.set(first, { autoAlpha: 1 }, t0 + p.okAt);
       const tg = abs(st, { left: cx + 134 + "px", top: cy - 242 + "px", padding: "10px 20px", borderRadius: "12px", background: "#eef9dd", border: "1px solid #d6ebb4", fontFamily: h.font(SANS), fontSize: "22px", color: "#3f6b10", boxShadow: "0 8px 24px -12px rgba(100,160,30,0.4)" }, "", "⚡ " + p.tag);
       tl.fromTo(tg, { autoAlpha: 0, y: -12 }, { autoAlpha: 1, y: 0, duration: 0.3 }, t0 + p.okAt);
       // the two counters: the failed attempt first (both climb in red), then the rule works and both fall in green to the first-try cost
@@ -277,13 +283,16 @@
       };
       const tNode = mk(0, "time on this task", "#fde3e6"), kNode = mk(bw / 2 - 4, "tokens spent", "#fbeed5");
       abs(box, { left: bw / 2 - 3 + "px", top: "30px", width: "1px", height: "140px", background: "#eee" });
-      const fmtT = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`, fmtK = (n) => Math.round(n).toLocaleString("en-US"), pr = { a: 0.37, k: 0 };
+      const fmtT = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`, fmtK = (n) => Math.round(n).toLocaleString("en-US"), pr = { u: 0, k: 0 };
+      const ck = p.counters.map((l) => l.trim().split(/\s+/).map(Number)).filter((q) => q.length === 3);
+      const upKey = (rel) => { if (rel <= ck[0][0]) return [ck[0][1], ck[0][2]]; for (let i = 1; i < ck.length; i++) if (rel <= ck[i][0]) { const a0 = ck[i - 1], b0 = ck[i], u = (rel - a0[0]) / Math.max(1e-9, b0[0] - a0[0]); return [a0[1] + (b0[1] - a0[1]) * u, a0[2] + (b0[2] - a0[2]) * u]; } const l = ck[ck.length - 1]; return [l[1], l[2]]; };
       const upd = () => {
-        const s = pr.k > 0 ? p.t0s + (p.t1 - p.t0s) * pr.k : p.t0s * pr.a, n = pr.k > 0 ? p.tok0 + (p.tok1 - p.tok0) * pr.k : p.tok0 * pr.a;
+        let s, n;
+        if (pr.k > 0) { s = p.t0s + (p.t1 - p.t0s) * pr.k; n = p.tok0 + (p.tok1 - p.tok0) * pr.k; } else [s, n] = upKey(pr.u);
         tNode.textContent = fmtT(s); kNode.textContent = fmtK(n); const c = pr.k > 0.45 ? p.accent : p.fail; tNode.style.color = c; kNode.style.color = c;
       };
       upd();
-      tl.to(pr, { a: 1, duration: p.okAt - 0.05, ease: "none", onUpdate: upd }, t0);
+      tl.to(pr, { u: p.okAt, duration: p.okAt, ease: "none", onUpdate: upd }, t0);
       tl.to(pr, { k: 1, duration: 0.9, ease: "power3.out", onUpdate: upd }, t0 + p.okAt);
       tl.fromTo(box, { autoAlpha: 0, y: 30 }, { autoAlpha: 1, y: 0, duration: 0.5, ease: "power3.out" }, t0 + 0.1);
     },
@@ -390,10 +399,13 @@
       tl.fromTo(mid, { autoAlpha: 0, scale: 0.85 }, { autoAlpha: 1, scale: 1, duration: 0.5, ease: "back.out(1.7)" }, t0 + 0.4);
       cards.forEach((c, i) => tl.fromTo(c, { autoAlpha: 0, scale: 0.9, y: 14 }, { autoAlpha: 1, scale: 1, y: 0, duration: 0.5, ease: "power3.out" }, t0 + p.nodeAt + i * p.nodeStep));
       tl.fromTo(svg, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.8 }, t0 + p.nodeAt);
-      tl.to(wrap, { opacity: 0, duration: 0.3, ease: "power1.in" }, t0 + dur - 0.6);
-      if (p.outro) {   // the product name comes in blurred on the white, just before the dark card
-        const o = abs(st, { left: w / 2 + "px", top: sh / 2 - 95 + "px", transform: "translateX(-50%)", fontFamily: h.font(SANS), fontSize: (tall ? 100 : 121) + "px", fontWeight: 500, letterSpacing: "-0.04em", color: "#2a2a28", whiteSpace: "nowrap" }, "", p.outro);
-        tl.fromTo(o, { autoAlpha: 0, filter: "blur(22px)" }, { autoAlpha: 0.9, filter: "blur(14px)", duration: 0.35, ease: "power1.out" }, t0 + dur - 0.5);
+      tl.to(wrap, { opacity: 0, duration: 0.25, ease: "power1.in" }, t0 + dur - 0.4);
+      if (p.outro) {   // the product name leaves its card and slides to the centre in a streak, on the white, just before the dark card (18.9 to 19.17 s)
+        const sx = tall ? 0 : (POS[2][0] + POS[2][2] / 2 - 960) * 0.9, sy = tall ? 0 : POS[2][1] + POS[2][3] / 2 - sh / 2;
+        const o = abs(st, { left: w / 2 + "px", top: sh / 2 - 60 + "px", transform: "translateX(-50%)", fontFamily: h.font(SANS), fontSize: (tall ? 100 : 121) + "px", fontWeight: 500, letterSpacing: "-0.04em", color: "#2a2a28", whiteSpace: "nowrap", lineHeight: 1 }, "", p.outro);
+        tl.set(o, { autoAlpha: 0 }, 0);
+        tl.fromTo(o, { autoAlpha: 0, x: sx, y: sy, scale: 0.28, filter: "blur(7px)" }, { autoAlpha: 1, x: 0, y: 0, scale: 1, filter: "blur(2px)", duration: 0.24, ease: "power3.out" }, t0 + dur - 0.3);
+        tl.to(o, { filter: "blur(0px)", duration: 0.08 }, t0 + dur - 0.06);
       }
     },
   });
@@ -406,7 +418,7 @@
       P("bg", "Fond", "color", "#0b0d0a", 2), P("ink", "Texte", "color", "#f1f2ed", 2), P("accent", "Vert", "color", "#87f300", 2), P("tags", "Mentions (séparées par une barre)", "text", "Free|Local|Open source", 2),
       N("size", "Taille du nom", 121, 40, 220, 1, 3, "px"), N("y", "Position verticale du nom (large)", 505, 100, 900, 1, 3, "px"), N("cmdAt", "Début de la frappe", 0.45, 0, 5, 0.05, 3, "s"),
       N("cps", "Caractères par seconde", 13, 4, 40, 1, 3), N("tagAt", "Première mention", 0.9, 0, 6, 0.05, 3, "s"), N("tagStep", "Écart entre mentions", 0.67, 0.05, 1.5, 0.01, 3, "s"),
-      N("endFade", "Fondu de fin", 0, 0, 1, 0.05, 3, "s"),
+      N("endFade", "Fondu de fin", 0, 0, 1, 0.05, 3, "s"), P("from", "Fond de départ (le nom arrive d'une scène blanche)", "color", "", 3),
     ],
     build(ctx) {
       const { el, p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
@@ -415,7 +427,10 @@
       // wide: the name's centre at p.y; tall: at 44 % of the frame (30 % with a command, which needs more room below)
       const cy = tall ? Math.round(sh * (hasCmd ? 0.3 : 0.44)) : p.y, boxW = tall ? 520 : 452;
       const name = abs(st, { left: w / 2 + "px", top: cy - sz * 0.5 + "px", transform: "translateX(-50%)", fontFamily: h.font(SANS), fontSize: sz + "px", fontWeight: 500, letterSpacing: "-0.04em", color: p.ink, whiteSpace: "nowrap", lineHeight: 1 }, "", p.name);
-      tl.fromTo(name, { autoAlpha: 0, filter: "blur(16px)", scale: 1.04 }, { autoAlpha: 1, filter: "blur(0px)", scale: 1, duration: 0.5, ease: "power2.out" }, t0);
+      if (p.from) {    // the white scene turns dark while the name (already at the centre) turns light: the reference between 19.17 and 19.4 s
+        tl.fromTo(el, { backgroundColor: p.from }, { backgroundColor: p.bg, duration: 0.25, ease: "sine.inOut" }, t0);
+        tl.fromTo(name, { color: "#2a2a28" }, { color: p.ink, duration: 0.25, ease: "sine.inOut" }, t0);
+      } else tl.fromTo(name, { autoAlpha: 0, filter: "blur(16px)", scale: 1.04 }, { autoAlpha: 1, filter: "blur(0px)", scale: 1, duration: 0.5, ease: "power2.out" }, t0);
       const by = abs(st, { left: w / 2 + "px", top: cy + sz * 0.5 + 12 + "px", transform: "translateX(-50%)", display: "flex", alignItems: "center", gap: "14px", fontFamily: h.font(SANS), fontSize: "30px", color: "#9a9b95", whiteSpace: "nowrap" });
       h.el("span", "", by, p.by);
       const lg = logoMark(by, 46, p.accent); h.css(lg, { position: "relative", display: "inline-block", boxShadow: "none" });

@@ -1,0 +1,119 @@
+// 16 October 2026: the templates of the Claudia teaser (whatships.com/videos/claudia, 20 s), measured on the reference. FOREGROUND ONLY (Matthieu's rule):
+// the typography, the prompt bar, the HUD frame, the relay diagram, the star, the marquee, the title card. No background photo, no face, nothing that needs
+// an AI image: where the reference shows a portrait, the scene shows its flat colour. Every template lays itself out for the format (ZS.stageAdaptive).
+// FR : les modeles du teaser Claudia ; typographie, barre de saisie, cadre HUD, schema, etoile, bandeau, carte titre ; jamais de photo ni de visage.
+(function () {
+  const ZS = window.ZS, h = ZS.h;
+  const P = (key, label, type, def, tier, extra) => Object.assign({ key, label, type, default: def, tier }, extra || {});
+  const N = (key, label, def, min, max, step, tier, unit) => ({ key, label, type: "number", default: def, min, max, step, tier, unit });
+  const NS = "http://www.w3.org/2000/svg";
+  const BG = "#0a0a0a", CREAM = "#ede8e0", CORAL = "#d27159", BAR = "#111113", SANS = "InterVariable", MONO = "JetBrainsMono";
+  const svgEl = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); Object.keys(attrs || {}).forEach((k) => e.setAttribute(k, attrs[k])); if (parent) parent.appendChild(e); return e; };
+  const abs = (parent, css, cls, text) => { const e = h.css(h.el("div", "zs-abs" + (cls ? " " + cls : ""), parent), css); if (text !== undefined) { if (/</.test(String(text))) e.innerHTML = text; else e.textContent = text; } return e; };
+  const keysOf = (lines) => lines.map((l) => l.trim().split(/\s+/).map(Number)).filter((q) => q.length >= 2 && q.every(isFinite));
+  const lerpKeys = (ks, t) => { if (t <= ks[0][0]) return ks[0][1]; for (let i = 1; i < ks.length; i++) if (t <= ks[i][0]) { const a = ks[i - 1], b = ks[i], u = (t - a[0]) / Math.max(1e-9, b[0] - a[0]); return a[1] + (b[1] - a[1]) * u; } return ks[ks.length - 1][1]; };
+
+  // ------------------------------------------------------------------------------------------------ the HUD frame (corner brackets, labels, beat squares, timecode)
+  // `page` is the section label bottom right ("01 / THE ASK"); `dark` false gives dark ink on a light scene. The timecode follows the FILM time (frames at 30 per second).
+  function hud(ctx, st, w, sh, o) {
+    const { tl, t0 } = ctx, ink = o.dark === false ? "#1a1a1a" : "#e9e5dd", dim = o.dark === false ? "#555" : "#8a8884", mono = { fontFamily: h.font(MONO), whiteSpace: "nowrap", letterSpacing: "0.16em", textTransform: "uppercase" };
+    const g = abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px", pointerEvents: "none", zIndex: 8 });
+    const arm = 27, m = 47, line = `1.6px solid ${dim}`;
+    [[m, m, "Top", "Left"], [w - m - arm, m, "Top", "Right"], [m, sh - m - arm, "Bottom", "Left"], [w - m - arm, sh - m - arm, "Bottom", "Right"]].forEach(([x, y, v, hz]) => abs(g, { left: x + "px", top: y + "px", width: arm + "px", height: arm + "px", [`border${v}`]: line, [`border${hz}`]: line }));
+    abs(g, Object.assign({ left: m + 41 + "px", top: m + 3 + "px", fontSize: "13px", fontWeight: 700, color: ink }, mono), "", "CLAUDIA GROK BOT");
+    abs(g, Object.assign({ left: m + 41 + "px", top: m + 27 + "px", fontSize: "12px", color: dim, letterSpacing: "0.14em" }, mono), "", "ANNOUNCEMENT · 0:20");
+    abs(g, Object.assign({ right: m + 41 + "px", top: m + 6 + "px", fontSize: "13px", fontWeight: 700, color: ink, textAlign: "right" }, mono), "", "134.7 BPM");
+    const sq = [0, 1, 2, 3].map((i) => abs(g, { right: m + 41 - 118 + 18 * (3 - i) + "px", top: m + 7 + "px", width: "12px", height: "12px", background: dim }));
+    const tc = abs(g, Object.assign({ left: m + 41 + "px", top: sh - m - 14 + "px", fontSize: "12px", color: dim }, mono), "", "00:00:00:00");
+    const pg = abs(g, Object.assign({ right: m + 41 + "px", top: sh - m - 14 + "px", fontSize: "12px", fontWeight: 700, color: ink, textAlign: "right" }, mono), "", o.page || "");
+    // beat squares: the coral one moves at 134.7 bpm (seek-safe: a set per beat)
+    const beat = 60 / 134.7, nb = Math.ceil(ctx.dur / beat);
+    for (let b = 0; b < nb; b++) sq.forEach((e, i) => tl.set(e, { background: i === b % 4 ? CORAL : dim }, t0 + b * beat));
+    const prox = { t: 0 }, f2 = (n) => String(n).padStart(2, "0");
+    const upd = () => { const T = Math.max(0, (o.film0 || 0) + prox.t), fr = Math.floor(T * 30 + 1e-6); tc.textContent = `00:00:${f2(Math.floor(fr / 30))}:${f2(fr % 30)}`; };
+    upd(); tl.to(prox, { t: ctx.dur, duration: ctx.dur, ease: "none", onUpdate: upd }, t0);
+    return { g, pg, tc };
+  }
+
+  // ------------------------------------------------------------------------------------------------ a giant word (SVG text: round joins soften the corners like the reference's face)
+  // fit: the word is stretched horizontally to span exactly `width` px between its first and last glyph, once the font is loaded (hooked into ZS.refit)
+  function giant(ctx, parent, o) {
+    const svg = svgEl("svg", { width: o.W, height: o.H, viewBox: `0 0 ${o.W} ${o.H}` }, parent);
+    h.css(svg, { position: "absolute", left: "0", top: "0", overflow: "visible" });
+    const grp = svgEl("g", {}, svg), t = svgEl("text", { x: 0, y: 0, "font-family": "InterVariable, sans-serif", "font-weight": 900, "font-size": o.size, fill: o.fill, stroke: o.stroke || o.fill, "stroke-width": o.sw === undefined ? o.size * 0.012 : o.sw, "stroke-linejoin": "round", "paint-order": "stroke", "letter-spacing": o.size * -0.01 }, grp);
+    t.textContent = o.text;
+    const place = () => {
+      let b; try { b = t.getBBox(); } catch (e) { return; }
+      if (!b.width) return;
+      const k = o.width / b.width;                                  // horizontal stretch (a condensed grotesque)
+      grp.setAttribute("transform", `translate(${o.x - b.x * k} ${o.baseline}) scale(${k} 1)`);
+    };
+    place(); ctx.fit(h.el("span", "", parent), 1, 1, { before: place });
+    return { svg, grp, text: t };
+  }
+
+  // ================================================================================================ 1. cl-ask
+  ZS.register({
+    id: "cl-ask", label: "Claudia : la demande, mot par mot", group: "Texte", duration: 2.95,
+    params: [
+      P("prompt", "Phrase tapée", "text", "make me a music video", 1), P("words", "Mots (début fin MOT style)", "lines", ["0.30 0.65 MAKE cream", "0.62 1.02 ME creamBg", "1.0 1.66 A coral", "1.65 2.0 MUSIC cream", "1.98 2.45 VIDEO coralBg"], 1),
+      P("coral", "Corail", "color", CORAL, 2), P("cream", "Crème", "color", CREAM, 2), P("bg", "Fond", "color", BG, 2),
+      P("typing", "Frappe (temps nombre de caractères)", "lines", ["0.15 0", "0.5 6", "0.8 7", "1.05 9", "1.5 10", "1.85 19", "2.0 21"], 2),
+      N("cap", "Hauteur des majuscules (large)", 610, 200, 900, 1, 3, "px"), N("baseline", "Ligne de base (large)", 850, 300, 1000, 1, 3, "px"), N("slam", "Force du choc d'entrée", 1.1, 1, 1.4, 0.01, 3),
+      P("page", "Section (en bas à droite)", "text", "01 / THE ASK", 3), N("marqueeAt", "Début du bandeau fantôme", 2.45, 1.5, 3, 0.01, 3, "s"),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
+      h.css(el, { background: p.bg });
+      const bgs = abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px", background: p.bg });      // the frame colour changes with the word (cream, coral)
+      const dots = abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px", backgroundImage: "radial-gradient(#1b1b1b 1.2px, transparent 1.4px)", backgroundSize: "48px 48px", opacity: 0 });
+      const k = tall ? w / 1920 : 1, capPx = p.cap * k, base = tall ? sh * 0.5 + capPx / 2 - sh * 0.04 : p.baseline;
+      // ---- the words
+      const STY = { cream: [p.cream, null, p.bg], creamBg: [p.bg, p.cream, p.bg], coral: [p.coral, null, p.bg], coralBg: [p.bg, p.coral, p.bg] };
+      p.words.forEach((l) => {
+        const [a, b, word, style] = l.trim().split(/\s+/), [fill, fillBg] = STY[style] || STY.cream, s0 = Number(a), s1 = Number(b), size = capPx / 0.727;
+        const widthOf = { MAKE: 0.93, ME: 0.62, A: 0.34, MUSIC: 0.94, VIDEO: 0.94 }[word] || 0.9, xOf = { ME: 0.185, A: 0.34 }[word] !== undefined ? { ME: 0.185, A: 0.34 }[word] : (1 - widthOf) / 2;
+        const sz = word === "ME" ? size * 1.42 : (word === "A" ? size * 1.4 : size), bl = word === "ME" ? base + capPx * 0.16 : (word === "A" ? base + capPx * 0.19 : base);
+        const box = abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px", visibility: "hidden" });
+        const g0 = giant(ctx, box, { text: word, W: w, H: sh, size: sz, fill, width: widthOf * w, x: xOf * w, baseline: bl });
+        // the colour of the whole frame under the word
+        const bgc = fillBg || p.bg;
+        tl.set(box, { visibility: "visible" }, t0 + s0); tl.set(box, { visibility: "hidden" }, t0 + s1);
+        tl.set(bgs, { backgroundColor: bgc }, t0 + s0);                       // each word sets its own frame colour at its start; the last one hands back the dark
+        if (l === p.words[p.words.length - 1]) tl.set(bgs, { backgroundColor: p.bg }, t0 + s1);
+        tl.fromTo(g0.svg, { scale: p.slam, transformOrigin: "50% 60%" }, { scale: 1, duration: 0.16, ease: "power3.out" }, t0 + s0);
+        if (style === "coral") {   // the A leaves a trail of fading copies behind it (the reference at 1.05 s)
+          for (let i = 1; i <= 4; i++) { const echo = giant(ctx, box, { text: word, W: w, H: sh, size: sz, fill: p.coral, width: widthOf * w, x: xOf * w, baseline: bl - i * 22 * k }); h.css(echo.svg, { opacity: 0.22 - i * 0.04 }); box.insertBefore(echo.svg, box.firstChild); tl.fromTo(echo.svg, { opacity: 0.3 - i * 0.05 }, { opacity: 0, duration: 0.22 }, t0 + s0 + 0.04); }
+        }
+        if (word === "MUSIC") {    // the top half is only an outline, the bottom half is filled (the reference at 1.85 s)
+          g0.text.setAttribute("fill", "none"); g0.text.setAttribute("stroke", p.cream); g0.text.setAttribute("stroke-width", 3);
+          const fillG = giant(ctx, box, { text: word, W: w, H: sh, size: sz, fill: p.cream, width: widthOf * w, x: xOf * w, baseline: bl });
+          const clip = abs(box, { left: "0", top: bl - capPx * 0.46 + "px", width: w + "px", height: capPx * 0.7 + "px", overflow: "hidden" });
+          clip.appendChild(fillG.svg); fillG.svg.style.top = -(bl - capPx * 0.46) + "px";
+          // the filled half rises to cover the whole word a moment later (the reference at 1.85 s is solid)
+          tl.to(clip, { top: bl - capPx * 1.05, height: capPx * 1.4, duration: 0.14, ease: "power2.out" }, t0 + s0 + 0.14);
+          tl.to(fillG.svg, { top: -(bl - capPx * 1.05), duration: 0.14, ease: "power2.out" }, t0 + s0 + 0.14);
+          tl.set(g0.svg, { visibility: "hidden" }, t0 + s0 + 0.29);
+        }
+      });
+      // ---- the prompt bar: typed text, a coral cursor, a coral send button; it shrinks to the centre when the words are done
+      const bw = 802 * k * (tall ? 1.05 : 1), bh = 74, bx = (w - bw) / 2 + (tall ? 0 : -1 * 0), by = (tall ? sh * 0.86 : 898);
+      const bar = abs(st, { left: bx + "px", top: by + "px", width: bw + "px", height: bh + "px", borderRadius: bh / 2 + "px", background: BAR, border: "1.5px solid #2a2a2c", zIndex: 5, transformOrigin: "50% 50%" });
+      const txt = abs(bar, { left: "40px", top: "22px", fontFamily: h.font(MONO), fontSize: "28px", color: "#ece8e0", whiteSpace: "pre" }), cur = abs(bar, { top: "21px", width: "13px", height: "33px", background: p.coral });
+      const btn = abs(bar, { right: "11px", top: "11px", width: "52px", height: "52px", borderRadius: "50%", background: p.coral, textAlign: "center", lineHeight: "50px", fontSize: "30px", color: "#2a1210", fontWeight: 700 }, "", "↑");
+      const tk = keysOf(p.typing), pr = { t: 0 };
+      const upd = () => { const n = Math.max(0, Math.floor(lerpKeys(tk, pr.t))), s = p.prompt.slice(0, n); txt.textContent = s; cur.style.left = 40 + s.length * 16.8 + "px"; };
+      upd(); tl.to(pr, { t: dur, duration: dur, ease: "none", onUpdate: upd }, t0);
+      tl.set(bar, { borderColor: p.coral }, t0 + p.marqueeAt); tl.set(btn, { autoAlpha: 0 }, t0 + p.marqueeAt);
+      tl.to(bar, { scale: 0.33, y: -(by + bh / 2 - (tall ? sh * 0.5 : 535)), x: tall ? 0 : -215, duration: 0.2, ease: "power2.inOut" }, t0 + p.marqueeAt + 0.05);
+      // ---- the ghost marquee: the sentence in outline, drifting left, on a faint dot grid
+      tl.fromTo(dots, { opacity: 0 }, { opacity: 1, duration: 0.2 }, t0 + p.marqueeAt - 0.05);
+      const mq = abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px", opacity: 0 }), ms = svgEl("svg", { width: w, height: sh }, mq), mt = svgEl("text", { x: 0, y: sh * 0.64, "font-family": "InterVariable", "font-weight": 900, "font-size": 300 * k / 0.727 * 0.85, fill: "none", stroke: "#1f1f1f", "stroke-width": 2.5, "stroke-linejoin": "round", "letter-spacing": 18 * k }, ms);
+      mt.textContent = "MAKE ME A MUSIC VIDEO · MAKE ME A MUSIC VIDEO";
+      tl.fromTo(mq, { opacity: 0 }, { opacity: 1, duration: 0.15 }, t0 + p.marqueeAt - 0.05);
+      tl.fromTo(mt, { attr: { x: -60 * k } }, { attr: { x: -230 * k }, duration: dur - p.marqueeAt, ease: "none" }, t0 + p.marqueeAt - 0.05);
+      hud(ctx, st, w, sh, { page: p.page, dark: true, film0: 0 });
+    },
+  });
+  ZS.claudiaKit = { hud, giant, svgEl, abs, keysOf, lerpKeys, P, N, BG, CREAM, CORAL, BAR, SANS, MONO };
+})();
