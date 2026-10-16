@@ -90,6 +90,16 @@
       "id": "yt-4q-o-ylnvnc-motion",
       "group": "Première sélection (à refaire en premier plan seul)",
       "reference": "yt-4Q-o_ylnVnc"
+    },
+    {
+      "id": "fin-4-ppm",
+      "group": "Premier Plan Mesuré · première sélection",
+      "reference": "fin-4"
+    },
+    {
+      "id": "kardashev-0-7-ppm",
+      "group": "Premier Plan Mesuré · première sélection",
+      "reference": "kardashev-0-7"
     }
   ],
   "formats": [

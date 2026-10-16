@@ -1,0 +1,44 @@
+"""Reproduction of the Kardashev-0.7 film (whatships.com/videos/kardashev-0-7, 67.4 s), workflow Premier Plan Mesuré (16 October 2026).
+Foreground only: captions, giant words, title card, three bar charts, the model grid, two line charts, the closing card. The interview footage and the archive picture
+are NOT reproduced (a flat tile stands for them). Cuts measured with Scripts/FindCuts.py; captions read by OCR on the white text. Usage: python3 motion/reproductions/kardashev_0_7.py"""
+import ppm
+from ppm import T
+
+SLUG = "kardashev-0-7"
+END = 67.42
+LIVE1 = ["0.6 | 1.45 | For millennia,", "1.55 | 2.35 | humanity advanced", "2.4 | 3.5 | through billions of", "3.6 | 4.2 | different minds", "4.2 | 5.0 | working together.", "7.6 | 9.0 | So why are we scaling AI"]
+LIVE2 = ["0.2 | 0.7 | I'm Ed.", "1.0 | 1.6 | And I'm Cat.", "1.8 | 3.4 | We're co-founders at Banbury Road.", "4.0 | 4.8 | Our team met as", "5.0 | 6.4 | top of the class undergrads at Oxford", "6.4 | 8.6 | and left PhD at Yale and UChicago", "8.6 | 10.3 | to scale intelligence horizontally."]
+LIVE3 = ["0.35 | 1.05 | For example,", "1.15 | 2.25 | we solved the 70-year-old", "2.35 | 3.65 | Pierce-Birkhoff conjecture", "3.75 | 4.55 | in algebraic geometry", "5.15 | 7.15 | for under $500."]
+LIVE4 = ["0.2 | 2.3 | 32 models is just the beginning.", "2.4 | 4.85 | Be among the first to try Kardashev for yourself."]
+CHARTS = ["SuperGPQA | Graduate-level knowledge · score (%) | lin | 0 | 2.55 | 81.3 72.7 73.6 69.9 | %",
+          "IFBench | Instruction following · score (%) | lin | 2.55 | 5.25 | 79.3 75.9 79.1 77.0 | %",
+          "Inference cost | USD / 1M output tokens · logarithmic scale | log | 5.25 | 7.05 | 0.18 30 4.95 3.96 | $"]
+LINES = ["Model size | Test loss · lower is better | line | 0 | 2.9 | 0.05 0.04 0.17 0.14 0.26 0.24 0.30 0.28 0.33 0.31 0.36 0.35 0.40 0.39 0.45 0.44 0.50 0.50 0.54 0.55 0.61 0.62 0.67 0.69 0.72 0.73 0.76 0.77 0.82 0.83 0.88 0.90 0.93 0.95 0.96 0.97 | w | Non-embedding parameters | 5.6:0.12,4.0:0.45,2.4:0.83 | 10⁵:0.18,10⁷:0.56,10⁹:0.92",
+         "Model count | Test loss · lower is better | line | 2.9 | 5.4 | 0 0.10 0.14 0.27 0.28 0.35 0.42 0.43 0.57 0.55 0.71 0.74 | gold | Models | 0.4:0.1,0.2:0.37,0.1:0.64,0.05:0.91 | 1:0,2:.14,4:.28,8:.42,16:.57,32:.71,64:.85 | 0.71 0.74 0.82 0.80"]
+BEATS = [
+    (0.00, "kd-live", {"captions": LIVE1, "bigs": ["9.75 | 11.1 | one giant model | 350 | 0.5 | 0.5"]}),
+    (11.15, "kd-card", {"kind": "title", "title": "Kardashev-0.7", "typeAt": 0.5, "typeLen": 1.7, "subs": ["4.25 | 6.25 | The world's first trained swarm.", "6.25 | 8.05 | 32 distinct models"]}),
+    (19.20, "kd-live", {"captions": LIVE2}),
+    (29.50, "kd-card", {"kind": "rl", "phases": ["0.0 | 2.9 | RL for\npopulation scaling", "2.9 | 6.45 | RLPS", "6.45 | 9.1 | GRID"]}),
+    (38.60, "kd-card", {"kind": "bars", "charts": CHARTS}),
+    (45.65, "kd-live", {"captions": LIVE3, "bigs": ["1.55 | 2.6 | 70-year-old | 450 | 0.5 | 0.37", "5.95 | 7.15 | $500 | 1080 | 0.5 | 0.52"]}),
+    (53.00, "kd-card", {"kind": "line", "charts": LINES}),
+    (58.40, "kd-live", {"captions": LIVE4}),
+    (63.25, "kd-card", {"kind": "close", "title": "Try Kardashev.", "titleSize": 112, "typeAt": 0.3, "typeLen": 1.0, "subs": ["1.25 | 4.2 | url"]}),
+]
+CONTROLS = [
+    {"id": "title", "label": "Titre de la carte d'ouverture", "type": "text", "group": "Phrases", "targets": [T("b02", "title")]},
+    {"id": "subs", "label": "Sous-titres de l'ouverture", "type": "lines", "group": "Phrases", "targets": [T("b02", "subs")]},
+    {"id": "cap1", "label": "Captions, première prise", "type": "lines", "group": "Captions", "targets": [T("b01", "captions")]},
+    {"id": "cap2", "label": "Captions, présentation", "type": "lines", "group": "Captions", "targets": [T("b03", "captions")]},
+    {"id": "cap3", "label": "Captions, exemple", "type": "lines", "group": "Captions", "targets": [T("b06", "captions")]},
+    {"id": "cap4", "label": "Captions, final", "type": "lines", "group": "Captions", "targets": [T("b08", "captions")]},
+    {"id": "bars", "label": "Graphiques à barres", "type": "lines", "group": "Données", "targets": [T("b05", "charts")]},
+    {"id": "names", "label": "Noms des barres", "type": "lines", "group": "Données", "targets": [T("b05", "names")]},
+    {"id": "gold", "label": "Couleur d'accent", "type": "color", "group": "Couleurs", "targets": [T(f"b{i:02d}", "gold") for i in (2, 4, 5, 7, 9)]},
+    {"id": "close", "label": "Phrase de fermeture", "type": "text", "group": "Phrases", "targets": [T("b09", "title")]},
+    {"id": "url", "label": "Adresse", "type": "text", "group": "Phrases", "targets": [T("b09", "url")]},
+]
+
+if __name__ == "__main__":
+    ppm.run("kardashev-0-7-ppm", ppm.build("Kardashev-0.7, premier plan mesuré", SLUG, BEATS, END, CONTROLS, bg="#0a0e1d", ink="#f3ead8", accent="#e3c892"))

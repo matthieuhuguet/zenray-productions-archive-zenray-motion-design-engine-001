@@ -1,0 +1,91 @@
+// 16 October 2026: the template of the Fin 4 announcement (whatships.com/videos/fin-4, 7.9 s, 1080x1350), measured on the reference. Workflow Premier Plan Mesuré (ppm).
+// FOREGROUND ONLY (Matthieu's rule): the title, the system diagram with its three highlighted steps, the paragraph and the mark; the colour swirl behind is NOT reproduced.
+// FR : le modele de l'annonce Fin 4 ; titre, schema et ses trois temps, paragraphe, marque ; jamais le fond de couleurs.
+(function () {
+  const ZS = window.ZS, h = ZS.h;
+  const P = (key, label, type, def, tier, extra) => Object.assign({ key, label, type, default: def, tier }, extra || {});
+  const N = (key, label, def, min, max, step, tier, unit) => ({ key, label, type: "number", default: def, min, max, step, tier, unit });
+  const NS = "http://www.w3.org/2000/svg", SANS = "InterVariable";
+  const svgEl = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); Object.keys(attrs || {}).forEach((k) => e.setAttribute(k, attrs[k])); if (parent) parent.appendChild(e); return e; };
+  const abs = (parent, css, text) => { const e = h.css(h.el("div", "zs-abs", parent), css); if (text !== undefined) { if (/[<&]/.test(String(text))) e.innerHTML = text; else e.textContent = text; } return e; };
+  const keys = (lines) => lines.map((l) => l.trim().split(/\s+/).map(Number)).filter((q) => q.length >= 2 && q.every((v) => !isNaN(v)));
+  const INK = "#161616", LINE = "#9b9b9b";
+
+  // the mark: eight leaves and a centre block, drawn with rounded corners (no picture)
+  function mark(parent, size, col) {
+    const g = abs(parent, { width: size + "px", height: size + "px", display: "grid", gridTemplateColumns: "repeat(3,1fr)", gridTemplateRows: "repeat(3,1fr)", gap: size * 0.02 + "px" });
+    const R = "100%", S = "0%";
+    const radius = ["100% 100% 0 100%", "100% 100% 0 0", "100% 100% 100% 0", "100% 0 0 100%", "8%", "0 100% 100% 0", "100% 0 100% 100%", "0 0 100% 100%", "0 100% 100% 100%"];
+    void R; void S;
+    radius.forEach((r) => { const c = h.el("div", "", g); h.css(c, { background: col, borderRadius: r }); });
+    return g;
+  }
+
+  ZS.register({
+    id: "fn-flow", label: "Fin : le schéma du système en trois temps", group: "Interface", duration: 7.87,
+    params: [
+      P("title", "Titre (lignes)", "lines", ["Introducing", "Fin 4"], 1), P("paraDark", "Paragraphe, partie sombre", "text", "Fin 4 brings major upgrades to every part of the system.", 1),
+      P("paraGrey", "Paragraphe, partie grise", "text", "A more capable Customer Agent, a more powerful Operator, and new ways for Fin to work with your team.", 1),
+      P("nodes", "Cases (client, agent, bureau d'aide, copilote, opérateur, échange)", "lines", ["CUSTOMER", "CUSTOMER AGENT", "HELPDESK", "COPILOT", "OPERATOR", "HITL"], 2),
+      P("steps", "Temps (début fin), un par étape", "lines", ["0 2.3", "2.3 5.35", "5.35 7.87"], 2),
+      P("blue", "Étape 1, couleur", "color", "#4f8ff7", 3), P("purple", "Étape 2, couleur", "color", "#7b3fe4", 3), P("green", "Étape 3, couleur", "color", "#7fb519", 3),
+      P("titleInk", "Couleur du titre", "color", "#b8b8be", 3), P("bg", "Fond", "color", "#fbfbfb", 3), P("showMark", "Marque en bas à droite", "select", "oui", 3, { options: ["oui", "non"] }),
+      N("titleSize", "Taille du titre (haut)", 166, 40, 260, 1, 3, "px"), N("paraSize", "Taille du paragraphe (haut)", 36.5, 16, 80, 0.5, 3, "px"), N("fade", "Fondu entre étapes (s)", 0.3, 0, 1.5, 0.05, 3, "s"),
+      N("film0", "Début dans le film (s)", 0, 0, 20, 0.01, 4, "s"),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0 } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
+      h.css(el, { background: p.bg });
+      const [lblCustomer, lblAgent, lblHelp, lblCopilot, lblOperator, lblHitl] = p.nodes;
+      // ---- the diagram, drawn once in its own frame (873 x 212, the reference's pixels), then placed
+      const DW = 873, DH = 212, dia = abs(st, { left: "0", top: "0", width: DW + "px", height: DH + "px", transformOrigin: "0 0" });
+      const sv = svgEl("svg", { width: DW, height: DH, viewBox: `0 0 ${DW} ${DH}`, style: "position:absolute;left:0;top:0;overflow:visible" }, dia);
+      const ox = 104, oy = 733, X = (x) => x - ox, Y = (y) => y - oy;
+      svgEl("path", { d: `M${X(212)},${Y(766)} V${Y(735)} Q${X(212)},${Y(733)} ${X(214)},${Y(733)} H${X(868)} Q${X(870)},${Y(733)} ${X(870)},${Y(735)} V${Y(777)}`, fill: "none", stroke: LINE, "stroke-width": 1.6 }, sv);
+      svgEl("path", { d: `M${X(206)},${Y(761)} L${X(212)},${Y(768)} L${X(218)},${Y(761)}`, fill: "none", stroke: LINE, "stroke-width": 1.6 }, sv);
+      const arrow = (x1, x2, y, col, parent) => { svgEl("path", { d: `M${X(x1)},${Y(y)} H${X(x2)} M${X(x1 + 9)},${Y(y - 6)} L${X(x1)},${Y(y)} L${X(x1 + 9)},${Y(y + 6)} M${X(x2 - 9)},${Y(y - 6)} L${X(x2)},${Y(y)} L${X(x2 - 9)},${Y(y + 6)}`, fill: "none", stroke: col, "stroke-width": 1.6 }, parent); };
+      arrow(334, 418, 825, LINE, sv);
+      const box = (x, y, wd, ht, rad, css) => abs(dia, Object.assign({ left: X(x) + "px", top: Y(y) + "px", width: wd + "px", height: ht + "px", borderRadius: rad + "px", border: "1.6px solid " + LINE, boxSizing: "border-box" }, css || {}));
+      const lab = (parent, css, text) => abs(parent, Object.assign({ fontFamily: h.font(SANS), fontWeight: 400, fontSize: "17px", letterSpacing: "0.07em", color: INK, whiteSpace: "nowrap", textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center" }, css), text);
+      box(104, 776, 214, 94, 47); lab(dia, { left: X(104) + "px", top: Y(776) + "px", width: "214px", height: "94px" }, lblCustomer);
+      const agent = box(434, 776, 214, 94, 4); lab(dia, { left: X(434) + "px", top: Y(776) + "px", width: "214px", height: "94px" }, lblAgent);
+      const hd = box(764, 776, 213, 96, 4); abs(dia, { left: X(764) + "px", top: Y(826) + "px", width: "213px", height: "1.6px", background: LINE });
+      lab(dia, { left: X(764) + "px", top: Y(776) + "px", width: "213px", height: "50px" }, lblHelp); lab(dia, { left: X(764) + "px", top: Y(827) + "px", width: "213px", height: "46px" }, lblCopilot);
+      const op = box(434, 895, 543, 50, 4); lab(dia, { left: X(434) + "px", top: Y(895) + "px", width: "543px", height: "50px" }, lblOperator);
+      const hitl = lab(dia, { left: X(664) + "px", top: Y(801) + "px", width: "84px", height: "22px", fontSize: "16px", color: LINE }, lblHitl);
+      const sv2 = svgEl("svg", { width: DW, height: DH, viewBox: `0 0 ${DW} ${DH}`, style: "position:absolute;left:0;top:0;overflow:visible" }, dia); arrow(664, 748, 825, LINE, sv2);
+      // ---- the three highlights, one layer each (shown by opacity so a seek is exact)
+      const badge = (cx, cy, col, n) => { const b = abs(dia, { left: X(cx) - 15 + "px", top: Y(cy) - 15 + "px", width: "30px", height: "30px", borderRadius: "50%", background: col, color: "#fff", fontFamily: h.font(SANS), fontSize: "14px", display: "flex", alignItems: "center", justifyContent: "center", opacity: 0 }, String(n)); return b; };
+      const L1 = abs(dia, { left: X(434) + "px", top: Y(776) + "px", width: "214px", height: "94px", borderRadius: "4px", background: "linear-gradient(180deg,#e8effd 0%,#b9d1fb 100%)", opacity: 0, boxShadow: "0 0 0 1.6px #d2e0fb" });
+      lab(L1, { left: 0, top: 0, width: "214px", height: "94px" }, lblAgent); const B1 = badge(434, 764, p.blue, 1);
+      const L2 = abs(dia, { left: X(434) + "px", top: Y(895) + "px", width: "543px", height: "50px", borderRadius: "4px", background: "linear-gradient(180deg,#ece3fe 0%,#a98bf7 100%)", opacity: 0 }); lab(L2, { left: 0, top: 0, width: "543px", height: "50px" }, lblOperator); const B2 = badge(433, 893, p.purple, 2);
+      const L3 = abs(dia, { left: X(764) + "px", top: Y(826) + "px", width: "213px", height: "46px", borderRadius: "0 0 4px 4px", background: "linear-gradient(180deg,#f1fbdc 0%,#b9e868 100%)", opacity: 0, boxShadow: "inset 0 0 0 1.6px #8dc42a" }); lab(L3, { left: 0, top: 0, width: "213px", height: "46px" }, lblCopilot);
+      const L3b = abs(dia, { left: X(764) + "px", top: Y(776) + "px", width: "213px", height: "96px", borderRadius: "4px", border: "1.6px solid #8dc42a", opacity: 0, boxSizing: "border-box" });
+      const L3c = abs(dia, { left: X(664) + "px", top: Y(800) + "px", width: "84px", height: "50px", opacity: 0 }); lab(L3c, { left: 0, top: 0, width: "84px", height: "22px", fontSize: "16px", color: p.green }, lblHitl);
+      const L3d = abs(dia, { left: "0", top: "0", width: DW + "px", height: DH + "px", opacity: 0 }); const sv3 = svgEl("svg", { width: DW, height: DH, viewBox: `0 0 ${DW} ${DH}`, style: "position:absolute;left:0;top:0;overflow:visible" }, L3d); arrow(664, 748, 825, p.green, sv3);
+      const B3 = badge(764, 849, p.green, 3);
+      void agent; void hd; void op; void hitl;
+      const layers = [[L1, B1], [L2, B2], [L3, L3b, L3c, L3d, B3]], ks = keys(p.steps);
+      layers.forEach((ls, i) => {
+        const [a, b] = ks[i] || [0, ctx.dur], f2 = Math.max(0.01, p.fade);
+        if (a <= 0) tl.set(ls, { opacity: 1 }, t0); else { tl.set(ls, { opacity: 0 }, t0); tl.fromTo(ls, { opacity: 0 }, { opacity: 1, duration: f2, ease: "sine.inOut" }, t0 + a - f2 / 2); }
+        if (b < ctx.dur - 0.02) tl.to(ls, { opacity: 0, duration: f2, ease: "sine.inOut" }, t0 + b - f2 / 2);
+      });
+      // ---- the title, the paragraph, the mark (tall: a column; wide: two columns)
+      const T = abs(st, { left: "0", top: "0", fontFamily: h.font(SANS), fontWeight: 400, color: p.titleInk, lineHeight: 0.95, letterSpacing: "-0.035em", whiteSpace: "nowrap" }, p.title.join("<br>"));
+      const para = abs(st, { left: "0", top: "0", fontFamily: h.font(SANS), fontWeight: 400, lineHeight: 1.13, letterSpacing: "-0.04em", color: "#9a9a9a" }, `<span style="color:${INK}">${p.paraDark}</span> ${p.paraGrey}`);
+      const mk = abs(st, { left: "0", top: "0" }); mark(mk, 56, INK); if (p.showMark !== "oui") mk.style.display = "none";
+      if (tall) {
+        const k = Math.min(1, sh / 1350, w / 1080), ox0 = (w - 1080 * k) / 2, oy0 = (sh - 1350 * k) / 2;
+        const place = (node, x, y, scale) => { node.style.left = ox0 + x * k + "px"; node.style.top = oy0 + y * k + "px"; node.style.transformOrigin = "0 0"; node.style.transform = `scale(${(scale || 1) * k})`; };
+        place(dia, 104, 733); T.style.fontSize = p.titleSize + "px"; place(T, 160, 327); para.style.fontSize = p.paraSize + "px"; para.style.width = 650 + "px"; para.style.whiteSpace = "normal"; place(para, 100, 1100); place(mk, 925, 1195);
+        h.css(el, { background: p.bg });
+      } else {
+        dia.style.left = 960 + "px"; dia.style.top = sh / 2 - 90 + "px"; dia.style.transform = "scale(1.0)";
+        T.style.fontSize = p.titleSize * 1.05 + "px"; T.style.left = "110px"; T.style.top = "150px";
+        para.style.fontSize = p.paraSize * 1.1 + "px"; para.style.width = "720px"; para.style.whiteSpace = "normal"; para.style.left = "110px"; para.style.top = sh - 330 + "px";
+        mk.style.left = "1790px"; mk.style.top = sh - 140 + "px";
+      }
+    },
+  });
+})();

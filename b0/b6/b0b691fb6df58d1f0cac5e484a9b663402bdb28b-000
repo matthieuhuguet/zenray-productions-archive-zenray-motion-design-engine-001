@@ -1,0 +1,185 @@
+// 16 October 2026: the templates of the Kardashev-0.7 film (whatships.com/videos/kardashev-0-7, 67.4 s), measured on the reference. Workflow Premier Plan Mesuré (ppm).
+// FOREGROUND ONLY (Matthieu's rule): the captions, the giant words, the title card, the charts, the model grid; the interview footage and the archive picture are NOT
+// reproduced (a flat dark tile stands for them). The horizon glow is drawn in code. FR : captions, mots geants, cartes, graphiques ; jamais les images filmees.
+(function () {
+  const ZS = window.ZS, h = ZS.h;
+  const P = (key, label, type, def, tier, extra) => Object.assign({ key, label, type, default: def, tier }, extra || {});
+  const N = (key, label, def, min, max, step, tier, unit) => ({ key, label, type: "number", default: def, min, max, step, tier, unit });
+  const NS = "http://www.w3.org/2000/svg", SERIF = "PlayfairDisplay", SANS = "InterVariable", MONO = "JetBrainsMono";
+  const GOLD = "#e3c892", CREAM = "#f3ead8", PALE = "#dbe5ef";
+  const svgEl = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); Object.keys(attrs || {}).forEach((k) => e.setAttribute(k, attrs[k])); if (parent) parent.appendChild(e); return e; };
+  const abs = (parent, css, text) => { const e = h.css(h.el("div", "zs-abs", parent), css); if (text !== undefined) { if (/[<&]/.test(String(text))) e.innerHTML = text; else e.textContent = text; } return e; };
+  const rows = (lines) => lines.map((l) => l.split("|").map((s) => s.trim())).filter((r) => r.length >= 2);
+  const num = (v) => Number(v);
+  // deterministic scramble: the characters of `final` settle one after the other as p goes from 0 to 1; the others cycle through a pool
+  const POOL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const scramble = (final, p) => { const n = final.length; let o = ""; for (let i = 0; i < n; i++) { const c = final[i]; if (c === " " || p >= (i + 1) / (n + 1) + 0.04) { o += c; continue; } const k = Math.floor(p * 26) * 31 + i * 17; o += POOL[(k * 7 + i * 13) % POOL.length]; } return o; };
+  const typeTween = (tl, node, final, t, dur, mode) => { const pr = { p: 0 }; tl.fromTo(pr, { p: 0 }, { p: 1, duration: dur, ease: "none", onUpdate: () => { node.textContent = mode === "type" ? final.slice(0, Math.round(pr.p * final.length)) : scramble(final, pr.p); } }, t); };
+  const serif = (css) => Object.assign({ fontFamily: h.font(SERIF), fontWeight: 400, color: CREAM, whiteSpace: "nowrap", letterSpacing: "-0.01em", lineHeight: 1.1 }, css);
+  const sans = (css) => Object.assign({ fontFamily: h.font(SANS), fontWeight: 400, color: "#9fb0c8", whiteSpace: "nowrap" }, css);
+
+  // the night sky with its horizon, drawn in code
+  function sky(st, w, hh) {
+    abs(st, { left: "0", top: "0", width: w + "px", height: hh + "px", background: "linear-gradient(180deg,#0a0e1f 0%,#0e152b 50%,#111c38 100%)" });
+    const clip = abs(st, { left: "0", top: "0", width: w + "px", height: hh + "px", overflow: "hidden" });
+    const s = 0.095 * hh, R = (0.25 * w * w + s * s) / (2 * s), top = hh * 0.855;
+    abs(clip, { left: w / 2 - R + "px", top: top + "px", width: 2 * R + "px", height: 2 * R + "px", borderRadius: "50%", background: "linear-gradient(180deg,#141b33 0%,#0d1326 100%)",
+      boxShadow: "0 -2px 3px #fff4e6, 0 -8px 14px #ffd9b0, 0 -24px 36px 6px #f59559, 0 -70px 100px 18px rgba(240,120,70,0.62), 0 -150px 200px 40px rgba(76,108,180,0.55), 0 -300px 300px 60px rgba(30,52,104,0.7)" });
+    return clip;
+  }
+  const brandMark = (parent, css, col) => { const sv = svgEl("svg", { width: 26, height: 30, viewBox: "0 0 26 30" }, abs(parent, css)); svgEl("path", { d: "M3,2 L12,16 L12,28 M23,2 L12,16", fill: "none", stroke: col || GOLD, "stroke-width": 3.2, "stroke-linecap": "round", "stroke-linejoin": "round" }, sv); };
+
+  // ================================================================================================ kd-live
+  ZS.register({
+    id: "kd-live", label: "Kardashev : captions et mots géants (sans image filmée)", group: "Texte", duration: 10,
+    params: [
+      P("captions", "Captions (début | fin | texte)", "lines", ["1.55 | 2.4 | humanity advanced"], 1), P("bigs", "Mots géants (début | fin | texte | taille | x | y)", "lines", [], 1),
+      P("tone", "Teinte de la tuile", "color", "#171b1d", 2), P("ink", "Encre des captions", "color", "#f4efe6", 2), P("bigInk", "Encre des mots géants", "color", CREAM, 2),
+      N("capSize", "Taille des captions (large)", 63, 16, 140, 1, 3, "px"), N("capY", "Hauteur des captions (fraction)", 0.84, 0.3, 0.97, 0.005, 3), N("fade", "Fondu des captions (s)", 0.12, 0, 1, 0.01, 3, "s"),
+      N("film0", "Début dans le film (s)", 0, 0, 70, 0.01, 4, "s"),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0 } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx), k = tall ? 0.85 : 1;
+      h.css(el, { background: p.tone });
+      abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px", background: `radial-gradient(ellipse 70% 60% at 50% 40%, rgba(255,255,255,0.05), rgba(0,0,0,0.35))` });
+      rows(p.captions).forEach((r) => {
+        const a = num(r[0]), b = num(r[1]), t = abs(st, serif({ left: (tall ? w * 0.05 : 0) + "px", width: (tall ? w * 0.9 : w) + "px", whiteSpace: tall ? "normal" : "nowrap", textAlign: "center", top: sh * p.capY - p.capSize * 0.6 * k * (tall ? 1.6 : 1) + "px", fontSize: p.capSize * k + "px", color: p.ink, textShadow: "0 2px 12px rgba(0,0,0,0.55)", opacity: 0 }), r.slice(2).join(" | "));
+        tl.fromTo(t, { opacity: 0 }, { opacity: 1, duration: Math.max(0.01, p.fade) }, t0 + a); tl.to(t, { opacity: 0, duration: Math.max(0.01, p.fade) }, t0 + Math.max(a, b - p.fade));
+      });
+      rows(p.bigs).forEach((r) => {
+        const a = num(r[0]), b = num(r[1]), size = num(r[3]) * k, x = num(r[4]), y = num(r[5]);
+        const t = abs(st, serif({ fontFamily: h.font("InstrumentSerif"), left: x * w + "px", top: y * sh - size * 0.55 + "px", fontSize: size + "px", color: p.bigInk, letterSpacing: "-0.03em", transform: "translateX(-50%)", opacity: 0 }), r[2]);
+        tl.fromTo(t, { opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1, duration: 0.18, ease: "power2.out" }, t0 + a); tl.to(t, { opacity: 0, duration: 0.1 }, t0 + Math.max(a, b - 0.1));
+      });
+    },
+  });
+
+  // ================================================================================================ kd-card
+  const KINDS = ["title", "rl", "bars", "line", "close"];
+  // polygons: 32 deterministic shapes, from a hash of the index
+  const hash = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+  const polyPoints = (i, r, round) => { const n = 4 + Math.floor(hash(i + 3) * 4); const pts = []; for (let j = 0; j < n; j++) { const a = (j / n) * Math.PI * 2 + hash(i * 7 + j) * 0.7, rr = r * (round ? 0.8 + 0.2 * hash(i * 5 + j) : 0.35 + 0.65 * hash(i * 11 + j * 3)); pts.push([Math.cos(a) * rr, Math.sin(a) * rr]); } return pts; };
+
+  ZS.register({
+    id: "kd-card", label: "Kardashev : une carte (titre, graphiques, grille, fermeture)", group: "Interface", duration: 8,
+    params: [
+      SEL("kind", "Carte", "title", KINDS, 1), P("title", "Titre", "text", "Kardashev-0.7", 1), P("subs", "Sous-titres (début | fin | texte)", "lines", ["3.6 | 6.2 | The world's first trained swarm.", "6.2 | 8.0 | 32 distinct models"], 1),
+      P("brand", "Marque", "text", "BANBURY ROAD", 2), P("url", "Adresse", "text", "banburyroad.ai", 2),
+      P("charts", "Graphiques (titre | sous-titre | échelle | début | fin | valeurs | unité)", "lines", [], 2),
+      P("names", "Noms des quatre barres", "lines", ["Kardashev-0.7", "GPT-5.5", "Qwen3.7 Max", "DeepSeek V4 Pro"], 3), P("gold", "Couleur d'accent", "color", GOLD, 3), P("pale", "Couleur des barres", "color", PALE, 3),
+      P("phases", "Phases de la grille (début | fin | texte | texte 2)", "lines", [], 3),
+      N("titleSize", "Taille du titre (large)", 129, 30, 300, 1, 3, "px"), N("typeAt", "Début du titre (s)", 0.3, 0, 8, 0.05, 3, "s"), N("typeLen", "Durée du titre (s)", 1.6, 0.1, 6, 0.05, 3, "s"),
+      N("fadeIn", "Entrée en fondu (s)", 0, 0, 3, 0.05, 3, "s"), N("fadeOut", "Sortie en fondu (s)", 0, 0, 3, 0.05, 3, "s"), N("film0", "Début dans le film (s)", 0, 0, 70, 0.01, 4, "s"),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx), k = tall ? 0.85 : 1, cx = w / 2;
+      h.css(el, { background: "#0a0e1d" });
+      sky(st, w, sh);
+      if (p.fadeIn > 0) tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: p.fadeIn }, t0);
+      if (p.fadeOut > 0) tl.to(el, { opacity: 0, duration: p.fadeOut }, t0 + dur - p.fadeOut);
+      const kind = p.kind;
+      if (kind === "title" || kind === "close") {
+        const size = p.titleSize * k, yBrand = sh * (kind === "title" ? 0.375 : 0.385), yTitle = sh * (kind === "title" ? 0.425 : 0.445);
+        if (kind === "close") brandMark(st, { left: cx - 13 * k * 1.1 + "px", top: sh * 0.305 + "px", transform: `scale(${k * 1.1})`, transformOrigin: "0 0" }, p.gold); else brandMark(st, { left: cx - 168 * k + "px", top: yBrand - 8 + "px", transform: `scale(${k * 1.1})`, transformOrigin: "0 0" }, p.gold);
+        abs(st, serif({ left: "0", width: w + "px", textAlign: "center", top: yBrand + "px", fontSize: (kind === "close" ? 33 : 26) * k + "px", letterSpacing: (kind === "close" ? "0.22em" : "0.16em"), color: "#dfd2b8" }), p.brand).style.paddingLeft = (kind === "close" ? 0 : 40) * k + "px";
+        const T = abs(st, serif({ left: "0", width: w + "px", textAlign: "center", top: yTitle + "px", fontSize: size + "px", letterSpacing: "-0.015em", opacity: 1 }), "");
+        typeTween(tl, T, p.title, t0 + p.typeAt, p.typeLen, "scramble"); tl.set(T, { textContent: p.title }, t0 + p.typeAt + p.typeLen + 0.01);
+        if (kind === "title") {
+          rows(p.subs).forEach((r) => {
+            const a = num(r[0]), b = num(r[1]), S = abs(st, serif({ left: "0", width: w + "px", textAlign: "center", top: yTitle + size * 1.22 + "px", fontSize: 38 * k + "px", color: CREAM, opacity: 0 }), r.slice(2).join(" | "));
+            tl.fromTo(S, { opacity: 0, y: 8 * k }, { opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }, t0 + a); if (b < dur - 0.05) tl.to(S, { opacity: 0, duration: 0.2 }, t0 + b - 0.2);
+          });
+        } else {
+          const U = abs(st, sans({ left: "0", width: w + "px", textAlign: "center", top: sh * 0.62 + "px", fontSize: 35 * k + "px", letterSpacing: "0.03em", color: "#c9d4e4", opacity: 0 }), p.url);
+          rows(p.subs).forEach((r) => { tl.fromTo(U, { opacity: 0 }, { opacity: 1, duration: 0.4 }, t0 + num(r[0])); });
+        }
+      } else if (kind === "rl") {
+        // the phases: "start | end | text | second text" (text 1: the title in the middle top; a phase named GRID shows the model grid on the right with its two lines)
+        const phs = rows(p.phases), stepX1 = tall ? 120 : 184, stepY1 = tall ? 58 : 83, gx0 = cx - 3.5 * stepX1, gy0 = sh * (tall ? 0.5 : 0.47);
+        const gridG = abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px" });
+        const cells = [];
+        for (let i = 0; i < 32; i++) {
+          const col = i % 8, row = Math.floor(i / 8), c = abs(gridG, { left: "0", top: "0", width: "0", height: "0" });
+          const sv = svgEl("svg", { width: 120, height: 120, viewBox: "-60 -60 120 120", style: "position:absolute;left:-60px;top:-60px;overflow:visible" }, c);
+          const hex = svgEl("polygon", { points: [0, 1, 2, 3, 4, 5].map((j) => `${Math.cos(j * Math.PI / 3 + Math.PI / 6) * 26},${Math.sin(j * Math.PI / 3 + Math.PI / 6) * 26}`).join(" "), fill: "none", stroke: "rgba(255,255,255,0.22)", "stroke-width": 1.2 }, sv);
+          const poly = svgEl("polygon", { fill: "none", stroke: "rgba(235,235,245,0.9)", "stroke-width": 1.6, "stroke-linejoin": "round" }, sv);
+          cells.push({ c, sv, hex, poly, i, col, row });
+        }
+        const place = (mix) => cells.forEach((q) => {
+          const x1 = gx0 + q.col * stepX1, y1 = gy0 + q.row * stepY1, x2 = tall ? cx - 3.5 * 120 + q.col * 120 : w * 0.365 + q.col * 132, y2 = sh * (tall ? 0.5 : 0.28) + q.row * (tall ? 120 : 124);
+          const x = x1 + (x2 - x1) * mix, y = y1 + (y2 - y1) * mix, s = 0.55 + 0.45 * mix;
+          q.c.style.transform = `translate(${x}px, ${y}px) scale(${(tall ? 0.8 : 1) * s})`;
+          const round = mix < 0.5, pts = polyPoints(q.i, 24, true), pts2 = polyPoints(q.i, 30, false), m = Math.max(0, Math.min(1, (mix - 0.2) / 0.8));
+          const nn = Math.max(pts.length, pts2.length);
+          const P2 = []; for (let j = 0; j < nn; j++) { const a = pts[j % pts.length], b = pts2[j % pts2.length]; P2.push(`${a[0] + (b[0] - a[0]) * m},${a[1] + (b[1] - a[1]) * m}`); }
+          q.poly.setAttribute("points", P2.join(" ")); q.poly.setAttribute("stroke", m > 0.5 ? (hash(q.i * 3 + 1) > 0.5 ? "rgba(227,200,146,1)" : "rgba(225,228,238,0.95)") : "rgba(235,235,245,0.9)"); q.poly.setAttribute("stroke-width", m > 0.5 ? 1.9 : 1.6); void round;
+        });
+        place(0);
+        const mixP = { m: 0 };
+        // the phases of the text
+        phs.forEach((r, idx) => {
+          const a = num(r[0]), b = num(r[1]), text = r[2], text2 = r[3] || "";
+          if (text === "GRID") {
+            const lx = tall ? w * 0.5 : w * 0.175, kk = tall ? 1.15 : 1;
+            const big = abs(st, serif({ left: lx + "px", top: sh * (tall ? 0.09 : 0.19) + "px", fontSize: 150 * k * kk + "px", color: p.gold, transform: "translateX(-50%)", opacity: 0 }), "32");
+            const l1 = abs(st, sans({ left: lx + "px", top: tall ? sh * 0.09 + 235 * k + "px" : sh * 0.375 + "px", fontSize: 30 * k * kk + "px", color: "#e9eef6", transform: "translateX(-50%)", opacity: 0 }), "distinct models");
+            const l2 = abs(st, serif({ left: lx + "px", top: tall ? sh * 0.09 + 235 * k + 62 * k + "px" : sh * 0.485 + "px", fontSize: 40 * k * kk + "px", color: "#d6dce6", transform: "translateX(-50%)", opacity: 0 }), "Complementary");
+            const l3 = abs(st, serif({ left: lx + "px", top: tall ? sh * 0.09 + 235 * k + 62 * k + 56 * k + "px" : sh * 0.595 + "px", fontSize: 40 * k * kk + "px", color: "#d6dce6", transform: "translateX(-50%)", opacity: 0, filter: "blur(2px)" }), "capabilities.");
+            [big, l1, l2, l3].forEach((n, q) => { tl.fromTo(n, { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }, t0 + a + q * 0.12); });
+            tl.fromTo(mixP, { m: 0 }, { m: 1, duration: 1.0, ease: "power2.inOut", onUpdate: () => place(mixP.m) }, t0 + a - 0.2);
+            void text2; void idx; return;
+          }
+          const T = abs(st, serif({ left: "0", width: w + "px", textAlign: "center", whiteSpace: "pre", lineHeight: 1.12, top: sh * (text.length > 6 ? 0.1 : 0.1) + "px", fontSize: (text.length > 6 ? 118 : 190) * k + "px", opacity: 0 }), "");
+          tl.set(T, { opacity: 1 }, t0 + a); tl.set(T, { opacity: 0 }, t0 + b);
+          typeTween(tl, T, text, t0 + a, Math.min(1.3, (b - a) * 0.6), "scramble"); tl.set(T, { textContent: text.replace(/\\n/g, "\n") }, t0 + a + Math.min(1.3, (b - a) * 0.6) + 0.02);
+        });
+      } else if (kind === "bars" || kind === "line") {
+        const charts = rows(p.charts), names = p.names;
+        charts.forEach((r) => {
+          const [title, sub, scale, a0, b0, vals, unit] = r, a = num(a0), b = num(b0), grp = abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px", opacity: 0 });
+          tl.set(grp, { opacity: 1 }, t0 + a); if (b < dur - 0.02) tl.set(grp, { opacity: 0 }, t0 + b);
+          const mx = (tall ? 70 : 128) * 1, f = tall ? 1.35 : 1, cw = w - mx * 2, chTop = sh * (tall ? 0.34 : 0.315), chH = sh * (tall ? 0.40 : 0.40), baseY = chTop + chH;
+          const T = abs(grp, serif({ left: mx + "px", top: sh * (tall ? 0.12 : 0.085) + "px", fontSize: (kind === "bars" ? 100 : 100) * k * (tall ? 1.2 : 1) + "px" }), "");
+          typeTween(tl, T, title, t0 + a, 0.45, "scramble"); tl.set(T, { textContent: title }, t0 + a + 0.47);
+          if (scale === "gold-title") T.style.color = p.gold;
+          abs(grp, sans({ left: mx + "px", top: sh * (tall ? 0.12 : 0.085) + 112 * k * (tall ? 1.2 : 1) + "px", fontSize: 36 * k * f + "px", color: "#b4c2d6" }), sub);
+          if (kind === "bars") {
+            const bw = w * (tall ? 0.12 : 0.0625), slot = w * (tall ? 0.2 : 0.178), c0 = w * (tall ? 0.2 : 0.235) - slot / 2;
+            const ticks = scale === "log" ? [["$100", 1], ["$10", 0.667], ["$1", 0.333], ["$0.1", 0]] : [["100%", 1], ["50%", 0.5], ["0%", 0]];
+            ticks.forEach(([lab, fr]) => { const y = baseY - fr * chH; abs(grp, { left: c0 + 0.0 * slot + "px", top: y + "px", width: slot * 4 + "px", height: "1px", background: "rgba(150,170,210,0.18)" }); abs(grp, sans({ left: c0 - 70 * f + "px", top: y - 12 + "px", fontFamily: h.font(MONO), fontSize: 22 * k * f + "px", color: "#8fa0bb" }), lab); });
+            const vs = vals.split(/\s+/).map(num);
+            vs.forEach((v, i) => {
+              const fr = scale === "log" ? (Math.log10(Math.max(v, 0.1)) + 1) / 3 : v / 100, bx = c0 + slot * i + slot / 2 - bw / 2, col = i === 0 ? p.gold : p.pale;
+              const bar = abs(grp, { left: bx + "px", top: baseY + "px", width: bw + "px", height: "0px", background: col, transformOrigin: "50% 100%" });
+              const val = abs(grp, serif({ left: bx + bw / 2 + "px", top: baseY - 50 + "px", fontSize: 42 * k * f + "px", color: i === 0 ? p.gold : "#e8e2d6", transform: "translateX(-50%)", opacity: 0 }), "");
+              const nm = abs(grp, sans({ left: bx + bw / 2 + "px", top: baseY + 0.104 * sh + "px", fontSize: (tall ? 21 : 31) * k * f + "px", color: i === 0 ? p.gold : "#b8c4d6", transform: "translateX(-50%)" }), names[i] || "");
+              abs(grp, { left: bx + bw / 2 - 9 * k * f + "px", top: baseY + 0.056 * sh + "px", width: 18 * k * f + "px", height: 18 * k * f + "px", borderRadius: "50%", border: `2px solid ${i === 0 ? p.gold : "#b8c4d6"}`, opacity: 0.8 }); void nm;
+              const pr = { g: 0 }, hh = fr * chH;
+              tl.fromTo(pr, { g: 0 }, { g: 1, duration: 0.9, ease: "power3.out", onUpdate: () => { bar.style.top = baseY - hh * pr.g + "px"; bar.style.height = hh * pr.g + "px"; val.style.top = baseY - hh * pr.g - 50 * k * f + "px"; val.style.opacity = Math.min(1, pr.g * 2); val.textContent = (unit === "$" ? "$" : "") + (v * pr.g).toFixed(unit === "$" ? (v < 10 ? 2 : 0) : 1) + (unit === "%" ? "%" : ""); } }, t0 + a + 0.15 + i * 0.07);
+            });
+          } else {
+            const y1 = vals.split(/\s+/).map(num), pts = []; for (let i = 0; i + 1 < y1.length; i += 2) pts.push([y1[i], y1[i + 1]]);
+            const gx = mx + 70 * k * f, gw = cw - 70 * k * f, gold = unit === "gold", col = gold ? p.gold : "#e9eef6";
+            const X = (u) => gx + u * gw, Y = (v) => chTop + v * chH;
+            const tk = (str) => (str || "").split(",").map((q) => q.split(":")).filter((q) => q.length === 2);
+            tk(r[8]).forEach(([lab, fr]) => { const y = Y(num(fr)); abs(grp, { left: gx + "px", top: y + "px", width: gw + "px", height: "1px", background: "rgba(150,170,210,0.16)" }); abs(grp, sans({ left: mx - 8 + "px", top: y - 10 + "px", fontFamily: h.font(MONO), fontSize: 22 * k * f + "px", color: "#8fa0bb" }), lab); });
+            tk(r[9]).forEach(([lab, fr]) => { abs(grp, sans({ left: X(num(fr)) + "px", top: baseY + 36 * k * f + "px", transform: "translateX(-50%)", fontFamily: h.font(MONO), fontSize: 22 * k * f + "px", color: "#8fa0bb" }), lab); });
+            if (gold) T.style.color = p.gold;
+            const svg = svgEl("svg", { width: w, height: sh, viewBox: `0 0 ${w} ${sh}`, style: "position:absolute;left:0;top:0;overflow:visible" }, grp);
+            const path = svgEl("path", { d: pts.map((q, i) => `${i ? "L" : "M"}${X(q[0])},${Y(q[1])}`).join(" "), fill: "none", stroke: col, "stroke-width": 2.2 * f }, svg);
+            const dots = pts.map((q) => svgEl("polygon", { points: `${X(q[0])},${Y(q[1]) - 7} ${X(q[0]) + 7},${Y(q[1])} ${X(q[0])},${Y(q[1]) + 7} ${X(q[0]) - 7},${Y(q[1])}`, fill: "none", stroke: col, "stroke-width": 1.6, opacity: 0 }, svg));
+            const ext = (r[10] || "").split(/\s+/).map(num).filter((v) => !isNaN(v));
+            const extP = ext.length >= 4 ? svgEl("path", { d: `M${X(ext[0])},${Y(ext[1])} L${X(ext[2])},${Y(ext[3])}`, fill: "none", stroke: col, "stroke-width": 2.2 * f, "stroke-dasharray": "14 10", opacity: 0 }, svg) : null;
+            const len = path.getTotalLength ? path.getTotalLength() : 1000; path.setAttribute("stroke-dasharray", len); path.setAttribute("stroke-dashoffset", len);
+            const pr = { g: 0 }, dur2 = 0.8;
+            tl.fromTo(pr, { g: 0 }, { g: 1, duration: dur2, ease: "none", onUpdate: () => { path.setAttribute("stroke-dashoffset", len * (1 - pr.g)); dots.forEach((d, i) => d.setAttribute("opacity", pr.g >= (i + 0.2) / dots.length ? 1 : 0)); if (extP) extP.setAttribute("opacity", pr.g >= 1 ? 1 : 0); } }, t0 + a + 0.3);
+            abs(grp, sans({ left: w / 2 + "px", top: baseY + 76 * k * f + "px", transform: "translateX(-50%)", fontSize: 24 * k * f + "px", color: "#d0dae8" }), r[7] || "");
+            abs(grp, sans({ left: w - mx + "px", top: chTop - 36 * f + "px", transform: "translateX(-100%)", fontSize: 15 * k * f + "px", color: "#8fa0bb" }), "Logarithmic axes");
+            if (gold) brandMark(grp, { left: w - mx - 20 + "px", top: sh * 0.1 + "px", transform: `scale(${1.2 * k * f})`, transformOrigin: "0 0" }, p.gold);
+          }
+        });
+      }
+    },
+  });
+  function SEL(key, label, def, options, tier) { return { key, label, type: "select", default: def, options, tier }; }
+})();

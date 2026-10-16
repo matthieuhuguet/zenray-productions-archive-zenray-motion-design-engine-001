@@ -1,0 +1,21 @@
+"""Reproduction of the Fin 4 announcement (whatships.com/videos/fin-4, 7.9 s, 1080x1350), workflow Premier Plan Mesuré (16 October 2026).
+Foreground only: title, diagram in three steps, paragraph, mark; the colour swirl behind is not reproduced. Usage: python3 motion/reproductions/fin_4.py"""
+import ppm
+from ppm import T
+
+SLUG = "fin-4"
+BEATS = [(0.0, "fn-flow", {})]
+END = 7.87
+CONTROLS = [
+    {"id": "title", "label": "Titre", "type": "lines", "group": "Phrases", "targets": [T("b01", "title")]},
+    {"id": "paraDark", "label": "Paragraphe, partie sombre", "type": "text", "group": "Phrases", "targets": [T("b01", "paraDark")]},
+    {"id": "paraGrey", "label": "Paragraphe, partie grise", "type": "text", "group": "Phrases", "targets": [T("b01", "paraGrey")]},
+    {"id": "nodes", "label": "Cases du schéma", "type": "lines", "group": "Schéma", "targets": [T("b01", "nodes")]},
+    {"id": "steps", "label": "Temps des trois étapes", "type": "lines", "group": "Schéma", "targets": [T("b01", "steps")]},
+    {"id": "blue", "label": "Étape 1, couleur", "type": "color", "group": "Couleurs", "targets": [T("b01", "blue")]},
+    {"id": "purple", "label": "Étape 2, couleur", "type": "color", "group": "Couleurs", "targets": [T("b01", "purple")]},
+    {"id": "green", "label": "Étape 3, couleur", "type": "color", "group": "Couleurs", "targets": [T("b01", "green")]},
+]
+
+if __name__ == "__main__":
+    ppm.run("fin-4-ppm", ppm.build("Fin 4, premier plan mesuré", SLUG, BEATS, END, CONTROLS, fmt="4x5", bg="#fbfbfb", ink="#161616", accent="#7b3fe4"))
