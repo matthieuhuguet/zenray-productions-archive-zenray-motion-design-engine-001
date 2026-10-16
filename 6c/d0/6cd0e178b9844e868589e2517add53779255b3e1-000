@@ -10,7 +10,9 @@
   "minGapS": 0.083,
   "firstOffsetS": 0.04,
   "maxKeysPerShot": 72,
-  "maxKeysPerSecond": 12
+  "maxKeysPerSecond": 12,
+  "pixelDelta": 24,
+  "areaThreshold": 0.006
  },
  "trace": {
   "width": 640,
@@ -64,6 +66,7 @@
   "temporalMax": 10.0,
   "thresholdStep": 0.55,
   "minThreshold": 1.2,
-  "shareSlack": 0.015
+  "shareSlack": 0.015,
+  "areaMax": 0.03
  }
 }
