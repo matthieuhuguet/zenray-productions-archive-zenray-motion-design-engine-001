@@ -37,7 +37,7 @@
   "speckle": 4,
   "cornerThreshold": 1.0,
   "curveTolerance": 0.4,
-  "maxKeyBytes": 900000,
+  "maxKeyBytes": 600000,
   "coarsen": [
    {
     "speckle": 8,
@@ -63,6 +63,7 @@
   },
   "temporalMax": 10.0,
   "thresholdStep": 0.55,
-  "minThreshold": 1.2
+  "minThreshold": 1.2,
+  "shareSlack": 0.015
  }
 }

@@ -8,9 +8,11 @@
   const ZS = window.ZS, h = ZS.h;
   const P = (key, label, type, def, tier, extra) => ({ key, label, type, default: def, tier, ...(extra || {}) });
   const N = (key, label, def, min, max, step, tier, unit) => P(key, label, "number", def, tier, { min, max, step, unit });
-  const keysOf = (txt) => String(txt || "").split("\n").map((l) => l.trim().split(/\s+/)).filter((a) => a.length >= 2 && isFinite(+a[0]))
+  // a "lines" value reaches a template as an array (or as text in an old project): both are read
+  const linesOf = (v) => (Array.isArray(v) ? v : String(v || "").split("\n")).map((l) => String(l).trim()).filter(Boolean);
+  const keysOf = (txt) => linesOf(txt).map((l) => l.split(/\s+/)).filter((a) => a.length >= 2 && isFinite(+a[0]))
     .map((a) => ({ t: +a[0], file: a.slice(1).join(" ") })).sort((a, b) => a.t - b.t);
-  const overlaysOf = (txt) => String(txt || "").split("\n").map((l) => l.trim()).filter(Boolean).map((l) => {
+  const overlaysOf = (txt) => linesOf(txt).map((l) => {
     const i = l.indexOf("|");
     if (i < 0) return null;
     const a = l.slice(0, i).trim().split(/\s+/);

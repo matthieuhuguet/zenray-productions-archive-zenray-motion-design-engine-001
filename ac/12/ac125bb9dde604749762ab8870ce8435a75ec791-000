@@ -276,7 +276,7 @@ def trace_with_loops(video: str, low: np.ndarray, hz: float, t0: float, t1: floa
     thr = ov.get("changeThreshold", CFG["sampling"]["changeThreshold"])
     width = ov.get("width", base_width)
     over = dict(ov.get("potrace") or {})
-    best = None
+    best, passes = None, []
     for rnd in range(rc["passes"] + 1):
         times = pick_keys(low, hz, t0, t1, thr, ov)
         frames = [grab(video, t, width) for t in times]
@@ -289,6 +289,8 @@ def trace_with_loops(video: str, low: np.ndarray, hz: float, t0: float, t1: floa
         tr["temporal"] = temporal_error(low, hz, t0, t1, times, tr["rasters"])
         tr["share"] = min(f["share"] for f in tr["fidelity"])
         tr["rounds"] = rnd
+        tr["bytesTotal"] = sum(len(x) for x in tr["svgs"])
+        passes.append(tr)
         if best is None or (tr["share"], -tr["temporal"]["max"]) > (best["share"], -best["temporal"]["max"]):
             best = tr
         weak_pic = tr["share"] < fc["targetShare"] and width < rc["maxWidth"]
@@ -304,7 +306,9 @@ def trace_with_loops(video: str, low: np.ndarray, hz: float, t0: float, t1: floa
                 ov = {**ov, "ladder": nxt}
         if weak_time:
             thr = max(rc["minThreshold"], thr * rc["thresholdStep"])
-    return best
+    # diminishing returns: a finer pass that costs several times the bytes for a hair of fidelity is not kept
+    ok = [t for t in passes if t["share"] >= best["share"] - rc["shareSlack"] and t["temporal"]["max"] <= max(rc["temporalMax"], best["temporal"]["max"])]
+    return min(ok, key=lambda t: t["bytesTotal"]) if ok else best
 
 
 def run_video(slug: str, video: str, workshop: Path, assets_dir: Path, html_dir: Path, recipe: dict | None = None, only: list[str] | None = None, log=print) -> dict:
@@ -329,6 +333,8 @@ def run_video(slug: str, video: str, workshop: Path, assets_dir: Path, html_dir:
             out.append(json.loads(meta_file.read_text(encoding="utf-8")))
             continue
         t0, t1 = float(s["start"]), float(s["end"])
+        for old in assets_dir.glob(f"{sid}-k*.svg"):
+            old.unlink()
         tr = trace_with_loops(video, low, hz, t0, t1, base, (recipe.get("shots") or {}).get(sid, {}) | {k: v for k, v in recipe.items() if k in ("potrace",) and k not in (recipe.get("shots") or {}).get(sid, {})})
         if not tr:
             continue
