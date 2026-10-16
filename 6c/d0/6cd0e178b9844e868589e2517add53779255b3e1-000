@@ -1,0 +1,42 @@
+{
+ "_doc": "16 October 2026: the single parameter interface of the vector animation of a cut (motion/htmlvec.py). FR : interface unique de l'animation vectorielle d'une coupe.",
+ "sampling": {
+  "probeHz": 8,
+  "probeSize": [
+   64,
+   36
+  ],
+  "changeThreshold": 5.0,
+  "minGapS": 0.2,
+  "firstOffsetS": 0.04,
+  "maxKeysPerShot": 24,
+  "maxKeysPerSecond": 6
+ },
+ "trace": {
+  "width": 640,
+  "widthVertical": 360
+ },
+ "quantize": {
+  "colorLadder": [
+   12,
+   20,
+   32,
+   48
+  ],
+  "samples": 60000,
+  "iterations": 20,
+  "attempts": 2,
+  "seed": 7
+ },
+ "fidelity": {
+  "toleranceDeltaE": 4.0,
+  "targetShare": 0.99
+ },
+ "potrace": {
+  "binary": "/opt/homebrew/bin/potrace",
+  "speckle": 4,
+  "cornerThreshold": 1.0,
+  "curveTolerance": 0.4,
+  "maxKeyBytes": 450000
+ }
+}

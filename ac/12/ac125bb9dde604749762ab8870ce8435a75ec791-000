@@ -1,0 +1,267 @@
+"""ZenRay Motion Design, the vector animation of every cut as ONE self-contained HTML (16 October 2026).
+
+For each shot of a measured reference (bible.json), the cut is turned into flat 2D vector motion: keyframes chosen where the picture
+really changes (never a fixed rate), ONE palette fitted to the whole shot, and every keyframe traced to a single stacked SVG (the
+colours painted in order, each over the previous one: no separate layers to edit, no holes). The palette is a set of CSS
+variables (--c0 .. --cN), so the colours of an animation are parameters. Detail goes up until the traced image is within
+`toleranceDeltaE` of the frame for `targetShare` of its pixels, or until the size cap of a keyframe is reached; the result is
+reported as numbers, never as a promise. Nothing is copied from the reference: the SVG is a measurement of its shapes.
+FR : l'animation vectorielle 2D de chaque coupe en UN seul HTML ; palette en variables CSS, pas de calques separes.
+"""
+from __future__ import annotations
+
+import html as _html
+import json
+import math
+import re
+import subprocess
+from pathlib import Path
+
+import cv2
+import numpy as np
+
+CFG_PATH = Path(__file__).resolve().parent / "params" / "htmlvec.json"
+CFG = json.loads(CFG_PATH.read_text(encoding="utf-8"))
+POTRACE = CFG["potrace"]["binary"]
+
+
+def probe(video: str) -> dict:
+    r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,r_frame_rate:format=duration",
+                        "-of", "json", video], capture_output=True, text=True)
+    j = json.loads(r.stdout)
+    s = j["streams"][0]
+    n, d = (s["r_frame_rate"].split("/") + ["1"])[:2]
+    return {"width": int(s["width"]), "height": int(s["height"]), "fps": float(n) / max(1.0, float(d)), "duration": float(j["format"]["duration"])}
+
+
+# ---------------------------------------------------------------------------------------------------- keyframe times
+def lowres(video: str, hz: float, seconds: float) -> np.ndarray:
+    """Every sample of the video at hz, 64 x 36 grey, in one pass: what the choice of the keyframes reads."""
+    w, h = CFG["sampling"]["probeSize"]
+    r = subprocess.run(["ffmpeg", "-v", "error", "-i", video, "-t", f"{seconds:.3f}", "-vf", f"fps={hz},scale={w}:{h}:flags=area,format=gray",
+                        "-f", "rawvideo", "-pix_fmt", "gray", "-"], capture_output=True, timeout=1200)
+    n = len(r.stdout) // (w * h)
+    return np.frombuffer(r.stdout[: n * w * h], dtype=np.uint8).reshape(n, h, w)
+
+
+def pick_keys(low: np.ndarray, hz: float, t0: float, t1: float) -> list[float]:
+    """The instants of a shot that get a traced image: the first one, then each time the picture moved by more than the threshold
+    since the last one (at least minGap apart, at most maxKeys). A still shot is one image."""
+    s = CFG["sampling"]
+    dur = max(1e-3, t1 - t0)
+    first = t0 + min(s["firstOffsetS"], dur / 2)
+    keys = [first]
+    cap = max(1, min(s["maxKeysPerShot"], math.ceil(dur * s["maxKeysPerSecond"])))
+    if len(low) == 0:
+        return keys
+
+    def at(t: float) -> np.ndarray:
+        return low[min(len(low) - 1, max(0, int(round(t * hz))))].astype(np.int16)
+
+    last = at(first)
+    for i in range(int(math.ceil(first * hz)) + 1, int(t1 * hz)):
+        t = i / hz
+        if t >= t1 - 1e-3 or len(keys) >= cap:
+            break
+        if t - keys[-1] >= s["minGapS"] and float(np.abs(at(t) - last).mean()) >= s["changeThreshold"]:
+            keys.append(t)
+            last = at(t)
+    return keys
+
+
+# ---------------------------------------------------------------------------------------------------- frames
+def grab(video: str, t: float, width: int) -> np.ndarray | None:
+    r = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{max(0.0, t):.3f}", "-i", video, "-frames:v", "1", "-vf", f"scale={width}:-2:flags=lanczos",
+                        "-f", "image2pipe", "-vcodec", "png", "-"], capture_output=True, timeout=120)
+    if not r.stdout:
+        return None
+    return cv2.imdecode(np.frombuffer(r.stdout, dtype=np.uint8), cv2.IMREAD_COLOR)
+
+
+def to_lab(bgr: np.ndarray) -> np.ndarray:
+    return cv2.cvtColor(bgr.astype(np.float32) / 255.0, cv2.COLOR_BGR2LAB)
+
+
+def hexof(lab: np.ndarray) -> str:
+    bgr = cv2.cvtColor(lab.reshape(1, 1, 3).astype(np.float32), cv2.COLOR_LAB2BGR).reshape(3)
+    r, g, b = (int(round(float(np.clip(c, 0, 1)) * 255)) for c in (bgr[2], bgr[1], bgr[0]))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+# ---------------------------------------------------------------------------------------------------- palette and tracing
+def fit_palette(labs: list[np.ndarray], n: int) -> np.ndarray:
+    """One palette for all the keyframes of a shot (k-means in Lab), ordered by area, largest first: the background first."""
+    rng = np.random.default_rng(CFG["quantize"]["seed"])
+    per = max(1000, CFG["quantize"]["samples"] // max(1, len(labs)))
+    pix = np.concatenate([l.reshape(-1, 3)[rng.integers(0, l.shape[0] * l.shape[1], size=min(per, l.shape[0] * l.shape[1]))] for l in labs]).astype(np.float32)
+    k = max(2, min(n, len(np.unique(np.round(pix, 1), axis=0))))
+    crit = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, CFG["quantize"]["iterations"], 0.5)
+    _, label, centers = cv2.kmeans(pix, k, None, crit, CFG["quantize"]["attempts"], cv2.KMEANS_PP_CENTERS)
+    order = np.argsort(-np.bincount(label.ravel(), minlength=k))
+    return centers[order]
+
+
+def assign(lab: np.ndarray, centers: np.ndarray) -> np.ndarray:
+    px = lab.reshape(-1, 3)
+    d = ((px[:, None, :] - centers[None, :, :]) ** 2).sum(axis=2)
+    return d.argmin(axis=1).reshape(lab.shape[:2]).astype(np.uint8)
+
+
+def fidelity(lab: np.ndarray, labels: np.ndarray, centers: np.ndarray) -> dict:
+    de = np.sqrt(((lab - centers[labels]) ** 2).sum(axis=2))
+    tol = CFG["fidelity"]["toleranceDeltaE"]
+    return {"share": round(float((de <= tol).mean()), 4), "meanDeltaE": round(float(de.mean()), 2)}
+
+
+def potrace_mask(mask: np.ndarray) -> tuple[str, str] | None:
+    """One stacked colour: the black pixels of the mask traced to a path (data and the group transform potrace gives)."""
+    h, w = mask.shape
+    pbm = b"P4\n%d %d\n" % (w, h) + np.packbits(mask.astype(np.uint8), axis=1).tobytes()
+    p = CFG["potrace"]
+    r = subprocess.run([POTRACE, "-b", "svg", "-t", str(p["speckle"]), "-a", str(p["cornerThreshold"]), "-O", str(p["curveTolerance"]),
+                        "-o", "-", "-"], input=pbm, capture_output=True, timeout=120)
+    txt = r.stdout.decode("utf-8", "replace")
+    d = re.search(r'<path d="([^"]+)"', txt)
+    tr = re.search(r'<g transform="([^"]+)"', txt)
+    return (d.group(1).replace("\n", " "), tr.group(1)) if d and tr else None
+
+
+def key_svg(labels: np.ndarray, hexes: list[str], width: int, height: int) -> str:
+    """The stacked SVG of one keyframe: colour 0 is the ground, every next colour is the union of itself and all the later ones
+    (painter's order), so no gap shows between two regions and the number of nodes stays small."""
+    parts = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" preserveAspectRatio="xMidYMid slice" '
+             f'shape-rendering="geometricPrecision"><rect width="{width}" height="{height}" style="fill:var(--c0,{hexes[0]})"/>']
+    for i in range(1, len(hexes)):
+        mask = labels >= i
+        if not mask.any():
+            continue
+        t = potrace_mask(mask)
+        if t:
+            parts.append(f'<g transform="{t[1]}" style="fill:var(--c{i},{hexes[i]})"><path d="{t[0]}"/></g>')
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def trace_shot(frames: list[np.ndarray]) -> dict:
+    """Palette and SVGs of the keyframes of one shot, at the least detail that reaches the target (or the cap)."""
+    q, fcfg = CFG["quantize"], CFG["fidelity"]
+    labs = [to_lab(f) for f in frames]
+    h, w = frames[0].shape[:2]
+    best = None
+    for n in q["colorLadder"]:
+        centers = fit_palette(labs, n)
+        labels = [assign(l, centers) for l in labs]
+        fid = [fidelity(l, lb, centers) for l, lb in zip(labs, labels)]
+        share = min(f["share"] for f in fid)
+        best = {"centers": centers, "labels": labels, "fid": fid, "n": len(centers)}
+        if share >= fcfg["targetShare"]:
+            break
+    hexes = [hexof(c) for c in best["centers"]]
+    svgs = [key_svg(lb, hexes, w, h) for lb in best["labels"]]
+    # size cap: a keyframe over the cap is traced again with a coarser palette (never silently truncated)
+    cap = CFG["potrace"]["maxKeyBytes"]
+    lad = [n for n in q["colorLadder"] if n < best["n"]]
+    while max(len(s) for s in svgs) > cap and lad:
+        n = lad.pop()
+        centers = fit_palette(labs, n)
+        labels = [assign(l, centers) for l in labs]
+        hexes = [hexof(c) for c in centers]
+        svgs = [key_svg(lb, hexes, w, h) for lb in labels]
+        best = {"centers": centers, "labels": labels, "fid": [fidelity(l, lb, centers) for l, lb in zip(labs, labels)], "n": n}
+    return {"palette": hexes, "svgs": svgs, "fidelity": best["fid"], "colors": len(hexes), "width": w, "height": h}
+
+
+# ---------------------------------------------------------------------------------------------------- the standalone HTML
+PLAYER = """<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>__TITLE__</title>
+<style>
+:root{__VARS__}
+html,body{margin:0;background:#101012;color:#e9e6e0;font:14px/1.4 -apple-system,"InterVariable",system-ui,sans-serif}
+#stage{position:relative;width:min(100vw,calc((100vh - 96px)*__AR__));aspect-ratio:__W__/__H__;margin:0 auto;background:var(--c0);overflow:hidden}
+.k{position:absolute;inset:0;display:none}.k.on{display:block}.k svg{position:absolute;inset:0;width:100%;height:100%}
+#bar{display:flex;gap:12px;align-items:center;justify-content:center;padding:12px;flex-wrap:wrap}
+button,input,summary{font:inherit;color:inherit}button{background:#26262a;border:1px solid #3a3a40;border-radius:8px;padding:6px 14px;cursor:pointer}
+#sl{width:min(52vw,520px)}#pal{display:flex;gap:6px;flex-wrap:wrap;max-width:min(92vw,720px);padding:8px 0}
+#pal input{width:34px;height:28px;padding:0;border:1px solid #3a3a40;border-radius:6px;background:none}
+details{max-width:92vw}summary{cursor:pointer}small{opacity:.6}
+</style></head><body>
+<div id="stage">__SVGS__</div>
+<div id="bar"><button id="pl">▶ / ❚❚</button><input id="sl" type="range" min="0" max="__DUR__" step="0.01" value="0"><span id="tm">0.00 s</span>
+<label><small>vitesse</small> <input id="sp" type="range" min="0.25" max="2" step="0.05" value="1" style="width:90px"></label>
+<details><summary>Palette (__N__ couleurs)</summary><div id="pal"></div></details></div>
+<script>
+const DUR=__DUR__, KEYS=__KEYS__, ks=[...document.querySelectorAll('.k')], root=document.documentElement.style;
+let t=0, playing=true, last=performance.now();
+const sl=document.getElementById('sl'), tm=document.getElementById('tm'), sp=document.getElementById('sp');
+function show(){let i=0;for(let k=0;k<KEYS.length;k++)if(KEYS[k]<=t+1e-6)i=k;ks.forEach((e,k)=>e.classList.toggle('on',k===i));sl.value=t;tm.textContent=t.toFixed(2)+' s'}
+function tick(now){const d=(now-last)/1000;last=now;if(playing){t+=d*sp.value;if(t>=DUR)t=0;show()}requestAnimationFrame(tick)}
+document.getElementById('pl').onclick=()=>{playing=!playing};sl.oninput=()=>{t=+sl.value;playing=false;show()};
+const pal=document.getElementById('pal');
+getComputedStyle(document.documentElement);
+[__PALETTE__].forEach((c,i)=>{const e=document.createElement('input');e.type='color';e.value=c;e.title='--c'+i;e.oninput=()=>root.setProperty('--c'+i,e.value);pal.appendChild(e)});
+show();requestAnimationFrame(tick);
+</script></body></html>
+"""
+
+
+def player_html(title: str, shot: dict, trace: dict, times: list[float]) -> str:
+    vars_ = ";".join(f"--c{i}:{c}" for i, c in enumerate(trace["palette"]))
+    svgs = "".join(f'<div class="k">{s}</div>' for s in trace["svgs"])
+    w, h = trace["width"], trace["height"]
+    return (PLAYER.replace("__TITLE__", _html.escape(title)).replace("__VARS__", vars_).replace("__SVGS__", svgs)
+            .replace("__AR__", f"{w / h:.5f}").replace("__W__", str(w)).replace("__H__", str(h))
+            .replace("__DUR__", f"{shot['duration']:.3f}").replace("__KEYS__", json.dumps([round(t - shot['start'], 3) for t in times]))
+            .replace("__N__", str(len(trace["palette"]))).replace("__PALETTE__", ",".join(json.dumps(c) for c in trace["palette"])))
+
+
+# ---------------------------------------------------------------------------------------------------- one video
+def run_video(slug: str, video: str, workshop: Path, assets_dir: Path, html_dir: Path, log=print) -> dict:
+    """Every shot of the bible of `slug`: keyframes, one palette, SVGs (written into assets_dir, flat names the project can use) and
+    one standalone HTML per shot (html_dir). Resumable: a shot whose files exist is read back, not traced again."""
+    bible = json.loads((workshop / "references" / slug / "bible.json").read_text(encoding="utf-8"))
+    info = probe(video)
+    shots = bible["shots"]
+    total = max(float(s["end"]) for s in shots)
+    hz = CFG["sampling"]["probeHz"]
+    low = lowres(video, hz, min(total + 0.5, info["duration"]))
+    width = CFG["trace"]["width"] if info["width"] >= info["height"] else CFG["trace"]["widthVertical"]
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    html_dir.mkdir(parents=True, exist_ok=True)
+    out, bytes_total = [], 0
+    for s in shots:
+        sid = s["id"]
+        meta_file = assets_dir / f"{sid}.json"
+        if meta_file.is_file():
+            m = json.loads(meta_file.read_text(encoding="utf-8"))
+            out.append(m)
+            bytes_total += m["bytes"]
+            continue
+        t0, t1 = float(s["start"]), float(s["end"])
+        times = pick_keys(low, hz, t0, t1)
+        frames = [f for f in (grab(video, t, width) for t in times) if f is not None]
+        if not frames:
+            continue
+        times = times[: len(frames)]
+        tr = trace_shot(frames)
+        files, size = [], 0
+        for k, svg in enumerate(tr["svgs"]):
+            name = f"{sid}-k{k:02d}.svg"
+            (assets_dir / name).write_text(svg, encoding="utf-8")
+            files.append({"t": round(times[k] - t0, 3), "file": name, "bytes": len(svg)})
+            size += len(svg)
+        shot = {"start": t0, "duration": round(t1 - t0, 4)}
+        (html_dir / f"{sid}.html").write_text(player_html(f"{slug} {sid}", shot, tr, times), encoding="utf-8")
+        m = {"id": sid, "start": t0, "end": t1, "duration": round(t1 - t0, 4), "family": s.get("family"), "keys": files, "palette": tr["palette"],
+             "colors": tr["colors"], "width": tr["width"], "height": tr["height"], "bytes": size,
+             "fidelityShare": min(f["share"] for f in tr["fidelity"]), "meanDeltaE": round(float(np.mean([f["meanDeltaE"] for f in tr["fidelity"]])), 2)}
+        meta_file.write_text(json.dumps(m, ensure_ascii=False) + "\n", encoding="utf-8")
+        out.append(m)
+        bytes_total += size
+    keys = sum(len(m["keys"]) for m in out)
+    share = [m["fidelityShare"] for m in out]
+    summary = {"slug": slug, "shots": len(out), "keys": keys, "bytes": bytes_total, "width": info["width"], "height": info["height"],
+               "fidelityMeanShare": round(float(np.mean(share)), 4) if share else None,
+               "fidelityMinShare": round(float(np.min(share)), 4) if share else None,
+               "shotsAtTarget": sum(1 for x in share if x >= CFG["fidelity"]["targetShare"])}
+    (assets_dir / "vector.json").write_text(json.dumps({"summary": summary, "shots": out}, ensure_ascii=False) + "\n", encoding="utf-8")
+    return summary
