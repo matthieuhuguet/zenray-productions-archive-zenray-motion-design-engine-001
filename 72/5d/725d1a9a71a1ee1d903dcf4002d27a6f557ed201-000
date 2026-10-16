@@ -9,6 +9,8 @@ PYTHON="$(python3 -c "import json;print(json.load(open('$ENGINE/settings.json'))
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 swiftc -O -framework Cocoa -framework WebKit "$ENGINE/shell/ZenRayMotionDesign.swift" -o "$APP/Contents/MacOS/ZenRayMotionDesign"
+[[ -f "$ENGINE/shell/icon/AppIcon.icns" ]] || python3 "$ENGINE/Scripts/BuildIcon.py" >/dev/null
+cp "$ENGINE/shell/icon/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 print -rn -- "$ENGINE" > "$APP/Contents/Resources/engine-path.txt"
 print -rn -- "$PYTHON" > "$APP/Contents/Resources/python-path.txt"
 cat > "$APP/Contents/Info.plist" <<PLIST
@@ -19,6 +21,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleDisplayName</key><string>ZenRay Motion Design</string>
   <key>CFBundleIdentifier</key><string>studio.zenray.motiondesign</string>
   <key>CFBundleExecutable</key><string>ZenRayMotionDesign</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>

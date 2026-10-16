@@ -1,0 +1,68 @@
+"""Builds the icon of ZenRay Motion Design (16 October 2026): a purple gradient rounded square with the ZenRay logo in white.
+The logo is Matthieu's SVG (black, transparent); it is recoloured white here. Output: shell/icon/AppIcon.icns (+ the iconset PNGs).
+FR : fabrique l'icone de l'app : fond violet degrade, logo ZenRay blanc. Parametres en tete du fichier.
+Usage: python3 Scripts/BuildIcon.py [--svg PATH]
+"""
+import argparse
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ENGINE = Path(__file__).resolve().parents[1]
+PARAMS = {  # every value of the icon is here (HDA law)
+    "svg": "/Users/zenray/Downloads/ZenRayLogoSvgBlackTransparent.svg",
+    "top": "#8a5cff", "bottom": "#4a1fb8", "glow": "#c9b2ff",     # gradient from the top-left to the bottom-right, soft light in the corner
+    "logoScale": 0.60,                                            # the logo's width as a share of the tile
+    "radius": 0.2237,                                             # macOS squircle approximation (share of the tile)
+    "inset": 0.098,                                               # transparent margin around the tile, as the system icons have
+}
+
+
+def svg_doc(p: dict, logo_paths: str, size: int) -> str:
+    s, ins = size, size * p["inset"]
+    w = s - 2 * ins
+    k = w * p["logoScale"] / 1024 * (1024 / 1024)
+    off = ins + (w - 1024 * k) / 2
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{s}" height="{s}" viewBox="0 0 {s} {s}">
+<defs>
+ <linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="{p["top"]}"/><stop offset="1" stop-color="{p["bottom"]}"/></linearGradient>
+ <radialGradient id="l" cx="0.2" cy="0.1" r="0.7"><stop offset="0" stop-color="{p["glow"]}" stop-opacity="0.55"/><stop offset="1" stop-color="{p["glow"]}" stop-opacity="0"/></radialGradient>
+ <filter id="sh" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="{s * 0.012}" stdDeviation="{s * 0.012}" flood-color="#1c0a52" flood-opacity="0.35"/></filter>
+</defs>
+<rect x="{ins}" y="{ins}" width="{w}" height="{w}" rx="{w * p["radius"]}" fill="url(#g)"/>
+<rect x="{ins}" y="{ins}" width="{w}" height="{w}" rx="{w * p["radius"]}" fill="url(#l)"/>
+<g transform="translate({off} {off}) scale({k})" fill="#ffffff" filter="url(#sh)">{logo_paths}</g>
+</svg>'''
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--svg", default=PARAMS["svg"])
+    a = ap.parse_args()
+    raw = Path(a.svg).read_text()
+    paths = "".join(re.findall(r"<path[^>]*?/>", raw))
+    if not paths:
+        raise SystemExit(f"no <path> in {a.svg}")
+    paths = re.sub(r'class="[^"]*"', "", paths)
+    out = ENGINE / "shell" / "icon"
+    iconset = out / "AppIcon.iconset"
+    iconset.mkdir(parents=True, exist_ok=True)
+    for base in (16, 32, 128, 256, 512):
+        for scale in (1, 2):
+            px = base * scale
+            svg = out / f"_{px}.svg"
+            svg.write_text(svg_doc(PARAMS, paths, px))
+            name = f"icon_{base}x{base}{'@2x' if scale == 2 else ''}.png"
+            r = subprocess.run(["rsvg-convert", "-w", str(px), "-h", str(px), str(svg), "-o", str(iconset / name)], capture_output=True, text=True)
+            if r.returncode != 0:
+                raise SystemExit(r.stderr or "rsvg-convert failed")
+            svg.unlink()
+    r = subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(out / "AppIcon.icns")], capture_output=True, text=True)
+    if r.returncode != 0:
+        raise SystemExit(r.stderr or "iconutil failed")
+    print(out / "AppIcon.icns")
+
+
+if __name__ == "__main__":
+    main()

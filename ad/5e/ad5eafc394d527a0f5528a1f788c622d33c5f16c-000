@@ -21,9 +21,9 @@ BEATS = [
     (8.95, "ap-ring", {}),
     (10.95, "ap-approaches", {}),
     (13.75, "ap-map", {}),
-    (18.95, "ap-brand", {"command": "", "tags": ""}),
+    (19.17, "ap-brand", {"command": "", "tags": ""}),
     (21.95, "ap-product", {}),
-    (34.25, "ap-brand", {"command": "uvx agentplay", "y": 380}),
+    (34.25, "ap-brand", {"command": "uvx agentplay", "y": 322, "size": 108}),
 ]
 END = 39.36
 

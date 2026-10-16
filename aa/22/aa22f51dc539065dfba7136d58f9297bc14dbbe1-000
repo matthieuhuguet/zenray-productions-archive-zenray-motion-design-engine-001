@@ -44,7 +44,7 @@
       ...HEAD("The [future] of coding\nisn't just the [code.]"),
       P("bg", "Fond", "color", "#0a0d09", 1), P("ink", "Texte", "color", "#f1f2ed", 2), P("accent", "Mot en couleur", "color", GREEN, 2),
       N("step", "Écart entre les mots", 0.3, 0.05, 1, 0.01, 2, "s"), N("size", "Taille du texte", 114, 20, 200, 1, 2, "px"),
-      N("wipeAt", "Début de l'ouverture blanche", 3.2, 0.5, 8, 0.05, 2, "s"), N("wipe", "Durée de l'ouverture", 0.7, 0.1, 3, 0.05, 2, "s"),
+      N("wipeAt", "Début de l'ouverture blanche", 3.55, 0.5, 8, 0.05, 2, "s"), N("wipe", "Durée de l'ouverture", 0.45, 0.1, 3, 0.05, 2, "s"),
       P("wipeColor", "Couleur qui s'ouvre", "color", "#ffffff", 3), N("y", "Centre de la première ligne", 449, 100, 900, 1, 3, "px"),
       N("fade", "Fondu du texte avant l'ouverture", 0.5, 0.1, 2, 0.05, 3, "s"), P("times", "Instants des mots (secondes, séparés par des espaces)", "text", "0 0.28 0.5 0.62 0.95 1.62 1.95 2.3", 3), N("lineGap", "Interligne", 1.09, 0.9, 2, 0.01, 3),
     ],
@@ -53,7 +53,7 @@
       h.css(el, { background: p.bg });
       const hd = headline(st, { x: 960, cy: p.y, w: 1700, align: "center", size: p.size, ink: p.ink, accent: p.accent, lines: p.title, at: t0 + 0.0,
         step: p.step, times: p.times, tl, lineHeight: p.lineGap });
-      tl.to(hd.box, { opacity: 0, filter: "blur(10px)", duration: p.fade, ease: "power1.in" }, t0 + p.wipeAt - p.fade * 0.3);
+      tl.to(hd.box, { opacity: 0, filter: "blur(10px)", duration: p.fade, ease: "power1.in" }, t0 + p.wipeAt - 1.0);
       // the white circle that grows from the centre until it covers the frame, the next scene starts on white
       const disc = abs(st, { left: "960px", top: "540px", width: "40px", height: "40px", marginLeft: "-20px", marginTop: "-20px", borderRadius: "50%", background: p.wipeColor });
       tl.fromTo(disc, { scale: 0, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: 0.05 }, t0 + p.wipeAt);
@@ -104,8 +104,8 @@
       ...HEAD("It's making sure [agents]\nget [better] at writing it."), P("cards", "Cartes (# titre | droite | genre | icône, puis les lignes)", "lines", CARDS, 1),
       P("bg", "Fond", "color", "#ffffff", 2), P("ink", "Texte", "color", INK, 2), P("accent", "Mot en couleur", "color", GREEN, 2),
       N("step", "Écart entre les mots", 0.33, 0.05, 1, 0.01, 2, "s"), N("cardStep", "Écart entre les cartes", 0.12, 0, 0.6, 0.01, 2, "s"),
-      N("size", "Taille du titre", 80, 24, 140, 1, 2, "px"), N("barsFrom", "Début de la croissance des barres", 0.6, 0, 4, 0.05, 3, "s"),
-      N("tilt", "Inclinaison des cartes", 1, 0, 2, 0.05, 3), P("times", "Instants des mots (secondes, séparés par des espaces)", "text", "0.05 0.05 0.38 0.72 1.05 1.38 1.72 2.05 2.38", 3), N("endFade", "Fondu de fin", 0.3, 0.05, 1, 0.05, 3, "s"),
+      N("size", "Taille du titre", 72, 24, 140, 1, 2, "px"), N("barsFrom", "Début de la croissance des barres", 0.6, 0, 4, 0.05, 3, "s"),
+      N("tilt", "Inclinaison des cartes", 1, 0, 2, 0.05, 3), P("times", "Instants des mots (secondes, séparés par des espaces)", "text", "-0.1 -0.1 0.23 0.57 0.9 1.23 1.57 1.9 2.23", 3), N("endFade", "Fondu de fin", 0.3, 0.05, 1, 0.05, 3, "s"),
     ],
     build(ctx) {
       const { el, p, tl, t0, dur } = ctx, st = stage(ctx);
@@ -164,7 +164,7 @@
       ...HEAD("Fewer repeated [failures.]"), P("caption", "Légende de la grille", "text", "steps per session", 1),
       P("rule", "Étiquette de la règle apprise", "text", "rule learned: run tsc before npm test", 1), P("unit", "Légende du compteur", "text", "repeated failures per session", 1),
       P("bg", "Fond", "color", "#ffffff", 2), P("accent", "Mot et cases en échec", "color", RED, 2), P("good", "Après la règle", "color", GREEN, 2),
-      N("size", "Taille du titre", 112, 30, 200, 1, 2, "px"), N("cols", "Colonnes", 56, 20, 90, 1, 3), N("rows", "Lignes", 18, 6, 30, 1, 3),
+      N("size", "Taille du titre", 95, 30, 200, 1, 2, "px"), N("cols", "Colonnes", 56, 20, 90, 1, 3), N("rows", "Lignes", 18, 6, 30, 1, 3),
       N("ruleAt", "Position de la règle (0 à 1)", 0.527, 0.1, 0.9, 0.005, 3), N("from", "Début de la grille", 0.25, 0, 2, 0.05, 3, "s"), N("build", "Durée de la montée", 0.9, 0.2, 3, 0.05, 3, "s"),
       N("seed", "Graine du hasard", 11, 1, 99, 1, 3), N("countAt", "Début du compteur", 1.3, 0, 3, 0.05, 3, "s"), P("times", "Instants des mots (secondes, séparés par des espaces)", "text", "0.38 0.72 1.05", 3),
     ],
@@ -181,7 +181,7 @@
       for (let c = 0; c < nC; c++) {
         // grey base that thins from left to right, sparse grey spikes above it, a red base (repeated failures) that fades out before the rule, green cells at the very end
         const f = c / (nC - 1), base = Math.round(10 - 7 * f), spike = rnd() < 0.4 ? Math.round(rnd() * (nR - 1 - base) * (1 - 0.85 * f)) : 0, total = Math.min(nR, base + spike);
-        const redH = Math.max(0, Math.round(10 * (1 - f / 0.6) * (0.78 + rnd() * 0.44)));
+        const redH = Math.max(0, Math.round(10 * (1 - f / 0.68) * (0.78 + rnd() * 0.44)));
         for (let r = 0; r < total; r++) {
           const isRed = r < redH, isGreen = c >= nC - 6 && r >= 1 && r <= (c >= nC - 3 ? 2 : 1) && c < nC && rnd() > 0.15 && r < base;
           const d = abs(st, { left: gx + c * pitch + "px", top: baseY - r * pitch + "px", width: cell - 3 + "px", height: cell - 3 + "px", borderRadius: "4px",
@@ -203,8 +203,7 @@
       const num = abs(st, { left: "1546px", top: "630px", fontFamily: h.font(SANS), fontSize: "70px", fontWeight: 500, letterSpacing: "-0.04em", color: p.accent, whiteSpace: "nowrap" });
       const a = h.el("span", "", num, "10"), arrow = h.css(h.el("span", "", num, " → "), { color: "#555", fontSize: "44px" }), b = h.css(h.el("span", "", num, "0"), { color: p.good });
       tl.fromTo(num, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.3 }, t0 + p.countAt - 0.3);
-      const prox = { n: 10 }; tl.to(prox, { n: 0, duration: 0.6, ease: "power2.inOut", onUpdate: () => { a.textContent = String(Math.round(prox.n)); } }, t0 + p.countAt);
-      tl.fromTo(b, { opacity: 0.2 }, { opacity: 1, duration: 0.4 }, t0 + p.countAt + 0.3);
+      tl.fromTo([arrow, b], { opacity: 0.1, x: -6 }, { opacity: 1, x: 0, duration: 0.35, ease: "power2.out" }, t0 + p.countAt);
     },
   });
 
@@ -214,9 +213,9 @@
     params: [
       ...HEAD("[Less] wasted\ntime and tokens."), P("command", "Commande dans l'anneau", "text", "npm test", 1), P("result", "Résultat", "text", "✓ 26 passed", 1),
       P("tag", "Étiquette", "text", "rule: tsc first", 1), P("bg", "Fond", "color", "#ffffff", 2), P("accent", "Vert", "color", GREEN, 2), P("fail", "Rouge de l'échec", "color", RED, 2),
-      N("size", "Taille du titre", 112, 30, 200, 1, 2, "px"), N("step", "Écart entre les mots", 0.3, 0.05, 1, 0.01, 2, "s"),
+      N("size", "Taille du titre", 95, 30, 200, 1, 2, "px"), N("step", "Écart entre les mots", 0.3, 0.05, 1, 0.01, 2, "s"),
       N("failAt", "Début de l'échec (anneau rouge)", 0, 0, 3, 0.05, 3, "s"), N("okAt", "Passage au vert", 1.05, 0, 3, 0.05, 3, "s"), N("t1", "Temps final (secondes)", 24, 5, 600, 1, 3),
-      N("tok1", "Jetons finaux", 12586, 100, 999999, 1, 3), N("t0s", "Temps de départ (secondes)", 134, 5, 600, 1, 3), N("tok0", "Jetons de départ", 184600, 100, 999999, 1, 3), P("times", "Instants des mots (secondes, séparés par des espaces)", "text", "0 0.33 0.67 1.0", 3),
+      N("tok1", "Jetons finaux", 12586, 100, 999999, 1, 3), N("t0s", "Temps de départ (secondes)", 134, 5, 600, 1, 3), N("tok0", "Jetons de départ", 184600, 100, 999999, 1, 3), P("times", "Instants des mots (secondes, séparés par des espaces)", "text", "0 0.2 0.5 0.85", 3),
     ],
     build(ctx) {
       const { el, p, tl, t0 } = ctx, st = stage(ctx);
@@ -319,7 +318,7 @@
       P("brand", "Marque en haut", "text", "Entelligence", 1), P("centre", "Nœud du centre", "lines", ["self-improving", "coding agents"], 1),
       P("nodes", "Nœuds (titre | sous-titre)", "lines", ["Agent Insights | Attributes every session to its outcome", "Code Review | Catches bugs before they ship twice", "agentplay | Replays every coding-agent session", "World Model | Sessions, PRs and incidents in one graph", "Model Router | Routes each turn to the most efficient model", "MCP and Plugins | Rules load before the agent writes"], 1),
       P("bg", "Fond", "color", "#ffffff", 2), P("accent", "Vert", "color", GREEN, 2), N("size", "Taille du titre", 56, 24, 120, 1, 2, "px"), N("step", "Écart entre les mots", 0.39, 0.05, 1, 0.01, 2, "s"),
-      N("nodeAt", "Arrivée des nœuds", 0.8, 0, 4, 0.05, 3, "s"), N("nodeStep", "Écart entre nœuds", 0.25, 0, 1, 0.01, 3, "s"), N("lime", "Vert du logo", 0, 0, 1, 1, 4),
+      N("nodeAt", "Arrivée des nœuds", 0.35, 0, 4, 0.05, 3, "s"), N("nodeStep", "Écart entre nœuds", 0.12, 0, 1, 0.01, 3, "s"), P("outro", "Mot final sur fond blanc", "text", "agentplay", 3),
     ],
     build(ctx) {
       const { el, p, tl, t0, dur } = ctx, st = stage(ctx);
@@ -355,7 +354,11 @@
       tl.fromTo(mid, { autoAlpha: 0, scale: 0.85 }, { autoAlpha: 1, scale: 1, duration: 0.5, ease: "back.out(1.7)" }, t0 + 0.4);
       cards.forEach((c, i) => tl.fromTo(c, { autoAlpha: 0, scale: 0.9, y: 14 }, { autoAlpha: 1, scale: 1, y: 0, duration: 0.5, ease: "power3.out" }, t0 + p.nodeAt + i * p.nodeStep));
       tl.fromTo(svg, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.8 }, t0 + p.nodeAt);
-      tl.to(wrap, { opacity: 0, duration: 0.25, ease: "power1.in" }, t0 + dur - 0.25);
+      tl.to(wrap, { opacity: 0, duration: 0.3, ease: "power1.in" }, t0 + dur - 0.6);
+      if (p.outro) {   // the product name comes in blurred on the white, just before the dark card
+        const w = abs(st, { left: "960px", top: "445px", transform: "translateX(-50%)", fontFamily: h.font(SANS), fontSize: "121px", fontWeight: 500, letterSpacing: "-0.04em", color: "#2a2a28", whiteSpace: "nowrap" }, "", p.outro);
+        tl.fromTo(w, { autoAlpha: 0, filter: "blur(22px)" }, { autoAlpha: 0.9, filter: "blur(14px)", duration: 0.35, ease: "power1.out" }, t0 + dur - 0.5);
+      }
     },
   });
 
@@ -365,14 +368,14 @@
     params: [
       P("name", "Nom", "text", "agentplay", 1), P("by", "Signature", "text", "by", 1), P("maker", "Éditeur", "text", "Entelligence", 1), P("command", "Commande (laisser vide pour aucune)", "text", "", 1),
       P("bg", "Fond", "color", "#0b0d0a", 2), P("ink", "Texte", "color", "#f1f2ed", 2), P("accent", "Vert", "color", "#87f300", 2), P("tags", "Mentions (séparées par une barre)", "text", "Free|Local|Open source", 2),
-      N("size", "Taille du nom", 100, 40, 220, 1, 3, "px"), N("y", "Position verticale du nom", 500, 100, 900, 1, 3, "px"), N("cmdAt", "Début de la frappe", 1.2, 0, 5, 0.05, 3, "s"),
-      N("cps", "Caractères par seconde", 14, 4, 40, 1, 3), N("tagAt", "Première mention", 2.0, 0, 6, 0.05, 3, "s"), N("tagStep", "Écart entre mentions", 0.4, 0.05, 1.5, 0.01, 3, "s"),
-      N("moveAt", "Début de la montée du nom", 0.4, 0, 4, 0.05, 3, "s"), N("endFade", "Fondu de fin", 0, 0, 1, 0.05, 3, "s"),
+      N("size", "Taille du nom", 121, 40, 220, 1, 3, "px"), N("y", "Position verticale du nom", 505, 100, 900, 1, 3, "px"), N("cmdAt", "Début de la frappe", 0.45, 0, 5, 0.05, 3, "s"),
+      N("cps", "Caractères par seconde", 13, 4, 40, 1, 3), N("tagAt", "Première mention", 0.9, 0, 6, 0.05, 3, "s"), N("tagStep", "Écart entre mentions", 0.67, 0.05, 1.5, 0.01, 3, "s"),
+      N("endFade", "Fondu de fin", 0, 0, 1, 0.05, 3, "s"),
     ],
     build(ctx) {
       const { el, p, tl, t0, dur } = ctx, st = stage(ctx);
       h.css(el, { background: p.bg });
-      const hasCmd = !!p.command, yTop = hasCmd ? 315 : p.y;
+      const hasCmd = !!p.command;
       const name = abs(st, { left: "960px", top: p.y - 60 + "px", transform: "translateX(-50%)", fontFamily: h.font(SANS), fontSize: p.size + "px", fontWeight: 500, letterSpacing: "-0.04em", color: p.ink, whiteSpace: "nowrap" }, "", p.name);
       tl.fromTo(name, { autoAlpha: 0, filter: "blur(16px)", scale: 1.04 }, { autoAlpha: 1, filter: "blur(0px)", scale: 1, duration: 0.5, ease: "power2.out" }, t0 + 0.0);
       const by = abs(st, { left: "960px", top: p.y + 70 + "px", transform: "translateX(-50%)", display: "flex", alignItems: "center", gap: "14px", fontFamily: h.font(SANS), fontSize: "30px", color: "#9a9b95", whiteSpace: "nowrap" });
@@ -381,16 +384,15 @@
       h.css(h.el("span", "", by, p.maker), { color: p.ink, fontWeight: 500, letterSpacing: "-0.03em" });
       tl.fromTo(by, { autoAlpha: 0, y: 10 }, { autoAlpha: 1, y: 0, duration: 0.5 }, t0 + 0.6);
       if (hasCmd) {
-        // the name and its signature rise, then the command is typed in a dark terminal pill and the three tags come in one by one
-        tl.to([name, by], { y: -(p.y - yTop), duration: 0.7, ease: "power3.inOut" }, t0 + p.moveAt + 0.2);
-        const box = abs(st, { left: "734px", top: "532px", width: "452px", height: "86px", borderRadius: "16px", background: "#161814", border: "1px solid #272a24", fontFamily: h.font(MONO), fontSize: "40px", color: p.ink });
+        // the command is typed in a dark terminal pill and the three tags come in one by one
+          const box = abs(st, { left: "734px", top: p.y + 212 + "px", width: "452px", height: "86px", borderRadius: "16px", background: "#161814", border: "1px solid #272a24", fontFamily: h.font(MONO), fontSize: "40px", color: p.ink });
         abs(box, { left: "36px", top: "16px", color: "#808279" }, "", "$");
         const txt = abs(box, { left: "80px", top: "16px", whiteSpace: "pre" }), cur = abs(box, { left: "80px", top: "21px", width: "20px", height: "44px", background: "#9cf040" });
         tl.fromTo(box, { autoAlpha: 0, y: 14 }, { autoAlpha: 1, y: 0, duration: 0.4 }, t0 + p.cmdAt - 0.3);
         const pr = { n: 0 }, per = 24;
         tl.to(pr, { n: p.command.length, duration: p.command.length / p.cps, ease: "none", onUpdate: () => { txt.textContent = p.command.slice(0, Math.round(pr.n)); cur.style.left = 80 + Math.round(pr.n) * 24.5 + "px"; } }, t0 + p.cmdAt);
         for (let k = 0; k < 8; k++) tl.set(cur, { autoAlpha: k % 2 ? 1 : 0.15 }, t0 + p.cmdAt + p.command.length / p.cps + k * 0.25);
-        const tags = p.tags.split("|").map((s) => s.trim()).filter(Boolean), row = abs(st, { left: "960px", top: "676px", transform: "translateX(-50%)", display: "flex", gap: "42px", alignItems: "center", whiteSpace: "nowrap", fontFamily: h.font(SANS), fontSize: "44px", letterSpacing: "-0.03em" });
+        const tags = p.tags.split("|").map((s) => s.trim()).filter(Boolean), row = abs(st, { left: "960px", top: p.y + 356 + "px", transform: "translateX(-50%)", display: "flex", gap: "42px", alignItems: "center", whiteSpace: "nowrap", fontFamily: h.font(SANS), fontSize: "44px", letterSpacing: "-0.03em" });
         tags.forEach((t, i) => {
           const s = h.css(h.el("span", "", row, t), { color: i === tags.length - 1 ? p.accent : p.ink });
           tl.fromTo(s, { autoAlpha: 0, filter: "blur(10px)", y: 10 }, { autoAlpha: 1, filter: "blur(0px)", y: 0, duration: 0.4, ease: "power2.out" }, t0 + p.tagAt + i * p.tagStep);
@@ -407,9 +409,9 @@
     id: "ap-product", label: "AgentPlay : fenêtre du produit avec titres qui changent", group: "Interface", duration: 12.2,
     params: [
       P("titles", "Titres (temps | texte)", "lines", ["0 | Your existing sessions", "1.67 | Interactive maps", "3.33 | Replayable timelines", "5.33 | What it explored", "7.33 | Where it failed", "8.33 | What it retried", "9.33 | The final change"], 1),
-      P("camera", "Caméra (temps zoom x y)", "lines", ["0 1 960 590", "1.0 1 960 590", "3.0 1 960 590", "5.0 1.45 1040 640", "7.2 1.45 1040 640", "8.3 1.45 1040 640", "9.3 1.0 960 590"], 1),
+      P("camera", "Caméra (temps zoom x y)", "lines", ["0 0.79 960 640", "0.72 0.79 960 640", "1.55 1.2 404 499", "3.55 1.03 960 690", "5.05 1.0 1100 790", "6.05 1.7 981 590", "7.55 1.3 1135 434", "8.9 0.85 960 640", "12.3 0.85 960 640"], 1),
       P("bg", "Fond", "color", "#ffffff", 2), P("ink", "Texte des titres", "color", INK, 2), P("accent", "Rouge de la piste", "color", "#a6452f", 2),
-      N("size", "Taille des titres", 33, 16, 80, 1, 2, "px"), N("seed", "Graine des branches", 5, 1, 99, 1, 3), N("branches", "Nombre de branches", 22, 8, 40, 1, 3), N("cursorAt", "Apparition du curseur bleu", 1.0, 0, 6, 0.05, 3, "s"),
+      N("size", "Taille des titres", 64, 16, 140, 1, 2, "px"), N("seed", "Graine des branches", 5, 1, 99, 1, 3), N("branches", "Nombre de branches", 22, 8, 40, 1, 3), N("cursorAt", "Apparition du curseur bleu", 1.0, 0, 6, 0.05, 3, "s"),
       N("entry", "Entrée de la fenêtre", 0.5, 0.1, 2, 0.05, 3, "s"), N("trail", "Début de la piste rouge", 5.5, 0, 12, 0.05, 3, "s"), N("playhead", "Vitesse de la tête de lecture", 1, 0, 3, 0.05, 3),
     ],
     build(ctx) {
@@ -476,7 +478,12 @@
         const put = (props, at, d) => tl.to(cam, Object.assign({ duration: d, ease: "power2.inOut" }, props), t0 + at);
         const props = { scale: z, x: 960 - cx * z, y: 540 - cy * z };
         if (i === 0) tl.set(cam, props, t0 + t);
-        else put(props, keys[i - 1][0], Math.max(0.01, t - keys[i - 1][0]));
+        else {
+          put(props, keys[i - 1][0], Math.max(0.01, t - keys[i - 1][0]));
+          // a fast, large change of zoom smears (the measured frames at 28.0 s and 29.5 s are blurred): a blur that rises then falls with the move
+          const ratio = Math.max(z, keys[i - 1][1]) / Math.min(z, keys[i - 1][1]), span = t - keys[i - 1][0];
+          if (ratio > 1.3 && span < 1.6) { const b = Math.min(9, (ratio - 1) * 5); tl.to(cam, { filter: `blur(${b}px)`, duration: span * 0.5, ease: "power1.in" }, t0 + keys[i - 1][0]); tl.to(cam, { filter: "blur(0px)", duration: span * 0.5, ease: "power1.out" }, t0 + keys[i - 1][0] + span * 0.5); }
+        }
       });
     },
   });
