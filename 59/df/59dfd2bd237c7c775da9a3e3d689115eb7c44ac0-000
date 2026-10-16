@@ -49,7 +49,7 @@ def build_project(slug: str, title: str, shots: list[dict], info: dict, recipe: 
     for m in sorted(shots, key=lambda x: x["start"]):
         r = shot_recipe.get(m["id"], {})
         keys = "\n".join(f"{k['t']} {k['file']}" for k in m["keys"])
-        params = {"bg": m["palette"][0], "keys": keys, "fit": "cover", **(r.get("params") or {})}
+        params = {"bg": m["palette"][0], "keys": keys, "fit": "contain", **(r.get("params") or {})}   # whole picture in every format, never cropped
         if r.get("overlays"):
             params["overlays"] = overlay_lines(r["overlays"])
         scenes.append({"id": f"s{len(scenes) + 1:03d}", "template": "vector-shot", "duration": min(120.0, max(0.02, round(m["duration"], 4))), "params": params,
