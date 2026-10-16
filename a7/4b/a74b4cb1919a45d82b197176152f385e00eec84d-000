@@ -1,0 +1,69 @@
+"""A sheet of one project in every format (16 October 2026): rows are instants, columns are 16:9, 9:16, 1:1 and 4:5, each cell a real HyperFrames
+snapshot of the same project rebuilt in that format. It shows at once what breaks when the format changes (text cut, cards overlapping, empty areas).
+FR : une planche d'un projet dans tous les formats, aux memes instants, pour voir ce qui casse quand le format change.
+Usage: python3 Scripts/FormatSheet.py <project-id> --at 1.5,5,9 [--formats 16x9,9x16,1x1,4x5] [--height 360] [--out PATH]"""
+import argparse
+import json
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+
+from PIL import Image, ImageDraw
+
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "motion"))
+import server  # noqa: E402
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("project")
+    ap.add_argument("--at", required=True)
+    ap.add_argument("--formats", default="16x9,9x16,1x1,4x5")
+    ap.add_argument("--height", type=int, default=360)
+    ap.add_argument("--out", default="")
+    a = ap.parse_args()
+    times = [float(x) for x in a.at.split(",")]
+    formats = a.formats.split(",")
+    base = server.read_project(a.project)
+    work = Path(tempfile.mkdtemp(prefix="zrmd-fmt-"))
+    cols = {}
+    tmp_ids = []
+    try:
+        for f in formats:
+            tid = f"fmt-{f}-{a.project}"[:60]
+            tmp_ids.append(tid)
+            server.write_project(tid, {**base, "format": f})
+            page = server.cook(tid, work / f"page-{f}")
+            snaps = work / f"snaps-{f}"
+            r = server.hyperframes(page, "snapshot", "--at", ",".join(f"{t:.3f}" for t in times), "--no-end", "-o", str(snaps), timeout=300)
+            files = sorted(snaps.glob("frame-*.png"))
+            if len(files) != len(times):
+                raise SystemExit(f"{f}: {len(files)} images for {len(times)} instants: {(r.stderr or r.stdout)[-400:]}")
+            cols[f] = files
+        H = a.height
+        cells = {f: [Image.open(p).convert("RGB") for p in cols[f]] for f in formats}
+        widths = {f: round(H * cells[f][0].width / cells[f][0].height) for f in formats}
+        sheet = Image.new("RGB", (sum(widths.values()) + 6 * (len(formats) + 1), len(times) * (H + 22) + 6), (30, 30, 30))
+        d = ImageDraw.Draw(sheet)
+        for ri, t in enumerate(times):
+            x = 6
+            for f in formats:
+                im = cells[f][ri].resize((widths[f], H))
+                sheet.paste(im, (x, ri * (H + 22) + 22))
+                d.text((x + 3, ri * (H + 22) + 5), f"{t:.2f} s  {f}", fill=(240, 240, 240))
+                x += widths[f] + 6
+        out = Path(a.out) if a.out else Path.home() / ".claude" / "tmp" / "tmp-zenray-motion-design" / "format-sheets" / f"{a.project}.png"
+        out = out.resolve()
+        out.parent.mkdir(parents=True, exist_ok=True)
+        sheet.save(out)
+        print(json.dumps({"sheet": str(out), "size": sheet.size}))
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+        for tid in tmp_ids:
+            shutil.rmtree(server.project_dir(tid), ignore_errors=True)
+
+
+if __name__ == "__main__":
+    main()

@@ -28,6 +28,38 @@ BEATS = [
 END = 39.36
 
 
+def T(scene: str, key: str, child=None) -> dict:
+    return {"scene": scene, "key": key} if child is None else {"scene": scene, "child": child, "key": key}
+
+
+# PROMOTED CONTROLS (16 October 2026): not a fixed list of N values, but what the storyboard of THIS film says can change: the seven statements, the product
+# name and its maker, the accent colours, the numbers of the demonstration, the contents of the cards. Each control drives every scene value it names.
+CONTROLS = [
+    {"id": "t1", "label": "Phrase d'ouverture ([mot] en couleur)", "type": "lines", "group": "Phrases", "targets": [T("b01", "title")]},
+    {"id": "t2", "label": "Phrase des cartes", "type": "lines", "group": "Phrases", "targets": [T("b02", "title")]},
+    {"id": "t3", "label": "Phrase des échecs", "type": "lines", "group": "Phrases", "targets": [T("b03", "title")]},
+    {"id": "t4", "label": "Phrase du gaspillage", "type": "lines", "group": "Phrases", "targets": [T("b04", "title")]},
+    {"id": "t5", "label": "Phrase des approches", "type": "lines", "group": "Phrases", "targets": [T("b05", "title")]},
+    {"id": "t6", "label": "Phrase de présentation", "type": "lines", "group": "Phrases", "targets": [T("b06", "title")]},
+    {"id": "titles", "label": "Titres de la démonstration (temps | texte)", "type": "lines", "group": "Phrases", "targets": [T("b08", "titles")]},
+    {"id": "product", "label": "Nom du produit", "type": "text", "group": "Marque", "targets": [T("b07", "name"), T("b09", "name"), T("b06", "outro")]},
+    {"id": "maker", "label": "Éditeur", "type": "text", "group": "Marque", "targets": [T("b06", "brand"), T("b07", "maker"), T("b09", "maker")]},
+    {"id": "green", "label": "Couleur d'accent", "type": "color", "group": "Marque", "targets": [T("b01", "accent"), T("b02", "accent"), T("b04", "accent"), T("b05", "accent"), T("b06", "accent"), T("b03", "good")]},
+    {"id": "red", "label": "Couleur des échecs", "type": "color", "group": "Marque", "targets": [T("b03", "accent"), T("b04", "fail")]},
+    {"id": "dark", "label": "Fond sombre", "type": "color", "group": "Marque", "targets": [T("b01", "bg"), T("b07", "bg"), T("b09", "bg")]},
+    {"id": "cmd", "label": "Commande d'installation", "type": "text", "group": "Fin", "targets": [T("b09", "command")]},
+    {"id": "tags", "label": "Mentions (séparées par une barre)", "type": "text", "group": "Fin", "targets": [T("b09", "tags")]},
+    {"id": "t0s", "label": "Temps de la tentative ratée (s)", "type": "number", "min": 5, "max": 600, "step": 1, "group": "Chiffres", "targets": [T("b04", "t0s")]},
+    {"id": "tok0", "label": "Jetons de la tentative ratée", "type": "number", "min": 100, "max": 999999, "step": 100, "group": "Chiffres", "targets": [T("b04", "tok0")]},
+    {"id": "t1s", "label": "Temps du premier coup (s)", "type": "number", "min": 5, "max": 600, "step": 1, "group": "Chiffres", "targets": [T("b04", "t1")]},
+    {"id": "tok1", "label": "Jetons du premier coup", "type": "number", "min": 100, "max": 999999, "step": 100, "group": "Chiffres", "targets": [T("b04", "tok1")]},
+    {"id": "rule", "label": "Règle apprise", "type": "text", "group": "Chiffres", "targets": [T("b03", "rule")]},
+    {"id": "cards", "label": "Cartes d'interface", "type": "lines", "group": "Contenu", "targets": [T("b02", "cards")]},
+    {"id": "approaches", "label": "Approches (nom | durée | jetons)", "type": "lines", "group": "Contenu", "targets": [T("b05", "rows")]},
+    {"id": "nodes", "label": "Nœuds de la carte", "type": "lines", "group": "Contenu", "targets": [T("b06", "nodes")]},
+]
+
+
 def project() -> dict:
     scenes = []
     for i, (t, tpl, params) in enumerate(BEATS):
@@ -36,7 +68,7 @@ def project() -> dict:
     return {"schema": "zrmd/motion-project@1", "title": "AgentPlay reproduit", "format": "16x9", "fps": 30, "reference": "agentplay",
             "doc": "16 October 2026: AgentPlay launch film, foreground assets only (no background image, no face); every text and colour is a value.",
             "theme": {"bg": "#ffffff", "ink": "#1b1b19", "accent": "#80c22a", "fontTitle": "InterVariable", "fontBody": "InterVariable"},
-            "music": {"mode": "none"}, "sfx": {"enabled": False}, "scenes": scenes}
+            "music": {"mode": "none"}, "sfx": {"enabled": False}, "controls": CONTROLS, "scenes": scenes}
 
 
 if __name__ == "__main__":

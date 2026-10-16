@@ -1,27 +1,28 @@
 // 16 October 2026: the templates of the AgentPlay launch film (whatships.com/videos/agentplay), measured on the reference at 3 images per second and on
 // full frames. FOREGROUND ASSETS ONLY (Matthieu's rule of 16 October 2026): headline words, cards, charts, rings, trees, node maps, the product window;
-// never a background image, never a face. Every visible value is a parameter or a theme token; every template works on a 1920 x 1080 stage.
-// FR : les modeles du film AgentPlay ; seulement les elements au premier plan, jamais d'image de fond.
+// never a background image, never a face. Every visible value is a parameter or a theme token. Every template lays itself out for the FORMAT it is given
+// (ZS.stageAdaptive): a wide frame uses a 1920 x 1080 design, a tall or square frame a 1080-wide design as tall as the frame, so a format change reflows.
+// FR : les modeles du film AgentPlay ; seulement le premier plan ; chaque modele se met en page pour le format recu (large ou haut).
 (function () {
   const ZS = window.ZS, h = ZS.h;
   const P = (key, label, type, def, tier, extra) => Object.assign({ key, label, type, default: def, tier }, extra || {});
   const N = (key, label, def, min, max, step, tier, unit) => ({ key, label, type: "number", default: def, min, max, step, tier, unit });
-  const GREEN = "#80c22a", RED = "#dc344f", INK = "#1b1b19", GREY = "#9a9a95", SANS = "InterVariable", MONO = "JetBrainsMono";
+  const GREEN = "#80c22a", RED = "#dc344f", INK = "#1b1b19", SANS = "InterVariable", MONO = "JetBrainsMono";
   const NS = "http://www.w3.org/2000/svg";
-  const stage = (ctx) => ZS.stage1920(ctx.el, ctx.W, ctx.H);
   const svgEl = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); Object.keys(attrs || {}).forEach((k) => e.setAttribute(k, attrs[k])); if (parent) parent.appendChild(e); return e; };
   const abs = (parent, css, cls, text) => h.css(h.el("div", "zs-abs" + (cls ? " " + cls : ""), parent, text), css);
+  const SHADOW = "0 24px 60px -24px rgba(20,30,10,0.22), 0 0 0 1px rgba(0,0,0,0.035)";
 
   // ------------------------------------------------------------------------------------------------ the headline
   // lines: one string per line; [word] takes the accent colour. Words come in one after the other, sharpening out of a blur (measured: "coding" is
-  // blurred a third of a second before it is sharp), 1 line = 1 row. Returns the words (for the end fade).
+  // blurred a third of a second before it is sharp). o.times gives each word's instant; o.wrap lets the words flow in a box of width o.w (tall formats).
   function headline(parent, o) {
     const lh = o.lineHeight || 1.08, top = o.cy !== undefined ? o.cy - o.size * lh / 2 : o.y;
     const box = abs(parent, { left: o.x + "px", top: top + "px", width: o.w + "px", textAlign: o.align, color: o.ink, fontFamily: h.font(SANS),
       fontSize: o.size + "px", fontWeight: o.weight || 500, letterSpacing: (o.tracking !== undefined ? o.tracking : -0.025) + "em", lineHeight: lh, transform: o.align === "center" ? "translateX(-50%)" : "none" });
-    const words = [];
-    o.lines.forEach((line, li) => {
-      const row = h.css(h.el("div", "", box), { whiteSpace: "nowrap", marginLeft: (o.indent && li > 0 ? o.indent : 0) + "px" });
+    const words = [], lines = o.wrap ? [o.lines.join(" ")] : o.lines;
+    lines.forEach((line, li) => {
+      const row = h.css(h.el("div", "", box), { whiteSpace: o.wrap ? "normal" : "nowrap", marginLeft: (o.indent && li > 0 && !o.wrap ? o.indent : 0) + "px" });
       line.split(/(\[[^\]]+\])|\s+/).filter((s) => s !== undefined && s !== "").forEach((w, wi) => {
         const acc = /^\[.*\]$/.test(w), txt = acc ? w.slice(1, -1) : w;
         if (wi) row.appendChild(document.createTextNode(" "));
@@ -30,12 +31,24 @@
     });
     const tm = String(o.times || "").trim().split(/\s+/).map(Number).filter((v) => isFinite(v));
     words.forEach((w, i) => {
-      const at = o.at + (tm.length > i ? tm[i] - (tm[0] || 0) * 0 : i * o.step);
+      const at = o.at + (tm.length > i ? tm[i] : i * o.step);
       o.tl.fromTo(w, { opacity: 0, y: 16, filter: "blur(14px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: o.enter || 0.3, ease: "power2.out" }, at);
     });
     return { box, words };
   }
+  // a layout taller than a short frame (1:1) shrinks about its own centre and is centred in the frame, so nothing is cropped
+  function fitFrame(node, w, sh, topY, botY) {
+    const k = Math.min(1, (sh - 60) / Math.max(1, botY - topY)), cy = (topY + botY) / 2;
+    if (k < 1) h.css(node, { transformOrigin: `${w / 2}px ${cy}px`, transform: `translateY(${sh / 2 - cy}px) scale(${k})` });
+    return k;
+  }
   const HEAD = (def) => [P("title", "Titre (un texte par ligne, [mot] en couleur)", "lines", def, 1)];
+  const TIMES = (def) => P("times", "Instants des mots (secondes, séparés par des espaces)", "text", def, 3);
+  const logoMark = (parent, size, bg, css) => {
+    const l = abs(parent, Object.assign({ width: size + "px", height: size + "px", borderRadius: size * 0.24 + "px", background: bg, boxShadow: "0 6px 16px -6px rgba(110,200,0,0.6)" }, css || {}));
+    h.css(h.el("div", "", l, "e"), { position: "absolute", inset: "0", textAlign: "center", lineHeight: size * 0.92 + "px", fontSize: size * 0.77 + "px", fontWeight: 800, color: "#111", fontFamily: h.font(SANS) });
+    return l;
+  };
 
   // ================================================================================================ 1. ap-matrix
   ZS.register({
@@ -43,27 +56,27 @@
     params: [
       ...HEAD("The [future] of coding\nisn't just the [code.]"),
       P("bg", "Fond", "color", "#0a0d09", 1), P("ink", "Texte", "color", "#f1f2ed", 2), P("accent", "Mot en couleur", "color", GREEN, 2),
-      N("step", "Écart entre les mots", 0.3, 0.05, 1, 0.01, 2, "s"), N("size", "Taille du texte", 114, 20, 200, 1, 2, "px"),
+      N("step", "Écart entre les mots", 0.3, 0.05, 1, 0.01, 2, "s"), N("size", "Taille du texte (large)", 114, 20, 200, 1, 2, "px"), N("sizeTall", "Taille du texte (haut)", 92, 20, 200, 1, 2, "px"),
       N("wipeAt", "Début de l'ouverture blanche", 3.55, 0.5, 8, 0.05, 2, "s"), N("wipe", "Durée de l'ouverture", 0.45, 0.1, 3, 0.05, 2, "s"),
-      P("wipeColor", "Couleur qui s'ouvre", "color", "#ffffff", 3), N("y", "Centre de la première ligne", 449, 100, 900, 1, 3, "px"),
-      N("fade", "Fondu du texte avant l'ouverture", 0.5, 0.1, 2, 0.05, 3, "s"), P("times", "Instants des mots (secondes, séparés par des espaces)", "text", "0 0.28 0.5 0.62 0.95 1.62 1.95 2.3", 3), N("lineGap", "Interligne", 1.09, 0.9, 2, 0.01, 3),
+      P("wipeColor", "Couleur qui s'ouvre", "color", "#ffffff", 3), N("y", "Centre de la première ligne (large)", 449, 100, 900, 1, 3, "px"),
+      N("fade", "Fondu du texte avant l'ouverture", 0.5, 0.1, 2, 0.05, 3, "s"), N("lineGap", "Interligne", 1.09, 0.9, 2, 0.01, 3), TIMES("0 0.28 0.5 0.62 0.95 1.62 1.95 2.3"),
     ],
     build(ctx) {
-      const { el, p, tl, t0 } = ctx, st = stage(ctx);
+      const { el, p, tl, t0 } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
       h.css(el, { background: p.bg });
-      const hd = headline(st, { x: 960, cy: p.y, w: 1700, align: "center", size: p.size, ink: p.ink, accent: p.accent, lines: p.title, at: t0 + 0.0,
-        step: p.step, times: p.times, tl, lineHeight: p.lineGap });
+      const hd = headline(st, { x: w / 2, cy: tall ? sh * 0.5 - 40 : p.y, w: tall ? 980 : 1700, align: "center", size: tall ? p.sizeTall : p.size, ink: p.ink, accent: p.accent, lines: p.title,
+        at: t0, step: p.step, times: p.times, tl, lineHeight: p.lineGap });
       tl.to(hd.box, { opacity: 0, filter: "blur(10px)", duration: p.fade, ease: "power1.in" }, t0 + p.wipeAt - 1.0);
-      // the white circle that grows from the centre until it covers the frame, the next scene starts on white
-      const disc = abs(st, { left: "960px", top: "540px", width: "40px", height: "40px", marginLeft: "-20px", marginTop: "-20px", borderRadius: "50%", background: p.wipeColor });
+      // the white circle that grows from the centre until it covers the frame; the next scene starts on white
+      const disc = abs(st, { left: w / 2 + "px", top: sh / 2 + "px", width: "40px", height: "40px", marginLeft: "-20px", marginTop: "-20px", borderRadius: "50%", background: p.wipeColor });
       tl.fromTo(disc, { scale: 0, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: 0.05 }, t0 + p.wipeAt);
-      tl.to(disc, { scale: 90, duration: p.wipe, ease: "power3.in" }, t0 + p.wipeAt);
+      tl.to(disc, { scale: Math.hypot(w, sh) / 20, duration: p.wipe, ease: "power3.in" }, t0 + p.wipeAt);
       ctx.cue(p.wipeAt, "whoosh", { length: 0.7, brightness: 0.6 });
     },
   });
 
   // ================================================================================================ 2. ap-cards
-  // card text language: "# title | right text | kind" starts a card; the following lines are its rows "status text | right"
+  // card text language: "# title | right text | kind | icon" starts a card; the following lines are its rows "status text | right"
   // (status: ok, err, warn, idle, none). kind: list (default), bars, line.
   const CARDS = [
     "# agent session | Claude Code | list | doc", "ok Read routes/orders.ts | 4s", "ok Write rateLimit.ts | 11s", "err Run npm test | 14s", "ok Edit rateLimit.ts | 6s", "ok Run npm test | 12s", "ok Open PR #142 | ",
@@ -72,11 +85,11 @@
     "# incidents | 3 open | list | alert", "err 429 storm on /orders | 2m", "warn Flaky test: refill timing | 12m", "idle Billing worker timeout | 1h",
     "# tests | 26 / 26 passing | bars | flask", "# first-try pass rate | 82% | line | chart",
   ];
-  // the layout read on the frame at 5.67 s (x, y, width, height, tilt around the vertical axis, rotation), in 1920 x 1080 pixels
-  const CARD_BOX = [[92, 108, 462, 322, 7, 2.5], [102, 466, 452, 200, 6, 1.6], [152, 700, 436, 260, 5, -1.2], [1358, 106, 432, 240, -7, -2.4], [1398, 380, 460, 300, -7, -1.4], [1332, 706, 452, 238, -6, 1.8]];
+  // wide design (x, y, width, height, tilt around the vertical axis, rotation) read on the frame at 5.67 s; tall design: two columns under the headline
+  const CARD_WIDE = [[92, 108, 462, 322, 7, 2.5], [102, 466, 452, 200, 6, 1.6], [152, 700, 436, 260, 5, -1.2], [1358, 106, 432, 240, -7, -2.4], [1398, 380, 460, 300, -7, -1.4], [1332, 706, 452, 238, -6, 1.8]];
+  const CARD_TALL = [[40, 0, 480, 322, 3, 1.4], [40, 346, 480, 200, 3, 0.8], [40, 570, 480, 262, 3, -0.8], [560, 0, 480, 240, -3, -1.4], [560, 264, 480, 300, -3, -0.8], [560, 588, 480, 244, -3, 1]];
   const TILE = { doc: "#e3f2d0", chat: "#ece3fa", rules: "#e3ecfa", alert: "#fde3e6", flask: "#e3f2d0", chart: "#fbeed5" };
   const DOT = { ok: GREEN, err: RED, warn: "#e7a53b", idle: "#c9c9c4" };
-
   function parseCards(lines) {
     const cards = [];
     lines.forEach((l) => {
@@ -89,43 +102,42 @@
     return cards;
   }
   function iconTile(parent, kind, size) {
-    const t = abs(parent, { position: "relative", width: size + "px", height: size + "px", borderRadius: size * 0.27 + "px", background: TILE[kind] || "#eee", flex: "none" });
-    h.css(t, { position: "relative", left: "auto", top: "auto" });
+    const t = h.css(h.el("div", "", parent), { position: "relative", width: size + "px", height: size + "px", borderRadius: size * 0.27 + "px", background: TILE[kind] || "#eee", flex: "none" });
     const s = svgEl("svg", { viewBox: "0 0 24 24", width: size * 0.56, height: size * 0.56, fill: "none", stroke: { rules: "#4a76b8", chat: "#7a52c4", alert: RED, chart: "#c8902c" }[kind] || "#5a8d1e", "stroke-width": 1.8, "stroke-linecap": "round", "stroke-linejoin": "round" }, t);
     h.css(s, { position: "absolute", left: "22%", top: "22%" });
-    const d = { doc: "M6 3h9l4 4v14H6zM9 12h7M9 16h7", chat: "M4 5h16v11H9l-5 4z", rules: "M5 7h14M5 12h14M5 17h9", alert: "M12 8v5M12 16.5v.5M4 20h16L12 4z", flask: "M9 3h6M10 3v6l-5 10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1l-5-10V3", chart: "M4 19V5M4 19h16M8 15l4-4 3 3 5-6" }[kind] || "M6 6h12v12H6z";
-    svgEl("path", { d }, s);
+    svgEl("path", { d: { doc: "M6 3h9l4 4v14H6zM9 12h7M9 16h7", chat: "M4 5h16v11H9l-5 4z", rules: "M5 7h14M5 12h14M5 17h9", alert: "M12 8v5M12 16.5v.5M4 20h16L12 4z", flask: "M9 3h6M10 3v6l-5 10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1l-5-10V3", chart: "M4 19V5M4 19h16M8 15l4-4 3 3 5-6" }[kind] || "M6 6h12v12H6z" }, s);
     return t;
   }
-
   ZS.register({
     id: "ap-cards", label: "AgentPlay : phrase et cartes d'interface qui flottent", group: "Interface", duration: 3.0,
     params: [
       ...HEAD("It's making sure [agents]\nget [better] at writing it."), P("cards", "Cartes (# titre | droite | genre | icône, puis les lignes)", "lines", CARDS, 1),
       P("bg", "Fond", "color", "#ffffff", 2), P("ink", "Texte", "color", INK, 2), P("accent", "Mot en couleur", "color", GREEN, 2),
       N("step", "Écart entre les mots", 0.33, 0.05, 1, 0.01, 2, "s"), N("cardStep", "Écart entre les cartes", 0.12, 0, 0.6, 0.01, 2, "s"),
-      N("size", "Taille du titre", 72, 24, 140, 1, 2, "px"), N("barsFrom", "Début de la croissance des barres", 0.6, 0, 4, 0.05, 3, "s"),
-      N("tilt", "Inclinaison des cartes", 1, 0, 2, 0.05, 3), P("times", "Instants des mots (secondes, séparés par des espaces)", "text", "-0.1 -0.1 0.23 0.57 0.9 1.23 1.57 1.9 2.23", 3), N("endFade", "Fondu de fin", 0.3, 0.05, 1, 0.05, 3, "s"),
+      N("size", "Taille du titre (large)", 72, 24, 140, 1, 2, "px"), N("sizeTall", "Taille du titre (haut)", 70, 24, 140, 1, 2, "px"), N("barsFrom", "Début de la croissance des barres", 0.6, 0, 4, 0.05, 3, "s"),
+      N("tilt", "Inclinaison des cartes", 1, 0, 2, 0.05, 3), TIMES("-0.1 -0.1 0.23 0.57 0.9 1.23 1.57 1.9 2.23"), N("endFade", "Fondu de fin", 0.3, 0.05, 1, 0.05, 3, "s"),
     ],
     build(ctx) {
-      const { el, p, tl, t0, dur } = ctx, st = stage(ctx);
+      const { el, p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
       h.css(el, { background: p.bg });
-      const wrap = abs(st, { left: "0", top: "0", width: "1920px", height: "1080px" });
-      headline(wrap, { x: 960, cy: 500, w: 900, align: "center", size: p.size, ink: p.ink, accent: p.accent, lines: p.title, at: t0 + 0.0, step: p.step, times: p.times, tl });
-      const cards = parseCards(p.cards);
-      cards.forEach((c, i) => {
-        const b = CARD_BOX[i]; if (!b) return;
-        const [x, y, w, hh, ry, rz] = b;
-        const card = abs(wrap, { left: x + "px", top: y + "px", width: w + "px", height: hh + "px", background: "#fff", borderRadius: "26px", padding: "22px 28px",
-          boxShadow: "0 24px 60px -24px rgba(20,30,10,0.22), 0 0 0 1px rgba(0,0,0,0.035)", fontFamily: h.font(SANS), color: INK, transformOrigin: "50% 50%" });
+      const wrap = abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px" });
+      const boxes = tall ? CARD_TALL : CARD_WIDE, topCards = tall ? Math.max(sh < 1300 ? 330 : 430, (sh - 840 + 260) / 2 + 150) : 0;
+      // a frame too short for the two columns (1:1) shrinks the whole block of cards, never crops it
+      const gk = tall ? Math.min(1, (sh - topCards - 40) / 840) : 1;
+      headline(wrap, { x: w / 2, cy: tall ? topCards - (sh < 1300 ? 120 : 150) : 500, w: tall ? 980 : 900, align: "center", size: tall ? p.sizeTall : p.size, ink: p.ink, accent: p.accent, lines: p.title, at: t0, step: p.step, times: p.times, tl });
+      const grp = abs(wrap, { left: "0", top: topCards + "px", width: w + "px", height: "840px", transformOrigin: "50% 0", transform: `scale(${gk})` });
+      parseCards(p.cards).forEach((c, i) => {
+        const b = boxes[i]; if (!b) return;
+        const [x, y, cw, hh, ry, rz] = b;
+        const card = abs(tall ? grp : wrap, { left: x + "px", top: y + "px", width: cw + "px", height: hh + "px", background: "#fff", borderRadius: "26px", padding: "22px 28px", boxShadow: SHADOW, fontFamily: h.font(SANS), color: INK, transformOrigin: "50% 50%" });
         const head = h.css(h.el("div", "", card), { display: "flex", alignItems: "center", gap: "16px", marginBottom: "16px" });
         iconTile(head, c.icon, 42);
         h.css(h.el("div", "", head, c.title), { fontSize: "22px", fontWeight: 600, letterSpacing: "-0.02em" });
-        h.css(h.el("div", "", head, c.right), { marginLeft: "auto", fontSize: "15px", fontFamily: h.font(MONO), color: c.icon === "alert" ? RED : (c.icon === "flask" ? GREEN : GREY) });
+        h.css(h.el("div", "", head, c.right), { marginLeft: "auto", fontSize: "15px", fontFamily: h.font(MONO), color: c.icon === "alert" ? RED : (c.icon === "flask" ? GREEN : "#9a9a95") });
         if (c.kind === "list") c.rows.forEach((r) => {
           const row = h.css(h.el("div", "", card), { display: "flex", alignItems: "center", gap: "14px", height: hh > 260 ? "34px" : "32px", fontSize: "17px", color: "#2f2f2c" });
           h.css(h.el("span", "", row), { width: "14px", height: "14px", borderRadius: "50%", background: DOT[r.st] || "#ddd", flex: "none", display: r.st === "none" ? "none" : "block" });
-          h.el("span", "", row, r.text);
+          h.css(h.el("span", "", row, r.text), { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" });
           h.css(h.el("span", "", row, r.right), { marginLeft: "auto", fontFamily: h.font(MONO), fontSize: "15px", color: "#a8a8a2" });
         });
         if (c.kind === "bars") {
@@ -136,22 +148,22 @@
           h.css(h.el("div", "", card, "● passing 26"), { fontSize: "14px", color: "#6c6c68", marginTop: "10px" });
         }
         if (c.kind === "line") {
-          const pts = [0.35, 0.18, 0.32, 0.2, 0.3, 0.26, 0.5, 0.58, 0.9], svg = svgEl("svg", { width: 280, height: 110, viewBox: "0 0 280 110" }, card);
+          const lw = cw - 190, pts = [0.35, 0.18, 0.32, 0.2, 0.3, 0.26, 0.5, 0.58, 0.9], svg = svgEl("svg", { width: lw, height: 110, viewBox: `0 0 ${lw} 110` }, card);
           h.css(svg, { position: "absolute", left: "26px", top: "88px" });
-          const X = (k) => k * 280 / (pts.length - 1), Y = (v) => 100 - v * 100;
-          const d = pts.map((v, k) => `${k ? "L" : "M"}${X(k)},${Y(v)}`).join(" ");
-          svgEl("path", { d: d + " L280,110 L0,110 Z", fill: "#fbf1e1" }, svg);
+          const X = (k) => k * lw / (pts.length - 1), Y = (v) => 100 - v * 100, d = pts.map((v, k) => `${k ? "L" : "M"}${X(k)},${Y(v)}`).join(" ");
+          svgEl("path", { d: d + ` L${lw},110 L0,110 Z`, fill: "#fbf1e1" }, svg);
           const line = svgEl("path", { d, fill: "none", stroke: "#e3a63d", "stroke-width": 3, "stroke-linecap": "round", "stroke-linejoin": "round" }, svg);
           pts.forEach((v, k) => svgEl("circle", { cx: X(k), cy: Y(v), r: 5, fill: "#fff", stroke: "#e3a63d", "stroke-width": 2.5 }, svg));
-          const L = 600; line.setAttribute("stroke-dasharray", L);
+          const L = lw * 2.3; line.setAttribute("stroke-dasharray", L);
           tl.fromTo(line, { attr: { "stroke-dashoffset": L } }, { attr: { "stroke-dashoffset": 0 }, duration: 1.2, ease: "power2.inOut" }, t0 + 0.5);
-          const num = h.css(h.el("div", "", card, c.right), { position: "absolute", right: "30px", top: "100px", fontSize: "50px", fontWeight: 500, letterSpacing: "-0.04em", color: INK });
+          h.css(h.el("div", "", card, c.right), { position: "absolute", right: "30px", top: "100px", fontSize: "50px", fontWeight: 500, letterSpacing: "-0.04em", color: INK });
           h.css(h.el("div", "", card, "▲ +18 pts"), { position: "absolute", right: "30px", top: "168px", fontSize: "14px", color: GREEN });
-          card.firstChild.lastChild.textContent = "";
+          head.lastChild.textContent = "";
         }
-        tl.fromTo(card, { opacity: 0, y: 40, scale: 0.94, rotationY: ry * p.tilt * 1.8, rotationZ: rz * p.tilt * 1.5, transformPerspective: 1500, filter: "blur(10px)" },
-          { opacity: 1, y: 0, scale: 1, rotationY: ry * p.tilt, rotationZ: rz * p.tilt, transformPerspective: 1500, filter: "blur(0px)", duration: 0.7, ease: "power3.out" }, t0 + i * p.cardStep);
-        tl.to(card, { rotationZ: rz * p.tilt * 0.7, y: -6, duration: Math.max(0.2, dur - 1.2), ease: "none" }, t0 + 0.9);
+        const t = tall ? 0.7 : 1;
+        tl.fromTo(card, { opacity: 0, y: 40, scale: 0.94, rotationY: ry * p.tilt * 1.8 * t, rotationZ: rz * p.tilt * 1.5 * t, transformPerspective: 1500, filter: "blur(10px)" },
+          { opacity: 1, y: 0, scale: 1, rotationY: ry * p.tilt * t, rotationZ: rz * p.tilt * t, transformPerspective: 1500, filter: "blur(0px)", duration: 0.7, ease: "power3.out" }, t0 + i * p.cardStep);
+        tl.to(card, { rotationZ: rz * p.tilt * 0.7 * t, y: -6, duration: Math.max(0.2, dur - 1.2), ease: "none" }, t0 + 0.9);
       });
       tl.to(wrap, { opacity: 0, duration: p.endFade, ease: "power1.in" }, t0 + dur - p.endFade);
     },
@@ -164,44 +176,45 @@
       ...HEAD("Fewer repeated [failures.]"), P("caption", "Légende de la grille", "text", "steps per session", 1),
       P("rule", "Étiquette de la règle apprise", "text", "rule learned: run tsc before npm test", 1), P("unit", "Légende du compteur", "text", "repeated failures per session", 1),
       P("bg", "Fond", "color", "#ffffff", 2), P("accent", "Mot et cases en échec", "color", RED, 2), P("good", "Après la règle", "color", GREEN, 2),
-      N("size", "Taille du titre", 95, 30, 200, 1, 2, "px"), N("cols", "Colonnes", 56, 20, 90, 1, 3), N("rows", "Lignes", 18, 6, 30, 1, 3),
-      N("ruleAt", "Position de la règle (0 à 1)", 0.527, 0.1, 0.9, 0.005, 3), N("from", "Début de la grille", 0.25, 0, 2, 0.05, 3, "s"), N("build", "Durée de la montée", 0.9, 0.2, 3, 0.05, 3, "s"),
-      N("seed", "Graine du hasard", 11, 1, 99, 1, 3), N("countAt", "Début du compteur", 1.3, 0, 3, 0.05, 3, "s"), P("times", "Instants des mots (secondes, séparés par des espaces)", "text", "0.38 0.72 1.05", 3),
+      N("size", "Taille du titre (large)", 95, 30, 200, 1, 2, "px"), N("sizeTall", "Taille du titre (haut)", 80, 30, 200, 1, 2, "px"), N("ruleAt", "Position de la règle (0 à 1)", 0.527, 0.1, 0.9, 0.005, 3),
+      N("from", "Début de la grille", 0.25, 0, 2, 0.05, 3, "s"), N("build", "Durée de la montée", 0.9, 0.2, 3, 0.05, 3, "s"), N("seed", "Graine du hasard", 11, 1, 99, 1, 3),
+      N("countAt", "Début du compteur", 1.3, 0, 3, 0.05, 3, "s"), TIMES("0.38 0.72 1.05"),
     ],
     build(ctx) {
-      const { el, p, tl, t0 } = ctx, st = stage(ctx);
+      const { el, p, tl, t0 } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
       h.css(el, { background: p.bg });
-      headline(st, { x: 960, cy: 203, w: 1500, align: "center", size: p.size, ink: INK, accent: p.accent, lines: p.title, at: t0 + 0.0, step: 0.33, times: p.times, tl });
-      const gx = 330, gy = 460, cell = 21, pitch = 21.0, nC = p.cols, nR = p.rows, rnd = h.rand(p.seed), cut = Math.round(nC * p.ruleAt);
-      abs(st, { left: gx + "px", top: "360px", fontFamily: h.font(MONO), fontSize: "18px", color: "#7d7d78" }, "", p.caption);
-      abs(st, { left: gx + "px", top: "876px", fontFamily: h.font(MONO), fontSize: "18px", color: INK }, "", "session 1");
-      abs(st, { left: gx + nC * pitch - 120 + "px", top: "876px", width: "120px", textAlign: "right", fontFamily: h.font(MONO), fontSize: "18px", color: INK }, "", "session 889");
-      // each column: a stack of grey steps of a height that falls with the session, a red base (repeated failures) that thins out, a few green cells at the end
-      const cells = [], baseY = 837;
+      // grid geometry per format: wide 56 columns of 21 px from x 330; tall 36 columns of 27 px from x 54
+      const nC = tall ? 36 : 56, nR = 18, pitch = tall ? 27 : 21, cell = pitch, gx = tall ? 54 : 330;
+      const block = nR * pitch + 560, y0 = tall ? Math.max(120, (sh - block) / 2) : 0, titleCy = tall ? y0 + 70 : 203, baseY = tall ? y0 + 330 + (nR - 1) * pitch : 837;
+      headline(st, { x: w / 2, cy: titleCy, w: tall ? 1000 : 1500, align: "center", size: tall ? p.sizeTall : p.size, ink: INK, accent: p.accent, lines: p.title, at: t0, step: 0.33, times: p.times, tl });
+      const rnd = h.rand(p.seed), cut = Math.round(nC * p.ruleAt), mono = (px) => ({ fontFamily: h.font(MONO), fontSize: px + "px" });
+      abs(st, Object.assign({ left: gx + "px", top: baseY - (nR - 1) * pitch - 100 + "px", color: "#7d7d78" }, mono(18)), "", p.caption);
+      abs(st, Object.assign({ left: gx + "px", top: baseY + 39 + "px", color: INK }, mono(18)), "", "session 1");
+      abs(st, Object.assign({ left: gx + nC * pitch - 120 + "px", top: baseY + 39 + "px", width: "120px", textAlign: "right", color: INK }, mono(18)), "", "session 889");
+      // each column: a grey base that thins from left to right, sparse grey spikes above it, a red base (repeated failures) that fades out past the rule, green cells at the end
+      const cells = [];
       for (let c = 0; c < nC; c++) {
-        // grey base that thins from left to right, sparse grey spikes above it, a red base (repeated failures) that fades out before the rule, green cells at the very end
         const f = c / (nC - 1), base = Math.round(10 - 7 * f), spike = rnd() < 0.4 ? Math.round(rnd() * (nR - 1 - base) * (1 - 0.85 * f)) : 0, total = Math.min(nR, base + spike);
         const redH = Math.max(0, Math.round(10 * (1 - f / 0.68) * (0.78 + rnd() * 0.44)));
         for (let r = 0; r < total; r++) {
-          const isRed = r < redH, isGreen = c >= nC - 6 && r >= 1 && r <= (c >= nC - 3 ? 2 : 1) && c < nC && rnd() > 0.15 && r < base;
-          const d = abs(st, { left: gx + c * pitch + "px", top: baseY - r * pitch + "px", width: cell - 3 + "px", height: cell - 3 + "px", borderRadius: "4px",
-            background: isRed ? p.accent : (isGreen ? p.good : "#dcddd6") });
-          cells.push({ d, c, r, isRed });
+          const isRed = r < redH, isGreen = c >= nC - 6 && r >= 1 && r <= (c >= nC - 3 ? 2 : 1) && rnd() > 0.15 && r < base;
+          cells.push({ d: abs(st, { left: gx + c * pitch + "px", top: baseY - r * pitch + "px", width: cell - 3 + "px", height: cell - 3 + "px", borderRadius: "4px", background: isRed ? p.accent : (isGreen ? p.good : "#dcddd6") }), c, r });
         }
       }
       cells.forEach(({ d, c, r }) => tl.fromTo(d, { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.18, ease: "back.out(2)" }, t0 + p.from + (c / nC) * p.build * 0.7 + r * 0.012));
-      const x = gx + cut * pitch;
-      const line = abs(st, { left: x + "px", top: "545px", width: "2px", height: "310px", background: p.good, transformOrigin: "50% 100%" });
+      const x = gx + cut * pitch, line = abs(st, { left: x + "px", top: baseY - 292 + "px", width: "2px", height: "310px", background: p.good, transformOrigin: "50% 100%" });
       tl.fromTo(line, { scaleY: 0 }, { scaleY: 1, duration: 0.4, ease: "power2.out" }, t0 + p.from + p.build * 0.75);
-      const tag = abs(st, { left: x - 2 + "px", top: "499px", padding: "9px 18px", borderRadius: "10px", background: "#eef9dd", border: "1px solid #cfe9a8", color: "#3f6b10", fontFamily: h.font(SANS), fontSize: "19px", fontWeight: 500, whiteSpace: "nowrap" }, "", "✓  " + p.rule);
+      const tag = abs(st, { left: x - 2 + "px", top: baseY - 338 + "px", padding: "9px 18px", borderRadius: "10px", background: "#eef9dd", border: "1px solid #cfe9a8", color: "#3f6b10", fontFamily: h.font(SANS), fontSize: "19px", fontWeight: 500, whiteSpace: "nowrap" }, "", "✓  " + p.rule);
+      if (tall) h.css(tag, { left: Math.min(x - 2, w - 560) + "px" });
       tl.fromTo(tag, { autoAlpha: 0, y: 8 }, { autoAlpha: 1, y: 0, duration: 0.3 }, t0 + p.from + p.build * 0.85);
-      const lg = abs(st, { left: "414px", top: "920px", display: "flex", alignItems: "center", gap: "10px", fontFamily: h.font(SANS), fontSize: "20px", color: "#444", whiteSpace: "nowrap" });
-      h.css(h.el("span", "", lg), { width: "14px", height: "14px", background: p.accent, borderRadius: "3px" }); h.el("span", "", lg, "repeated failure ("); h.css(h.el("span", "", lg, "npm test · exit 1"), { fontFamily: h.font(MONO), fontSize: "20px" }); h.el("span", "", lg, ")");
+      const lg = abs(st, { left: (tall ? gx : 414) + "px", top: baseY + 83 + "px", display: "flex", alignItems: "center", gap: "10px", fontFamily: h.font(SANS), fontSize: "20px", color: "#444", whiteSpace: "nowrap" });
+      h.css(h.el("span", "", lg), { width: "14px", height: "14px", background: p.accent, borderRadius: "3px" }); h.el("span", "", lg, "repeated failure ("); h.css(h.el("span", "", lg, "npm test · exit 1"), mono(20)); h.el("span", "", lg, ")");
       h.css(h.el("span", "", lg), { width: "14px", height: "14px", background: "#dcddd6", borderRadius: "3px", marginLeft: "22px" }); h.el("span", "", lg, "other steps");
       tl.fromTo(lg, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.3 }, t0 + p.from + 0.3);
-      abs(st, { left: "1546px", top: "608px", fontFamily: h.font(MONO), fontSize: "18px", color: "#7d7d78" }, "", p.unit);
-      const num = abs(st, { left: "1546px", top: "630px", fontFamily: h.font(SANS), fontSize: "70px", fontWeight: 500, letterSpacing: "-0.04em", color: p.accent, whiteSpace: "nowrap" });
-      const a = h.el("span", "", num, "10"), arrow = h.css(h.el("span", "", num, " → "), { color: "#555", fontSize: "44px" }), b = h.css(h.el("span", "", num, "0"), { color: p.good });
+      const nx = tall ? gx : 1546, ny = tall ? baseY + 170 : 608;
+      abs(st, Object.assign({ left: nx + "px", top: ny + "px", color: "#7d7d78" }, mono(18)), "", p.unit);
+      const num = abs(st, { left: nx + "px", top: ny + 22 + "px", fontFamily: h.font(SANS), fontSize: "70px", fontWeight: 500, letterSpacing: "-0.04em", color: p.accent, whiteSpace: "nowrap" });
+      h.el("span", "", num, "10"); const arrow = h.css(h.el("span", "", num, " → "), { color: "#555", fontSize: "44px" }), b = h.css(h.el("span", "", num, "0"), { color: p.good });
       tl.fromTo(num, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.3 }, t0 + p.countAt - 0.3);
       tl.fromTo([arrow, b], { opacity: 0.1, x: -6 }, { opacity: 1, x: 0, duration: 0.35, ease: "power2.out" }, t0 + p.countAt);
     },
@@ -213,48 +226,47 @@
     params: [
       ...HEAD("[Less] wasted\ntime and tokens."), P("command", "Commande dans l'anneau", "text", "npm test", 1), P("result", "Résultat", "text", "✓ 26 passed", 1),
       P("tag", "Étiquette", "text", "rule: tsc first", 1), P("bg", "Fond", "color", "#ffffff", 2), P("accent", "Vert", "color", GREEN, 2), P("fail", "Rouge de l'échec", "color", RED, 2),
-      N("size", "Taille du titre", 95, 30, 200, 1, 2, "px"), N("step", "Écart entre les mots", 0.3, 0.05, 1, 0.01, 2, "s"),
+      N("size", "Taille du titre (large)", 95, 30, 200, 1, 2, "px"), N("sizeTall", "Taille du titre (haut)", 88, 30, 200, 1, 2, "px"), N("step", "Écart entre les mots", 0.3, 0.05, 1, 0.01, 2, "s"),
       N("failAt", "Début de l'échec (anneau rouge)", 0, 0, 3, 0.05, 3, "s"), N("okAt", "Passage au vert", 1.05, 0, 3, 0.05, 3, "s"), N("t1", "Temps final (secondes)", 24, 5, 600, 1, 3),
-      N("tok1", "Jetons finaux", 12586, 100, 999999, 1, 3), N("t0s", "Temps de départ (secondes)", 134, 5, 600, 1, 3), N("tok0", "Jetons de départ", 184600, 100, 999999, 1, 3), P("times", "Instants des mots (secondes, séparés par des espaces)", "text", "0 0.2 0.5 0.85", 3),
+      N("tok1", "Jetons finaux", 12586, 100, 999999, 1, 3), N("t0s", "Temps de départ (secondes)", 134, 5, 600, 1, 3), N("tok0", "Jetons de départ", 184600, 100, 999999, 1, 3), TIMES("0 0.2 0.5 0.85"),
     ],
     build(ctx) {
-      const { el, p, tl, t0 } = ctx, st = stage(ctx);
+      const { el, p, tl, t0 } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
       h.css(el, { background: p.bg });
-      headline(st, { x: 82, cy: 416, w: 900, align: "left", size: p.size, ink: INK, accent: p.accent, lines: p.title, at: t0 + 0.0, step: p.step, times: p.times, tl, lineHeight: 1.01 });
-      // the ring: starts red and open (attempt that failed), becomes a closed green ring with the result
-      const cx = 1342, cy = 380, r = 175, C = 2 * Math.PI * r, svg = svgEl("svg", { width: 480, height: 480, viewBox: "0 0 480 480" }, st);
+      const top = tall ? Math.max(80, (sh - 1180) / 2) : 0, cx = tall ? w / 2 : 1342, cy = tall ? top + 560 : 380, bx = tall ? 70 : 998, by = tall ? cy + 360 : 714, bw = tall ? 940 : 688;
+      headline(st, { x: tall ? 70 : 82, cy: tall ? top + 70 : 416, w: tall ? 940 : 900, align: "left", size: tall ? p.sizeTall : p.size, ink: INK, accent: p.accent, lines: p.title, at: t0, step: p.step, times: p.times, tl, lineHeight: tall ? 1.1 : 1.01 });
+      // the ring: starts red and open (the attempt that failed), becomes a closed green ring with the result
+      const r = 175, C = 2 * Math.PI * r, svg = svgEl("svg", { width: 480, height: 480, viewBox: "0 0 480 480" }, st);
       h.css(svg, { position: "absolute", left: cx - 240 + "px", top: cy - 240 + "px" });
-      const ringBack = svgEl("circle", { cx: 240, cy: 240, r, fill: "none", stroke: "#f3f3f0", "stroke-width": 14 }, svg);
+      svgEl("circle", { cx: 240, cy: 240, r, fill: "none", stroke: "#f3f3f0", "stroke-width": 14 }, svg);
       const ring = svgEl("circle", { cx: 240, cy: 240, r, fill: "none", stroke: p.fail, "stroke-width": 14, "stroke-linecap": "round", transform: "rotate(-90 240 240)", "stroke-dasharray": C, "stroke-dashoffset": C }, svg);
       tl.to(ring, { attr: { "stroke-dashoffset": C * 0.32 }, duration: p.okAt - 0.1, ease: "power1.out" }, t0 + p.failAt);
       tl.to(ring, { attr: { stroke: p.accent, "stroke-dashoffset": 0 }, duration: 0.25, ease: "power2.out" }, t0 + p.okAt);
-      const lab = abs(st, { left: cx - 150 + "px", top: cy - 40 + "px", width: "300px", textAlign: "center", fontFamily: h.font(MONO), fontSize: "30px", color: "#222" }, "", p.command);
-      const bad = abs(st, { left: cx - 150 + "px", top: cy + 2 + "px", width: "300px", textAlign: "center", fontFamily: h.font(MONO), fontSize: "26px", fontWeight: 600, color: p.fail }, "", "✗ exit 1");
-      const res = abs(st, { left: cx - 150 + "px", top: cy + 2 + "px", width: "300px", textAlign: "center", fontFamily: h.font(MONO), fontSize: "26px", fontWeight: 600, color: p.accent }, "", p.result);
+      const lab = (css, txt) => abs(st, Object.assign({ left: cx - 150 + "px", width: "300px", textAlign: "center", fontFamily: h.font(MONO) }, css), "", txt);
+      lab({ top: cy - 40 + "px", fontSize: "30px", color: "#222" }, p.command);
+      const bad = lab({ top: cy + 2 + "px", fontSize: "26px", fontWeight: 600, color: p.fail }, "✗ exit 1"), res = lab({ top: cy + 2 + "px", fontSize: "26px", fontWeight: 600, color: p.accent }, p.result);
       tl.set(res, { autoAlpha: 0 }, 0); tl.set(bad, { autoAlpha: 0 }, 0);
       tl.to(bad, { autoAlpha: 1, duration: 0.2 }, t0 + 0.5); tl.to(bad, { autoAlpha: 0, duration: 0.15 }, t0 + p.okAt);
       tl.to(res, { autoAlpha: 1, duration: 0.25 }, t0 + p.okAt + 0.1);
-      abs(st, { left: cx - 150 + "px", top: "584px", width: "300px", textAlign: "center", fontFamily: h.font(SANS), fontSize: "22px", color: "#8b8b86" }, "", "first try · attempt 1");
-      const tg = abs(st, { left: "1476px", top: "138px", padding: "10px 20px", borderRadius: "12px", background: "#eef9dd", border: "1px solid #d6ebb4", fontFamily: h.font(SANS), fontSize: "22px", color: "#3f6b10", boxShadow: "0 8px 24px -12px rgba(100,160,30,0.4)" }, "", "⚡ " + p.tag);
+      abs(st, { left: cx - 150 + "px", top: cy + 204 + "px", width: "300px", textAlign: "center", fontFamily: h.font(SANS), fontSize: "22px", color: "#8b8b86" }, "", "first try · attempt 1");
+      const tg = abs(st, { left: cx + 134 + "px", top: cy - 242 + "px", padding: "10px 20px", borderRadius: "12px", background: "#eef9dd", border: "1px solid #d6ebb4", fontFamily: h.font(SANS), fontSize: "22px", color: "#3f6b10", boxShadow: "0 8px 24px -12px rgba(100,160,30,0.4)" }, "", "⚡ " + p.tag);
       tl.fromTo(tg, { autoAlpha: 0, y: -12 }, { autoAlpha: 1, y: 0, duration: 0.3 }, t0 + p.okAt);
-      // the two counters (time on this task, tokens spent) fall from the failed attempt's numbers to the first-try ones, red then green
-      const box = abs(st, { left: "998px", top: "714px", width: "688px", height: "196px", background: "#fff", borderRadius: "26px", boxShadow: "0 24px 60px -24px rgba(20,30,10,0.22), 0 0 0 1px rgba(0,0,0,0.035)" });
+      // the two counters: the failed attempt first (both climb in red), then the rule works and both fall in green to the first-try cost
+      const box = abs(st, { left: bx + "px", top: by + "px", width: bw + "px", height: "196px", background: "#fff", borderRadius: "26px", boxShadow: SHADOW });
       const mk = (x, label, tint) => {
         abs(box, { left: x + 32 + "px", top: "28px", width: "40px", height: "40px", borderRadius: "11px", background: tint });
         abs(box, { left: x + 88 + "px", top: "34px", fontFamily: h.font(SANS), fontSize: "22px", color: "#555" }, "", label);
         return abs(box, { left: x + 32 + "px", top: "96px", fontFamily: h.font(SANS), fontSize: "58px", fontWeight: 500, letterSpacing: "-0.03em", color: p.fail, whiteSpace: "nowrap" });
       };
-      const tNode = mk(0, "time on this task", "#fde3e6"), kNode = mk(340, "tokens spent", "#fbeed5");
-      abs(box, { left: "341px", top: "30px", width: "1px", height: "140px", background: "#eee" });
-      const fmtT = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`, fmtK = (n) => Math.round(n).toLocaleString("en-US");
-      // the failed attempt first: both numbers climb in red to the cost of a retry; then the rule works, both fall in green to the first-try cost
-      const pr = { a: 0.37, k: 0 };
+      const tNode = mk(0, "time on this task", "#fde3e6"), kNode = mk(bw / 2 - 4, "tokens spent", "#fbeed5");
+      abs(box, { left: bw / 2 - 3 + "px", top: "30px", width: "1px", height: "140px", background: "#eee" });
+      const fmtT = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`, fmtK = (n) => Math.round(n).toLocaleString("en-US"), pr = { a: 0.37, k: 0 };
       const upd = () => {
         const s = pr.k > 0 ? p.t0s + (p.t1 - p.t0s) * pr.k : p.t0s * pr.a, n = pr.k > 0 ? p.tok0 + (p.tok1 - p.tok0) * pr.k : p.tok0 * pr.a;
         tNode.textContent = fmtT(s); kNode.textContent = fmtK(n); const c = pr.k > 0.45 ? p.accent : p.fail; tNode.style.color = c; kNode.style.color = c;
       };
       upd();
-      tl.to(pr, { a: 1, duration: p.okAt - 0.05, ease: "none", onUpdate: upd }, t0 + 0.0);
+      tl.to(pr, { a: 1, duration: p.okAt - 0.05, ease: "none", onUpdate: upd }, t0);
       tl.to(pr, { k: 1, duration: 0.9, ease: "power3.out", onUpdate: upd }, t0 + p.okAt);
       tl.fromTo(box, { autoAlpha: 0, y: 30 }, { autoAlpha: 1, y: 0, duration: 0.5, ease: "power3.out" }, t0 + 0.1);
     },
@@ -266,39 +278,43 @@
     params: [
       ...HEAD("[Better] approaches\nto the same task."), P("rows", "Approches (nom | durée | jetons)", "lines", ["Approach 1 | 10m | 7.1K", "Approach 2 | 8m | 5.1K", "Approach 3 | 2m | 1.2K", "Approach 4 | 6m | 4.8K", "Approach 5 | 10m | 6.8K"], 1),
       P("picked", "Approche retenue (numéro)", "text", "3", 1), P("bg", "Fond", "color", "#ffffff", 2), P("accent", "Vert", "color", GREEN, 2),
-      N("size", "Taille du titre", 76, 30, 160, 1, 2, "px"), N("step", "Écart entre les mots", 0.2, 0.05, 1, 0.01, 2, "s"), N("pickAt", "Moment du choix", 1.3, 0, 4, 0.05, 2, "s"),
-      N("rowStep", "Écart entre les lignes", 0.1, 0, 0.5, 0.01, 3, "s"), N("endFade", "Fondu de fin", 0.3, 0.05, 1, 0.05, 3, "s"),
+      N("size", "Taille du titre (large)", 76, 30, 160, 1, 2, "px"), N("sizeTall", "Taille du titre (haut)", 70, 30, 160, 1, 2, "px"), N("step", "Écart entre les mots", 0.2, 0.05, 1, 0.01, 2, "s"),
+      N("pickAt", "Moment du choix", 1.3, 0, 4, 0.05, 2, "s"), N("rowStep", "Écart entre les lignes", 0.1, 0, 0.5, 0.01, 3, "s"), N("endFade", "Fondu de fin", 0.3, 0.05, 1, 0.05, 3, "s"),
     ],
     build(ctx) {
-      const { el, p, tl, t0, dur } = ctx, st = stage(ctx);
+      const { el, p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
       h.css(el, { background: p.bg });
-      const wrap = abs(st, { left: "0", top: "0", width: "1920px", height: "1080px" });
-      headline(wrap, { x: 150, y: 96, w: 900, align: "left", size: p.size, ink: INK, accent: p.accent, lines: p.title, at: t0 + 0.0, step: p.step, tl, lineHeight: 1.13 });
-      const shadow = "0 18px 50px -22px rgba(20,30,10,0.22), 0 0 0 1px rgba(0,0,0,0.04)";
-      const task = abs(wrap, { left: "150px", top: "543px", width: "475px", height: "214px", background: "#fff", borderRadius: "22px", boxShadow: shadow });
+      const wrap = abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px" });
+      const rows = p.rows.map((l) => l.split("|").map((s) => s.trim())), pick = Number(p.picked) - 1;
+      // wide: task card on the left, five rows on the right; tall: the task card on top, the five rows stacked under it, a curved connector to each
+      const rowW = tall ? 940 : 990, rowH = tall ? 118 : 115, gap = tall ? 18 : 19, rx = tall ? 70 : 790;
+      const stackH = 5 * rowH + 4 * gap, y0 = tall ? Math.max(430, (sh - stackH - 380) / 2 + 380) : 325;
+      if (tall) fitFrame(wrap, w, sh, y0 - 400, y0 + stackH + 20);
+      headline(wrap, { x: tall ? 70 : 150, cy: tall ? y0 - 330 : 160, w: tall ? 940 : 900, align: "left", size: tall ? p.sizeTall : p.size, ink: INK, accent: p.accent, lines: p.title, at: t0, step: p.step, tl, lineHeight: tall ? 1.1 : 1.13 });
+      const taskX = tall ? 70 : 150, taskY = tall ? y0 - 210 : 543, taskW = tall ? 470 : 475, taskH = tall ? 170 : 214;
+      const task = abs(wrap, { left: taskX + "px", top: taskY + "px", width: taskW + "px", height: taskH + "px", background: "#fff", borderRadius: "22px", boxShadow: SHADOW });
       abs(task, { left: "34px", top: "30px", width: "48px", height: "48px", borderRadius: "12px", background: "#f3f4f6" });
       abs(task, { left: "100px", top: "38px", fontFamily: h.font(SANS), fontSize: "26px", color: INK }, "", "Task");
-      [[34, 98, 405], [34, 128, 350], [34, 158, 180]].forEach(([x, y, w]) => abs(task, { left: x + "px", top: y + 60 - 60 + "px", width: w + "px", height: "13px", borderRadius: "7px", background: "#ececec", marginTop: "40px" }));
+      [[34, 98, taskW - 70], [34, 128, taskW - 125], [34, 158, 180]].forEach(([x, y, ww]) => { if (y + 13 <= taskH) abs(task, { left: x + "px", top: y + "px", width: ww + "px", height: "13px", borderRadius: "7px", background: "#ececec" }); });
       tl.fromTo(task, { autoAlpha: 0, x: -40 }, { autoAlpha: 1, x: 0, duration: 0.6, ease: "power3.out" }, t0 + 0.2);
-      const rows = p.rows.map((l) => l.split("|").map((s) => s.trim())), ys = [325, 459, 593, 727, 861], pick = Number(p.picked) - 1;
-      const svg = svgEl("svg", { width: 1920, height: 1080, viewBox: "0 0 1920 1080" }, wrap); h.css(svg, { position: "absolute", left: "0", top: "0" });
+      const svg = svgEl("svg", { width: w, height: sh, viewBox: `0 0 ${w} ${sh}` }, wrap); h.css(svg, { position: "absolute", left: "0", top: "0" });
       rows.forEach((r, i) => {
-        const y = ys[i], on = i === pick;
-        const row = abs(wrap, { left: "790px", top: y + "px", width: "990px", height: "115px", background: "#fff", borderRadius: "20px", boxShadow: shadow, border: "1px solid rgba(0,0,0,0.03)" });
-        const inner = { row, on };
+        const y = y0 + i * (rowH + gap), on = i === pick;
+        const row = abs(wrap, { left: rx + "px", top: y + "px", width: rowW + "px", height: rowH + "px", background: "#fff", borderRadius: "20px", boxShadow: SHADOW, border: "1px solid rgba(0,0,0,0.03)" });
         abs(row, { left: "31px", top: "26px", width: "64px", height: "64px", borderRadius: "16px", background: "#f3f4f6" });
         const ttl = abs(row, { left: "125px", top: "20px", fontFamily: h.font(SANS), fontSize: "25px", color: "#9b9b97", whiteSpace: "nowrap" }, "", r[0]);
-        [[66, 300], [92, 220]].forEach(([yy, w]) => abs(row, { left: "125px", top: yy + "px", width: w + "px", height: "13px", borderRadius: "7px", background: "#eceeef" }));
-        abs(row, { left: "788px", top: "22px", width: "1px", height: "72px", background: "#ececec" });
-        const t = abs(row, { left: "822px", top: "17px", fontFamily: h.font(SANS), fontSize: "23px", color: "#a0a09c" }, "", "◷  " + r[1]);
-        const k = abs(row, { left: "822px", top: "58px", fontFamily: h.font(SANS), fontSize: "23px", color: "#a0a09c" }, "", "▤  " + r[2]);
+        [[66, 300], [92, 220]].forEach(([yy, ww]) => abs(row, { left: "125px", top: yy + "px", width: ww + "px", height: "13px", borderRadius: "7px", background: "#eceeef" }));
+        abs(row, { left: rowW - 202 + "px", top: "22px", width: "1px", height: "72px", background: "#ececec" });
+        const t = abs(row, { left: rowW - 168 + "px", top: "17px", fontFamily: h.font(SANS), fontSize: "23px", color: "#a0a09c" }, "", "◷  " + r[1]);
+        const k = abs(row, { left: rowW - 168 + "px", top: "58px", fontFamily: h.font(SANS), fontSize: "23px", color: "#a0a09c" }, "", "▤  " + r[2]);
         tl.fromTo(row, { autoAlpha: 0, x: 60 }, { autoAlpha: 1, x: 0, duration: 0.5, ease: "power3.out" }, t0 + 0.5 + i * p.rowStep);
-        // the elbow connector from the task card to the row
-        const d = `M625 650 C 700 650, 700 ${y + 57}, 790 ${y + 57}`, path = svgEl("path", { d, fill: "none", stroke: on ? p.accent : "#d3d3d3", "stroke-width": on ? 3 : 2, "stroke-linecap": "round" }, svg);
-        const L = 400; path.setAttribute("stroke-dasharray", L);
-        tl.fromTo(path, { attr: { "stroke-dashoffset": L } }, { attr: { "stroke-dashoffset": 0 }, duration: 0.6, ease: "power2.out" }, t0 + 0.5 + i * p.rowStep);
+        // the connector from the task card to the row (wide: from its right edge; tall: from its bottom edge)
+        const ex = rx, ey = y + rowH / 2;
+        const d = tall ? `M ${taskX + 60} ${taskY + taskH} C ${taskX + 60} ${ey}, ${taskX + 20} ${ey}, ${ex} ${ey}` : `M ${taskX + taskW} ${taskY + taskH / 2} C ${taskX + taskW + 75} ${taskY + taskH / 2}, ${ex - 90} ${ey}, ${ex} ${ey}`;
+        const path = svgEl("path", { d, fill: "none", stroke: on ? p.accent : "#d3d3d3", "stroke-width": on ? 3 : 2, "stroke-linecap": "round" }, svg);
+        path.setAttribute("stroke-dasharray", 1400);
+        tl.fromTo(path, { attr: { "stroke-dashoffset": 1400 } }, { attr: { "stroke-dashoffset": 0 }, duration: 0.6, ease: "power2.out" }, t0 + 0.5 + i * p.rowStep);
         if (on) {
-          const pk = (props) => tl.to(row, props, t0 + p.pickAt);
           const badge = abs(row, { left: "283px", top: "17px", padding: "5px 16px", borderRadius: "12px", background: "#e8f6d4", color: p.accent, fontFamily: h.font(SANS), fontSize: "19px", fontWeight: 500 }, "", "✔ Selected");
           tl.set(badge, { autoAlpha: 0 }, 0); tl.fromTo(badge, { autoAlpha: 0, scale: 0.8 }, { autoAlpha: 1, scale: 1, duration: 0.3, ease: "back.out(2)" }, t0 + p.pickAt);
           tl.to(row, { background: "#f7fdf0", borderColor: "#cdee8f", boxShadow: "0 0 0 2px #cdee8f, 0 18px 50px -22px rgba(100,160,30,0.35)", duration: 0.4 }, t0 + p.pickAt);
@@ -312,43 +328,46 @@
 
   // ================================================================================================ 6. ap-map
   ZS.register({
-    id: "ap-map", label: "AgentPlay : carte de produits autour d'un nœud", group: "Données", duration: 5.2,
+    id: "ap-map", label: "AgentPlay : carte de produits autour d'un nœud", group: "Données", duration: 5.4,
     params: [
       ...HEAD("At [Entelligence,] we're opening up a first step\ntoward [self-improving] coding agents."),
       P("brand", "Marque en haut", "text", "Entelligence", 1), P("centre", "Nœud du centre", "lines", ["self-improving", "coding agents"], 1),
       P("nodes", "Nœuds (titre | sous-titre)", "lines", ["Agent Insights | Attributes every session to its outcome", "Code Review | Catches bugs before they ship twice", "agentplay | Replays every coding-agent session", "World Model | Sessions, PRs and incidents in one graph", "Model Router | Routes each turn to the most efficient model", "MCP and Plugins | Rules load before the agent writes"], 1),
-      P("bg", "Fond", "color", "#ffffff", 2), P("accent", "Vert", "color", GREEN, 2), N("size", "Taille du titre", 56, 24, 120, 1, 2, "px"), N("step", "Écart entre les mots", 0.39, 0.05, 1, 0.01, 2, "s"),
-      N("nodeAt", "Arrivée des nœuds", 0.35, 0, 4, 0.05, 3, "s"), N("nodeStep", "Écart entre nœuds", 0.12, 0, 1, 0.01, 3, "s"), P("outro", "Mot final sur fond blanc", "text", "agentplay", 3),
+      P("bg", "Fond", "color", "#ffffff", 2), P("accent", "Vert", "color", GREEN, 2), N("size", "Taille du titre (large)", 56, 24, 120, 1, 2, "px"), N("sizeTall", "Taille du titre (haut)", 50, 24, 120, 1, 2, "px"),
+      N("step", "Écart entre les mots", 0.39, 0.05, 1, 0.01, 2, "s"), N("nodeAt", "Arrivée des nœuds", 0.35, 0, 4, 0.05, 3, "s"), N("nodeStep", "Écart entre nœuds", 0.12, 0, 1, 0.01, 3, "s"),
+      P("outro", "Mot final sur fond blanc", "text", "agentplay", 3),
     ],
     build(ctx) {
-      const { el, p, tl, t0, dur } = ctx, st = stage(ctx);
+      const { el, p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
       h.css(el, { background: p.bg });
-      const wrap = abs(st, { left: "0", top: "0", width: "1920px", height: "1080px" });
-      const logo = abs(wrap, { left: "872px", top: "54px", width: "44px", height: "44px", borderRadius: "11px", background: "#87f300", boxShadow: "0 6px 16px -6px rgba(110,200,0,0.6)" });
-      h.css(h.el("div", "", logo, "e"), { position: "absolute", inset: "0", textAlign: "center", lineHeight: "40px", fontSize: "34px", fontWeight: 800, color: "#111", fontFamily: h.font(SANS) });
-      abs(wrap, { left: "928px", top: "58px", fontFamily: h.font(SANS), fontSize: "26px", fontWeight: 500, letterSpacing: "-0.03em", color: INK }, "", p.brand);
-      tl.fromTo([logo, wrap.lastChild], { autoAlpha: 0, y: -10 }, { autoAlpha: 1, y: 0, duration: 0.4 }, t0 + 0.0);
-      headline(wrap, { x: 960, y: 130, w: 1300, align: "center", size: p.size, ink: INK, accent: p.accent, lines: p.title, at: t0 + 0.25, step: p.step, tl, lineHeight: 1.05, indent: 40 });
-      const svg = svgEl("svg", { width: 1920, height: 1080, viewBox: "0 0 1920 1080" }, wrap); h.css(svg, { position: "absolute", left: "0", top: "0" });
+      const wrap = abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px" });
+      const top = tall ? Math.max(70, (sh - 1500) / 2) : 0;
+      const logo = logoMark(wrap, 44, "#87f300", { left: (tall ? w / 2 - 100 : 872) + "px", top: (tall ? top : 54) + "px" });
+      const bn = abs(wrap, { left: (tall ? w / 2 - 44 : 928) + "px", top: (tall ? top + 4 : 58) + "px", fontFamily: h.font(SANS), fontSize: "26px", fontWeight: 500, letterSpacing: "-0.03em", color: INK }, "", p.brand);
+      tl.fromTo([logo, bn], { autoAlpha: 0, y: -10 }, { autoAlpha: 1, y: 0, duration: 0.4 }, t0);
+      headline(wrap, { x: w / 2, cy: tall ? top + 150 : 160, w: tall ? 960 : 1300, align: "center", size: tall ? p.sizeTall : p.size, ink: INK, accent: p.accent, lines: p.title, at: t0 + 0.25, step: p.step, tl, lineHeight: 1.12, indent: 40, wrap: tall });
+      const svg = svgEl("svg", { width: w, height: sh, viewBox: `0 0 ${w} ${sh}` }, wrap); h.css(svg, { position: "absolute", left: "0", top: "0" });
       const nodes = p.nodes.map((l) => l.split("|").map((s) => s.trim()));
-      const POS = [[432, 366, 391, 93], [1097, 366, 391, 93], [122, 558, 421, 121], [1392, 572, 391, 93], [432, 778, 391, 93], [1097, 778, 391, 93]];
-      const cx = 772, cy = 560, cw = 378, chh = 118;
-      // the dashed orbit and spokes between the centre and the others
-      svgEl("ellipse", { cx: 960, cy: 618, rx: 600, ry: 240, fill: "none", stroke: "#d9d9d9", "stroke-width": 1.6, "stroke-dasharray": "6 6" }, svg);
-      POS.forEach((b) => svgEl("line", { x1: 960, y1: 618, x2: b[0] + b[2] / 2, y2: b[1] + b[3] / 2, stroke: "#d9d9d9", "stroke-width": 1.6, "stroke-dasharray": "6 6" }, svg));
+      // wide: the centre in the middle of a dashed orbit, three cards each side; tall: the centre under the headline, the cards in three rows of two under it
+      let POS, centre;
+      if (!tall) { POS = [[432, 366, 391, 93], [1097, 366, 391, 93], [122, 558, 421, 121], [1392, 572, 391, 93], [432, 778, 391, 93], [1097, 778, 391, 93]]; centre = [772, 560, 378, 118]; }
+      else { const y1 = top + 520; centre = [w / 2 - 190, y1, 380, 118]; POS = [[40, y1 + 230, 480, 100], [560, y1 + 230, 480, 100], [40, y1 + 380, 480, 100], [560, y1 + 380, 480, 100], [40, y1 + 530, 480, 100], [560, y1 + 530, 480, 100]]; }
+      if (tall) fitFrame(wrap, w, sh, top - 20, POS[5][1] + POS[5][3] + 30);
+      const cxm = centre[0] + centre[2] / 2, cym = centre[1] + centre[3] / 2;
+      if (!tall) svgEl("ellipse", { cx: 960, cy: 618, rx: 600, ry: 240, fill: "none", stroke: "#d9d9d9", "stroke-width": 1.6, "stroke-dasharray": "6 6" }, svg);
+      POS.forEach((b) => svgEl("line", { x1: cxm, y1: tall ? centre[1] + centre[3] : cym, x2: b[0] + b[2] / 2, y2: tall ? b[1] : b[1] + b[3] / 2, stroke: "#d9d9d9", "stroke-width": 1.6, "stroke-dasharray": "6 6" }, svg));
       const ICON = ["#fbeed5", "#ece3fa", "#eef7e3", "#e3ecfa", "#dff4ef", "#eeeeee"];
-      const card = (x, y, w, hh, ttl, sub, tint, big) => {
-        const c = abs(wrap, { left: x + "px", top: y + "px", width: w + "px", height: hh + "px", background: "#fff", borderRadius: "20px", boxShadow: "0 20px 48px -24px rgba(20,30,10,0.25), 0 0 0 1px rgba(0,0,0,0.04)" });
+      const card = (x, y, cw, hh, ttl, sub, tint, big) => {
+        const c = abs(wrap, { left: x + "px", top: y + "px", width: cw + "px", height: hh + "px", background: "#fff", borderRadius: "20px", boxShadow: "0 20px 48px -24px rgba(20,30,10,0.25), 0 0 0 1px rgba(0,0,0,0.04)" });
         abs(c, { left: "20px", top: big ? "30px" : "20px", width: "48px", height: "48px", borderRadius: "12px", background: tint });
-        abs(c, { left: "88px", top: big ? "26px" : "17px", fontFamily: h.font(SANS), fontSize: big ? "28px" : "22px", fontWeight: big ? 500 : 500, color: INK, whiteSpace: "nowrap", letterSpacing: "-0.02em" }, "", ttl);
-        abs(c, { left: big ? "22px" : "88px", top: big ? "82px" : "50px", fontFamily: h.font(SANS), fontSize: "17px", color: "#8c8c88", whiteSpace: "nowrap" }, "", sub);
+        abs(c, { left: "88px", top: big ? "26px" : "17px", fontFamily: h.font(SANS), fontSize: big ? "28px" : "22px", fontWeight: 500, color: INK, whiteSpace: "nowrap", letterSpacing: "-0.02em" }, "", ttl);
+        abs(c, { left: big ? "22px" : "88px", top: big ? "82px" : "50px", fontFamily: h.font(SANS), fontSize: tall ? "15px" : "17px", color: "#8c8c88", whiteSpace: "nowrap" }, "", sub);
         return c;
       };
-      const cards = nodes.map((n, i) => { const b = POS[i]; const c = card(b[0], b[1], b[2], b[3], n[0], n[1], ICON[i], i === 2); return c; });
-      // the agentplay card carries the glow and the open source chip
+      const cards = nodes.map((n, i) => { const b = POS[i]; return card(b[0], b[1], b[2], b[3], n[0], n[1], ICON[i], !tall && i === 2); });
       const ag = cards[2]; h.css(ag, { boxShadow: "0 0 0 3px #e9f8cf, 0 0 40px 6px rgba(150,230,60,0.35)" });
-      abs(ag, { left: "296px", top: "26px", padding: "4px 14px", borderRadius: "12px", background: "#e8f6d4", color: p.accent, fontFamily: h.font(SANS), fontSize: "15px", fontWeight: 500 }, "", "open source");
-      const mid = abs(wrap, { left: cx + "px", top: cy + "px", width: cw + "px", height: chh + "px", background: "#fff", borderRadius: "20px", boxShadow: "0 0 0 3px #e9f8cf, 0 0 36px 4px rgba(150,230,60,0.30)" });
+      abs(ag, { left: (tall ? 330 : 296) + "px", top: "26px", padding: "4px 14px", borderRadius: "12px", background: "#e8f6d4", color: p.accent, fontFamily: h.font(SANS), fontSize: "15px", fontWeight: 500 }, "", "open source");
+      const mid = abs(wrap, { left: centre[0] + "px", top: centre[1] + "px", width: centre[2] + "px", height: centre[3] + "px", background: "#fff", borderRadius: "20px", boxShadow: "0 0 0 3px #e9f8cf, 0 0 36px 4px rgba(150,230,60,0.30)" });
       abs(mid, { left: "24px", top: "30px", width: "54px", height: "54px", borderRadius: "14px", background: "#87f300" });
       p.centre.forEach((t, i) => abs(mid, { left: "98px", top: 30 + i * 28 + "px", fontFamily: h.font(SANS), fontSize: "24px", color: INK, letterSpacing: "-0.01em" }, "", t));
       tl.fromTo(mid, { autoAlpha: 0, scale: 0.85 }, { autoAlpha: 1, scale: 1, duration: 0.5, ease: "back.out(1.7)" }, t0 + 0.4);
@@ -356,8 +375,8 @@
       tl.fromTo(svg, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.8 }, t0 + p.nodeAt);
       tl.to(wrap, { opacity: 0, duration: 0.3, ease: "power1.in" }, t0 + dur - 0.6);
       if (p.outro) {   // the product name comes in blurred on the white, just before the dark card
-        const w = abs(st, { left: "960px", top: "445px", transform: "translateX(-50%)", fontFamily: h.font(SANS), fontSize: "121px", fontWeight: 500, letterSpacing: "-0.04em", color: "#2a2a28", whiteSpace: "nowrap" }, "", p.outro);
-        tl.fromTo(w, { autoAlpha: 0, filter: "blur(22px)" }, { autoAlpha: 0.9, filter: "blur(14px)", duration: 0.35, ease: "power1.out" }, t0 + dur - 0.5);
+        const o = abs(st, { left: w / 2 + "px", top: sh / 2 - 95 + "px", transform: "translateX(-50%)", fontFamily: h.font(SANS), fontSize: (tall ? 100 : 121) + "px", fontWeight: 500, letterSpacing: "-0.04em", color: "#2a2a28", whiteSpace: "nowrap" }, "", p.outro);
+        tl.fromTo(o, { autoAlpha: 0, filter: "blur(22px)" }, { autoAlpha: 0.9, filter: "blur(14px)", duration: 0.35, ease: "power1.out" }, t0 + dur - 0.5);
       }
     },
   });
@@ -368,31 +387,34 @@
     params: [
       P("name", "Nom", "text", "agentplay", 1), P("by", "Signature", "text", "by", 1), P("maker", "Éditeur", "text", "Entelligence", 1), P("command", "Commande (laisser vide pour aucune)", "text", "", 1),
       P("bg", "Fond", "color", "#0b0d0a", 2), P("ink", "Texte", "color", "#f1f2ed", 2), P("accent", "Vert", "color", "#87f300", 2), P("tags", "Mentions (séparées par une barre)", "text", "Free|Local|Open source", 2),
-      N("size", "Taille du nom", 121, 40, 220, 1, 3, "px"), N("y", "Position verticale du nom", 505, 100, 900, 1, 3, "px"), N("cmdAt", "Début de la frappe", 0.45, 0, 5, 0.05, 3, "s"),
+      N("size", "Taille du nom", 121, 40, 220, 1, 3, "px"), N("y", "Position verticale du nom (large)", 505, 100, 900, 1, 3, "px"), N("cmdAt", "Début de la frappe", 0.45, 0, 5, 0.05, 3, "s"),
       N("cps", "Caractères par seconde", 13, 4, 40, 1, 3), N("tagAt", "Première mention", 0.9, 0, 6, 0.05, 3, "s"), N("tagStep", "Écart entre mentions", 0.67, 0.05, 1.5, 0.01, 3, "s"),
       N("endFade", "Fondu de fin", 0, 0, 1, 0.05, 3, "s"),
     ],
     build(ctx) {
-      const { el, p, tl, t0, dur } = ctx, st = stage(ctx);
+      const { el, p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
       h.css(el, { background: p.bg });
-      const hasCmd = !!p.command;
-      const name = abs(st, { left: "960px", top: p.y - 60 + "px", transform: "translateX(-50%)", fontFamily: h.font(SANS), fontSize: p.size + "px", fontWeight: 500, letterSpacing: "-0.04em", color: p.ink, whiteSpace: "nowrap" }, "", p.name);
-      tl.fromTo(name, { autoAlpha: 0, filter: "blur(16px)", scale: 1.04 }, { autoAlpha: 1, filter: "blur(0px)", scale: 1, duration: 0.5, ease: "power2.out" }, t0 + 0.0);
-      const by = abs(st, { left: "960px", top: p.y + 70 + "px", transform: "translateX(-50%)", display: "flex", alignItems: "center", gap: "14px", fontFamily: h.font(SANS), fontSize: "30px", color: "#9a9b95", whiteSpace: "nowrap" });
+      const hasCmd = !!p.command, sz = tall ? Math.round(p.size * 0.88) : p.size;
+      // wide: the name's centre at p.y; tall: at 44 % of the frame (30 % with a command, which needs more room below)
+      const cy = tall ? Math.round(sh * (hasCmd ? 0.3 : 0.44)) : p.y, boxW = tall ? 520 : 452;
+      const name = abs(st, { left: w / 2 + "px", top: cy - sz * 0.5 + "px", transform: "translateX(-50%)", fontFamily: h.font(SANS), fontSize: sz + "px", fontWeight: 500, letterSpacing: "-0.04em", color: p.ink, whiteSpace: "nowrap", lineHeight: 1 }, "", p.name);
+      tl.fromTo(name, { autoAlpha: 0, filter: "blur(16px)", scale: 1.04 }, { autoAlpha: 1, filter: "blur(0px)", scale: 1, duration: 0.5, ease: "power2.out" }, t0);
+      const by = abs(st, { left: w / 2 + "px", top: cy + sz * 0.5 + 12 + "px", transform: "translateX(-50%)", display: "flex", alignItems: "center", gap: "14px", fontFamily: h.font(SANS), fontSize: "30px", color: "#9a9b95", whiteSpace: "nowrap" });
       h.el("span", "", by, p.by);
-      const lg = h.css(h.el("span", "", by), { display: "inline-block", width: "46px", height: "46px", borderRadius: "11px", background: p.accent, textAlign: "center", lineHeight: "42px", fontSize: "34px", fontWeight: 800, color: "#111" }); lg.textContent = "e";
+      const lg = logoMark(by, 46, p.accent); h.css(lg, { position: "relative", display: "inline-block", boxShadow: "none" });
       h.css(h.el("span", "", by, p.maker), { color: p.ink, fontWeight: 500, letterSpacing: "-0.03em" });
       tl.fromTo(by, { autoAlpha: 0, y: 10 }, { autoAlpha: 1, y: 0, duration: 0.5 }, t0 + 0.6);
       if (hasCmd) {
-        // the command is typed in a dark terminal pill and the three tags come in one by one
-          const box = abs(st, { left: "734px", top: p.y + 212 + "px", width: "452px", height: "86px", borderRadius: "16px", background: "#161814", border: "1px solid #272a24", fontFamily: h.font(MONO), fontSize: "40px", color: p.ink });
+        // the command is typed in a dark terminal pill, then the tags come in one by one
+        const box = abs(st, { left: w / 2 - boxW / 2 + "px", top: cy + 212 + "px", width: boxW + "px", height: "86px", borderRadius: "16px", background: "#161814", border: "1px solid #272a24", fontFamily: h.font(MONO), fontSize: "40px", color: p.ink });
         abs(box, { left: "36px", top: "16px", color: "#808279" }, "", "$");
         const txt = abs(box, { left: "80px", top: "16px", whiteSpace: "pre" }), cur = abs(box, { left: "80px", top: "21px", width: "20px", height: "44px", background: "#9cf040" });
         tl.fromTo(box, { autoAlpha: 0, y: 14 }, { autoAlpha: 1, y: 0, duration: 0.4 }, t0 + p.cmdAt - 0.3);
-        const pr = { n: 0 }, per = 24;
+        const pr = { n: 0 };
         tl.to(pr, { n: p.command.length, duration: p.command.length / p.cps, ease: "none", onUpdate: () => { txt.textContent = p.command.slice(0, Math.round(pr.n)); cur.style.left = 80 + Math.round(pr.n) * 24.5 + "px"; } }, t0 + p.cmdAt);
         for (let k = 0; k < 8; k++) tl.set(cur, { autoAlpha: k % 2 ? 1 : 0.15 }, t0 + p.cmdAt + p.command.length / p.cps + k * 0.25);
-        const tags = p.tags.split("|").map((s) => s.trim()).filter(Boolean), row = abs(st, { left: "960px", top: p.y + 356 + "px", transform: "translateX(-50%)", display: "flex", gap: "42px", alignItems: "center", whiteSpace: "nowrap", fontFamily: h.font(SANS), fontSize: "44px", letterSpacing: "-0.03em" });
+        const tags = p.tags.split("|").map((s) => s.trim()).filter(Boolean);
+        const row = abs(st, { left: w / 2 + "px", top: cy + 356 + "px", transform: "translateX(-50%)", display: "flex", gap: tall ? "30px" : "42px", alignItems: "center", whiteSpace: "nowrap", fontFamily: h.font(SANS), fontSize: (tall ? 40 : 44) + "px", letterSpacing: "-0.03em" });
         tags.forEach((t, i) => {
           const s = h.css(h.el("span", "", row, t), { color: i === tags.length - 1 ? p.accent : p.ink });
           tl.fromTo(s, { autoAlpha: 0, filter: "blur(10px)", y: 10 }, { autoAlpha: 1, filter: "blur(0px)", y: 0, duration: 0.4, ease: "power2.out" }, t0 + p.tagAt + i * p.tagStep);
@@ -403,87 +425,91 @@
   });
 
   // ================================================================================================ 8. ap-product
-  // the product window, drawn in code: sessions list on the left, the radial map, details on the right, a timeline under it. A title above it changes
-  // at the instants of "titles"; the window pans and zooms to the focus of each title (camera keys "t zoom cx cy", measured).
+  // the product window, drawn in code: sessions list, the radial map, details, a timeline. A title above it changes at the instants of "titles"; the
+  // camera keys "t zoom u v" say where the camera looks, (u, v) being a point of the WINDOW (0 to 1) and zoom 1 the window filling the frame's width, so the
+  // same keys work in every format. Wide: sessions, map and details side by side; tall: the map on top, the details and the timeline under it.
   ZS.register({
-    id: "ap-product", label: "AgentPlay : fenêtre du produit avec titres qui changent", group: "Interface", duration: 12.2,
+    id: "ap-product", label: "AgentPlay : fenêtre du produit avec titres qui changent", group: "Interface", duration: 12.3,
     params: [
-      P("titles", "Titres (temps | texte)", "lines", ["0 | Your existing sessions", "1.67 | Interactive maps", "3.33 | Replayable timelines", "5.33 | What it explored", "7.33 | Where it failed", "8.33 | What it retried", "9.33 | The final change"], 1),
-      P("camera", "Caméra (temps zoom x y)", "lines", ["0 0.79 960 640", "0.72 0.79 960 640", "1.55 1.2 404 499", "3.55 1.03 960 690", "5.05 1.0 1100 790", "6.05 1.7 981 590", "7.55 1.3 1135 434", "8.9 0.85 960 640", "12.3 0.85 960 640"], 1),
+      P("titles", "Titres (temps | texte)", "lines", ["0.05 | Your existing sessions", "1.72 | Interactive maps", "3.38 | Replayable timelines", "5.38 | What it explored", "7.38 | Where it failed", "8.38 | What it retried", "9.38 | The final change"], 1),
+      P("camera", "Caméra (temps zoom u v)", "lines", ["0 0.76 0.5 0.52", "0.72 0.76 0.5 0.52", "1.55 1.16 0.19 0.36", "3.55 1.0 0.5 0.58", "5.05 0.97 0.58 0.69", "6.05 1.64 0.51 0.47", "7.55 1.25 0.6 0.29", "8.9 0.82 0.5 0.52", "12.3 0.82 0.5 0.52"], 1),
       P("bg", "Fond", "color", "#ffffff", 2), P("ink", "Texte des titres", "color", INK, 2), P("accent", "Rouge de la piste", "color", "#a6452f", 2),
-      N("size", "Taille des titres", 64, 16, 140, 1, 2, "px"), N("seed", "Graine des branches", 5, 1, 99, 1, 3), N("branches", "Nombre de branches", 22, 8, 40, 1, 3), N("cursorAt", "Apparition du curseur bleu", 1.0, 0, 6, 0.05, 3, "s"),
-      N("entry", "Entrée de la fenêtre", 0.5, 0.1, 2, 0.05, 3, "s"), N("trail", "Début de la piste rouge", 5.5, 0, 12, 0.05, 3, "s"), N("playhead", "Vitesse de la tête de lecture", 1, 0, 3, 0.05, 3),
+      N("size", "Taille des titres (large)", 64, 16, 140, 1, 2, "px"), N("sizeTall", "Taille des titres (haut)", 56, 16, 140, 1, 2, "px"), N("seed", "Graine des branches", 5, 1, 99, 1, 3), N("branches", "Nombre de branches", 22, 8, 40, 1, 3),
+      N("cursorAt", "Apparition du curseur bleu", 1.0, 0, 6, 0.05, 3, "s"), N("entry", "Entrée de la fenêtre", 0.5, 0.1, 2, 0.05, 3, "s"), N("trail", "Début de la piste rouge", 5.5, 0, 12, 0.05, 3, "s"),
     ],
     build(ctx) {
-      const { el, p, tl, t0, dur } = ctx, st = stage(ctx);
+      const { el, p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
       h.css(el, { background: p.bg });
-      // the window at 1920 x 1080 scale; the camera moves this wrapper
-      const cam = abs(st, { left: "0", top: "0", width: "1920px", height: "1080px", transformOrigin: "0 0" });
-      const win = abs(cam, { left: "62px", top: "180px", width: "1796px", height: "880px", background: "#fcfcfa", borderRadius: "26px", boxShadow: "0 40px 100px -40px rgba(20,30,10,0.25), 0 0 0 1px rgba(0,0,0,0.04)", overflow: "hidden", fontFamily: h.font(SANS) });
-      abs(win, { left: "0", top: "0", width: "1796px", height: "5px", background: "linear-gradient(90deg,#eaf6d6,#fcfcfa)" });
-      abs(win, { left: "40px", top: "24px", fontSize: "26px", fontWeight: 500, color: INK, letterSpacing: "-0.02em" }, "", "Demo: Add rate limiting to the orders API");
-      [["Claude Code", "#f0f0ee", INK], ["PR opened", "#e8f6d4", "#4f7d14"], ["1 PR", "#fff", INK]].forEach(([t, bg, c], i) => abs(win, { left: [560, 724, 878][i] + "px", top: "20px", padding: "7px 16px", borderRadius: "10px", background: bg, color: c, fontSize: "20px", border: "1px solid #e8e8e4" }, "", t));
-      abs(win, { left: "1170px", top: "20px", fontFamily: h.font(MONO), fontSize: "18px", color: "#9a9a95" }, "", "Task: All tasks ⌄    Agent: All agents (1) ⌄    5f2c9a1e · Thu, Sep 24");
-      // left list of sessions (checked rows)
-      const left = abs(win, { left: "22px", top: "86px", width: "420px", height: "560px", background: "#fff", borderRadius: "18px", border: "1px solid #ececea" });
-      ["Whole session", "Explore the request pipeline", "Add a token-bucket rate limiter", "Commit and open a PR"].forEach((t, i) => abs(left, { left: "28px", top: 30 + i * 96 + "px", width: "364px", fontSize: "21px", color: i ? "#444" : INK, fontWeight: i ? 400 : 600 }, "", t));
-      // the radial map
-      const map = abs(win, { left: "460px", top: "86px", width: "1000px", height: "560px", background: "#fff", borderRadius: "18px", border: "1px solid #ececea", overflow: "hidden" });
-      const svg = svgEl("svg", { width: 1000, height: 560, viewBox: "-500 -280 1000 560" }, map);
-      const rnd = h.rand(p.seed), names = ["README.md", "index.ts", "auth.ts", "server.ts", "env.ts", "orders.ts", "package.json", "rateLimit.test.ts", "rateLimit.ts", "errors", "subagents", "outputs", "models", "MCP", "PR #142", "commit 9d41c07", "Sub 1: Explore", "overloaded", "non-zero exit", "test", "does", "rate-limit"], spokes = [];
+      const winW = tall ? 1000 : 1796, winH = tall ? Math.min(1480, sh - 380) : 880, winX = (w - winW) / 2, winY = tall ? 260 : 180;
+      const cam = abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px", transformOrigin: "0 0" });
+      const win = abs(cam, { left: winX + "px", top: winY + "px", width: winW + "px", height: winH + "px", background: "#fcfcfa", borderRadius: "26px", boxShadow: "0 40px 100px -40px rgba(20,30,10,0.25), 0 0 0 1px rgba(0,0,0,0.04)", overflow: "hidden", fontFamily: h.font(SANS) });
+      abs(win, { left: "0", top: "0", width: winW + "px", height: "5px", background: "linear-gradient(90deg,#eaf6d6,#fcfcfa)" });
+      abs(win, { left: "40px", top: "24px", fontSize: tall ? "24px" : "26px", fontWeight: 500, color: INK, letterSpacing: "-0.02em" }, "", "Demo: Add rate limiting to the orders API");
+      if (!tall) {
+        [["Claude Code", "#f0f0ee", INK], ["PR opened", "#e8f6d4", "#4f7d14"], ["1 PR", "#fff", INK]].forEach(([t, bg, c], i) => abs(win, { left: [560, 724, 878][i] + "px", top: "20px", padding: "7px 16px", borderRadius: "10px", background: bg, color: c, fontSize: "20px", border: "1px solid #e8e8e4" }, "", t));
+        abs(win, { left: "1170px", top: "20px", fontFamily: h.font(MONO), fontSize: "18px", color: "#9a9a95" }, "", "Task: All tasks ⌄    Agent: All agents (1) ⌄    5f2c9a1e · Thu, Sep 24");
+      } else abs(win, { left: "40px", top: "56px", fontFamily: h.font(MONO), fontSize: "16px", color: "#9a9a95" }, "", "Claude Code · PR opened · 1 PR · 5f2c9a1e");
+      const panelCss = { background: "#fff", borderRadius: "18px", border: "1px solid #ececea" };
+      const L = tall ? { list: null, map: [20, 96, 960, 740], det: [20, 856, 960, 250], tl: [20, 1126, 960, Math.max(150, winH - 1146)] }
+        : { list: [22, 86, 420, 560], map: [460, 86, 1000, 560], det: [1478, 86, 300, 560], tl: [22, 664, 1756, 190] };
+      if (L.list) {
+        const left = abs(win, Object.assign({ left: L.list[0] + "px", top: L.list[1] + "px", width: L.list[2] + "px", height: L.list[3] + "px" }, panelCss));
+        ["Whole session", "Explore the request pipeline", "Add a token-bucket rate limiter", "Commit and open a PR"].forEach((t, i) => abs(left, { left: "28px", top: 30 + i * 96 + "px", width: "364px", fontSize: "21px", color: i ? "#444" : INK, fontWeight: i ? 400 : 600 }, "", t));
+      }
+      const [mx, my, mw, mh] = L.map, map = abs(win, Object.assign({ left: mx + "px", top: my + "px", width: mw + "px", height: mh + "px", overflow: "hidden" }, panelCss));
+      const svg = svgEl("svg", { width: mw, height: mh, viewBox: `${-mw / 2} ${-mh / 2} ${mw} ${mh}` }, map);
+      const rnd = h.rand(p.seed), names = ["README.md", "index.ts", "auth.ts", "server.ts", "env.ts", "orders.ts", "package.json", "rateLimit.test.ts", "rateLimit.ts", "errors", "subagents", "outputs", "models", "MCP", "PR #142", "commit 9d41c07", "Sub 1: Explore", "overloaded", "non-zero exit", "test", "does", "rate-limit"], sy = tall ? 1.45 : 0.92;
       for (let i = 0; i < p.branches; i++) {
-        const a = (i / p.branches) * Math.PI * 2 + rnd() * 0.2, r0 = 40 + rnd() * 30, r1 = 120 + rnd() * 230, bend = (rnd() - 0.5) * 70;
-        const x1 = Math.cos(a) * r1, y1 = Math.sin(a) * r1 * 0.92, mx = Math.cos(a) * r1 * 0.5 + Math.cos(a + 1.57) * bend, my = Math.sin(a) * r1 * 0.5 + Math.sin(a + 1.57) * bend;
-        const pathEl = svgEl("path", { d: `M0,0 Q ${mx.toFixed(1)},${my.toFixed(1)} ${x1.toFixed(1)},${y1.toFixed(1)}`, fill: "none", stroke: "#d6d6d2", "stroke-width": 1.6 }, svg);
-        const tint = ["#e9b8b0", "#b9cfe6", "#e8c9a6", "#c6bfe6", "#cfe2b8"][i % 5];
-        svgEl("circle", { cx: x1, cy: y1, r: 7, fill: tint }, svg);
-        const lab = svgEl("text", { x: x1 + 10, y: y1 + 5, fill: "#b8b8b4", "font-size": 18, "font-family": "JetBrainsMono, monospace", transform: `rotate(${(a * 180 / Math.PI) % 180 - 90 > 90 ? 0 : (Math.sin(a) * 28).toFixed(0)} ${x1} ${y1})` }, svg); lab.textContent = names[i % names.length];
-        spokes.push(pathEl);
+        const a = (i / p.branches) * Math.PI * 2 + rnd() * 0.2, r1 = (120 + rnd() * 230) * (tall ? 0.95 : 1), bend = (rnd() - 0.5) * 70;
+        const x1 = Math.cos(a) * r1, y1 = Math.sin(a) * r1 * sy, mx2 = Math.cos(a) * r1 * 0.5 + Math.cos(a + 1.57) * bend, my2 = Math.sin(a) * r1 * 0.5 * sy + Math.sin(a + 1.57) * bend;
+        svgEl("path", { d: `M0,0 Q ${mx2.toFixed(1)},${my2.toFixed(1)} ${x1.toFixed(1)},${y1.toFixed(1)}`, fill: "none", stroke: "#d6d6d2", "stroke-width": 1.6 }, svg);
+        svgEl("circle", { cx: x1, cy: y1, r: 7, fill: ["#e9b8b0", "#b9cfe6", "#e8c9a6", "#c6bfe6", "#cfe2b8"][i % 5] }, svg);
+        const lab = svgEl("text", { x: x1 + 10, y: y1 + 5, fill: "#b8b8b4", "font-size": 18, "font-family": "JetBrainsMono, monospace", transform: `rotate(${(Math.sin(a) * 28).toFixed(0)} ${x1} ${y1})` }, svg); lab.textContent = names[i % names.length];
       }
       svgEl("circle", { cx: 0, cy: 0, r: 11, fill: "#e8f6d4", stroke: "#4f7d14", "stroke-width": 2 }, svg);
-      // the red trail: root, acme/api, src, rateLimit.ts, drawn along its path
-      const trailPath = svgEl("path", { d: "M0,0 L108,-24 C 150,-40 140,-120 165,-160 C 175,-175 240,-170 270,-165", fill: "none", stroke: p.accent, "stroke-width": 5, "stroke-linecap": "round" }, svg);
-      const Lt = 560; trailPath.setAttribute("stroke-dasharray", Lt); trailPath.setAttribute("stroke-dashoffset", Lt);
+      const k = tall ? 0.85 : 1, tx = (x) => x * k, ty = (y) => y * (tall ? 1.35 : 1);
+      const trailPath = svgEl("path", { d: `M0,0 L${tx(108)},${ty(-24)} C ${tx(150)},${ty(-40)} ${tx(140)},${ty(-120)} ${tx(165)},${ty(-160)} C ${tx(175)},${ty(-175)} ${tx(240)},${ty(-170)} ${tx(270)},${ty(-165)}`, fill: "none", stroke: p.accent, "stroke-width": 5, "stroke-linecap": "round" }, svg);
+      trailPath.setAttribute("stroke-dasharray", 900); trailPath.setAttribute("stroke-dashoffset", 900);
       [["acme/api", 108, -24, 22], ["src", 165, -100, 8], ["rateLimit.ts", 270, -165, 11]].forEach(([t, x, y, r]) => {
-        svgEl("circle", { cx: x, cy: y, r, fill: t === "rateLimit.ts" ? p.accent : "#66665f" }, svg);
-        const l = svgEl("text", { x: x + 12, y: y - 8, fill: "#2b2b28", "font-size": 24, "font-family": "JetBrainsMono, monospace", "font-weight": 600 }, svg); l.textContent = t;
+        svgEl("circle", { cx: tx(x), cy: ty(y), r, fill: t === "rateLimit.ts" ? p.accent : "#66665f" }, svg);
+        const l = svgEl("text", { x: tx(x) + 12, y: ty(y) - 8, fill: "#2b2b28", "font-size": 24, "font-family": "JetBrainsMono, monospace", "font-weight": 600 }, svg); l.textContent = t;
       });
       tl.to(trailPath, { attr: { "stroke-dashoffset": 0 }, duration: 1.4, ease: "power2.inOut" }, t0 + p.trail);
-      // details panel on the right
-      const right = abs(win, { left: "1478px", top: "86px", width: "300px", height: "560px", background: "#fff", borderRadius: "18px", border: "1px solid #ececea", fontSize: "19px" });
-      ["Span", "Tasks", "Requests", "Tool calls", "Cost", "Tokens", "Agents", "Files"].forEach((t, i) => abs(right, { left: "22px", top: 34 + i * 30 + "px", color: "#666" }, "", t));
-      abs(right, { left: "22px", top: "304px", width: "256px", height: "130px", background: "#eef9dd", borderRadius: "14px", border: "1px solid #d8eeb6", padding: "14px", color: INK, fontSize: "19px", lineHeight: 1.35 }, "", "OUTCOME\n3 tasks · 1 PR created · 1 commit · 1 model switch");
-      // the timeline strip under the map
-      const tlb = abs(win, { left: "22px", top: "664px", width: "1756px", height: "190px", background: "#fff", borderRadius: "18px", border: "1px solid #ececea" });
-      const colors = ["#6a7bd8", "#e0a23d", "#c9514e", "#55a35f", "#8b6fd0"];
-      for (let r = 0; r < 4; r++) for (let c = 0; c < 70; c++) { if (rnd() > 0.75) continue; abs(tlb, { left: 120 + c * 23 + "px", top: 70 + r * 26 + "px", width: "15px", height: "15px", borderRadius: "3px", background: colors[Math.floor(rnd() * colors.length)] }); }
-      const head = abs(tlb, { left: "700px", top: "30px", width: "2px", height: "150px", background: "#2f6bd6" });
-      tl.fromTo(head, { x: -580 }, { x: 600, duration: Math.max(1, dur - 1), ease: "none" }, t0 + 0.6);
+      // details (right panel, or the strip under the map in tall formats)
+      const [dx, dy, dw, dh] = L.det, right = abs(win, Object.assign({ left: dx + "px", top: dy + "px", width: dw + "px", height: dh + "px", fontSize: "19px" }, panelCss));
+      ["Span", "Tasks", "Requests", "Tool calls", "Cost", "Tokens", "Agents", "Files"].forEach((t, i) => abs(right, tall ? { left: 22 + Math.floor(i / 4) * 140 + "px", top: 28 + (i % 4) * 30 + "px", color: "#666" } : { left: "22px", top: 34 + i * 30 + "px", color: "#666" }, "", t));
+      abs(right, tall ? { left: "330px", top: "22px", width: "608px", height: "130px", background: "#eef9dd", borderRadius: "14px", border: "1px solid #d8eeb6", padding: "14px", color: INK, fontSize: "19px", lineHeight: 1.35 }
+        : { left: "22px", top: "304px", width: "256px", height: "130px", background: "#eef9dd", borderRadius: "14px", border: "1px solid #d8eeb6", padding: "14px", color: INK, fontSize: "19px", lineHeight: 1.35 }, "", "OUTCOME\n3 tasks · 1 PR created · 1 commit · 1 model switch");
+      // the timeline strip
+      const [bx, byy, bw, bh] = L.tl, strip = abs(win, Object.assign({ left: bx + "px", top: byy + "px", width: bw + "px", height: bh + "px" }, panelCss));
+      const colors = ["#6a7bd8", "#e0a23d", "#c9514e", "#55a35f", "#8b6fd0"], cols = tall ? 38 : 70, cw = (bw - 150) / cols;
+      for (let r = 0; r < 4; r++) for (let c = 0; c < cols; c++) { if (rnd() > 0.75) continue; abs(strip, { left: 120 + c * cw + "px", top: 70 + r * 26 + "px", width: Math.max(8, cw - 8) + "px", height: "15px", borderRadius: "3px", background: colors[Math.floor(rnd() * colors.length)] }); }
+      const head = abs(strip, { left: bw * 0.4 + "px", top: "30px", width: "2px", height: "150px", background: "#2f6bd6" });
+      tl.fromTo(head, { x: -bw * 0.33 }, { x: bw * 0.33, duration: Math.max(1, dur - 1), ease: "none" }, t0 + 0.6);
       // the blue "Play" cursor pill
-      const cur = abs(cam, { left: "300px", top: "210px", padding: "7px 18px", borderRadius: "18px", background: "#2f6bd6", color: "#fff", fontFamily: h.font(SANS), fontSize: "20px", fontWeight: 500, boxShadow: "0 8px 20px -8px rgba(47,107,214,0.7)" }, "", "▶ Play");
+      const cur = abs(cam, { left: winX + (tall ? 300 : 330) + "px", top: winY + (tall ? 700 : 330) + "px", padding: "7px 18px", borderRadius: "18px", background: "#2f6bd6", color: "#fff", fontFamily: h.font(SANS), fontSize: "20px", fontWeight: 500, boxShadow: "0 8px 20px -8px rgba(47,107,214,0.7)" }, "", "▶ Play");
       tl.fromTo(cur, { autoAlpha: 0, x: -200, y: 300 }, { autoAlpha: 1, x: 0, y: 0, duration: 0.8, ease: "power2.out" }, t0 + p.cursorAt);
-      tl.to(cur, { x: 520, y: 620, duration: 4, ease: "power1.inOut" }, t0 + p.cursorAt + 1.2);
-      tl.fromTo(win, { autoAlpha: 0, y: 60, scale: 0.97 }, { autoAlpha: 1, y: 0, scale: 1, duration: p.entry, ease: "power3.out" }, t0 + 0.0);
+      tl.to(cur, { x: tall ? 120 : 220, y: tall ? 360 : 330, duration: 4, ease: "power1.inOut" }, t0 + p.cursorAt + 1.2);
+      tl.fromTo(win, { autoAlpha: 0, y: 60, scale: 0.97 }, { autoAlpha: 1, y: 0, scale: 1, duration: p.entry, ease: "power3.out" }, t0);
       // the changing title
       p.titles.forEach((l, i) => {
-        const [tm, tx] = l.split("|").map((s) => s.trim()), nxt = p.titles[i + 1] ? Number(p.titles[i + 1].split("|")[0]) : dur, a = Number(tm);
-        const t = abs(st, { left: "960px", top: "40px", transform: "translateX(-50%)", fontFamily: h.font(SANS), fontSize: p.size + "px", fontWeight: 500, letterSpacing: "-0.035em", color: p.ink, whiteSpace: "nowrap" }, "", tx);
+        const [tm, tx2] = l.split("|").map((s) => s.trim()), nxt = p.titles[i + 1] ? Number(p.titles[i + 1].split("|")[0]) : dur, a = Number(tm);
+        const t = abs(st, { left: w / 2 + "px", top: (tall ? 90 : 40) + "px", transform: "translateX(-50%)", fontFamily: h.font(SANS), fontSize: (tall ? p.sizeTall : p.size) + "px", fontWeight: 500, letterSpacing: "-0.035em", color: p.ink, whiteSpace: "nowrap" }, "", tx2);
         tl.set(t, { autoAlpha: 0 }, 0);
         tl.fromTo(t, { autoAlpha: 0, y: 10, filter: "blur(8px)" }, { autoAlpha: 1, y: 0, filter: "blur(0px)", duration: 0.3, ease: "power2.out" }, t0 + a);
         if (i < p.titles.length - 1) tl.to(t, { autoAlpha: 0, duration: 0.15 }, t0 + nxt - 0.15);
       });
-      // the camera keys: zoom around (cx, cy), eased between keys
-      const keys = p.camera.map((l) => l.trim().split(/\s+/).map(Number)).filter((k) => k.length === 4);
-      keys.forEach(([t, z, cx, cy], i) => {
-        const put = (props, at, d) => tl.to(cam, Object.assign({ duration: d, ease: "power2.inOut" }, props), t0 + at);
-        const props = { scale: z, x: 960 - cx * z, y: 540 - cy * z };
-        if (i === 0) tl.set(cam, props, t0 + t);
-        else {
-          put(props, keys[i - 1][0], Math.max(0.01, t - keys[i - 1][0]));
-          // a fast, large change of zoom smears (the measured frames at 28.0 s and 29.5 s are blurred): a blur that rises then falls with the move
-          const ratio = Math.max(z, keys[i - 1][1]) / Math.min(z, keys[i - 1][1]), span = t - keys[i - 1][0];
-          if (ratio > 1.3 && span < 1.6) { const b = Math.min(9, (ratio - 1) * 5); tl.to(cam, { filter: `blur(${b}px)`, duration: span * 0.5, ease: "power1.in" }, t0 + keys[i - 1][0]); tl.to(cam, { filter: "blur(0px)", duration: span * 0.5, ease: "power1.out" }, t0 + keys[i - 1][0] + span * 0.5); }
-        }
+      // the camera: zoom 1 = the window fills the frame's width (about 93 %); (u, v) is the point of the window at the centre of the frame
+      const keys = p.camera.map((l) => l.trim().split(/\s+/).map(Number)).filter((q) => q.length === 4);
+      const at = (z, u, v) => { const cx = winX + u * winW, cy = winY + v * winH; return { scale: z, x: w / 2 - cx * z, y: sh / 2 - cy * z }; };
+      keys.forEach(([t, z, u, v], i) => {
+        const props = at(z, u, v);
+        if (i === 0) { tl.set(cam, props, t0 + t); return; }
+        const prev = keys[i - 1], span = Math.max(0.01, t - prev[0]);
+        tl.to(cam, Object.assign({ duration: span, ease: "power2.inOut" }, props), t0 + prev[0]);
+        // a fast, large change of zoom smears (the measured frames at 28.0 s and 29.5 s are blurred): a blur that rises then falls with the move
+        const ratio = Math.max(z, prev[1]) / Math.min(z, prev[1]);
+        if (ratio > 1.3 && span < 1.6) { const b = Math.min(9, (ratio - 1) * 5); tl.to(cam, { filter: `blur(${b}px)`, duration: span * 0.5, ease: "power1.in" }, t0 + prev[0]); tl.to(cam, { filter: "blur(0px)", duration: span * 0.5, ease: "power1.out" }, t0 + prev[0] + span * 0.5); }
       });
     },
   });

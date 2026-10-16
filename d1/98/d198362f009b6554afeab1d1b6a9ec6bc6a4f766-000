@@ -1,0 +1,60 @@
+"""Camera keys of a window (or any large picture) seen by a moving camera, from its own pixels (16 October 2026).
+
+A canonical frame (where the whole window is visible and its rectangle is known) is matched against every frame of a range with SIFT and a RANSAC
+similarity (scale and translation). For each frame it gives the zoom of the window and the point of the window at the centre of the frame, as the keys
+"t zoom u v" of the template ap-product (zoom 1 = the window as wide as DESIGN_W pixels, (u, v) in 0..1 of the window). A frame that cannot be matched
+(blur, a cut) is reported as missing, never invented. FR : les cles de camera d'une fenetre vue par une camera mobile, depuis ses propres pixels.
+Usage: python3 Scripts/TrackWindow.py <video> --canon 31.2 --rect 208,155,1712,1037 --design-w 1796 --from 22.3 --to 34.2 --step 0.1 [--t0 21.95]
+"""
+import argparse
+import json
+import subprocess
+
+import cv2
+import numpy as np
+
+
+def frame(video, t, w=1920):
+    h = round(w * 9 / 16)
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{t:.3f}", "-i", video, "-frames:v", "1", "-vf", f"scale={w}:{h}", "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+                         capture_output=True, check=True).stdout
+    return np.frombuffer(raw, np.uint8).reshape(h, w)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("video")
+    ap.add_argument("--canon", type=float, required=True)
+    ap.add_argument("--rect", required=True)
+    ap.add_argument("--design-w", type=float, required=True)
+    ap.add_argument("--from", dest="a", type=float, required=True)
+    ap.add_argument("--to", dest="b", type=float, required=True)
+    ap.add_argument("--step", type=float, default=0.1)
+    ap.add_argument("--t0", type=float, default=0.0, help="scene start: printed times are relative to it")
+    a = ap.parse_args()
+    x0, y0, x1, y1 = (float(v) for v in a.rect.split(","))
+    sift, bf = cv2.SIFT_create(4000), cv2.BFMatcher()
+    base = frame(a.video, a.canon)
+    kb, db = sift.detectAndCompute(base, None)
+    out, t = [], a.a
+    while t <= a.b + 1e-6:
+        f = frame(a.video, t)
+        kf, df = sift.detectAndCompute(f, None)
+        row = {"t": round(t - a.t0, 3)}
+        if df is not None and len(kf) > 20:
+            m = bf.knnMatch(db, df, k=2)
+            good = [p[0] for p in m if len(p) == 2 and p[0].distance < 0.75 * p[1].distance]
+            if len(good) >= 12:
+                pa = np.float32([kb[g.queryIdx].pt for g in good]); pb = np.float32([kf[g.trainIdx].pt for g in good])
+                M, inl = cv2.estimateAffinePartial2D(pa, pb, method=cv2.RANSAC, ransacReprojThreshold=2.5)
+                if M is not None and inl.sum() >= 12:
+                    s = float(np.hypot(M[0, 0], M[1, 0])); d = M[:, 2]
+                    c = (np.array([960.0, 540.0]) - d) / s                     # the canonical-frame point at the centre of this frame
+                    row.update({"z": round(s * (x1 - x0) / a.design_w, 4), "u": round((c[0] - x0) / (x1 - x0), 4), "v": round((c[1] - y0) / (y1 - y0), 4), "inliers": int(inl.sum())})
+        out.append(row)
+        t += a.step
+    print(json.dumps(out))
+
+
+if __name__ == "__main__":
+    main()
