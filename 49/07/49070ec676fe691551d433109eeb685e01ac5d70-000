@@ -1,0 +1,254 @@
+"""ZenRay Motion Design, the corpus night (16 October 2026).
+
+One workflow for a corpus of reference videos (the 102 of /Users/zenray/Downloads/Corpus.md), always in this order:
+fetch -> ingest -> shots (cut to the rhythm) -> book (bible and storyboard) -> music (stored in the app) -> vector (the
+animation of every cut as ONE self-contained HTML, flat 2D vector, never separate layers) -> project (the gallery entry).
+Each step is idempotent and keeps its own state per video in <workshop>/corpus-102/state.json, so a night can be stopped
+and resumed, and one dead link never blocks the others. Every value comes from motion/params/corpus.json (HDA law).
+FR : le workflow de corpus ; chaque etape reprenable, un etat par video, une video en echec ne bloque pas les autres.
+Usage: see Scripts/CorpusNight.py.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+import unicodedata
+from pathlib import Path
+
+MOTION = Path(__file__).resolve().parent
+REPO = MOTION.parent
+CFG = json.loads((MOTION / "params" / "corpus.json").read_text(encoding="utf-8"))
+MCFG = json.loads((MOTION / "params" / "motion.json").read_text(encoding="utf-8"))
+P = {k: Path(os.path.expanduser(v)) for k, v in MCFG["paths"].items()}
+WORKSHOP = P.get("workshop", Path(os.path.expanduser("~/.claude/tmp/tmp-zenray-motion-design")))
+REFCACHE = P.get("refcache", Path(os.path.expanduser("~/.claude/tmp/tmp-zenray-motion-design-refcache")))
+HOME = WORKSHOP / CFG["workshopDir"]
+STATE_FILE = HOME / "state.json"
+LOG_FILE = HOME / "night.log"
+PY = str(Path(os.path.expanduser(CFG["python"])))
+YTDLP = str(Path(os.path.expanduser(CFG["download"]["ytdlp"])))
+STEPS = CFG["steps"]
+
+
+def log(msg: str) -> None:
+    HOME.mkdir(parents=True, exist_ok=True)
+    line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}"
+    with LOG_FILE.open("a", encoding="utf-8") as f:
+        f.write(line + "\n")
+    print(line, flush=True)
+
+
+# ------------------------------------------------------------------------------------------------ corpus file
+def kebab(text: str, n: int) -> str:
+    t = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"[^a-z0-9]+", "-", t).strip("-")[:n].strip("-")
+
+
+def parse_corpus(md: str) -> list[dict]:
+    """Corpus.md -> one item per entry: number, category, title, status, ordered links (main first, then the fallbacks)."""
+    cat, items = "", []
+    for line in md.splitlines():
+        if line.startswith("## "):
+            cat = line[3:].strip()
+            continue
+        m = re.match(r"- \*\*(\d+) (.+?)\*\* \((.+?)\) : (.+)$", line)
+        if not m:
+            continue
+        n, title, status, rest = m.groups()
+        links = re.findall(r"(?:(secours|trailer) : )?\[([^\]]+)\]\((https?://[^)]+)\)", rest)
+        items.append({"n": int(n), "slug": f"c{int(n):03d}-{kebab(title, CFG['slugTitleChars'])}", "category": cat, "title": title,
+                      "status": status, "links": [{"role": r or ("main" if i == 0 else "autre"), "title": t, "url": u} for i, (r, t, u) in enumerate(links)]})
+    return items
+
+
+def load_items() -> list[dict]:
+    src = HOME / CFG["source"]
+    if not src.is_file():
+        raise FileNotFoundError(f"{src}: copy Corpus.md there first")
+    return parse_corpus(src.read_text(encoding="utf-8"))
+
+
+# ------------------------------------------------------------------------------------------------ state
+def read_state() -> dict:
+    try:
+        return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"items": {}}
+
+
+def write_state(st: dict) -> None:
+    HOME.mkdir(parents=True, exist_ok=True)
+    tmp = STATE_FILE.with_suffix(".part")
+    tmp.write_text(json.dumps(st, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    tmp.replace(STATE_FILE)
+
+
+def mark(slug: str, step: str, ok: bool, **info) -> None:
+    # the state file is shared by parallel workers: re-read, change one entry, write (atomic rename)
+    st = read_state()
+    it = st["items"].setdefault(slug, {})
+    it[step] = {"ok": ok, "at": time.strftime("%Y-%m-%d %H:%M:%S"), **info}
+    write_state(st)
+
+
+def done(slug: str, step: str) -> bool:
+    return bool(read_state()["items"].get(slug, {}).get(step, {}).get("ok"))
+
+
+# ------------------------------------------------------------------------------------------------ fetch
+def _run(argv: list[str], timeout: int, cwd: str | None = None) -> subprocess.CompletedProcess:
+    return subprocess.run(argv, capture_output=True, text=True, timeout=timeout, cwd=cwd)
+
+
+def resolve_url(url: str) -> tuple[list[str], str]:
+    """(extra yt-dlp arguments, url to give it). Vimeo pages ask for a login: the public player of the same id does not.
+    ArtStation: the project JSON names the embedded player (a Vimeo player or its own clip player)."""
+    m = re.match(r"https?://(?:www\.)?vimeo\.com/(?:[^/]+/)*(\d+)", url)
+    if m:
+        return ["--referer", "https://vimeo.com/"], f"https://player.vimeo.com/video/{m.group(1)}"
+    m = re.match(r"https?://(?:www\.)?artstation\.com/artwork/([A-Za-z0-9]+)", url)
+    if m:
+        from curl_cffi import requests  # in the yt-dlp venv only
+        r = requests.get(f"https://www.artstation.com/projects/{m.group(1)}.json", impersonate="chrome", timeout=30)
+        r.raise_for_status()
+        for a in r.json().get("assets", []):
+            emb = a.get("player_embedded") or ""
+            src = re.search(r"src=['\"]([^'\"]+)", emb)
+            if src:
+                u = src.group(1).replace("&amp;", "&")
+                vm = re.match(r"https?://player\.vimeo\.com/video/(\d+)", u)
+                if vm:
+                    return ["--referer", "https://www.artstation.com/"], f"https://player.vimeo.com/video/{vm.group(1)}"
+                return ["--referer", "https://www.artstation.com/", "--impersonate", "chrome"], u
+        raise RuntimeError("ArtStation: no embedded video in the project")
+    return [], url
+
+
+def fetch(item: dict) -> dict:
+    d = CFG["download"]
+    out_dir = REFCACHE / d["folder"] / item["slug"]
+    out_dir.mkdir(parents=True, exist_ok=True)
+    have = next(iter(sorted(out_dir.glob("video.mp4"))), None)
+    if have and have.stat().st_size > 50_000:
+        return {"file": str(have), "reused": True}
+    errors = []
+    for link in item["links"]:
+        try:
+            extra, url = resolve_url(link["url"])
+            argv = [YTDLP, "--no-playlist", "--no-progress", "--no-warnings", "-f", d["format"], "--merge-output-format", "mp4",
+                    "--download-sections", f"*0-{d['maxSeconds']}", "--force-keyframes-at-cuts", "--retries", str(d["retries"]),
+                    "--write-info-json", "-o", str(out_dir / "video.%(ext)s"), *extra, url]
+            r = _run(argv, d["timeoutS"])
+            f = out_dir / "video.mp4"
+            if r.returncode == 0 and f.is_file() and f.stat().st_size > 50_000:
+                info = {}
+                ij = out_dir / "video.info.json"
+                if ij.is_file():
+                    j = json.loads(ij.read_text(encoding="utf-8"))
+                    info = {k: j.get(k) for k in ("title", "uploader", "duration", "height", "width", "fps", "extractor", "webpage_url")}
+                    ij.unlink()
+                return {"file": str(f), "link": link, "info": info, "errors": errors}
+            errors.append({"url": link["url"], "error": (r.stderr or r.stdout).strip().splitlines()[-1][:300] if (r.stderr or r.stdout).strip() else f"exit {r.returncode}"})
+        except Exception as e:  # a bad link names its cause and the next one is tried
+            errors.append({"url": link["url"], "error": f"{type(e).__name__}: {e}"[:300]})
+    raise RuntimeError(json.dumps(errors, ensure_ascii=False))
+
+
+# ------------------------------------------------------------------------------------------------ ingest, shots, book
+def ingest(item: dict, video: str) -> dict:
+    r = _run([PY, "-I", str(REPO / "Scripts" / "Orchestrate.py"), "ingest", video, "--slug", item["slug"], "--title",
+              f"{item['n']:03d} {item['title']}"], 900, str(REPO))
+    if r.returncode != 0:
+        raise RuntimeError((r.stderr or r.stdout).strip()[-400:])
+    return {"out": r.stdout.strip()[-200:]}
+
+
+def shots(item: dict) -> dict:
+    r = _run([PY, "-I", "-m", "zrmd.cli", "shots", item["slug"]], 900, str(REPO))
+    if r.returncode != 0:
+        raise RuntimeError((r.stderr or r.stdout).strip()[-400:])
+    p = WORKSHOP / "references" / item["slug"] / "analysis" / "shots.json"
+    n = len((json.loads(p.read_text(encoding="utf-8")) or {}).get("shots", [])) if p.is_file() else 0
+    return {"shots": n}
+
+
+def book(item: dict) -> dict:
+    env = {**os.environ, "OMP_NUM_THREADS": "1"}
+    r = subprocess.run([PY, "-I", str(REPO / "Scripts" / "BuildReferenceBook.py"), "--slug", item["slug"], "--workers", str(CFG["book"]["workers"])],
+                       capture_output=True, text=True, timeout=CFG["book"]["timeoutS"], cwd=str(REPO), env=env)
+    b = WORKSHOP / "references" / item["slug"] / "bible.json"
+    if r.returncode != 0 or not b.is_file():
+        raise RuntimeError((r.stderr or r.stdout).strip()[-400:] or "no bible written")
+    j = json.loads(b.read_text(encoding="utf-8"))
+    return {"shots": len(j.get("shots", [])), "duration": (j.get("summary", {}).get("rhythm") or {}).get("duration")}
+
+
+# ------------------------------------------------------------------------------------------------ music
+def music(item: dict, video: str) -> dict:
+    """The audio of the reference, stored in the app's music bank as a local track (never published), with its measured tempo."""
+    m = CFG["music"]
+    dst_dir = P["bank"] / m["folder"]
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    dst = dst_dir / f"{item['slug']}.{m['format']}"
+    r = _run(["ffmpeg", "-v", "error", "-y", "-i", video, "-vn", "-ac", "2", "-ar", "44100", "-t", str(m["maxSeconds"]),
+              "-c:a", "libmp3lame", "-b:a", m["bitrate"], str(dst)], 600)
+    if r.returncode != 0 or not dst.is_file() or dst.stat().st_size < 2000:
+        raise RuntimeError("no audio stream: " + (r.stderr.strip()[-200:] or "empty"))
+    bible = json.loads((WORKSHOP / "references" / item["slug"] / "bible.json").read_text(encoding="utf-8")) if (WORKSHOP / "references" / item["slug"] / "bible.json").is_file() else {}
+    snd = bible.get("sound") or {}
+    entry = {"id": item["slug"], "n": item["n"], "title": item["title"], "category": item["category"], "file": dst.name,
+             "bytes": dst.stat().st_size, "tempoBpm": snd.get("tempo_bpm"), "loudnessLufs": snd.get("loudness_lufs"),
+             "duration": snd.get("duration"), "kind": "reference-audio", "local": True,
+             "note": "audio de la référence rangé pour le montage ; local, jamais publié"}
+    idx_file = dst_dir / "index.json"
+    idx = json.loads(idx_file.read_text(encoding="utf-8")) if idx_file.is_file() else {"tracks": []}
+    idx["tracks"] = [t for t in idx["tracks"] if t["id"] != entry["id"]] + [entry]
+    idx["tracks"].sort(key=lambda t: t["n"])
+    idx_file.write_text(json.dumps(idx, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    return {"file": dst.name, "bytes": entry["bytes"]}
+
+
+STEP_FN = {"shots": lambda it, ctx: shots(it), "book": lambda it, ctx: book(it), "music": lambda it, ctx: music(it, ctx["video"])}
+
+
+def process(item: dict, only: list[str] | None = None) -> dict:
+    """Runs every step of one video that is not done; a failure is recorded with its cause and stops THIS video only."""
+    slug, ctx, steps_run = item["slug"], {}, []
+    for step in STEPS:
+        if only and step not in only:
+            continue
+        if done(slug, step):
+            if step == "fetch":
+                ctx["video"] = read_state()["items"][slug]["fetch"]["file"]
+            continue
+        t0 = time.time()
+        try:
+            if step == "fetch":
+                r = fetch(item)
+                ctx["video"] = r["file"]
+            elif step == "ingest":
+                r = ingest(item, ctx.get("video") or read_state()["items"][slug]["fetch"]["file"])
+            elif step in STEP_FN:
+                ctx.setdefault("video", read_state()["items"].get(slug, {}).get("fetch", {}).get("file"))
+                r = STEP_FN[step](item, ctx)
+            else:
+                try:  # steps added by other modules of the night (vector, project)
+                    import importlib
+                    mod = importlib.import_module(f"corpus_{step}")
+                    r = mod.run(item, ctx)
+                except ModuleNotFoundError:
+                    continue
+            mark(slug, step, True, seconds=round(time.time() - t0, 1), **{k: v for k, v in r.items() if k not in ("errors",)})
+            steps_run.append(step)
+            log(f"{slug} {step} ok ({time.time() - t0:.0f} s)")
+        except Exception as e:
+            msg = str(e)[:600]
+            mark(slug, step, False, error=msg, seconds=round(time.time() - t0, 1))
+            log(f"{slug} {step} FAILED: {msg[:200]}")
+            return {"slug": slug, "failed": step, "error": msg}
+    return {"slug": slug, "ran": steps_run}

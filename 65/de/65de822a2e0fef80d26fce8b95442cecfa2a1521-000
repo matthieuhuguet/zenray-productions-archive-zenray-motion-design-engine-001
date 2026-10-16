@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+# 16 October 2026: the corpus night. Runs the workflow of motion/corpus.py on the videos of Corpus.md, resumable.
+#   CorpusNight.py parse                      write corpus-102/items.json from Corpus.md and print the count
+#   CorpusNight.py run [--only 26,12] [--steps fetch,shots] [--videos 3]
+#   CorpusNight.py status                     one line per step, then the failures with their cause
+# FR : la nuit de corpus ; reprenable, une video en echec ne bloque pas les autres.
+import argparse
+import concurrent.futures as cf
+import json
+import os
+import sys
+from pathlib import Path
+
+ENGINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE))
+sys.path.insert(0, str(ENGINE / "motion"))
+import corpus  # noqa: E402
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("cmd", choices=["parse", "run", "status"])
+    ap.add_argument("--only", default="")
+    ap.add_argument("--steps", default="")
+    ap.add_argument("--videos", type=int, default=0)
+    a = ap.parse_args()
+    items = corpus.load_items()
+    if a.cmd == "parse":
+        (corpus.HOME / "items.json").write_text(json.dumps(items, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        print(len(items), "entries,", sum(len(i["links"]) for i in items), "links")
+        return 0
+    st = corpus.read_state()["items"]
+    if a.cmd == "status":
+        for step in corpus.STEPS:
+            ok = sum(1 for i in items if st.get(i["slug"], {}).get(step, {}).get("ok"))
+            ko = sum(1 for i in items if st.get(i["slug"], {}).get(step, {}).get("ok") is False)
+            print(f"{step:8} ok {ok:3} failed {ko:3} of {len(items)}")
+        for i in items:
+            for step, v in st.get(i["slug"], {}).items():
+                if v.get("ok") is False:
+                    print(f"  {i['n']:03d} {i['title'][:34]:34} {step}: {str(v.get('error'))[:150]}")
+        return 0
+    os.nice(corpus.CFG["nice"])
+    wanted = {int(x) for x in a.only.split(",") if x.strip()}
+    steps = [s for s in a.steps.split(",") if s] or None
+    todo = [i for i in items if not wanted or i["n"] in wanted]
+    n = a.videos or corpus.CFG["parallel"]["videos"]
+    corpus.log(f"night start: {len(todo)} videos, {n} at a time, steps {steps or corpus.STEPS}")
+    with cf.ThreadPoolExecutor(max_workers=n) as ex:
+        for r in ex.map(lambda it: corpus.process(it, steps), todo):
+            pass
+    corpus.log("night end")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

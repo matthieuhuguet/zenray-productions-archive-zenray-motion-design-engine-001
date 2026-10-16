@@ -1,26 +1,20 @@
 {
-  "_doc": "16 October 2026: the single parameter interface of the corpus night (motion/corpus.py, Scripts/CorpusNight.py). HDA law: no value in the code. FR : interface unique de la nuit de corpus.",
+  "_doc": "16 October 2026: the single parameter interface of the corpus night (motion/corpus.py, motion/htmlvec.py, Scripts/CorpusNight.py). HDA law: no value in the code. FR : interface unique de la nuit de corpus.",
   "workshopDir": "corpus-102",
   "source": "Corpus.md",
+  "slugTitleChars": 36,
+  "python": "~/.venvs/zenray-motion/bin/python",
+  "steps": ["fetch", "ingest", "shots", "book", "music", "vector", "project"],
   "download": {
+    "ytdlp": "~/.venvs/zenray-ytdlp/bin/yt-dlp",
     "maxSeconds": 240,
-    "maxHeight": 1080,
-    "format": "bv*[height<=1080][vcodec!*=av01]+ba/b[height<=1080]/bv*+ba/b",
+    "format": "bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b",
     "retries": 3,
-    "timeoutS": 900,
+    "timeoutS": 1200,
     "folder": "_corpus"
   },
-  "analysis": {
-    "mergeBelowS": 0.2,
-    "maxScenes": 400,
-    "thumbKind": "mid",
-    "visionBatch": 64
-  },
-  "text": {
-    "lexicon": ["Procedural", "Motion", "ZenRay", "Houdini", "Light", "Nodes", "Frame", "Signal", "Origin", "Build", "Render", "Flow", "Pulse", "Echo", "Field", "Layer", "Focus", "Rhythm", "Orbit", "Tempo", "Grain", "Vector", "Shift", "Drift", "Spark", "Anchor", "Bloom", "Trace", "Ripple", "Prism"],
-    "words": ["Made with ZenRay", "Every value a parameter", "Change one number", "From node to frame", "Procedural by design", "Built to be edited", "One idea, many cuts", "Edit it yourself"]
-  },
-  "parallel": {"fetch": 3, "analyze": 2, "compute": 2},
-  "steps": ["fetch", "ingest", "shots", "book", "vision", "compute", "music"],
-  "music": {"bank": "music", "format": "mp3", "bitrate": "192k", "maxSeconds": 240, "tag": "corpus"}
+  "book": {"workers": 6, "timeoutS": 3600},
+  "music": {"folder": "corpus-music", "format": "mp3", "bitrate": "192k", "maxSeconds": 240},
+  "parallel": {"videos": 3},
+  "nice": 5
 }
