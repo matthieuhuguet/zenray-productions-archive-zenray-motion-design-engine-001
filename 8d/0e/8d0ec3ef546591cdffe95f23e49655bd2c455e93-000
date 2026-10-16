@@ -1,0 +1,63 @@
+"""Reproduction of the Factory Environments launch film (whatships.com/videos/factory-environments, 33.6 s) as an editable motion project (16 October 2026).
+
+FOREGROUND ONLY (Matthieu's rule): kinetic words, typed command, interface cards, title, mark; no photograph. FR : mots, commande, cartes, titre, marque ; jamais de photo.
+Usage: python3 motion/reproductions/factory_environments.py
+"""
+import json
+import sys
+from pathlib import Path
+
+MOTION = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(MOTION))
+import server  # noqa: E402
+
+BEATS = [
+    (0.00, "fa-words", {}),
+    (3.00, "fa-code", {}),
+    (7.30, "fa-words", {"words": ["0 2.0 _ #2e2e2e #2e2e2e"], "fromBg": "1.0"}),
+    (9.30, "fa-card", {"kind": "env"}),
+    (12.10, "fa-card", {"kind": "steps"}),
+    (15.10, "fa-card", {"kind": "terminal"}),
+    (18.40, "fa-card", {"kind": "building", "hold": 1.05}),
+    (21.30, "fa-card", {"kind": "linter", "hold": 1.0}),
+    (24.90, "fa-card", {"kind": "instances"}),
+    (28.30, "fa-title", {}),
+    (31.30, "fa-end", {}),
+]
+END = 33.6
+
+
+def T(scene: str, key: str) -> dict:
+    return {"scene": scene, "key": key}
+
+
+# PROMOTED CONTROLS: what the storyboard says can change: the opening words, the command, the project of the cards, the linter message, the title and the name.
+CONTROLS = [
+    {"id": "words", "label": "Mots d'ouverture (début fin MOT fond encre)", "type": "lines", "group": "Phrase", "targets": [T("b01", "words")]},
+    {"id": "code", "label": "Commande qui défile", "type": "lines", "group": "Commande", "targets": [T("b02", "code")]},
+    {"id": "project", "label": "Nom du projet des cartes", "type": "text", "group": "Cartes", "targets": [T(f"b{i:02d}", "project") for i in (5, 8, 9)]},
+    {"id": "terminal", "label": "Lignes du terminal", "type": "lines", "group": "Cartes", "targets": [T("b06", "lines")]},
+    {"id": "linter", "label": "Titre de la carte d'alerte", "type": "text", "group": "Cartes", "targets": [T("b08", "title")]},
+    {"id": "title", "label": "Grand titre", "type": "text", "group": "Titre", "targets": [T("b10", "title")]},
+    {"id": "name", "label": "Nom de la marque", "type": "text", "group": "Titre", "targets": [T("b11", "name")]},
+]
+
+
+def project() -> dict:
+    scenes = []
+    for i, (t, tpl, params) in enumerate(BEATS):
+        nxt = BEATS[i + 1][0] if i + 1 < len(BEATS) else END
+        scenes.append({"id": f"b{i + 1:02d}", "template": tpl, "duration": round(nxt - t, 4), "params": params, "ref": {"start": t, "note": "instant read on the reference"}})
+    return {"schema": "zrmd/motion-project@1", "title": "Factory Environments reproduit", "format": "16x9", "fps": 30, "reference": "factory-environments",
+            "doc": "16 October 2026: Factory Environments launch film, foreground only (no photograph).",
+            "theme": {"bg": "#d9d9d9", "ink": "#0b0b0b", "accent": "#c80000", "fontTitle": "InterVariable", "fontBody": "InterVariable"},
+            "music": {"mode": "none"}, "sfx": {"enabled": False}, "controls": CONTROLS, "scenes": scenes}
+
+
+if __name__ == "__main__":
+    pid = "factory-environments-motion"
+    if (server.project_dir(pid) / "project.json").is_file():
+        server.save_version(pid, "avant une nouvelle passe de reproduction")
+    p = project()
+    server.write_project(pid, p)
+    print(json.dumps({"id": pid, "scenes": len(p["scenes"]), "duration": round(sum(s["duration"] for s in p["scenes"]), 2)}))

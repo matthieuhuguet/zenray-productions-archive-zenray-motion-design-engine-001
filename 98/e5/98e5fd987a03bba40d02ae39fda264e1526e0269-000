@@ -75,7 +75,8 @@
         tl.fromTo([tag, line], { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.2 }, t0 + 0.55 + i * 0.2);
       });
       // the big serif word, coral, cropped by the right edge
-      const sw = abs(st, { left: (tall ? w * 0.28 : 1130) + "px", top: (tall ? sh * 0.42 : 130) + "px", fontFamily: "AnthropicSerif, serif", fontSize: 560 * k + "px", color: p.coral, opacity: 0.88, whiteSpace: "nowrap", lineHeight: 1, letterSpacing: "-0.03em" }, "", p.word);
+      const sw = abs(st, { left: (tall ? w * 0.2 : 470) + "px", top: (tall ? sh * 0.36 : 20) + "px", fontFamily: "AnthropicSerif, serif", fontSize: (tall ? 640 : 860) + "px", color: p.coral, opacity: 0.88, whiteSpace: "nowrap", lineHeight: 1, letterSpacing: "-0.03em", zIndex: 0 }, "", p.word);
+      st.insertBefore(sw, field);
       tl.fromTo(sw, { x: 420 * k, autoAlpha: 0 }, { x: 0, autoAlpha: 0.88, duration: 0.45, ease: "power3.out" }, t0 + p.soulAt);
       hud(ctx, st, w, sh, { pages: [[0, "04 / THE SOUL"]], dark: true, film0: p.film0 });
     },
@@ -108,17 +109,17 @@
     id: "cl-output", label: "Claudia : une sortie (STILL, CLIP, SONG, MUSIC VIDEO)", group: "Texte", duration: 1.0,
     params: [
       P("kind", "Genre", "select", "still", ["still", "clip", "song", "video"], 1), P("word", "Mot géant", "text", "STILL", 1), P("source", "Source", "text", "STILL — MIDJOURNEY", 1), P("output", "Numéro de sortie", "text", "OUTPUT 01 / 04", 1),
-      P("coral", "Corail", "color", CORAL, 2), P("cream", "Crème", "color", CREAM, 2), P("bg", "Fond", "color", "#0b0b0b", 2), P("tag", "Étiquette de repère", "text", "STAR CLIP ↗", 2),
+      P("coral", "Corail", "color", CORAL, 2), P("cream", "Crème", "color", CREAM, 2), P("bg", "Fond (vide = selon le genre)", "text", "", 2), P("tag", "Étiquette de repère", "text", "STAR CLIP ↗", 2),
       P("checks", "Pastilles de contrôle", "text", "CANON ✓   ONE STREAK ✓   STAR CLIP ✓   MIC ✓", 3), P("page", "Section", "text", "06 / EVERYTHING", 3), N("film0", "Début dans le film (s)", 10.8, 0, 30, 0.01, 3, "s"),
       N("size", "Taille du mot (large)", 224, 40, 600, 1, 3, "px"),
     ],
     build(ctx) {
       const { p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = sceneBase(ctx, p.bg), k = tall ? w / 1920 : 1, kind = p.kind;
-      const bg = { still: "#0b0b0b", clip: "#0b0b0b", song: "#d9d4cb", video: "#0b0b0b" }[kind] === p.bg ? ({ still: "#0b0b0b", clip: "#0b0b0b", song: "#d9d4cb", video: "#141414" }[kind]) : p.bg;
+      const bg = p.bg || { still: "#0b0b0b", clip: "#0b0b0b", song: "#d9d4cb", video: "#141414" }[kind];
       h.css(ctx.el, { background: bg });
       const light = kind === "song", ink = light ? "#161616" : p.cream;
       const wd = { still: { x: 46, y: 238, c: "#c9cdcf", fs: p.size }, clip: { x: 1112, y: 100, c: p.coral, fs: p.size * 1.6 }, song: { x: 65, y: 255, c: "#0a0a0a", fs: p.size * 1.6 }, video: { x: 98, y: 38, c: p.cream, fs: p.size * 0.55 } }[kind];
-      const word = abs(st, { left: wd.x * k + "px", top: (tall ? sh * 0.2 : wd.y) + "px", fontFamily: "InterVariable", fontWeight: 900, fontSize: wd.fs * k + "px", color: wd.c, letterSpacing: "-0.02em", lineHeight: 1, whiteSpace: "nowrap", transform: "scaleX(0.82)", transformOrigin: "0 0", opacity: kind === "still" ? 0.92 : 1 }, "", p.word);
+      const wk = tall ? 0.78 : 1, word = abs(st, { left: (tall ? 60 : wd.x) + "px", top: (tall ? sh * (kind === "video" ? 0.04 : 0.2) : wd.y) + "px", fontFamily: "InterVariable", fontWeight: 900, fontSize: wd.fs * wk + "px", color: wd.c, letterSpacing: "-0.02em", lineHeight: 1, whiteSpace: "nowrap", transform: "scaleX(0.82)", transformOrigin: "0 0", opacity: kind === "still" ? 0.92 : 1 }, "", p.word);
       tl.fromTo(word, { autoAlpha: 0, x: -30 * k, scale: 1.04 }, { autoAlpha: kind === "still" ? 0.92 : 1, x: 0, scale: 1, duration: 0.2, ease: "power3.out" }, t0);
       if (kind === "video") {
         abs(st, { left: "0", top: "0", width: w + "px", height: 147 * k + "px", background: "#0b0b0b" }); abs(st, { left: "0", top: sh - 140 * k + "px", width: w + "px", height: 140 * k + "px", background: "#0b0b0b" });
@@ -159,7 +160,7 @@
     ],
     build(ctx) {
       const { p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = sceneBase(ctx, p.bg), k = tall ? w / 1920 : 1;
-      const X = tall ? 80 : 117, top = tall ? sh * 0.2 : 190, fs = (tall ? p.size * 0.78 : p.size) * k * (tall ? 1.3 : 1);
+      const X = tall ? 70 : 117, top = tall ? sh * 0.2 : 190, fs = tall ? p.size * 0.92 : p.size;
       const mk = (txt, y) => { const e = abs(st, { left: X + "px", top: y + "px", fontFamily: "InterVariable", fontWeight: 900, fontSize: fs + "px", color: p.ink, letterSpacing: "-0.02em", lineHeight: 1, whiteSpace: "nowrap", transform: "scaleX(0.82)", transformOrigin: "0 0" }, "", txt); return e; };
       const l1 = mk(p.line1, top), l2 = mk(p.line2, top + fs * 0.86);
       // the reveal: the lines glitch in as horizontal slices that settle, the ink goes from blue-grey to black (the reference's letters are filled with picture first)

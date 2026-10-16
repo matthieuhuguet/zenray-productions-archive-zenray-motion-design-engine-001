@@ -1,0 +1,192 @@
+// 16 October 2026: the templates of the Factory Environments launch film (whatships.com/videos/factory-environments, 33.6 s), measured on the reference.
+// FOREGROUND ONLY (Matthieu's rule): the kinetic words, the typed command, the interface cards (environment, build steps, terminal, ready, linter, instances),
+// the big title and the Factory mark; no photograph (the reference's pictures are not reproduced). Every template lays itself out for the format.
+// FR : les modeles du film Factory Environments ; mots, commande tapee, cartes d'interface, titre, marque ; jamais de photo.
+(function () {
+  const ZS = window.ZS, h = ZS.h;
+  const P = (key, label, type, def, tier, extra) => Object.assign({ key, label, type, default: def, tier }, extra || {});
+  const N = (key, label, def, min, max, step, tier, unit) => ({ key, label, type: "number", default: def, min, max, step, tier, unit });
+  const NS = "http://www.w3.org/2000/svg", RED = "#c80000", GREY = "#d9d9d9", INK = "#0b0b0b", SANS = "InterVariable", MONO = "JetBrainsMono";
+  const svgEl = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); Object.keys(attrs || {}).forEach((k) => e.setAttribute(k, attrs[k])); if (parent) parent.appendChild(e); return e; };
+  const abs = (parent, css, cls, text) => { const e = h.css(h.el("div", "zs-abs" + (cls ? " " + cls : ""), parent), css); if (text !== undefined) { if (/</.test(String(text))) e.innerHTML = text; else e.textContent = text; } return e; };
+  const lab = (px, css) => Object.assign({ fontFamily: h.font(MONO), fontSize: px + "px", letterSpacing: "0.1em", textTransform: "uppercase", color: "#9a9a9a", whiteSpace: "nowrap" }, css || {});
+  const keys = (lines) => lines.map((l) => l.trim().split(/\s+/)).filter((q) => q.length >= 2);
+  const lerp = (ks, t) => { if (t <= ks[0][0]) return ks[0][1]; for (let i = 1; i < ks.length; i++) if (t <= ks[i][0]) { const a = ks[i - 1], b = ks[i], u = (t - a[0]) / Math.max(1e-9, b[0] - a[0]); return a[1] + (b[1] - a[1]) * u; } return ks[ks.length - 1][1]; };
+  const SHADOW = "0 30px 70px -30px rgba(0,0,0,0.35), 0 2px 8px rgba(0,0,0,0.08)";
+
+  // the Factory mark: eight petals drawn as thick outlines (no picture)
+  function mark(parent, size, col, sw) {
+    const svg = svgEl("svg", { width: size, height: size, viewBox: "-500 -500 1000 1000" }, parent);
+    for (let i = 0; i < 8; i++) svgEl("path", { d: "M0,-50 C 190,-150 175,-380 0,-480 C -175,-380 -190,-150 0,-50 Z", fill: "none", stroke: col, "stroke-width": sw || 46, "stroke-linejoin": "round", transform: `rotate(${i * 45})` }, svg);
+    return svg;
+  }
+
+  // ================================================================================================ fa-words
+  ZS.register({
+    id: "fa-words", label: "Factory : les mots qui s'enchaînent", group: "Texte", duration: 3.0,
+    params: [
+      P("words", "Mots (début fin MOT fond encre)", "lines", ["0 0.3 DROIDS #c80000 #0b0b0b", "0.3 0.5 NOW #000000 #e6e6e6", "0.5 0.8 HAVE #d9d9d9 #c80000", "0.8 1.1 A #c80000 #0b0b0b", "1.1 1.3 FLEET #000000 #e6e6e6", "1.3 1.6 OF #d9d9d9 #c80000", "1.6 3.0 SANDBOXES #05262f #c80000"], 1),
+      N("cap", "Hauteur des majuscules (large)", 225, 60, 500, 1, 2, "px"), N("x", "Marge gauche (large)", 108, 0, 400, 1, 2, "px"), N("baseline", "Ligne de base (large)", 660, 200, 1000, 1, 2, "px"),
+      P("fromBg", "Début du fondu vers la scène suivante", "text", "2.6", 3),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
+      const base = tall ? sh * 0.5 + p.cap * 0.4 : p.baseline, x = tall ? 60 : p.x;
+      const bg = abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px" });
+      h.css(el, { background: "#000" });
+      p.words.forEach((l) => {
+        const [a, b, word, fill, ink] = l.trim().split(/\s+/), s0 = Number(a), s1 = Number(b);
+        const fs = (tall ? Math.min(p.cap / 0.72, (w - 120) / (word.length * 0.62)) : p.cap / 0.72);
+        const t = abs(st, { left: x + "px", top: base - fs * 0.78 + "px", fontFamily: "InterVariable", fontWeight: 500, fontSize: fs + "px", color: ink, letterSpacing: "-0.045em", lineHeight: 1, whiteSpace: "nowrap", visibility: "hidden" }, "", word);
+        tl.set(t, { visibility: "visible" }, t0 + s0); if (s1 < dur) tl.set(t, { visibility: "hidden" }, t0 + s1);
+        tl.set(bg, { backgroundColor: fill, backgroundImage: fill === "#05262f" ? "linear-gradient(180deg,#356f80 0%,#0a1a20 55%,#000 85%)" : "none" }, t0 + s0);
+      });
+      tl.to(bg, { backgroundColor: "#2e2e2e", backgroundImage: "none", duration: 0.4 }, t0 + Number(p.fromBg));
+    },
+  });
+
+  // ================================================================================================ fa-code
+  const CODE = ["API=https://api.factory.ai/api/v0", "AUTH=\"Authorization: Bearer $FACTORY_API_KEY\"", "", "# twenty environments, one call", "curl -H \"$AUTH\" --json '{", "  \"quantity\": 20,", "  \"namePrefix\": \"web-app\",", "  \"repos\": [\"https://github.com/acme/web-app\"],", "  \"autoInstallDeps\": true", "}' $API/computers/bulk > fleet.json", "", "# then a Droid on each, once it's up", "jq -c '.computers[] | {computerId: .id}' fleet.json |", "while read -r body; do", "  curl -fH \"$AUTH\" --retry 10 --retry-all-errors \\", "    --json \"$body\" $API/sessions", "done"];
+  ZS.register({
+    id: "fa-code", label: "Factory : la commande qui défile", group: "Texte", duration: 4.3,
+    params: [
+      P("code", "Code", "lines", CODE, 1), P("bg", "Fond", "color", "#2b2b2b", 2), P("ink", "Texte", "color", "#ececec", 2), N("size", "Taille du texte", 37, 10, 80, 1, 3, "px"),
+      N("scroll", "Défilement (px par seconde)", 38, 0, 300, 1, 3), N("cps", "Caractères par seconde", 420, 10, 800, 1, 3),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
+      h.css(el, { background: `linear-gradient(180deg, ${p.bg} 0%, #1b1b1b 100%)` });
+      const fs = tall ? p.size * 0.8 : p.size, box = abs(st, { left: (tall ? 40 : 28) + "px", top: (tall ? sh * 0.2 : 56) + "px", fontFamily: h.font(MONO), fontSize: fs + "px", lineHeight: 1.5, color: p.ink, whiteSpace: "pre", opacity: 0.88 });
+      const full = p.code.join("\n"), pr = { n: 0 };
+      box.textContent = "";
+      tl.to(pr, { n: full.length, duration: full.length / p.cps, ease: "none", onUpdate: () => { box.textContent = full.slice(0, Math.round(pr.n)); } }, t0 + 0.05);
+      tl.to(box, { y: -p.scroll * dur, duration: dur, ease: "none" }, t0);
+      // the cursor block
+      void sh;
+    },
+  });
+
+  // ================================================================================================ fa-card (one interface card per scene; cards of the same family share the layout)
+  const pill = (parent, css, txt) => abs(parent, Object.assign({ borderRadius: "5px", padding: "5px 11px", fontFamily: h.font(MONO), fontSize: "15px", letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 600 }, css), "", txt);
+  const check = (parent, css, on) => { const b = abs(parent, Object.assign({ width: "30px", height: "30px", border: "2px solid #444", borderRadius: "5px", background: "#fff" }, css)); if (on) abs(b, { left: "4px", top: "-3px", fontSize: "26px", color: "#222", fontWeight: 700 }, "", "✓"); return b; };
+  const spinner = (parent, css) => { const s = svgEl("svg", { width: 26, height: 26, viewBox: "0 0 26 26" }, abs(parent, css)); svgEl("circle", { cx: 13, cy: 13, r: 9, fill: "none", stroke: "#eee", "stroke-width": 3 }, s); const a = svgEl("path", { d: "M13 4 A9 9 0 0 1 22 13", fill: "none", stroke: "#d4202a", "stroke-width": 3, "stroke-linecap": "round" }, s); return { svg: s, arc: a }; };
+
+  ZS.register({
+    id: "fa-card", label: "Factory : une carte d'interface", group: "Interface", duration: 2.6,
+    params: [
+      P("kind", "Carte", "select", "env", ["env", "steps", "terminal", "building", "ready", "linter", "instances"], 1), P("title", "Titre (selon la carte)", "text", "", 1), P("bg", "Fond", "color", GREY, 2),
+      P("project", "Projet", "text", "acme-web", 2), P("lines", "Lignes (selon la carte)", "lines", [], 2), N("hold", "Instant du changement d'état", 1.2, 0, 8, 0.05, 3, "s"),
+      N("cardY", "Position verticale de la carte (large)", 590, 100, 1000, 1, 3, "px"), N("film0", "Début dans le film (s)", 0, 0, 40, 0.01, 3, "s"),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx), kind = p.kind, dark = kind === "terminal" || kind === "instances";
+      h.css(el, { background: kind === "instances" ? "linear-gradient(180deg,#32677a 0%,#0b1a21 50%,#000 80%)" : p.bg });
+      const k = tall ? Math.min(1, (w - 80) / 1100) : 1, cw = { env: 1096, steps: 997, terminal: 1137, building: 1077, ready: 1077, linter: 1100, instances: 1100 }[kind], ch = { env: 250, steps: 433, terminal: 370, building: 397, ready: 397, linter: 500, instances: 560 }[kind];
+      const cx = tall ? (w - cw * k) / 2 : 240, cy = tall ? sh / 2 - (ch * k) / 2 : p.cardY - ch / 2;
+      const card = abs(st, { left: cx + "px", top: cy + "px", width: cw + "px", height: ch + "px", background: dark ? "#111111" : "#ffffff", boxShadow: SHADOW, borderRadius: "3px", transformOrigin: "0 0", transform: `scale(${k})`, fontFamily: h.font(SANS), color: dark ? "#f2f2f2" : INK });
+      tl.fromTo(card, { autoAlpha: 0, x: -28 }, { autoAlpha: 1, x: 0, duration: 0.3, ease: "power3.out" }, t0);
+      tl.to(card, { autoAlpha: 0, x: 18, duration: 0.18, ease: "power1.in" }, t0 + dur - 0.2);
+      // measured on the reference (700 px wide compare, x 2.74): padding 55, header centre at y 60, rule at y 96, labels 20 px mono, values 40 px
+      const PAD = 55, LAB = 20;
+      const head = (left, right, rightStyle) => { abs(card, lab(LAB - 2, { left: PAD + "px", top: "49px", color: dark ? "#8a8a8a" : "#8a8a8a" }), "", left); const r = abs(card, lab(LAB - 2, Object.assign({ right: PAD + "px", top: "49px" }, rightStyle || {})), "", right); abs(card, { left: "44px", right: "44px", top: "96px", height: "1px", background: dark ? "#2a2a2a" : "#e6e6e6" }); return r; };
+      const badge = (txt, css) => abs(card, lab(LAB - 3, Object.assign({ right: PAD + "px", top: "42px", color: "#222", background: "#f4f4f4", padding: "6px 12px", borderRadius: "4px", fontWeight: 700, border: "1px solid #e2e2e2" }, css || {})), "", txt);
+      if (kind === "env") {
+        abs(card, lab(LAB - 2, { left: PAD + "px", top: "49px" }), "", "Environment"); abs(card, { left: "44px", right: "44px", top: "96px", height: "1px", background: "#e6e6e6" }); badge("◐ Building");
+        [["Scope", "Organization", PAD, 0], ["Provider", "Factory managed", 384, 0], ["ID", "env-web", 814, 1]].forEach(([l, v, x, m], i) => { const g = abs(card, { left: x + "px", top: "118px", opacity: 0 }); abs(g, lab(LAB - 3, { color: "#8a8a8a" }), "", l); abs(g, { top: "28px", fontSize: "40px", whiteSpace: "nowrap", fontFamily: m ? h.font(MONO) : h.font(SANS), color: m ? "#555" : INK }, "", v); tl.fromTo(g, { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.2 }, t0 + 0.4 + i * 0.25); });
+      } else if (kind === "steps") {
+        head("Build steps", p.project);
+        [["Clone repositories", "2 repositories", 0], ["Global setup", "", 1], ["Repository setup scripts", "2 scripts", 2]].forEach(([tx, r, i]) => {
+          const y = 140 + i * 96, row = abs(card, { left: PAD + "px", top: y + "px", width: cw - 2 * PAD + "px", height: "48px" });
+          const box = abs(row, { left: "0", top: "4px", width: "40px", height: "40px", border: "2px solid #d0d0d0", borderRadius: "5px", background: "#fff", textAlign: "center", lineHeight: "36px", fontSize: "18px", color: "#aaa", fontFamily: h.font(MONO) }, "", String(i + 1)), tick = abs(box, { left: "6px", top: "-4px", fontSize: "34px", color: "#222", fontWeight: 700, opacity: 0, lineHeight: "40px" }, "", "✓");
+          const sp = spinner(row, { left: "7px", top: "11px", opacity: 0 });
+          const name = abs(row, { left: "74px", top: "-2px", fontSize: "44px", color: "#b0b0b0", whiteSpace: "nowrap" }, "", tx); abs(row, lab(LAB - 3, { right: "0", top: "13px", color: "#777" }), "", r);
+          const a2 = 0.35 + i * 0.7;
+          tl.set(sp.svg.parentNode, { opacity: 1 }, t0 + a2); tl.to(sp.arc, { rotation: 720, transformOrigin: "13px 13px", duration: 0.7, ease: "none" }, t0 + a2);
+          tl.set(sp.svg.parentNode, { opacity: 0 }, t0 + a2 + 0.7); tl.set(tick, { opacity: 1 }, t0 + a2 + 0.7); tl.set(box, { borderColor: "#222" }, t0 + a2 + 0.7); tl.to(name, { color: "#111", duration: 0.2 }, t0 + a2 + 0.7);
+          tl.to(name, { color: "#555", duration: 0.2 }, t0 + a2 - 0.05 + 0.0);
+        });
+      } else if (kind === "terminal") {
+        head("Global setup", "Runs once");
+        const txt = abs(card, { left: PAD + "px", top: "118px", fontFamily: h.font(MONO), fontSize: "40px", lineHeight: "74px", whiteSpace: "pre", color: "#f2f2f2" });
+        const full = (p.lines.length ? p.lines : ["npm i -g pnpm@9", "pip install semgrep pip-audit", "curl -sSfL https://get.trivy.dev | sh"]).join("\n"), pr = { n: 0 };
+        const cur = abs(card, { left: PAD + "px", top: "0", width: "20px", height: "44px", background: "#f2f2f2" });
+        tl.to(pr, { n: full.length, duration: full.length / 42, ease: "none", onUpdate: () => { const s = full.slice(0, Math.round(pr.n)), ls = s.split("\n"); txt.textContent = s; cur.style.top = 130 + (ls.length - 1) * 74 + "px"; cur.style.left = PAD + ls[ls.length - 1].length * 24 + "px"; } }, t0 + 0.35);
+      } else if (kind === "building" || kind === "ready") {
+        // one card that goes from "Building" to "Ready for new sessions" at p.hold
+        abs(card, lab(LAB - 2, { left: PAD + "px", top: "49px" }), "", "Environments / " + p.project); abs(card, { left: "44px", right: "44px", top: "96px", height: "1px", background: "#e6e6e6" });
+        const hb = badge("◐ Building"), hr = badge("Ready", { color: "#fff", background: "#111", border: "none" });
+        const sp = spinner(card, { left: PAD + "px", top: "128px" }), tb = abs(card, { left: "104px", top: "112px", fontSize: "56px", color: "#c4c4c4" }, "", "Building");
+        const ok = abs(card, { left: PAD + "px", top: "126px", width: "58px", height: "58px", borderRadius: "50%", background: "#111", color: "#fff", textAlign: "center", lineHeight: "58px", fontSize: "34px", opacity: 0 }, "", "✓");
+        const tr = abs(card, { left: "140px", top: "116px", fontSize: "58px", color: "#111", opacity: 0, whiteSpace: "nowrap", letterSpacing: "-0.02em" }, "", "Ready for new sessions");
+        const g1 = abs(card, { left: PAD + "px", top: "246px", opacity: 0 }), g2 = abs(card, { left: "389px", top: "246px", opacity: 0 }), g3 = abs(card, { left: "720px", top: "246px", opacity: 0 });
+        [[g1, "Last built", "Just now"], [g2, "Build duration", "5m 0s"], [g3, "Trigger", "Scheduled refresh"]].forEach(([g, l, v]) => { abs(g, lab(LAB - 3, { color: "#9a9a9a" }), "", l); abs(g, { top: "34px", fontSize: "40px", whiteSpace: "nowrap" }, "", v); });
+        tl.set(hr, { opacity: 0 }, 0); tl.to(sp.arc, { rotation: 1080, transformOrigin: "13px 13px", duration: p.hold, ease: "none" }, t0);
+        tl.set([hb, sp.svg.parentNode, tb], { opacity: 0 }, t0 + p.hold); tl.set([hr, ok], { opacity: 1 }, t0 + p.hold); tl.fromTo(tr, { opacity: 0, y: 6 }, { opacity: 1, y: 0, duration: 0.2 }, t0 + p.hold);
+        [g1, g2, g3].forEach((g, i) => tl.fromTo(g, { opacity: 0 }, { opacity: 1, duration: 0.25 }, t0 + p.hold + 0.25 + i * 0.25));
+      } else if (kind === "linter") {
+        head("Agent readiness", "Basic");
+        abs(card, { left: PAD + "px", top: "118px", fontSize: "56px", fontWeight: 500, letterSpacing: "-0.02em" }, "", p.title || "Linter Configuration");
+        abs(card, { left: PAD + "px", top: "206px", fontSize: "36px", color: "#555" }, "", `Score: <span style="color:#d4202a;font-weight:600">0/2</span>`);
+        abs(card, { left: PAD + "px", top: "284px", fontSize: "32px", fontWeight: 600 }, "", "Why this failed:");
+        abs(card, { left: PAD + "px", top: "330px", fontSize: "29px", color: "#666" }, "", "No ESLint, Biome, oxlint, or SonarQube config in root.");
+        abs(card, { right: "260px", top: "394px", fontSize: "29px", border: "1px solid #ddd", borderRadius: "5px", padding: "11px 20px", color: "#444" }, "", `◈ ${p.project} ⌄`);
+        const btn = abs(card, { right: PAD + "px", top: "394px", fontSize: "29px", border: "1px solid #111", borderRadius: "5px", padding: "11px 20px", color: "#111", background: "#fff" }, "", "Remediate");
+        tl.to(btn, { backgroundColor: "#111", color: "#fff", duration: 0.15 }, t0 + p.hold + 0.6);
+      } else if (kind === "instances") {
+        head("Environment instances", p.project);
+        const cnt1 = abs(card, { left: PAD + "px", top: "150px", fontSize: "70px", letterSpacing: "-0.03em" }, "", "1,284"), cnt2 = abs(card, { left: "480px", top: "150px", fontSize: "70px", letterSpacing: "-0.03em" }, "", "212");
+        abs(card, lab(LAB - 3, { left: PAD + "px", top: "118px" }), "", "Registered"); abs(card, lab(LAB - 3, { left: "480px", top: "118px" }), "", "Seen in last 24h");
+        abs(card, { left: "44px", right: "44px", top: "246px", height: "1px", background: "#2a2a2a" });
+        abs(card, lab(LAB - 3, { left: PAD + "px", top: "266px" }), "", "Instance ID"); abs(card, lab(LAB - 3, { left: "480px", top: "266px" }), "", "Owner"); abs(card, lab(LAB - 3, { right: PAD + "px", top: "266px" }), "", "Last seen");
+        const rows = [["d61b5c19", "Rahul Desai", "2m ago"], ["e69286a7", "Mei Huang", "4m ago"], ["f9a609b6", "Farah Malouf", "7m ago"]], rowEls = [];
+        for (let i = 0; i < 3; i++) { const r = abs(card, { left: "44px", right: "44px", top: 306 + i * 70 + "px", height: "62px", fontSize: "30px" }); abs(r, { left: "11px", top: "14px", fontFamily: h.font(MONO), fontSize: "29px" }, "", rows[i][0]); abs(r, { left: "436px", top: "12px" }, "", rows[i][1]); abs(r, { right: "11px", top: "12px", color: "#9a9a9a" }, "", rows[i][2]); rowEls.push(r); }
+        tl.set(rowEls[0], { backgroundColor: "#1f1f1f" }, t0);
+        const pr = { u: 0 };
+        const upd = () => { cnt1.textContent = (1284 + Math.round(pr.u * 6)).toLocaleString("en-US"); cnt2.textContent = String(212 + Math.round(pr.u * 6)); };
+        tl.to(pr, { u: 1, duration: Math.max(0.5, dur - 0.5), ease: "none", onUpdate: upd }, t0 + 0.3);
+      }
+      void dur;
+    },
+  });
+
+  // ================================================================================================ fa-title
+  ZS.register({
+    id: "fa-title", label: "Factory : le grand titre et la marque", group: "Marque", duration: 3.0,
+    params: [
+      P("title", "Titre", "text", "Environments", 1), P("schemes", "Variantes (instant fond encre rouge)", "lines", ["0 #d9d9d9 #4a4a4a 0", "0.75 #000000 #c80000 1", "1.35 #d9d9d9 #4a4a4a 0"], 2), N("size", "Taille (large)", 292, 60, 700, 1, 3, "px"), N("spin", "Rotation de la marque (degrés par seconde)", 6, 0, 90, 1, 3),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
+      h.css(el, { background: GREY });
+      const bg = abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px", background: GREY });
+      const fs = tall ? Math.min(p.size * 0.75, (w - 100) / 6.4) : p.size, ty = tall ? sh * 0.1 : 40;
+      const title = abs(st, { left: (tall ? 50 : 60) + "px", top: ty + "px", fontFamily: "InterVariable", fontWeight: 600, fontSize: fs + "px", letterSpacing: "-0.055em", lineHeight: 1, color: "#4a4a4a", whiteSpace: "nowrap" }, "", p.title);
+      tl.fromTo(title, { x: 50, autoAlpha: 0 }, { x: 0, autoAlpha: 1, duration: 0.3, ease: "power3.out" }, t0);
+      // the panels under the title: a dark box on the left, a black box with dots and the mark on the right
+      const pl = abs(st, { left: "0", top: (tall ? sh * 0.42 : 560) + "px", width: (tall ? w : 1130) + "px", height: (tall ? sh * 0.58 : 520) + "px", background: "#2a2a2a" });
+      const pr = abs(st, { left: (tall ? 0 : 1130) + "px", top: (tall ? sh * 0.62 : 560) + "px", width: (tall ? w : 790) + "px", height: (tall ? sh * 0.38 : 520) + "px", background: "#000", backgroundImage: "radial-gradient(#5a5a5a 2px, transparent 2.4px)", backgroundSize: "56px 56px", overflow: "hidden" });
+      const bar = abs(st, { left: (tall ? 0 : 1130) + "px", top: (tall ? sh * 0.62 : 560) + "px", width: "14px", height: (tall ? sh * 0.38 : 520) + "px", background: RED, opacity: 0, zIndex: 3 }), LG = 1040, logo = abs(pr, { left: (tall ? w / 2 - LG / 2 : -60) + "px", top: (tall ? -200 : -130) + "px", width: LG + "px", height: LG + "px" }), mk = mark(logo, LG, "#f2f2f2", 72);
+      tl.fromTo(mk, { rotation: 0, transformOrigin: "50% 50%" }, { rotation: p.spin * dur, duration: dur, ease: "none" }, t0);
+      tl.fromTo([pl, pr], { y: 80, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 0.35, ease: "power3.out" }, t0 + 0.1);
+      p.schemes.forEach((l) => {
+        const [a, bgc, ink, inv] = l.trim().split(/\s+/);
+        tl.set(bg, { backgroundColor: bgc }, t0 + Number(a)); tl.set(title, { color: ink }, t0 + Number(a)); tl.set(mk.querySelectorAll("path"), { attr: { stroke: Number(inv) ? "#111" : "#f2f2f2" } }, t0 + Number(a));
+        tl.set(pr, { backgroundColor: Number(inv) ? "#e9e9e9" : "#000" }, t0 + Number(a)); tl.set(bar, { opacity: Number(inv) ? 1 : 0 }, t0 + Number(a));
+      });
+    },
+  });
+
+  // ================================================================================================ fa-end
+  ZS.register({
+    id: "fa-end", label: "Factory : la carte de fin", group: "Marque", duration: 2.3,
+    params: [P("name", "Nom", "text", "FACTORY", 1), P("bg", "Fond", "color", "#000000", 2), P("ink", "Texte", "color", "#f2f2f2", 2), N("size", "Taille du nom (large)", 74, 20, 200, 1, 3, "px")],
+    build(ctx) {
+      const { el, p, tl, t0 } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
+      h.css(el, { background: p.bg });
+      const fs = tall ? p.size * 0.8 : p.size, g = abs(st, { left: "0", top: sh / 2 - fs + "px", width: w + "px", display: "flex", justifyContent: "center", alignItems: "center", gap: fs * 0.4 + "px" });
+      const ic = abs(g, { position: "relative", width: fs * 1.15 + "px", height: fs * 1.15 + "px" }); mark(ic, fs * 1.15, p.ink, 52);
+      abs(g, { position: "relative", fontFamily: "InterVariable", fontWeight: 700, fontSize: fs + "px", letterSpacing: "0.12em", color: p.ink, lineHeight: 1 }, "", p.name);
+      tl.fromTo(g, { autoAlpha: 0, scale: 0.96 }, { autoAlpha: 1, scale: 1, duration: 0.4, ease: "power2.out" }, t0);
+    },
+  });
+})();
