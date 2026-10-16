@@ -14,20 +14,45 @@ import server  # noqa: E402
 
 BEATS = [
     (0.00, "cl-ask", {}),
-    (2.95, "cl-relay", {}),
+    (2.95, "cl-relay", {"film0": 2.95}),
+    (5.30, "cl-star", {"film0": 5.3}),
+    (6.35, "cl-soul", {"film0": 6.35}),
+    (9.00, "cl-marquee", {"film0": 9.0}),
+    (10.80, "cl-output", {"kind": "still", "word": "STILL", "source": "STILL — MIDJOURNEY", "output": "OUTPUT 01 / 04", "film0": 10.8}),
+    (11.60, "cl-output", {"kind": "clip", "word": "CLIP", "source": "CLIP — GROK IMAGINE", "output": "OUTPUT 02 / 04", "tag": "STAR CLIP ↗", "film0": 11.6}),
+    (12.60, "cl-output", {"kind": "song", "word": "SONG", "source": "SONG — SUNO", "output": "OUTPUT 03 / 04", "tag": "134.7 BPM", "film0": 12.6}),
+    (13.60, "cl-output", {"kind": "video", "word": "MUSIC VIDEO", "source": "MUSIC VIDEO — CLAUDE CODE", "output": "OUTPUT 04 / 04", "tag": "STAR CLIP ↗", "film0": 13.6}),
+    (14.30, "cl-title", {"film0": 14.3}),
 ]
-END = 5.3
+END = 20.25
 
 
 def T(scene: str, key: str) -> dict:
     return {"scene": scene, "key": key}
 
 
+# PROMOTED CONTROLS: what the storyboard of THIS film says can change: the sentence asked, the giant words, the two engines of the relay, the name and the
+# serif word, the four outputs, the title card, the two colours.
 CONTROLS = [
-    {"id": "prompt", "label": "Phrase demandée", "type": "text", "group": "Texte", "targets": [T("b01", "prompt")]},
-    {"id": "words", "label": "Mots géants (début fin MOT style)", "type": "lines", "group": "Texte", "targets": [T("b01", "words")]},
-    {"id": "coral", "label": "Couleur corail", "type": "color", "group": "Marque", "targets": [T("b01", "coral")]},
-    {"id": "cream", "label": "Couleur crème", "type": "color", "group": "Marque", "targets": [T("b01", "cream")]},
+    {"id": "prompt", "label": "Phrase demandée", "type": "text", "group": "Demande", "targets": [T("b01", "prompt")]},
+    {"id": "words", "label": "Mots géants (début fin MOT style)", "type": "lines", "group": "Demande", "targets": [T("b01", "words")]},
+    {"id": "a", "label": "Premier moteur", "type": "text", "group": "Relais", "targets": [T("b02", "a")]},
+    {"id": "aSub", "label": "Sa légende", "type": "text", "group": "Relais", "targets": [T("b02", "aSub")]},
+    {"id": "b", "label": "Second moteur", "type": "text", "group": "Relais", "targets": [T("b02", "b")]},
+    {"id": "bSub", "label": "Sa légende", "type": "text", "group": "Relais", "targets": [T("b02", "bSub")]},
+    {"id": "name", "label": "Nom du lieu", "type": "text", "group": "Âme", "targets": [T("b04", "label"), T("b05", "name")]},
+    {"id": "word", "label": "Mot en serif", "type": "text", "group": "Âme", "targets": [T("b04", "word"), T("b05", "word")]},
+    {"id": "soulText", "label": "Texte décodé", "type": "text", "group": "Âme", "targets": [T("b04", "text")]},
+    {"id": "o1", "label": "Sortie 1 (mot)", "type": "text", "group": "Sorties", "targets": [T("b06", "word")]},
+    {"id": "o2", "label": "Sortie 2 (mot)", "type": "text", "group": "Sorties", "targets": [T("b07", "word")]},
+    {"id": "o3", "label": "Sortie 3 (mot)", "type": "text", "group": "Sorties", "targets": [T("b08", "word")]},
+    {"id": "o4", "label": "Sortie 4 (mot)", "type": "text", "group": "Sorties", "targets": [T("b09", "word")]},
+    {"id": "t1", "label": "Titre, ligne 1", "type": "text", "group": "Titre", "targets": [T("b10", "line1")]},
+    {"id": "t2", "label": "Titre, ligne 2", "type": "text", "group": "Titre", "targets": [T("b10", "line2")]},
+    {"id": "tagline", "label": "Légende du titre", "type": "text", "group": "Titre", "targets": [T("b10", "tagline")]},
+    {"id": "link", "label": "Lien", "type": "text", "group": "Titre", "targets": [T("b10", "link")]},
+    {"id": "coral", "label": "Couleur corail", "type": "color", "group": "Marque", "targets": [T(f"b{i:02d}", "coral") for i in range(1, 11)]},
+    {"id": "cream", "label": "Couleur crème", "type": "color", "group": "Marque", "targets": [T(f"b{i:02d}", "cream") for i in (1, 2, 3, 4, 5, 6, 7, 8, 9)]},
 ]
 
 

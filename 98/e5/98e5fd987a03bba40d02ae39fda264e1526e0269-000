@@ -1,0 +1,187 @@
+// 16 October 2026: Claudia, from the star (5.3 s) to the title card (20 s): the starburst and its flying characters, the decoded prompt text with its labels and the
+// serif "soul", the giant scrolling name, the four outputs (STILL, CLIP, SONG, MUSIC VIDEO) and the title card. FOREGROUND ONLY: the portraits of the reference are
+// not reproduced; every scene stands on a flat colour. FR : de l'etoile a la carte titre, premier plan seulement, sans portrait.
+(function () {
+  const ZS = window.ZS, h = ZS.h, K = ZS.claudiaKit, { hud, scramble, svgEl, abs, P, N, BG, CREAM, CORAL, MONO } = K;
+  const mono = (px, css) => Object.assign({ fontFamily: h.font(MONO), fontSize: px + "px", whiteSpace: "nowrap", letterSpacing: "0.1em" }, css || {});
+  const PROMPT = "a 28-year-old Caucasian American woman with a grown-up angular face, defined cheekbones and a strong jawline, pale skin and light freckles, a glossy black blunt jaw-length bob with heavy straight bangs and one clay-orange streak through the bangs, a small flat clay-orange eight-pointed star hair clip, a thin headset microphone at her cheek, ";
+  const hsh = (a, b) => { let x = (a * 374761393 + b * 668265263) >>> 0; x = (x ^ (x >>> 13)) * 1274126177 >>> 0; return x; };
+  const starPts = (R, r, n, seed) => { const rnd = h.rand(seed), pts = []; for (let i = 0; i < n * 2; i++) { const a = (i / (n * 2)) * Math.PI * 2 - Math.PI / 2, rad = i % 2 ? r : R * (0.94 + rnd() * 0.12); pts.push(`${(Math.cos(a) * rad).toFixed(1)},${(Math.sin(a) * rad).toFixed(1)}`); } return pts.join(" "); };
+  const sceneBase = (ctx, bg) => { const { el } = ctx, S = ZS.stageAdaptive(ctx); h.css(el, { background: bg }); return S; };
+
+  // ================================================================================================ cl-star
+  ZS.register({
+    id: "cl-star", label: "Claudia : l'étoile et les caractères qui volent", group: "Données", duration: 1.05,
+    params: [
+      P("coral", "Corail", "color", CORAL, 2), P("cream", "Crème", "color", CREAM, 2), P("bg", "Fond", "color", BG, 2), N("chars", "Nombre de caractères", 70, 0, 200, 1, 3), N("seed", "Graine", 9, 1, 99, 1, 3),
+      P("page", "Section", "text", "04 / THE SOUL", 3), N("film0", "Début dans le film (s)", 5.3, 0, 30, 0.01, 3, "s"),
+    ],
+    build(ctx) {
+      const { p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = sceneBase(ctx, p.bg), k = tall ? w / 1920 : 1;
+      const rnd = h.rand(p.seed), cx = w / 2 - 15 * k, cy = tall ? sh * 0.46 : 490;
+      // the star: small and to the right, then it grows and slides to the centre (5.5 s to 5.9 s)
+      const svg = svgEl("svg", { width: 700, height: 700, viewBox: "-350 -350 700 700" }, abs(st, { left: cx - 350 + "px", top: cy - 350 + "px", width: "700px", height: "700px" }));
+      const star = svgEl("polygon", { points: starPts(300, 178, 8, 3), fill: p.coral }, svg);
+      tl.set(svg.parentNode, { x: (tall ? w * 0.3 : 355) * 1, y: tall ? 0 : 48, scale: 0.19 * k }, t0);
+      tl.to(svg.parentNode, { x: 0, y: 0, scale: 0.6 * k, duration: 0.45, ease: "power2.inOut" }, t0 + 0.2);
+      tl.to(star, { rotation: 22, transformOrigin: "0 0", duration: dur, ease: "none" }, t0);
+      tl.fromTo(svg.parentNode, { opacity: 0 }, { opacity: 1, duration: 0.08 }, t0);
+      // flying characters: sizes and places drawn once, each flickers through glyphs
+      const G = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789\\/#*=+>-_.,";
+      for (let i = 0; i < p.chars; i++) {
+        const x = rnd() * w, y = rnd() * sh, sz = (18 + rnd() * rnd() * 70) * k, at = 0.2 + rnd() * 0.65, col = rnd() < 0.12 ? p.coral : (rnd() < 0.6 ? p.cream : "#8f8d89");
+        const e = abs(st, Object.assign(mono(sz, { left: x + "px", top: y + "px", color: col, opacity: 0, letterSpacing: "0", fontWeight: rnd() < 0.3 ? 700 : 400 })));
+        const pr = { u: 0 }, seed = i;
+        tl.to(e, { opacity: 0.5 + rnd() * 0.5, duration: 0.05 }, t0 + at); tl.to(e, { opacity: 0, duration: 0.15 }, t0 + at + 0.25 + rnd() * 0.3);
+        tl.to(pr, { u: 1, duration: 0.6, ease: "none", onUpdate: () => { e.textContent = G[hsh(seed, Math.floor(pr.u * 14)) % G.length]; } }, t0 + at);
+      }
+      hud(ctx, st, w, sh, { pages: [[0, "03 / THE PRODUCTION"], [0.62, p.page]], dark: true, film0: p.film0 });
+    },
+  });
+
+  // ================================================================================================ cl-soul
+  ZS.register({
+    id: "cl-soul", label: "Claudia : le texte décodé et le mot « soul »", group: "Texte", duration: 2.65,
+    params: [
+      P("label", "Nom du lieu", "text", "claudia.gallery", 1), P("word", "Mot en serif", "text", "soul", 1), P("text", "Texte qui se décode", "text", PROMPT, 1),
+      P("coral", "Corail", "color", CORAL, 2), P("cream", "Crème", "color", CREAM, 2), P("bg", "Fond", "color", BG, 2),
+      P("tags", "Étiquettes (texte | x | y)", "lines", ["ONE CLAY STREAK · #D97757 | 300 | 78", "8-POINT STAR CLIP · CLAY | 1150 | 100", "LIGHT FRECKLES | 1450 | 495", "THIN HEADSET MIC | 130 | 735", "GLOSSY BLACK BLUNT BOB | 1180 | 660"], 2),
+      N("size", "Taille du texte", 24, 10, 60, 1, 3, "px"), N("decode", "Durée du décodage", 0.7, 0.1, 2, 0.05, 3, "s"), N("soulAt", "Arrivée du mot", 0.65, 0, 2, 0.05, 3, "s"),
+      P("page", "Section", "text", "04 / THE SOUL", 3), N("film0", "Début dans le film (s)", 6.35, 0, 30, 0.01, 3, "s"),
+    ],
+    build(ctx) {
+      const { p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = sceneBase(ctx, p.bg), k = tall ? w / 1920 : 1;
+      // the dense text field: the prompt repeated, set line after line in monospace; characters decode from noise to text
+      const lh = p.size * 1.25, cols = Math.floor(w / (p.size * 0.6)), rows = Math.ceil(sh / lh) + 2, full = (p.text.repeat(40)).replace(/\s+/g, " ");
+      const field = abs(st, mono(p.size, { left: "0", top: "0", width: w + "px", height: sh + "px", letterSpacing: "0", color: p.cream, whiteSpace: "pre", lineHeight: lh + "px", opacity: 0.8, overflow: "hidden" }));
+      const rowsTxt = []; for (let r = 0; r < rows; r++) rowsTxt.push(full.slice((r * 37) % 300, (r * 37) % 300 + cols));
+      const pr = { u: 0 }, G = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789\\/#*=+<>-_.,%&";
+      const upd = () => {
+        const f = Math.floor(pr.u * 20);
+        field.textContent = rowsTxt.map((line, r) => line.split("").map((c, i) => { const settle = (hsh(r, i) % 1000) / 1000; return pr.u >= 1 || pr.u > settle ? c : (c === " " ? " " : G[hsh(r * 131 + i, f) % G.length]); }).join("")).join("\n");
+      };
+      upd(); tl.to(pr, { u: 1, duration: p.decode, ease: "none", onUpdate: upd }, t0 + 0.1);
+      tl.to(field, { y: -34 * k, duration: dur, ease: "none" }, t0);
+      // the label and the little code list at the top left
+      const head = abs(st, { left: 72 * k + "px", top: 120 * k + "px", fontFamily: "InterVariable", fontWeight: 800, fontSize: 40 * k + "px", color: p.cream, letterSpacing: "-0.02em", whiteSpace: "nowrap", textShadow: "0 0 18px #0a0a0a, 0 0 6px #0a0a0a" }, "", p.label);
+      const list = abs(st, mono(17 * k, { left: 72 * k + "px", top: 188 * k + "px", color: p.cream, letterSpacing: "0.02em", lineHeight: 1.6, whiteSpace: "pre", textShadow: "0 0 10px #0a0a0a" }), "", "claudia_canon()\n  constants · identity · never-list\n  get_guide(\"consistency\")\n  build_prompt(\"close-up\")\n  search_images(\"star clip\")\n\n  ✦ 1,927 prompts  ✦ 4 films");
+      tl.fromTo([head, list], { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.15 }, t0 + 0.35);
+      // the labels with their leader lines
+      const svg = svgEl("svg", { width: w, height: sh }, abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px" }));
+      p.tags.forEach((l, i) => {
+        const [txt, x, y] = l.split("|").map((s) => s.trim()), X = Number(x) * k, Y = Number(y) * k;
+        const tag = abs(st, mono(14 * k, { left: X + "px", top: Y + "px", color: "#e9e5dd", background: "rgba(10,10,10,0.78)", border: `1px solid ${p.coral}`, padding: `${4 * k}px ${10 * k}px`, borderRadius: "3px" }), "", txt);
+        const tx = X + 80 * k, ty = Y + 36 * k, line = svgEl("line", { x1: X + 12 * k, y1: Y + 24 * k, x2: tx + (i % 2 ? 120 : -120) * k, y2: ty + 90 * k, stroke: "#cfcac1", "stroke-width": 1, opacity: 0.8 }, svg);
+        tl.fromTo([tag, line], { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.2 }, t0 + 0.55 + i * 0.2);
+      });
+      // the big serif word, coral, cropped by the right edge
+      const sw = abs(st, { left: (tall ? w * 0.28 : 1130) + "px", top: (tall ? sh * 0.42 : 130) + "px", fontFamily: "AnthropicSerif, serif", fontSize: 560 * k + "px", color: p.coral, opacity: 0.88, whiteSpace: "nowrap", lineHeight: 1, letterSpacing: "-0.03em" }, "", p.word);
+      tl.fromTo(sw, { x: 420 * k, autoAlpha: 0 }, { x: 0, autoAlpha: 0.88, duration: 0.45, ease: "power3.out" }, t0 + p.soulAt);
+      hud(ctx, st, w, sh, { pages: [[0, "04 / THE SOUL"]], dark: true, film0: p.film0 });
+    },
+  });
+
+  // ================================================================================================ cl-marquee
+  ZS.register({
+    id: "cl-marquee", label: "Claudia : le nom géant qui défile", group: "Texte", duration: 1.8,
+    params: [
+      P("label", "Texte qui défile", "text", "CLAUDIA.GALLERY — ", 1), P("name", "Nom en bas", "text", "claudia.gallery", 1), P("line", "Ligne sous le nom", "text", "the MCP that holds her", 1), P("word", "Mot en serif", "text", "soul", 1),
+      P("coral", "Corail", "color", CORAL, 2), P("cream", "Crème", "color", CREAM, 2), P("bg", "Fond", "color", "#0b0b0b", 2), N("size", "Taille des lettres", 215, 40, 400, 1, 3, "px"),
+      N("speed", "Vitesse (px par seconde)", 700, 0, 2500, 10, 3), P("tag", "Étiquette", "text", "STAR CLIP · CANON ✓", 3), P("page", "Section", "text", "05 / DSI", 3), N("film0", "Début dans le film (s)", 9.0, 0, 30, 0.01, 3, "s"),
+    ],
+    build(ctx) {
+      const { p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = sceneBase(ctx, p.bg), k = tall ? w / 1920 : 1;
+      const row = abs(st, { left: "0", top: (tall ? sh * 0.08 : 52) + "px", fontFamily: "InterVariable", fontWeight: 900, fontSize: p.size * k + "px", color: p.cream, letterSpacing: "-0.02em", whiteSpace: "nowrap", lineHeight: 1, transform: "scaleX(0.82)", transformOrigin: "0 0", WebkitMaskImage: "linear-gradient(90deg,#000 55%,rgba(0,0,0,0.25) 100%)", maskImage: "linear-gradient(90deg,#000 55%,rgba(0,0,0,0.25) 100%)" }, "", p.label.repeat(6));
+      tl.fromTo(row, { x: 60 * k }, { x: (60 - p.speed * 1.8) * k, duration: dur, ease: "none" }, t0);
+      const cap = abs(st, { right: 80 * k + "px", top: (tall ? sh * 0.84 : 870) + "px", textAlign: "right", whiteSpace: "nowrap" });
+      abs(cap, { position: "relative", fontFamily: "InterVariable", fontWeight: 800, fontSize: 70 * k + "px", color: p.cream, letterSpacing: "-0.02em", lineHeight: 1, textShadow: "0 0 18px #0a0a0a" }, "", p.name);
+      abs(cap, mono(20 * k, { position: "relative", marginTop: 14 * k + "px", color: "#d8d4cb", letterSpacing: "0.02em" }), "", `${p.line} <span style="font-family:AnthropicSerif,serif;color:${p.coral};font-size:${30 * k}px;letter-spacing:0">${p.word}</span>`);
+      tl.fromTo(cap, { autoAlpha: 0, y: 14 }, { autoAlpha: 1, y: 0, duration: 0.2 }, t0 + 0.1);
+      const tag = abs(st, mono(14 * k, { left: 1050 * k + "px", top: 238 * k + "px", color: "#fff", background: p.coral, padding: `${3 * k}px ${9 * k}px`, borderRadius: "2px" }), "", p.tag);
+      tl.fromTo(tag, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.15 }, t0 + 0.9);
+      hud(ctx, st, w, sh, { pages: [[0, p.page]], dark: true, film0: p.film0 });
+    },
+  });
+
+  // ================================================================================================ cl-output (STILL, CLIP, SONG, MUSIC VIDEO)
+  ZS.register({
+    id: "cl-output", label: "Claudia : une sortie (STILL, CLIP, SONG, MUSIC VIDEO)", group: "Texte", duration: 1.0,
+    params: [
+      P("kind", "Genre", "select", "still", ["still", "clip", "song", "video"], 1), P("word", "Mot géant", "text", "STILL", 1), P("source", "Source", "text", "STILL — MIDJOURNEY", 1), P("output", "Numéro de sortie", "text", "OUTPUT 01 / 04", 1),
+      P("coral", "Corail", "color", CORAL, 2), P("cream", "Crème", "color", CREAM, 2), P("bg", "Fond", "color", "#0b0b0b", 2), P("tag", "Étiquette de repère", "text", "STAR CLIP ↗", 2),
+      P("checks", "Pastilles de contrôle", "text", "CANON ✓   ONE STREAK ✓   STAR CLIP ✓   MIC ✓", 3), P("page", "Section", "text", "06 / EVERYTHING", 3), N("film0", "Début dans le film (s)", 10.8, 0, 30, 0.01, 3, "s"),
+      N("size", "Taille du mot (large)", 224, 40, 600, 1, 3, "px"),
+    ],
+    build(ctx) {
+      const { p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = sceneBase(ctx, p.bg), k = tall ? w / 1920 : 1, kind = p.kind;
+      const bg = { still: "#0b0b0b", clip: "#0b0b0b", song: "#d9d4cb", video: "#0b0b0b" }[kind] === p.bg ? ({ still: "#0b0b0b", clip: "#0b0b0b", song: "#d9d4cb", video: "#141414" }[kind]) : p.bg;
+      h.css(ctx.el, { background: bg });
+      const light = kind === "song", ink = light ? "#161616" : p.cream;
+      const wd = { still: { x: 46, y: 238, c: "#c9cdcf", fs: p.size }, clip: { x: 1112, y: 100, c: p.coral, fs: p.size * 1.6 }, song: { x: 65, y: 255, c: "#0a0a0a", fs: p.size * 1.6 }, video: { x: 98, y: 38, c: p.cream, fs: p.size * 0.55 } }[kind];
+      const word = abs(st, { left: wd.x * k + "px", top: (tall ? sh * 0.2 : wd.y) + "px", fontFamily: "InterVariable", fontWeight: 900, fontSize: wd.fs * k + "px", color: wd.c, letterSpacing: "-0.02em", lineHeight: 1, whiteSpace: "nowrap", transform: "scaleX(0.82)", transformOrigin: "0 0", opacity: kind === "still" ? 0.92 : 1 }, "", p.word);
+      tl.fromTo(word, { autoAlpha: 0, x: -30 * k, scale: 1.04 }, { autoAlpha: kind === "still" ? 0.92 : 1, x: 0, scale: 1, duration: 0.2, ease: "power3.out" }, t0);
+      if (kind === "video") {
+        abs(st, { left: "0", top: "0", width: w + "px", height: 147 * k + "px", background: "#0b0b0b" }); abs(st, { left: "0", top: sh - 140 * k + "px", width: w + "px", height: 140 * k + "px", background: "#0b0b0b" });
+        word.parentNode.appendChild(word);
+        abs(st, mono(16 * k, { right: 150 * k + "px", top: 70 * k + "px", color: p.cream, letterSpacing: "0.12em" }), "", `<span style="color:#e34a3a">●</span>&nbsp; REC`);
+      }
+      // output labels, bottom left
+      const bl = abs(st, mono(12 * k, { left: 114 * k + "px", top: sh - 118 * k + "px", color: light ? "#333" : "#8a8884", letterSpacing: "0.12em" }), "", p.output);
+      abs(st, mono(15 * k, { left: 114 * k + "px", top: sh - 94 * k + "px", color: ink, fontWeight: 700, letterSpacing: "0.1em" }), "", p.source);
+      abs(st, mono(12 * k, { left: (tall ? 114 : 1020) * k + "px", top: sh - 92 * k + "px", color: p.coral, letterSpacing: "0.12em", whiteSpace: "pre" }), "", p.checks);
+      // the coral tag with its leader line
+      const tx = (kind === "song" ? 1500 : 1190) * k, ty = (kind === "video" ? 250 : 160) * k;
+      const tag = abs(st, mono(14 * k, { left: tx + "px", top: ty + "px", color: "#fff", background: p.coral, padding: `${3 * k}px ${9 * k}px`, borderRadius: "2px" }), "", p.tag);
+      const svg = svgEl("svg", { width: w, height: sh }, abs(st, { left: "0", top: "0", width: w + "px", height: sh + "px" }));
+      svgEl("line", { x1: tx, y1: ty + 12 * k, x2: tx - 110 * k, y2: ty + 70 * k, stroke: p.coral, "stroke-width": 1.4 }, svg); svgEl("polygon", { points: starPts(18 * k, 10 * k, 8, 5), fill: p.coral, transform: `translate(${tx - 118 * k} ${ty + 74 * k})` }, svg);
+      tl.fromTo([tag, svg.parentNode], { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.15 }, t0 + 0.15);
+      if (kind === "song") {   // the waveform strip of the song, coral, with its playhead
+        const wave = abs(st, { left: 105 * k + "px", top: sh - 190 * k + "px", width: w - 210 * k + "px", height: 96 * k + "px" }), n = 150, rnd = h.rand(4);
+        for (let i = 0; i < n; i++) { const hh = (8 + rnd() * rnd() * 80) * k; abs(wave, { left: i * (w - 210 * k) / n + "px", top: (96 * k - hh) / 2 + "px", width: Math.max(2, (w - 210 * k) / n - 2) + "px", height: hh + "px", background: p.coral }); }
+        const ph = abs(wave, { left: "0", top: "-6px", width: "2px", height: 108 * k + "px", background: "#161616" });
+        tl.fromTo(ph, { x: 0 }, { x: (w - 210 * k) * 0.8, duration: dur, ease: "none" }, t0);
+        tl.fromTo(wave, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.15 }, t0 + 0.1);
+      }
+      void bl;
+      hud(ctx, st, w, sh, { pages: [[0, p.page]], dark: !light, film0: p.film0 });
+    },
+  });
+
+  // ================================================================================================ cl-title
+  ZS.register({
+    id: "cl-title", label: "Claudia : la carte titre", group: "Marque", duration: 5.95,
+    params: [
+      P("line1", "Première ligne", "text", "CLAUDIA", 1), P("line2", "Seconde ligne", "text", "GROK BOT", 1), P("tagline", "Légende", "text", "your words → stills · clips · songs · music videos", 1),
+      P("soul", "Ligne de l'âme", "text", "claudia.gallery", 1), P("link", "Lien", "text", "github.com/anabologyco-maker/claudia-bot", 2), P("credit", "Crédit", "text", "Claudia by anabology · made with AI: Midjourney, Grok Imagine, Suno, Claude", 2),
+      P("coral", "Corail", "color", CORAL, 2), P("bg", "Fond", "color", "#d6d7d2", 2), P("ink", "Encre", "color", "#0b0b0b", 2),
+      N("size", "Taille du titre (large)", 206, 40, 400, 1, 3, "px"), N("typeAt", "Début de la frappe de la légende", 1.6, 0, 4, 0.05, 3, "s"), N("cps", "Caractères par seconde", 24, 5, 80, 1, 3),
+      N("film0", "Début dans le film (s)", 14.3, 0, 30, 0.01, 3, "s"),
+    ],
+    build(ctx) {
+      const { p, tl, t0, dur } = ctx, { st, tall, w, h: sh } = sceneBase(ctx, p.bg), k = tall ? w / 1920 : 1;
+      const X = tall ? 80 : 117, top = tall ? sh * 0.2 : 190, fs = (tall ? p.size * 0.78 : p.size) * k * (tall ? 1.3 : 1);
+      const mk = (txt, y) => { const e = abs(st, { left: X + "px", top: y + "px", fontFamily: "InterVariable", fontWeight: 900, fontSize: fs + "px", color: p.ink, letterSpacing: "-0.02em", lineHeight: 1, whiteSpace: "nowrap", transform: "scaleX(0.82)", transformOrigin: "0 0" }, "", txt); return e; };
+      const l1 = mk(p.line1, top), l2 = mk(p.line2, top + fs * 0.86);
+      // the reveal: the lines glitch in as horizontal slices that settle, the ink goes from blue-grey to black (the reference's letters are filled with picture first)
+      [l1, l2].forEach((e, i) => {
+        tl.fromTo(e, { autoAlpha: 0, x: 40 * k, skewX: -12, color: "#3d6a96" }, { autoAlpha: 1, x: 0, skewX: 0, duration: 0.25, ease: "power3.out" }, t0 + 0.05 + i * 0.35);
+        tl.to(e, { color: p.ink, duration: 0.4, ease: "power1.inOut" }, t0 + 0.9 + i * 0.1);
+        for (let g = 0; g < 4; g++) tl.fromTo(e, { clipPath: `inset(${g * 22}% 0 ${78 - g * 22}% 0)` }, { clipPath: "inset(0% 0 0% 0)", duration: 0.05 }, t0 + 0.1 + i * 0.35 + g * 0.04);
+      });
+      // the underline with its coral star, the typed lines, the link, the credit
+      const uy = top + fs * 1.72 + 24 * k, ul = abs(st, { left: X + "px", top: uy + "px", width: (tall ? w - 160 : 820) * k + "px", height: 3 * k + "px", background: p.ink, transformOrigin: "0 50%" });
+      tl.fromTo(ul, { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: "power2.out" }, t0 + 1.15);
+      const sv = svgEl("svg", { width: 60 * k, height: 60 * k, viewBox: "-30 -30 60 60" }, abs(st, { left: X + (tall ? w - 160 : 820) * k - 24 * k + "px", top: uy - 22 * k + "px", width: 60 * k + "px", height: 60 * k + "px" }));
+      svgEl("polygon", { points: starPts(26, 15, 8, 2), fill: p.coral }, sv); tl.fromTo(sv.parentNode, { scale: 0, rotation: -90 }, { scale: 1, rotation: 0, duration: 0.35, ease: "back.out(2)" }, t0 + 1.5);
+      const line = (txt, y, css) => abs(st, mono(21 * k, Object.assign({ left: X + "px", top: y + "px", color: p.ink, letterSpacing: "0.02em" }, css)), "", txt);
+      const t1 = line("", uy + 40 * k), t2 = line("", uy + 94 * k), t3 = line("", uy + 148 * k, { color: p.coral, textDecoration: "underline" });
+      const typeIn = (node, full, at, html) => { const pr = { n: 0 }; tl.to(pr, { n: full.length, duration: full.length / p.cps, ease: "none", onUpdate: () => { const s = full.slice(0, Math.round(pr.n)); node.innerHTML = html ? html(s) : s; } }, at); };
+      typeIn(t1, p.tagline, t0 + p.typeAt);
+      const soulHtml = (s) => `her <span style="font-family:AnthropicSerif,serif;color:${p.coral};font-size:${27 * k}px;letter-spacing:0">soul</span>: ${s}`;
+      typeIn(t2, p.soul, t0 + p.typeAt + p.tagline.length / p.cps + 0.15, soulHtml);
+      typeIn(t3, p.link, t0 + p.typeAt + (p.tagline.length + p.soul.length) / p.cps + 0.3);
+      const cr = abs(st, mono(12 * k, { left: X + "px", top: sh - 120 * k + "px", color: "#555", letterSpacing: "0.05em" }), "", p.credit); tl.fromTo(cr, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.3 }, t0 + 2.8);
+      hud(ctx, st, w, sh, { pages: [[0, "06 / EVERYTHING"]], dark: false, film0: p.film0 });
+    },
+  });
+})();
