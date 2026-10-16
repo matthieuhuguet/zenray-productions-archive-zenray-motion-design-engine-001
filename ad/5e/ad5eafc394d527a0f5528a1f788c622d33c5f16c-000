@@ -1,0 +1,48 @@
+"""Reproduction of the AgentPlay launch film (whatships.com/videos/agentplay, 39.36 s) as an editable motion project (16 October 2026).
+
+FOREGROUND ASSETS ONLY (Matthieu's rule): words, cards, charts, rings, trees, node maps, the product window, the end card. No background image,
+no face. The beats were read at 3 images per second on the reference and measured on full frames; every word and colour is a default value.
+FR : reproduction d'AgentPlay, seulement les elements au premier plan, textes et couleurs modifiables dans la page Motion.
+Usage: python3 motion/reproductions/agentplay.py
+"""
+import json
+import sys
+from pathlib import Path
+
+MOTION = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(MOTION))
+import server  # noqa: E402
+
+# (start in the reference, template, params): the start instants read on the 3 fps sheets
+BEATS = [
+    (0.00, "ap-matrix", {}),
+    (3.95, "ap-cards", {}),
+    (6.95, "ap-heat", {}),
+    (8.95, "ap-ring", {}),
+    (10.95, "ap-approaches", {}),
+    (13.75, "ap-map", {}),
+    (18.95, "ap-brand", {"command": "", "tags": ""}),
+    (21.95, "ap-product", {}),
+    (34.25, "ap-brand", {"command": "uvx agentplay", "y": 380}),
+]
+END = 39.36
+
+
+def project() -> dict:
+    scenes = []
+    for i, (t, tpl, params) in enumerate(BEATS):
+        nxt = BEATS[i + 1][0] if i + 1 < len(BEATS) else END
+        scenes.append({"id": f"b{i + 1:02d}", "template": tpl, "duration": round(nxt - t, 4), "params": params, "ref": {"start": t, "note": "instant read on the reference"}})
+    return {"schema": "zrmd/motion-project@1", "title": "AgentPlay reproduit", "format": "16x9", "fps": 30, "reference": "agentplay",
+            "doc": "16 October 2026: AgentPlay launch film, foreground assets only (no background image, no face); every text and colour is a value.",
+            "theme": {"bg": "#ffffff", "ink": "#1b1b19", "accent": "#80c22a", "fontTitle": "InterVariable", "fontBody": "InterVariable"},
+            "music": {"mode": "none"}, "sfx": {"enabled": False}, "scenes": scenes}
+
+
+if __name__ == "__main__":
+    pid = "agentplay-motion"
+    if (server.project_dir(pid) / "project.json").is_file():
+        server.save_version(pid, "avant une nouvelle passe de reproduction")
+    p = project()
+    server.write_project(pid, p)
+    print(json.dumps({"id": pid, "scenes": len(p["scenes"]), "duration": round(sum(s["duration"] for s in p["scenes"]), 2)}))

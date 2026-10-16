@@ -129,6 +129,7 @@ def _route(method: str, path: str, q: dict, body: dict, raw) -> Reply:
         if path == "/api/v1/config":
             return ok({"ok": True, **ingest.config(), "limits": tiers.load()["limits"]})
         if path == "/api/v1/run":
+            P.invalidate()      # polled while a run works: its scores change as steps finish
             try:
                 return ok({"ok": True, "run": ingest.run_view(orch.load_run(q.get("id", "")))})
             except orch.OrchestratorError as e:
@@ -231,6 +232,7 @@ def _route(method: str, path: str, q: dict, body: dict, raw) -> Reply:
             return Reply(file=f, mime="audio/wav")
         return fail("not found", 404)
     if method == "POST":
+        P.invalidate()      # any write may change a card: the next list reads the disk
         if path == "/api/v1/project/create":
             made = ingest.create_project(str(body.get("upload", "")), body.get("title"))
             run = ingest.start_run(made["slug"], body["run"]) if body.get("run") else None

@@ -292,7 +292,7 @@ window.ZS_BUILT = ZS.build(window.ZS_PROJECT, document.getElementById("root"), {
 if (document.fonts) document.fonts.ready.then(() => ZS.refit(window.ZS_BUILT));</script>
 </body></html>
 """
-RUNTIME_SCRIPTS = ["zs-core.js", "zs-post.js", "zs-templates.js", "zs-templates-extra.js", "zs-templates-app.js", "zs-illustrate.js", "zs-vector.js", "zs-templates-kit.js"]
+RUNTIME_SCRIPTS = ["zs-core.js", "zs-post.js", "zs-templates.js", "zs-templates-extra.js", "zs-templates-app.js", "zs-illustrate.js", "zs-vector.js", "zs-templates-kit.js", "zs-templates-agentplay.js"]
 
 
 def code_version() -> str:

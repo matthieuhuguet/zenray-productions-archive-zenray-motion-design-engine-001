@@ -5,6 +5,7 @@
 # FR : projets, scenes et edition de scene ; toute liste est paginee, aucun chemin ne vient de la page.
 from __future__ import annotations
 
+import time
 import json
 import re
 from pathlib import Path
@@ -34,8 +35,29 @@ def motions_dir() -> Path:
     return workshop() / "motions"
 
 
+# 16 October 2026: the Projets page and /status read the whole registry and 6 score modules per card from disk; a short cache keeps the page fluid.
+# FR : cache court : la page Projets relisait des milliers de JSON a chaque appel.
+_TTL = {"refs": 8.0, "modules": 20.0}
+_CACHE: dict = {}
+
+
+def _cached(key, ttl, make):
+    hit = _CACHE.get(key)
+    now = time.monotonic()
+    if hit and now - hit[0] < ttl:
+        return hit[1]
+    value = make()
+    _CACHE[key] = (now, value)
+    return value
+
+
+def invalidate() -> None:
+    """Call when a run ends or a project changes: the next read comes from the disk."""
+    _CACHE.clear()
+
+
 def _references() -> list[dict]:
-    return [r for r in registry.table() if r.get("origin") not in HIDDEN_ORIGINS]
+    return _cached("refs", _TTL["refs"], lambda: [r for r in registry.table() if r.get("origin") not in HIDDEN_ORIGINS])
 
 
 def _check_slug(slug: str) -> dict:
@@ -48,6 +70,10 @@ def _check_slug(slug: str) -> dict:
 
 
 def _modules(slug: str) -> list[dict]:
+    return _cached(("modules", slug), _TTL["modules"], lambda: _modules_now(slug))
+
+
+def _modules_now(slug: str) -> list[dict]:
     out = []
     for m in orch.module_scores(slug):
         out.append({"module": m["module"], "label": m.get("label"), "value": m.get("value"), "target": m.get("target"), "reached": bool(m.get("reached")),

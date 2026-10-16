@@ -45,3 +45,8 @@ Correction : le tracé image par image d'une vidéo de référence est une copie
 
 Les vidéos téléchargées restent dans le cache local, hors Assets. La musique rangée dans la banque est locale et n'est pas publiée sur
 ZenRayProgress sans décision de Matthieu. Le texte d'un plan est un paramètre.
+
+## 16 October 2026: foreground vector assets only (Matthieu's rule)
+
+- We reproduce ONLY the foreground assets (shapes, type, cards, charts, interface parts). Never the background images, never faces, never anything that would need an AI generation: only what HTML/motion code can animate. (16 October 2026)
+- Selection of the references from https://whatships.com/videos/<name>/ (big animated vector HTML, simple): agentplay first, claudia second (2 of 4), the 2 others come from Matthieu. One video at a time, each cut from its graphic bible and storyboard. (16 October 2026)

@@ -17,6 +17,7 @@
   <script src="/motion/runtime/zs-illustrate.js"></script>
   <script src="/motion/runtime/zs-vector.js"></script>
   <script src="/motion/runtime/zs-templates-kit.js"></script>
+  <script src="/motion/runtime/zs-templates-agentplay.js"></script>
   <script src="/motion/runtime/zs-audio.js"></script>
 </head>
 <body>
