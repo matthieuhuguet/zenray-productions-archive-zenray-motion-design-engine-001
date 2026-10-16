@@ -255,7 +255,8 @@ def temporal_error(low: np.ndarray, hz: float, t0: float, t1: float, times: list
     w, h = CFG["sampling"]["probeSize"]
     grey = [cv2.resize(cv2.cvtColor(r, cv2.COLOR_BGR2GRAY), (w, h), interpolation=cv2.INTER_AREA).astype(np.int16) if r is not None else None for r in rasters]
     errs = []
-    for i in range(int(math.ceil(t0 * hz)), min(len(low), int(math.ceil(t1 * hz)))):
+    guard = CFG["sampling"].get("cutGuardSamples", 1.5) / hz   # the probe's own timing is one sample loose: never judge next to a cut
+    for i in range(int(math.ceil((t0 + guard) * hz)), min(len(low), int(math.ceil((t1 - guard) * hz)))):
         t = i / hz
         k = max(j for j, kt in enumerate(times) if kt <= t + 1e-6) if any(kt <= t + 1e-6 for kt in times) else 0
         if grey[k] is not None:
