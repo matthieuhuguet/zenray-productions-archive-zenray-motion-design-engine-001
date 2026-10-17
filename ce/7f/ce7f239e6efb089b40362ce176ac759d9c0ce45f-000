@@ -110,6 +110,24 @@
         ]
       ],
       "note": "AnthropicSans Light as its own family (15 October 2026)"
+    },
+    "VogunLight": {
+      "files": [
+        [
+          "~/Library/Fonts/Vogun-Light.ttf",
+          300
+        ]
+      ],
+      "note": "Vogun Light by Yukita Creative (17 October 2026)"
+    },
+    "VogunRegular": {
+      "files": [
+        [
+          "~/Library/Fonts/Vogun-Regular.ttf",
+          400
+        ]
+      ],
+      "note": "Vogun Regular by Yukita Creative (17 October 2026)"
     }
   },
   "uploads": {

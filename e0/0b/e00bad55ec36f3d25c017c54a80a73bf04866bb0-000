@@ -102,8 +102,14 @@
     },
     yawen(pl, p) {
       const it = [], tw = p.tw, F = tw("footSize", 20);
-      it.push({ n: T(pl, { text: p.l1, x: tw("x1", 960), y: tw("y1", 360), size: tw("size1", 160), font: "InstrumentSerif", weight: 400, color: "#f4f6f8", align: "center", ls: tw("ls1", 0.055) + "em", lh: 1, sx: tw("sx1", 1.035), css: { webkitTextStroke: tw("stroke1", 4.5) + "px #f4f6f8" } }) });
-      it.push({ n: T(pl, { text: p.l2, x: tw("x2", 960), y: tw("y2", 529), size: tw("size2", 44), font: "Fraunces", weight: 500, color: "#eef2f6", align: "center", ls: tw("ls2", 0.17) + "em", lh: 1 }) });
+      // the title: two words and a four-point star between them (the reference ornament), every position a parameter
+      const [w1, w2] = String(p.l1).split("·"), tf = { size: tw("size1", 128), font: p.font || "VogunMedium", weight: 500, color: "#f4f6f8", ls: tw("ls1", 0.02) + "em", lh: 1, sx: tw("sx1", 1), css: { webkitTextStroke: tw("stroke1", 0) + "px #f4f6f8" } };
+      it.push({ n: T(pl, Object.assign({ text: w1, x: tw("ax", 375), y: tw("y1", 372) }, tf)) });
+      const os = tw("os", 1), orn = svgEl("svg", { width: 80, height: 120, viewBox: "-40 -40 80 120", style: `position:absolute;left:${tw("ox", 851) - 40}px;top:${tw("oy", 421) - 40}px;overflow:visible;transform:scale(${os});transform-origin:40px 40px` }, pl);
+      svgEl("path", { d: "M0,-11 Q1,-2 11,0 Q2,3 0,31 Q-2,3 -11,0 Q-1,-2 0,-11 Z", fill: "#f4f6f8" }, orn);
+      it.push({ n: orn, shape: true });
+      it.push({ n: T(pl, Object.assign({ text: w2, x: tw("bx", 893), y: tw("y1", 372) }, tf)) });
+      it.push({ n: T(pl, { text: p.l2, x: tw("x2", 960), y: tw("y2", 529), size: tw("size2", 44), font: p.font2 || "VogunRegular", weight: 400, color: "#eef2f6", align: "center", ls: tw("ls2", 0.17) + "em", lh: 1 }) });
       // the footer: a round icon (person, then briefcase) and its line; both drawn
       [[p.l3, 972], [p.l4, 1005]].forEach(([t, y], i) => {
         const y0 = tw("footY", y), ic = abs(pl, { left: tw("footX", 131) + "px", top: y0 + 2 + "px", width: F + "px", height: F + "px" });
