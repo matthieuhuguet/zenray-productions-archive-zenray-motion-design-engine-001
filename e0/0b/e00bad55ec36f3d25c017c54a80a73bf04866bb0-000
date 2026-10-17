@@ -109,7 +109,7 @@
       svgEl("path", { d: "M0,-11 Q1,-2 11,0 Q2,3 0,31 Q-2,3 -11,0 Q-1,-2 0,-11 Z", fill: "#f4f6f8" }, orn);
       it.push({ n: orn, shape: true });
       it.push({ n: T(pl, Object.assign({ text: w2, x: tw("bx", 893), y: tw("y1", 372) }, tf)) });
-      it.push({ n: T(pl, { text: p.l2, x: tw("x2", 960), y: tw("y2", 529), size: tw("size2", 44), font: p.font2 || "VogunLight", weight: 300, color: "#eef2f6", align: "center", ls: tw("ls2", 0.17) + "em", lh: 1 }) });
+      it.push({ n: T(pl, { text: p.l2, x: tw("x2", 960), y: tw("y2", 529), size: tw("size2", 44), font: p.font2 || "VogunRegular", weight: 400, color: "#eef2f6", align: "center", ls: tw("ls2", 0.17) + "em", lh: 1 }) });
       // the footer: a round icon (person, then briefcase) and its line; both drawn
       [[p.l3, 972], [p.l4, 1005]].forEach(([t, y], i) => {
         const y0 = tw("footY", y), ic = abs(pl, { left: tw("footX", 131) + "px", top: y0 + 2 + "px", width: F + "px", height: F + "px" });
@@ -189,7 +189,7 @@
     });
   }
 
-  const BOXES = { bleach: [880, 90, 1920, 1080], ichiban: [30, 20, 960, 480], paget: [90, 190, 700, 1050], "pale-raven": [90, 250, 900, 1010], phase: [90, 300, 1830, 840], yawen: [110, 330, 1560, 1030], indy: [40, 780, 1040, 990], zhongkui: [330, 90, 1230, 580] };
+  const BOXES = { bleach: [880, 90, 1920, 1080], ichiban: [30, 20, 960, 480], paget: [90, 190, 700, 1050], "pale-raven": [90, 250, 900, 1010], phase: [90, 300, 1830, 840], yawen: [110, 340, 1800, 1030], indy: [40, 780, 1040, 990], zhongkui: [330, 90, 1230, 580] };
   const TALLBOXES = { zhongkui: [470, 100, 1130, 490] };
   const EASES = ["auto", "power3.out", "power4.out", "expo.out", "back.out(1.7)", "back.out(3)", "elastic.out(1,0.4)", "bounce.out", "sine.inOut", "power2.inOut", "steps(6)"];
   const parseTweaks = (lines) => { const m = {}; (lines || []).forEach((l) => { const q = String(l).trim().split(/\s+/); if (q.length >= 2 && !isNaN(Number(q[q.length - 1]))) m[q.slice(0, -1).join(" ")] = Number(q[q.length - 1]); }); return m; };
