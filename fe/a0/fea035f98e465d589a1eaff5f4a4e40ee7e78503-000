@@ -25,7 +25,8 @@ import server  # noqa: E402
 CFG = {
     "ichiban-japan-ppm": [("pink word", (0.0, 0.22, 0.6, 0.45), ("rgb", (255, 123, 123), 70)), ("black outline", (0.012, 0.0, 0.5, 0.2), ("dark", 45))],
     "paget-character-concept-ppm": [("orange words", (0.06, 0.18, 0.4, 0.9), ("rgb", (255, 157, 31), 70)), ("white words", (0.06, 0.08, 0.36, 0.75), ("light", 225))],
-    "bleach-tybw-ppm": [("dark text on orange", (0.5, 0.0, 1.0, 1.0), ("dark", 70))],
+    "bleach-tybw-ppm": [("chip and kicker", (0.64, 0.08, 0.9, 0.14), ("notrgb", (241, 98, 7), 150)), ("title", (0.5, 0.2, 1.0, 0.38), ("notrgb", (241, 98, 7), 150)),
+                        ("body", (0.5, 0.38, 1.0, 0.6), ("notrgb", (241, 98, 7), 90)), ("big word", (0.5, 0.7, 1.0, 1.0), ("dark", 70))],
     "yawen-visual-designer-ppm": [("white title", (0.12, 0.3, 0.88, 0.55), ("light", 215))],
     "paget-indiana-jones-ppm": [("white title", (0.04, 0.8, 0.96, 0.96), ("light", 150))],
     "fe-pale-ravens-perch-ppm": [("cream title", (0.03, 0.1, 0.4, 0.9), ("rgb", (247, 236, 211), 55))],
@@ -42,6 +43,8 @@ def mask(img: np.ndarray, region, pred) -> np.ndarray:
     r = img[y0:y1, x0:x1].astype(int)
     if pred[0] == "rgb":
         m[y0:y1, x0:x1] = np.abs(r - np.array(pred[1])).sum(2) < pred[2]
+    elif pred[0] == "notrgb":
+        m[y0:y1, x0:x1] = np.abs(r - np.array(pred[1])).sum(2) > pred[2]
     elif pred[0] == "dark":
         m[y0:y1, x0:x1] = r.max(2) < pred[1]
     elif pred[0] == "light":
