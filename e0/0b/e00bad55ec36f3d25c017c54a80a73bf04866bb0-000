@@ -54,17 +54,17 @@
       abs(pl, { left: "0", top: "0", width: "1920px", height: "1080px", background: p.accent });
       abs(pl, { left: "48px", top: "0", width: "828px", height: "1080px", background: p.tile });
       const it = [];
-      const chip = abs(pl, { left: "1264px", top: "107px", width: "55px", height: "34px", background: "#0b0b0b" }); abs(chip, { left: "0", top: "8px", width: "55px", textAlign: "center", fontFamily: h.font("Syne"), fontWeight: 800, fontSize: "13px", color: "#fff" }, p.code); it.push({ n: chip, shape: true });
-      it.push({ n: T(pl, { text: p.kicker, x: 1334, y: 108, size: 11, font: "Fraunces", weight: 600, color: "#111", ls: "0.08em", upper: true }) });
-      it.push({ n: T(pl, { text: p.subtitle, x: 1334, y: 124, size: 17, font: "Fraunces", weight: 600, color: "#111", ls: "0.06em", upper: true }) });
-      it.push({ n: T(pl, { text: p.title, x: 1000, y: 230, size: tw("titleSize", 150), font: "PlayfairDisplay", weight: 600, color: "#0d0d0d", ls: "-0.02em", lh: 1 }) });
-      const jp = T(pl, { text: p.body, x: 1000, y: 418, size: tw("bodySize", 23), font: "Yu Mincho", weight: 700, color: "#111", ls: "0.02em", lh: 1.9, split: false, css: { fontFamily: "'Yu Mincho','Hiragino Mincho ProN',serif" } }); it.push({ n: jp, block: true });
+      const chip = abs(pl, { left: "1272px", top: "107px", width: "55px", height: "34px", background: "#0b0b0b" }); abs(chip, { left: "0", top: "8px", width: "55px", textAlign: "center", fontFamily: h.font("Syne"), fontWeight: 800, fontSize: "13px", color: "#fff" }, p.code); it.push({ n: chip, shape: true });
+      it.push({ n: T(pl, { text: p.kicker, x: 1342, y: 108, size: 11, font: "Fraunces", weight: 600, color: "#111", ls: "0.08em", upper: true }) });
+      it.push({ n: T(pl, { text: p.subtitle, x: 1342, y: 124, size: 17, font: "Fraunces", weight: 600, color: "#111", ls: "0.06em", upper: true }) });
+      it.push({ n: T(pl, { text: p.title, x: 1007, y: 240, size: tw("titleSize", 150), font: "PlayfairDisplay", weight: tw("titleWeight", 500), color: "#0d0d0d", ls: "-0.02em", lh: 1 }) });
+      const jp = T(pl, { text: p.body, x: 1007, y: 418, size: tw("bodySize", 23), font: "Yu Mincho", weight: 700, color: "#111", ls: "0.02em", lh: tw("bodyLh", 1.83), split: false, css: { fontFamily: "'Yu Mincho','Hiragino Mincho ProN',serif" } }); it.push({ n: jp, block: true });
       const big = T(pl, { text: p.title, x: 896, y: 731, size: tw("bigSize", 520), font: "Sora", weight: 800, color: "#050505", ls: "-0.07em", lh: 1, sx: tw("bigScaleX", 0.332) }); it.push({ n: big });
       return it;
     },
     ichiban(pl, p) {
       const it = [], tw = p.tw;
-      it.push({ n: sticker(pl, { text: p.line1, x: 46, y: 52, size: tw("size1", 168), font: "Sora", weight: 800, color: "#ffffff", ls: "-0.03em", border: tw("border", 34), outline: tw("outline", 20), fillStroke: tw("fill", 8), sx: tw("sx1", 0.70), lh: 1 }) });
+      it.push({ n: sticker(pl, { text: p.line1, x: 46, y: 52, size: tw("size1", 168), font: "Sora", weight: 800, color: "#ffffff", ls: "-0.03em", border: tw("border", 34), outline: tw("outline", 15), fillStroke: tw("fill", 8), sx: tw("sx1", 0.70), lh: 1 }) });
       it.push({ n: sticker(pl, { text: p.line2, x: 41, y: 232, size: tw("size2", 250), font: "Sora", weight: 800, color: p.accent, ls: "-0.03em", border: tw("border", 36), outline: tw("outline2", 0), fillStroke: tw("fill", 8), sx: tw("sx2", 0.68), lh: 1 }) });
       return it;
     },
@@ -100,7 +100,7 @@
     },
     yawen(pl, p) {
       const it = [], tw = p.tw;
-      it.push({ n: T(pl, { text: p.l1, x: 960, y: 348, size: tw("size1", 160), font: "InstrumentSerif", weight: 400, color: "#f4f6f8", align: "center", ls: tw("ls1", 0.05) + "em", lh: 1, css: { webkitTextStroke: tw("stroke1", 3) + "px #f4f6f8" } }) });
+      it.push({ n: T(pl, { text: p.l1, x: 960, y: tw("y1", 370), size: tw("size1", 138), font: "InstrumentSerif", weight: 400, color: "#f4f6f8", align: "center", ls: tw("ls1", 0.055) + "em", lh: 1, sx: tw("sx1", 1.2), css: { webkitTextStroke: tw("stroke1", 4.5) + "px #f4f6f8" } }) });
       it.push({ n: T(pl, { text: p.l2, x: 960, y: 530, size: tw("size2", 44), font: "Fraunces", weight: 500, color: "#eef2f6", align: "center", ls: tw("ls2", 0.17) + "em", lh: 1 }) });
       it.push({ n: T(pl, { text: "◉  " + p.l3, x: 130, y: 976, size: 19, font: "Geist", weight: 500, color: "#e6eaee", ls: "0.03em" }) });
       it.push({ n: T(pl, { text: "✉  " + p.l4, x: 130, y: 1009, size: 19, font: "Geist", weight: 500, color: "#e6eaee", ls: "0.03em" }) });
