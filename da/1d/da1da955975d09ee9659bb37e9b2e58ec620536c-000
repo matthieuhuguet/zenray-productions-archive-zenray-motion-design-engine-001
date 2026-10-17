@@ -1,0 +1,87 @@
+"""Trace the red lettering of the Zhong Kui title (17 October 2026).
+Run with /Users/zenray/.venvs/zenray-motion/bin/python -I (numpy, scikit-image, potrace on the PATH).
+Reads the reference still, cuts each letter by its box, upsamples the redness 4x, thresholds, and lets potrace turn it into bezier outlines.
+Writes <out>/traced.json: {letter_key: {"d": path in reference pixels, "bbox": [x0, y0, x1, y1], "ink": px}} and a mask PNG per run.
+Usage: ZhongKuiTrace.py [--still PATH] [--out DIR] [--scale 4]"""
+import argparse, json, os, re, subprocess, tempfile
+import numpy as np
+from PIL import Image
+from scipy import ndimage as ndi
+
+BOXES = {  # letter key -> (x0, y0, x1, y1) in reference pixels, padded around the ink
+    "Z": (468, 222, 582, 350), "H": (598, 226, 708, 350), "O": (732, 222, 862, 350), "N": (880, 226, 992, 350), "G": (1008, 222, 1128, 350),
+    "K": (606, 364, 714, 490), "U": (742, 364, 856, 490), "I": (910, 364, 966, 490),
+}
+
+def redness(im):
+    r, g, b = im[..., 0], im[..., 1], im[..., 2]
+    return np.clip(((r - np.maximum(g, b)) - 28) / 40.0, 0, 1) * np.clip((r - 70) / 50.0, 0, 1)
+
+def trace(mask, scale):
+    with tempfile.TemporaryDirectory() as td:
+        pbm = os.path.join(td, "m.pbm"); svg = os.path.join(td, "m.svg")
+        h, w = mask.shape
+        with open(pbm, "wb") as f:
+            f.write(b"P4\n%d %d\n" % (w, h)); f.write(np.packbits(mask.astype(np.uint8), axis=1).tobytes())
+        subprocess.run(["potrace", "-s", "-o", svg, "--turdsize", "30", "--alphamax", "1.1", "--opttolerance", "0.4", pbm], check=True)
+        txt = open(svg).read()
+    d = " ".join(re.findall(r'<path[^>]* d="([^"]+)"', txt))
+    m = re.search(r'translate\(([-\d.]+),([-\d.]+)\)\s*scale\(([-\d.]+),([-\d.]+)\)', txt)
+    tx, ty, sx, sy = [float(v) for v in m.groups()]
+    return d, (tx, ty, sx, sy)
+
+def path_to_px(d, tf, scale, x0, y0):
+    """Potrace emits relative/absolute bezier in its own units; convert every pair to reference pixels (absolute, M C L Z only)."""
+    tx, ty, sx, sy = tf
+    toks = re.findall(r"[MmCcLlZz]|-?\d+(?:\.\d+)?", d)
+    out, i, cur, cmd = [], 0, (0.0, 0.0), None
+    def P(x, y):  # potrace units -> reference pixel
+        return ((tx + x * sx) / scale + x0, (ty + y * sy) / scale + y0)
+    while i < len(toks):
+        t = toks[i]
+        if re.match(r"[MmCcLlZz]", t): cmd = t; i += 1
+        if cmd in "Zz": out.append("Z"); continue
+        n = {"M": 2, "m": 2, "L": 2, "l": 2, "C": 6, "c": 6}[cmd]
+        v = [float(x) for x in toks[i:i + n]]; i += n
+        if cmd == "M": cur = (v[0], v[1]); out.append("M%.2f,%.2f" % P(*cur)); cmd = "L"
+        elif cmd == "m": cur = (cur[0] + v[0], cur[1] + v[1]); out.append("M%.2f,%.2f" % P(*cur)); cmd = "l"
+        elif cmd == "L": cur = (v[0], v[1]); out.append("L%.2f,%.2f" % P(*cur))
+        elif cmd == "l": cur = (cur[0] + v[0], cur[1] + v[1]); out.append("L%.2f,%.2f" % P(*cur))
+        elif cmd == "C": pts = [(v[0], v[1]), (v[2], v[3]), (v[4], v[5])]; cur = pts[2]; out.append("C" + " ".join("%.2f,%.2f" % P(*q) for q in pts))
+        elif cmd == "c": pts = [(cur[0] + v[0], cur[1] + v[1]), (cur[0] + v[2], cur[1] + v[3]), (cur[0] + v[4], cur[1] + v[5])]; cur = pts[2]; out.append("C" + " ".join("%.2f,%.2f" % P(*q) for q in pts))
+    return " ".join(out)
+
+def main():
+    ap = argparse.ArgumentParser(); ap.add_argument("--still", default="/Users/zenray/.claude/tmp/tmp-zenray-motion-design-refcache/_stills/still-zhong-kui.png")
+    ap.add_argument("--out", default="/Users/zenray/.claude/tmp/tmp-zenray-motion-design/zhongkui-font"); ap.add_argument("--scale", type=int, default=4)
+    a = ap.parse_args(); os.makedirs(a.out, exist_ok=True)
+    im = np.array(Image.open(a.still).convert("RGB")).astype(float)
+    red = redness(im); res = {}
+    for k, (x0, y0, x1, y1) in BOXES.items():
+        c = red[y0:y1, x0:x1]
+        up = ndi.zoom(c, a.scale, order=3)
+        up = ndi.gaussian_filter(up, a.scale * 0.6)
+        m = up > 0.45
+        m = ndi.binary_closing(m, iterations=a.scale)
+        m = ndi.binary_fill_holes(m) if k not in ("O", "G", "U") else m  # keep the counters of O and G open
+        lab, n = ndi.label(m)
+        if n > 1:
+            sizes = ndi.sum(m, lab, range(1, n + 1)); keep = [i + 1 for i, s in enumerate(sizes) if s > 0.04 * sizes.max()]
+            m = np.isin(lab, keep)
+        d, tf = trace(m, a.scale)
+        px = path_to_px(d, tf, a.scale, x0, y0)
+        ys, xs = np.nonzero(m)
+        res[k] = {"d": px, "bbox": [x0 + xs.min() / a.scale, y0 + ys.min() / a.scale, x0 + xs.max() / a.scale, y0 + ys.max() / a.scale], "ink": int(m.sum() / a.scale ** 2)}
+        Image.fromarray((m * 255).astype("uint8")).save(os.path.join(a.out, "mask_%s.png" % k))
+    # the grey brush calligraphy behind the title: the dim grey ink (red letters filled by closing), smoothed, one potrace outline
+    r_, g_, b_ = im[..., 0], im[..., 1], im[..., 2]; lum = im.mean(axis=2); redm = (r_ - np.maximum(g_, b_)) > 25
+    sm = ndi.gaussian_filter(lum * (~redm), 4); gm = sm > 18; gm[:, :300] = False; gm[:, 1260:] = False; gm[:70] = False; gm[600:] = False
+    fill = ndi.binary_dilation(redm, iterations=4) & ndi.binary_closing(gm, iterations=22)
+    gm = ndi.binary_opening(gm | fill, iterations=2)
+    lab, n = ndi.label(gm); sizes = ndi.sum(gm, lab, range(1, n + 1)); gm = np.isin(lab, [i + 1 for i, v in enumerate(sizes) if v > 260])
+    up = ndi.gaussian_filter(ndi.zoom(gm.astype(float), 2, order=1), 3) > 0.5
+    d, tf = trace(up, 2); res["calligraphy"] = {"d": path_to_px(d, tf, 2, 0, 0), "ink": int(gm.sum())}
+    Image.fromarray((gm * 255).astype("uint8")).save(os.path.join(a.out, "mask_calligraphy.png"))
+    json.dump(res, open(os.path.join(a.out, "traced.json"), "w"), indent=1)
+    print({k: (round(v["bbox"][0]), round(v["bbox"][1]), round(v["bbox"][2]), round(v["bbox"][3]), v["ink"]) for k, v in res.items() if "bbox" in v})
+main()

@@ -1,0 +1,41 @@
+"""Score the procedural ZhongKui Brush font against the traced letters (17 October 2026).
+For each traced letter (K, H, ...), renders the same letter of the font at the traced cap height, slides it +-8 px to its best place and prints the overlap (IoU).
+Run with /Users/zenray/.venvs/zenray-motion/bin/python -I. Options: --width 12 --taper 0.55 --flare 0.12 --cap 100 --out DIR (writes a comparison PNG per letter)."""
+import argparse, json, os, subprocess
+import numpy as np
+from PIL import Image, ImageDraw
+
+ROOT = "/Users/zenray/Create/Build/Productions/GithubProductions/ZenRayMotionDesign"
+TR = "/Users/zenray/.claude/tmp/tmp-zenray-motion-design/zhongkui-font"
+BOX = {"Z": (468, 222), "H": (598, 226), "O": (732, 222), "N": (880, 226), "G": (1008, 222), "K": (606, 364), "U": (742, 364), "I": (910, 364)}
+S = 4
+
+def font_polys(letter, opts):
+    js = "const f=require(%r);const r=f.layout(%r,%s);console.log(JSON.stringify(r.polygons.map(p=>p.poly)))" % (ROOT + "/motion/runtime/zs-templates-brushfont-1.js", letter, json.dumps(opts))
+    return json.loads(subprocess.check_output(["node", "-e", js]))
+
+def render(polys, w, h, dx, dy):
+    im = Image.new("L", (w * S, h * S), 0); d = ImageDraw.Draw(im)
+    for p in polys: d.polygon([((x + dx) * S, (y + dy) * S) for x, y in p], fill=255)
+    return np.array(im) > 0
+
+def main():
+    ap = argparse.ArgumentParser()
+    for k, v in (("width", 12), ("taper", 0.55), ("flare", 0.12), ("cap", 100), ("tracking", 14)): ap.add_argument("--" + k, type=float, default=v)
+    ap.add_argument("--out", default=None); a = ap.parse_args()
+    opts = {"width": a.width, "taper": a.taper, "flare": a.flare, "cap": a.cap, "tracking": a.tracking}
+    traced = json.load(open(TR + "/traced.json")); tot = []
+    for k, (x0, y0) in BOX.items():
+        m = np.array(Image.open("%s/mask_%s.png" % (TR, k))) > 0; h, w = m.shape[0] // S, m.shape[1] // S
+        bx0, by0, bx1, by1 = traced[k]["bbox"]; polys = font_polys(k, opts)
+        best = (0, 0, 0)
+        for ddx in range(-8, 9, 2):
+            for ddy in range(-8, 9, 2):
+                r = render(polys, w, h, bx0 - x0 + ddx, by0 - y0 + ddy); iou = (r & m).sum() / max(1, (r | m).sum())
+                if iou > best[0]: best = (iou, ddx, ddy)
+        tot.append(best[0]); print(k, "iou %.3f shift %+d,%+d" % best)
+        if a.out:
+            os.makedirs(a.out, exist_ok=True); r = render(polys, w, h, bx0 - x0 + best[1], by0 - y0 + best[2]); o = np.zeros(m.shape + (3,), np.uint8)
+            o[m & ~r] = (255, 80, 80); o[r & ~m] = (80, 160, 255); o[r & m] = (255, 255, 255); Image.fromarray(o).save("%s/cmp_%s.png" % (a.out, k))
+    print("mean iou %.3f" % np.mean(tot))
+main()

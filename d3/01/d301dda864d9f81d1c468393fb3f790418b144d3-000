@@ -1,0 +1,136 @@
+"""Fit the skeleton points of the ZhongKui Brush letters to the traced letters (17 October 2026), by coordinate descent on the overlap (IoU).
+A Python port of strokePolygon() in motion/runtime/zs-templates-brushfont-1.js (checked against node by --check). Prints the fitted glyph lines in JS source form
+and, with --apply, patches them into the font file. Run with /Users/zenray/.venvs/zenray-motion/bin/python -I.
+Usage: ZhongKuiFontFit.py [--letters ZHONGKUI] [--passes 3] [--apply] [--check]"""
+import argparse, json, math, re, subprocess
+import numpy as np
+from PIL import Image, ImageDraw
+
+ROOT = "/Users/zenray/Create/Build/Productions/GithubProductions/ZenRayMotionDesign"
+JS = ROOT + "/motion/runtime/zs-templates-brushfont-1.js"
+TR = "/Users/zenray/.claude/tmp/tmp-zenray-motion-design/zhongkui-font"
+CAP_PX = 103.0; BEAR = 8.0
+ORIGIN = {"Z": (468, 222), "H": (598, 226), "O": (732, 222), "N": (880, 226), "G": (1008, 222), "K": (606, 364), "U": (742, 364), "I": (910, 364)}
+CAPTOP = {"Z": 236, "H": 236, "O": 236, "N": 236, "G": 236, "K": 374, "U": 374, "I": 374}
+S = 2; OPT = dict(width=12.0, taper=0.55, flare=0.12, steps=10)
+
+def smooth(a, b, x):
+    t = min(1, max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t)
+
+def sample(pts, steps):
+    if len(pts) == 2:
+        out = []
+        for i in range(steps * 2 + 1):
+            t = i / (steps * 2); m0 = pts[0][2] if len(pts[0]) > 2 else 1; m1 = pts[1][2] if len(pts[1]) > 2 else 1
+            out.append([pts[0][0] + (pts[1][0] - pts[0][0]) * t, pts[0][1] + (pts[1][1] - pts[0][1]) * t, m0 + (m1 - m0) * t])
+        return out
+    P = [[p[0], p[1], p[2] if len(p) > 2 else 1] for p in pts]; n = len(P); out = []
+    at = lambda i: P[min(n - 1, max(0, i))]
+    for i in range(n - 1):
+        p0, p1, p2, p3 = at(i - 1), at(i), at(i + 1), at(i + 2)
+        for s in range(steps):
+            t = s / steps; t2 = t * t; t3 = t2 * t
+            f = lambda a, b, c, d: 0.5 * ((2 * b) + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3)
+            out.append([f(p0[0], p1[0], p2[0], p3[0]), f(p0[1], p1[1], p2[1], p3[1]), f(p0[2], p1[2], p2[2], p3[2])])
+    out.append(P[-1]); return out
+
+def stroke_polygon(pts, o):
+    line = sample(pts, o["steps"]); n = len(line)
+    closed = math.hypot(pts[0][0] - pts[-1][0], pts[0][1] - pts[-1][1]) < 8 and len(pts) > 4
+    dist = [0.0]
+    for i in range(1, n): dist.append(dist[-1] + math.hypot(line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]))
+    total = dist[-1] or 1; L = []; R = []
+    for i in range(n):
+        t = dist[i] / total; a = line[max(0, i - 1)]; b = line[min(n - 1, i + 1)]
+        dx, dy = b[0] - a[0], b[1] - a[1]; m = math.hypot(dx, dy) or 1; dx /= m; dy /= m
+        f = line[i][2] * (1 + o["flare"] * (1 - smooth(0, 0.14, t))) * (1 - o["taper"] * 0.65 * smooth(0.9 if closed else 0.72, 1, t))
+        hw = max(0.6, o["width"] * f / 2)
+        L.append([line[i][0] + dy * hw, line[i][1] - dx * hw]); R.append([line[i][0] - dy * hw, line[i][1] + dx * hw])
+    def cap(i, kind, hw):
+        a = line[max(0, i - 1)]; b = line[min(n - 1, i + 1)]; dx, dy = b[0] - a[0], b[1] - a[1]; m = math.hypot(dx, dy) or 1; dx /= m; dy /= m; pts = []
+        for j in range(1, 6):
+            ang = math.pi * j / 6; c = math.cos(ang); sn = math.sin(ang)
+            pts.append([line[i][0] + kind * (dy * c + dx * sn) * hw, line[i][1] + kind * (-dx * c + dy * sn) * hw])
+        return pts
+    hw_at = lambda i: math.hypot(L[i][0] - R[i][0], L[i][1] - R[i][1]) / 2
+    end_cap = [] if closed else cap(n - 1, 1, hw_at(n - 1)); start_cap = [] if closed else cap(0, -1, hw_at(0))
+    return L + end_cap + R[::-1] + start_cap
+
+def glyphs_from_js():
+    js = "const f=require(%r);console.log(JSON.stringify(f.glyphs))" % JS
+    return json.loads(subprocess.check_output(["node", "-e", js]))
+
+def raster(strokes, k, ox, oy, w, h):
+    im = Image.new("L", (w * S, h * S), 0); d = ImageDraw.Draw(im); kk = CAP_PX / 100.0
+    for st in strokes:
+        poly = stroke_polygon(st, OPT); d.polygon([((p[0] * kk + ox) * S, (p[1] * kk + oy) * S) for p in poly], fill=255)
+    return np.array(im) > 0
+
+def iou(a, b): return (a & b).sum() / max(1, (a | b).sum())
+
+def fmt(strokes):
+    return "[" + ", ".join("[" + ", ".join("[" + ", ".join(("%g" % round(v, 1)) for v in p) + "]" for p in st) + "]" for st in strokes) + "]"
+
+def main():
+    ap = argparse.ArgumentParser(); ap.add_argument("--letters", default="ZHONGKUI"); ap.add_argument("--passes", type=int, default=3); ap.add_argument("--apply", action="store_true"); ap.add_argument("--check", action="store_true"); ap.add_argument("--score", default=None); ap.add_argument("--lock", default="")
+    a = ap.parse_args(); G = glyphs_from_js(); res = {}
+    if a.check:
+        js = "const f=require(%r);const r=f.layout('Z',{width:12,taper:0.55,flare:0.12,cap:100});console.log(JSON.stringify(r.polygons[0].poly))" % JS
+        ref = json.loads(subprocess.check_output(["node", "-e", js])); mine = stroke_polygon(G["Z"]["s"][0], OPT)
+        print("check Z stroke 0 max diff", max(abs(p[0] - q[0]) + abs(p[1] - q[1]) for p, q in zip(ref, mine)))
+        return
+    if a.score:
+        out = {}
+        for k in a.letters:
+            x0, y0 = ORIGIN[k]; mm = (np.array(Image.open("%s/mask_%s.png" % (TR, k))) > 0)[::2, ::2]; ww, hh = mm.shape[1] // S, mm.shape[0] // S
+            bx0 = json.load(open(TR + "/traced.json"))[k]["bbox"][0]
+            rr = raster([[list(p) for p in st] for st in G[k]["s"]], k, bx0 - x0 - BEAR * CAP_PX / 100.0, CAPTOP[k] - y0, ww, hh); out[k] = round(float(iou(rr, mm)), 3)
+            o = np.zeros(mm.shape + (3,), np.uint8); o[mm & ~rr] = (255, 80, 80); o[rr & ~mm] = (80, 160, 255); o[rr & mm] = (255, 255, 255); Image.fromarray(o).resize((o.shape[1] * 2, o.shape[0] * 2), Image.NEAREST).save("/tmp/fit_%s.png" % k)
+        json.dump(out, open(a.score, "w")); print(out); return
+    tot = []
+    for k in a.letters:
+        x0, y0 = ORIGIN[k]; m = (np.array(Image.open("%s/mask_%s.png" % (TR, k))) > 0)[::2, ::2]; h, w = m.shape[0] // S * S // S, m.shape[1] // S * S // S
+        h, w = m.shape[0] // S, m.shape[1] // S
+        m = m[:h * S, :w * S] if False else m
+        # glyph origin in the crop: traced bbox left minus the side bearing, cap top
+        bx0 = json.load(open(TR + "/traced.json"))[k]["bbox"][0]; ox = bx0 - x0 - BEAR * CAP_PX / 100.0; oy = CAPTOP[k] - y0
+        strokes = [[list(p) for p in st] for st in G[k]["s"]]
+        mm = np.array(Image.open("%s/mask_%s.png" % (TR, k))) > 0; mm = mm[::2, ::2]
+        ww, hh = mm.shape[1] // S, mm.shape[0] // S
+        best = iou(raster(strokes, k, ox, oy, ww, hh), mm); start = best
+        for step in [3.0, 2.0, 1.0, 0.5][:a.passes + 1]:
+            improved = True
+            while improved:
+                improved = False
+                for si, st in enumerate(strokes):
+                    if (k + ":" + str(si)) in a.lock.split(","): continue
+                    for pi, p in enumerate(st):
+                        for ax in (0, 1):
+                            for sgn in (-1, 1):
+                                old = p[ax]; p[ax] = old + sgn * step
+                                sc = iou(raster(strokes, k, ox, oy, ww, hh), mm)
+                                if sc > best + 1e-4: best = sc; improved = True
+                                else: p[ax] = old
+                        if len(p) > 2 or True:
+                            m0 = p[2] if len(p) > 2 else 1.0
+                            for sgn in (-1, 1):
+                                nm = round(max(0.5, m0 + sgn * 0.1 * (step / 3.0 + 0.3)), 2); q = list(p) + [1.0] * (3 - len(p)); q[2] = nm
+                                keep = list(p); st[pi] = q
+                                sc = iou(raster(strokes, k, ox, oy, ww, hh), mm)
+                                if sc > best + 1e-4: best = sc; improved = True; p = q
+                                else: st[pi] = keep; p = keep
+        # tidy: drop width multipliers that stayed at 1
+        for st in strokes:
+            for p in st:
+                if len(p) > 2 and abs(p[2] - 1) < 0.04: del p[2]
+        G[k]["w"] = round(max(p[0] for st in strokes for p in st) + BEAR); tot.append(best); res[k] = strokes
+        print("%s %.3f -> %.3f" % (k, start, best))
+    print("mean", round(sum(tot) / len(tot), 3))
+    for k, st in res.items(): print("    %s: { w: %d, s: %s }," % (k, round(G[k]["w"]), fmt(st)))
+    if a.apply:
+        src = open(JS).read()
+        for k, st in res.items():
+            pat = re.compile(r"^    %s: \{ w: \d+, s: .*\},$" % k, re.M); assert pat.search(src), k
+            src = pat.sub(lambda mm_: "    %s: { w: %d, s: %s }," % (k, round(G[k]["w"]), fmt(st)), src, count=1)
+        open(JS, "w").write(src); print("patched", JS)
+main()

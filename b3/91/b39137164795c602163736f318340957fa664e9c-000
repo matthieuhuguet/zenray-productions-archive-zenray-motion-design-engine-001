@@ -1,0 +1,23 @@
+// 17 October 2026: full-page screenshot of a local page in the managed chrome-headless-shell (never a personal browser).
+// Run: node Scripts/ShotPage.mjs <page.html or http url> <width> <out.png> [scale=1] [evalScript]
+import { spawnSync } from "node:child_process";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
+const TOOLING = join(dirname(dirname(fileURLToPath(import.meta.url))), "tooling");
+const require = createRequire(join(TOOLING, "package.json"));
+const puppeteer = require("puppeteer-core");
+const env = { ...process.env, HYPERFRAMES_NO_TELEMETRY: "1", DO_NOT_TRACK: "1", HYPERFRAMES_NO_UPDATE_CHECK: "1" };
+const browserPath = spawnSync(join(TOOLING, "node_modules", ".bin", "hyperframes"), ["browser", "path"], { env, encoding: "utf8" }).stdout.trim();
+const [page, width, out, scale, ev] = process.argv.slice(2);
+const browser = await puppeteer.launch({ executablePath: browserPath, headless: true, args: ["--allow-file-access-from-files", "--no-first-run", "--disable-extensions"] });
+try {
+  const tab = await browser.newPage();
+  await tab.setViewport({ width: Number(width || 1440), height: 900, deviceScaleFactor: Number(scale || 1) });
+  await tab.goto(/^https?:/.test(page) ? page : pathToFileURL(resolve(page)).href, { waitUntil: "load", timeout: 120000 });
+  await tab.evaluate(async () => { await document.fonts.ready; });
+  if (ev) await tab.evaluate(ev);
+  await new Promise((r) => setTimeout(r, 300));
+  await tab.screenshot({ path: out, fullPage: true });
+  console.log(out);
+} finally { await browser.close(); }

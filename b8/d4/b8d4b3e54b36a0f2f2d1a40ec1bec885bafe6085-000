@@ -1,0 +1,88 @@
+"""Build the validation sheet of the Zhong Kui lettering (17 October 2026): the reference letters, their traced vectors (decalque), the procedural ZhongKui Brush font fitted on them,
+their overlay, the full A-Z alphabet and the title typed with the font. One self-contained HTML with live sliders (the font parameters), written next to the traced data.
+Run with /Users/zenray/.venvs/zenray-motion/bin/python -I. Usage: ZhongKuiFontSheet.py [--out FILE]"""
+import argparse, base64, io, json
+from PIL import Image
+
+ROOT = "/Users/zenray/Create/Build/Productions/GithubProductions/ZenRayMotionDesign"
+TR = "/Users/zenray/.claude/tmp/tmp-zenray-motion-design/zhongkui-font"
+STILL = "/Users/zenray/.claude/tmp/tmp-zenray-motion-design-refcache/_stills/still-zhong-kui.png"
+ORIGIN = {"Z": (468, 222, 582, 350), "H": (598, 226, 708, 350), "O": (732, 222, 862, 350), "N": (880, 226, 992, 350), "G": (1008, 222, 1128, 350), "K": (606, 364, 714, 490), "U": (742, 364, 856, 490), "I": (910, 364, 966, 490)}
+CAPTOP = {"Z": 236, "H": 236, "O": 236, "N": 236, "G": 236, "K": 374, "U": 374, "I": 374}
+
+def b64(im):
+    b = io.BytesIO(); im.save(b, "PNG"); return "data:image/png;base64," + base64.b64encode(b.getvalue()).decode()
+
+def main():
+    ap = argparse.ArgumentParser(); ap.add_argument("--out", default=TR + "/FontSheet.html"); a = ap.parse_args()
+    traced = json.load(open(TR + "/traced.json")); iou = json.load(open(TR + "/iou.json"))
+    still = Image.open(STILL).convert("RGB"); crops = {k: b64(still.crop(b)) for k, b in ORIGIN.items()}
+    title = b64(still.crop((440, 215, 1150, 500)))
+    lib = open(ROOT + "/motion/runtime/zs-templates-brushfont-1.js").read()
+    data = {"traced": traced, "origin": ORIGIN, "captop": CAPTOP, "iou": iou, "crops": crops, "title": title}
+    html = HTML.replace("/*LIB*/", lib).replace("/*DATA*/", json.dumps(data))
+    open(a.out, "w").write(html); print(a.out, len(html) // 1024, "KiB")
+
+HTML = r'''<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ZhongKui Brush : planche de la police</title>
+<style>
+:root{--bg:#0e0d0f;--card:#17151a;--ink:#ece8e4;--mut:#9a9298;--red:#d94a4e;--blue:#5ea6ff;--line:#2a262d}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,Helvetica,Arial,sans-serif;padding:0 16px 80px}
+h1{font-size:22px;margin:24px 0 4px}h2{font-size:15px;margin:34px 0 8px;color:var(--red);letter-spacing:.06em;text-transform:uppercase}p.n{color:var(--mut);margin:2px 0 10px;max-width:880px}
+.panel{border-bottom:1px solid var(--line);padding:10px 0;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px 18px}
+.panel label{display:flex;flex-direction:column;font-size:12px;color:var(--mut)}.panel label b{color:var(--ink);font-weight:500;display:flex;justify-content:space-between}.panel input[type=range]{width:100%;accent-color:var(--red)}
+.panel button{background:var(--red);color:#1a0808;border:0;border-radius:8px;padding:8px 12px;font-weight:600;cursor:pointer;align-self:end}
+.row{display:grid;grid-template-columns:44px repeat(4,minmax(0,1fr));gap:10px;align-items:center;margin:8px 0;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px}
+.row .k{font-size:26px;color:var(--red)}.cell{background:#050405;border-radius:8px;overflow:hidden;position:relative;line-height:0}.cell svg,.cell img{width:100%;height:auto;display:block}
+.cell .t{position:absolute;left:6px;top:4px;font-size:10px;color:var(--mut);line-height:1.2}.cell .s{position:absolute;right:6px;top:4px;font-size:11px;color:var(--ink);line-height:1.2}
+.big{background:#050405;border-radius:12px;padding:12px;line-height:0;overflow:hidden}.big svg{width:100%;height:auto}.trio{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.trio .cell img,.trio .cell svg{width:100%}.alpha{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}.alpha .cell{padding:6px 0}.alpha .tag{position:absolute;left:6px;bottom:3px;font-size:10px;color:var(--mut)}
+@media(max-width:800px){.row{grid-template-columns:30px repeat(2,minmax(0,1fr))}.trio{grid-template-columns:1fr}}
+</style></head><body>
+<h1>ZhongKui Brush : planche de la police</h1>
+<p class="n">Titre rouge de Black Myth: Zhong Kui. Trois niveaux : <b>référence</b> (l'image), <b>décalque</b> (contours vectorisés pixel par pixel, potrace) et <b>police procédurale</b> (traits à largeur variable, calés sur le décalque). Bleu = police seule, rouge = décalque seul, blanc = recouvrement. Les curseurs règlent toute la planche et se copient en bas.</p>
+<div class="panel" id="panel"></div>
+<h2>1. Les huit lettres mesurées</h2><div id="rows"></div>
+<h2>2. Le titre composé</h2><div class="trio"><div class="cell"><span class="t">référence</span><img id="titleRef"></div><div class="cell"><span class="t">décalque (vecteur)</span><svg id="titleTrace"></svg></div><div class="cell"><span class="t">police procédurale (texte tapé)</span><svg id="titleFont"></svg></div></div>
+<h2>3. L'alphabet complet</h2><p class="n">Lettres du titre : mesurées (étiquette « mesurée »). Les autres lettres sont dessinées dans la même direction (traits, effilage, pinceau) : à valider à l'œil.</p><div class="alpha" id="alpha"></div>
+<h2>4. Texte libre</h2><div style="margin:6px 0"><input id="free" value="BLACK MYTH WUKONG" style="width:100%;max-width:560px;background:#17151a;color:#ece8e4;border:1px solid #2a262d;border-radius:8px;padding:8px"></div><div class="big"><svg id="freeSvg"></svg></div>
+<h2>Valeurs</h2><pre id="vals" style="background:#17151a;border-radius:10px;padding:12px;overflow:auto;color:#cfc8c4"></pre>
+<script>/*LIB*/</script>
+<script>
+const D=/*DATA*/, F=window.ZSBrushFont, NS="http://www.w3.org/2000/svg", RED="#c9484c";
+const PARAMS=[["width","Épaisseur du trait",12,6,22,.5],["taper","Effilage de la fin",.55,0,1,.01],["flare","Attaque du pinceau",.12,0,.5,.01],["wobble","Tremblement",0,0,4,.1],["slant","Inclinaison (°)",0,-20,20,.5],["tracking","Espacement",24,0,50,1],["rough","Rugosité du bord",1.2,0,10,.1],["seed","Graine",1,1,99,1],["cap","Hauteur de capitale (px)",103,60,160,1]];
+const V={};PARAMS.forEach(p=>V[p[0]]=p[2]);const panel=document.getElementById("panel");
+PARAMS.forEach(([k,l,d,mn,mx,st])=>{const lab=document.createElement("label");lab.innerHTML=`<b><span>${l}</span><span id="v_${k}">${d}</span></b><input type="range" min="${mn}" max="${mx}" step="${st}" value="${d}">`;lab.querySelector("input").oninput=e=>{V[k]=+e.target.value;document.getElementById("v_"+k).textContent=V[k];draw()};panel.appendChild(lab)});
+const btn=document.createElement("button");btn.textContent="Copier les valeurs";btn.onclick=()=>navigator.clipboard&&navigator.clipboard.writeText(document.getElementById("vals").textContent);panel.appendChild(btn);
+const el=(t,a,p)=>{const e=document.createElementNS(NS,t);for(const k in a||{})e.setAttribute(k,a[k]);if(p)p.appendChild(e);return e};
+function roughFilter(svg,id){const d=el("defs",{},svg),f=el("filter",{id,x:"-10%",y:"-10%",width:"120%",height:"120%"},d);el("feTurbulence",{type:"fractalNoise",baseFrequency:"0.07",numOctaves:2,seed:V.seed},f);el("feDisplacementMap",{in:"SourceGraphic",scale:V.rough},f);return V.rough>0?`url(#${id})`:null}
+const KERN={UI:38};const opts=()=>({kern:KERN,width:V.width,taper:V.taper,flare:V.flare,wobble:V.wobble,slant:V.slant,tracking:V.tracking,seed:V.seed,cap:V.cap});
+function glyphPaths(ch,ox,oy){const r=F.layout(ch,Object.assign(opts(),{tracking:0}));return r.polygons.map(p=>F.toPath(p.poly,ox,oy))}
+function draw(){
+  const rows=document.getElementById("rows");rows.innerHTML="";
+  Object.keys(D.origin).forEach(k=>{const [x0,y0,x1,y1]=D.origin[k],w=x1-x0,h=y1-y0,bb=D.traced[k].bbox,kk=V.cap/100;
+    const row=document.createElement("div");row.className="row";row.innerHTML=`<div class="k">${k}</div>`;rows.appendChild(row);
+    const cell=(t,s)=>{const c=document.createElement("div");c.className="cell";c.innerHTML=`<span class="t">${t}</span>${s||""}`;row.appendChild(c);return c};
+    const c1=cell("référence");const im=new Image();im.src=D.crops[k];c1.appendChild(im);
+    const mk=(c)=>el("svg",{viewBox:`0 0 ${w} ${h}`},c);
+    const ox=bb[0]-x0-8*kk,oy=D.captop[k]-y0;
+    const c2=cell("décalque");const s2=mk(c2);el("path",{d:D.traced[k].d.replace(/(-?[\d.]+),(-?[\d.]+)/g,(m,a,b)=>(a-x0).toFixed(2)+","+(b-y0).toFixed(2)),fill:RED},s2);
+    const c3=cell("police","<span class='s'>iou "+D.iou[k]+"</span>");const s3=mk(c3);const flt=roughFilter(s3,"r"+k);const g3=el("g",flt?{filter:flt}:{},s3);glyphPaths(k,ox,oy).forEach(d=>el("path",{d,fill:RED},g3));
+    const c4=cell("superposition");const s4=mk(c4);el("path",{d:D.traced[k].d.replace(/(-?[\d.]+),(-?[\d.]+)/g,(m,a,b)=>(a-x0).toFixed(2)+","+(b-y0).toFixed(2)),fill:"#ff5050",opacity:.85},s4);const g4=el("g",{style:"mix-blend-mode:screen"},s4);glyphPaths(k,ox,oy).forEach(d=>el("path",{d,fill:"#4aa0ff",opacity:.85},g4));
+  });
+  // title composed
+  document.getElementById("titleRef").src=D.title;
+  const T=document.getElementById("titleTrace");T.innerHTML="";T.setAttribute("viewBox","440 215 710 285");Object.keys(D.traced).forEach(k=>el("path",{d:D.traced[k].d,fill:RED},T));
+  const TF=document.getElementById("titleFont");TF.innerHTML="";TF.setAttribute("viewBox","440 215 710 285");const f2=roughFilter(TF,"rt");const gg=el("g",f2?{filter:f2}:{},TF);
+  const line=(text,cx,top)=>{const r=F.layout(text,opts()),sx=cx-r.width/2;r.polygons.forEach(p=>el("path",{d:F.toPath(p.poly,sx,top),fill:RED},gg))};
+  line("ZHONG",798,236);line("KUI",780,374);
+  // alphabet
+  const A=document.getElementById("alpha");A.innerHTML="";const measured="ZHONGKUI";
+  F.alphabet.split("").forEach(ch=>{const c=document.createElement("div");c.className="cell";const r=F.layout(ch,Object.assign(opts(),{tracking:0})),pad=24;const s=el("svg",{viewBox:`0 -${pad} ${r.width+pad*2} ${V.cap+pad*2}`},c);const fl=roughFilter(s,"a"+ch);const g=el("g",fl?{filter:fl}:{},s);r.polygons.forEach(p=>el("path",{d:F.toPath(p.poly,pad,0),fill:RED},g));
+    const tg=document.createElement("span");tg.className="tag";tg.textContent=ch+(measured.includes(ch)?"  mesurée":"  dessinée");c.appendChild(tg);A.appendChild(c)});
+  freeDraw();
+  document.getElementById("vals").textContent=JSON.stringify(V,null,1);
+}
+function freeDraw(){const s=document.getElementById("freeSvg");s.innerHTML="";const r=F.layout(document.getElementById("free").value,opts());s.setAttribute("viewBox",`-20 -20 ${r.width+40} ${V.cap+60}`);const fl=roughFilter(s,"rf");const g=el("g",fl?{filter:fl}:{},s);r.polygons.forEach(p=>el("path",{d:F.toPath(p.poly,0,0),fill:RED},g))}
+document.getElementById("free").oninput=freeDraw;draw();
+</script></body></html>'''
+main()
