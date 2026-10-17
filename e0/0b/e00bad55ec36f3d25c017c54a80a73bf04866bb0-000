@@ -154,7 +154,7 @@
       let zkId = 0;
       const fontLine = (text, o) => {
         const holder = abs(pl, { left: "0", top: "0", width: "0", height: "0" });
-        const r = F.layout(text, { width: o.width, taper: o.taper, flare: o.flare, cap: o.cap, tracking: o.tracking, kern: o.kern, positions: o.positions, wobble: o.wobble, slant: o.slant, seed: o.seed });
+        const r = F.layout(text, { width: o.width, taper: o.taper, flare: o.flare, cap: o.cap, tracking: o.tracking, kern: o.kern, positions: o.positions, wobble: o.wobble, slant: o.slant, seed: o.seed, style: o.style });
         const first = r.polygons.filter((q) => q.i === 0), x0 = o.positions ? 0 : o.x - Math.min.apply(null, first.flatMap((q) => q.poly.map((c) => c[0])));
         const byI = {}; r.polygons.forEach((q) => { (byI[q.i] = byI[q.i] || []).push(q); });
         Object.keys(byI).forEach((i) => { const gs = byI[i], xs = gs.flatMap((q) => q.poly.map((c) => c[0] + x0)), ys = gs.flatMap((q) => q.poly.map((c) => c[1] + o.top));
@@ -178,7 +178,7 @@
       it.push({ n: line(p.l1, "ZHONG", tw("x1", 476), tw("top1", 236), tw("track1", 24), [476, 608, 742, 894, 1019]) });
       it.push({ n: line(p.l3, "KUI", tw("x2", 614), tw("top2", 374), tw("track2", 24), [614, 752, 924]) });
       // the subtitle: the same font at a small size, wide-spaced; positions measured on the reference for BLACK MYTH
-      const sub = fontLine(p.l2, Object.assign({}, base, { cap: tw("subCap", 18), width: tw("subWidth", 12), taper: 0.3, flare: 0.05, rough: 0, wobble: 0, slant: 0, x: tw("subX", 505), top: tw("subTop", 349), tracking: tw("subTrack", 211), kern: {}, positions: same(p.l2, "BLACK MYTH") && tw("measured", 1) === 1 ? [505, 558, 610, 665, 719, undefined, 859, 929, 997, 1062] : undefined }));
+      const sub = fontLine(p.l2, Object.assign({}, base, { cap: tw("subCap", 18), width: tw("subWidth", 12), taper: tw("subTaper", 0.55), flare: tw("subFlare", 0.12), style: "fine", rough: 0, wobble: 0, slant: 0, x: tw("subX", 505), top: tw("subTop", 349), tracking: tw("subTrack", 211), kern: {}, positions: same(p.l2, "BLACK MYTH") && tw("measured", 1) === 1 ? [505, 558, 610, 665, 719, undefined, 859, 929, 997, 1062] : undefined }));
       sub.style.opacity = tw("subOpacity", 0.92); it.push({ n: sub });
       return it;
     },
