@@ -15,7 +15,7 @@ STILLS = {
     "ichiban-japan": ("Ichiban Japan, miniature Redécouvrir Kyushu", "still-ichiban-japan", "ichiban", "16x9", ["pop", "drop", "ink"], {"font": "Impact", "tweaks": ["x1 63", "y1 51", "size1 162", "sx1 0.99", "x2 60", "y2 225", "size2 231", "sx2 0.984", "ls1 0", "ls2 0.01", "outline1 33", "border1 48", "outline2 0", "border2 36", "weight 400"]}),
     "paget-character-concept": ("David Paget, Character Concept Art 01", "still-paget-character-concept", "paget", "16x9", ["wipe", "rise", "typewriter"], {"tweaks": ["y1 230.4", "s1 67", "sx1 1.051", "y2 300.7", "s2 64.3", "sx2 1.099", "y3 371", "s3 43", "sx3 1.086", "y4 456", "s4 29.2", "sx4 1.147", "x4 123", "y5 578", "s5 30.6", "sx5 1.108", "y6 699", "s6 32", "sx6 1.042", "y7 736", "s7 65.5", "sx7 1.055", "y8 807", "s8 64.3", "sx8 1.04"]}),
     "fe-pale-ravens-perch": ("Fire Emblem Fortune's Weave, Pale Raven's Perch", "still-fe-pale-ravens-perch", "pale-raven", "16x9", ["wipe", "letters", "ink"], {}),
-    "yawen-visual-designer": ("Yawen, Visual Designer marketing 01", "still-yawen-visual-designer", "yawen", "16x9", ["letters", "glitch", "rise"], {}),
+    "yawen-visual-designer": ("Yawen, Visual Designer marketing 01", "still-yawen-visual-designer", "yawen", "16x9", ["letters", "glitch", "rise"], {"tweaks": ["x1 968", "y1 364", "size1 160", "sx1 1.035", "ls1 0.055", "stroke1 4.5", "y2 529", "size2 46", "ls2 0.15"]}),
     "bmw-zhong-kui": ("Black Myth: Wukong, Zhong Kui", "still-zhong-kui", "zhongkui", "16x9", ["ink", "letters", "zoom"], {}),
     "paget-indiana-jones": ("David Paget, Indiana Jones", "still-paget-indiana-jones", "indy", "1x1", ["letters", "zoom", "typewriter"], {}),
 }
