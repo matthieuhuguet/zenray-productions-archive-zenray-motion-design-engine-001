@@ -1,0 +1,13 @@
+#!/bin/bash
+# 17 October 2026: set the tweaks of the Zhong Kui visual (name value, one argument each), rebuild the project and print the three overlap scores at 3.9 s.
+# Usage: bash Scripts/ZhongKuiTry.sh "subOpacity 1" "width 12.3"   (no argument = no tweak). Edits the zhongkui line of motion/reproductions/stills.py.
+cd "$(dirname "$0")/.."
+python3 - "$@" <<'PY'
+import sys,re
+f="motion/reproductions/stills.py"; s=open(f).read()
+tw=sys.argv[1:]
+new='"zhongkui", "16x9", ["brush", "ink", "zoom"], {%s}),' % ('"tweaks": [%s]' % ", ".join('"%s"' % t for t in tw) if tw else "")
+s2=re.sub(r'"zhongkui", "16x9", \["brush", "ink", "zoom"\], \{.*?\}\),',lambda m:new,s,count=1)
+open(f,"w").write(s2)
+PY
+python3 motion/reproductions/stills.py bmw-zhong-kui >/dev/null; python3 Scripts/FitReport.py bmw-zhong-kui-ppm --at 3.9 | grep -E "score|mask"

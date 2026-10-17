@@ -9,6 +9,16 @@ import ppm
 from ppm import T
 
 SCENE = 4.2
+
+
+def template_defaults() -> dict:
+    """The texts and colours the layouts start with, read from the template itself (ZS.stills.DEFAULTS), so a scene always carries real values the editor can show and change."""
+    import json
+    import subprocess
+    from pathlib import Path
+    js = Path(__file__).resolve().parents[1] / "runtime" / "zs-templates-stills-1.js"
+    code = "global.window={ZS:{h:{},register(){}}};global.document={};require(%r);console.log(JSON.stringify(window.ZS.stills.DEFAULTS))" % str(js)
+    return json.loads(subprocess.check_output(["node", "-e", code], text=True))
 # id -> (title, slug of the reference still, layout, format, the three appearances, per-scene extras)
 STILLS = {
     "bleach-tybw": ("Bleach Thousand-Year Blood War, page de personnage", "still-bleach-tybw", "bleach", "16x9", ["wipe", "letters", "zoom"], {"tweaks": ["bigSize 505", "bigScaleX 0.3394", "bigX 902", "bigY 722", "bigLs -0.07"]}),
@@ -16,18 +26,18 @@ STILLS = {
     "paget-character-concept": ("David Paget, Character Concept Art 01", "still-paget-character-concept", "paget", "16x9", ["wipe", "rise", "typewriter"], {"tweaks": ["y1 230.4", "s1 67", "sx1 1.051", "y2 300.7", "s2 64.3", "sx2 1.099", "y3 371", "s3 43", "sx3 1.086", "y4 456", "s4 29.2", "sx4 1.147", "x4 123", "y5 578", "s5 30.6", "sx5 1.108", "y6 699", "s6 32", "sx6 1.042", "y7 736", "s7 65.5", "sx7 1.055", "y8 807", "s8 64.3", "sx8 1.04"]}),
     "fe-pale-ravens-perch": ("Fire Emblem Fortune's Weave, Pale Raven's Perch", "still-fe-pale-ravens-perch", "pale-raven", "16x9", ["wipe", "letters", "ink"], {"tweaks": ["x1 106","y1 239","s1 200","sx1 0.97","x2 106","y2 428","s2 190","sx2 1.03","x3 106","y3 604","s3 195","sx3 0.935"]}),
     "yawen-visual-designer": ("Yawen, Visual Designer marketing 01", "still-yawen-visual-designer", "yawen", "16x9", ["letters", "glitch", "rise"], {"tweaks": ["size1 144", "sx1 0.86", "ls1 0.03", "ax 372", "bx 884", "y1 359", "y2 529", "size2 46", "ls2 0.19", "sx2 0.95"]}),
-    "bmw-zhong-kui": ("Black Myth: Wukong, Zhong Kui", "still-zhong-kui", "zhongkui", "16x9", ["brush", "ink", "zoom"], {"tweaks": ["subOpacity 1", "width 12.3"]}),
+    "bmw-zhong-kui": ("Black Myth: Wukong, Zhong Kui", "still-zhong-kui", "zhongkui", "16x9", ["brush", "ink", "zoom"], {}),
     "paget-indiana-jones": ("David Paget, Indiana Jones", "still-paget-indiana-jones", "indy", "1x1", ["letters", "zoom", "typewriter"], {}),
 }
 PHASES = [("Player Phase", "still-fe-player-phase", "PLAYER PHASE", "#3fb8ff", 5), ("Enemy Phase", "still-fe-enemy-phase", "ENEMY PHASE", "#f2555a", 7), ("Next Round", "still-fe-next-round", "NEXT ROUND", "#f4e27a", 3)]
 
 
-def controls(n: int, apps: "list | None" = None) -> list:
+def controls(n: int, apps: "list | None" = None, layout: str = "") -> list:
     ids = [f"b{i + 1:02d}" for i in range(n)]
     allt = lambda k: [T(i, k) for i in ids]  # noqa: E731
     c = [
         {"id": "lines", "label": "Textes du visuel (un par ligne)", "type": "lines", "group": "Phrases", "targets": allt("lines")},
-        {"id": "accent", "label": "Couleur d'accent", "type": "color", "group": "Couleurs", "targets": allt("accent")},
+        {"id": "accent", "label": "Couleur du texte principal", "type": "color", "group": "Couleurs", "targets": allt("accent")},
         {"id": "bg", "label": "Fond de la tuile", "type": "color", "group": "Couleurs", "targets": allt("bg")},
         {"id": "dur", "label": "Durée d'une apparition (s)", "type": "number", "group": "Mouvement", "min": 0.1, "max": 3, "step": 0.05, "targets": allt("dur")},
         {"id": "stagger", "label": "Décalage entre éléments (s)", "type": "number", "group": "Mouvement", "min": 0, "max": 1.5, "step": 0.01, "targets": allt("stagger")},
@@ -38,14 +48,25 @@ def controls(n: int, apps: "list | None" = None) -> list:
         {"id": "ease", "label": "Courbe", "type": "select", "group": "Mouvement", "options": ["auto", "power3.out", "power4.out", "expo.out", "back.out(1.7)", "back.out(3)", "elastic.out(1,0.4)", "bounce.out", "sine.inOut", "power2.inOut", "steps(6)"], "targets": allt("ease")},
         {"id": "tweaks", "label": "Réglages du visuel (nom valeur)", "type": "lines", "group": "Visuel", "targets": allt("tweaks")},
     ]
+    if layout == "zhongkui":  # the brush lettering: its colours and its brush, as real controls
+        num = lambda k, lab, mn, mx, st: {"id": k, "label": lab, "type": "number", "group": "Pinceau", "min": mn, "max": mx, "step": st, "targets": allt(k)}  # noqa: E731
+        c += [{"id": "accent2", "label": "Couleur du sous-titre", "type": "color", "group": "Couleurs", "targets": allt("accent2")},
+              {"id": "deco", "label": "Couleur de la calligraphie", "type": "color", "group": "Couleurs", "targets": allt("deco")},
+              num("brushSpeed", "Vitesse du pinceau (px/s)", 100, 6000, 50), num("brushSoft", "Douceur du bord du pinceau (px)", 0, 8, 0.1), num("push", "Recul de caméra pendant l'écriture", 0, 0.3, 0.005),
+              num("brushWidth", "Épaisseur du trait", 4, 24, 0.1), num("brushTaper", "Effilage de la fin du trait", 0, 1, 0.01), num("brushFlare", "Attaque du pinceau", 0, 0.5, 0.01),
+              num("brushRough", "Rugosité du bord", 0, 8, 0.1), num("brushWobble", "Tremblement du trait", 0, 4, 0.1), num("brushSlant", "Inclinaison des lettres (°)", -20, 20, 0.5)]
     for i, a in enumerate(apps or []):
-        c.append({"id": f"appearance{i + 1}", "label": f"Apparition de la scène {i + 1}", "type": "select", "group": "Apparitions", "options": ["wipe", "letters", "rise", "ink", "drop", "pop", "typewriter", "zoom", "glitch"], "targets": [T(ids[i], "appearance")]})
+        c.append({"id": f"appearance{i + 1}", "label": f"Apparition de la scène {i + 1}", "type": "select", "group": "Apparitions", "options": ["wipe", "letters", "rise", "ink", "drop", "pop", "typewriter", "zoom", "glitch", "brush"], "targets": [T(ids[i], "appearance")]})
     return c
 
 
 def build_one(pid: str, title: str, slug: str, layout: str, fmt: str, apps: list, extra: dict) -> dict:
-    beats = [(i * SCENE, "sv-visual", dict({"layout": layout, "appearance": a}, **extra)) for i, a in enumerate(apps)]
-    return ppm.build(title + ", trois apparitions", slug, beats, SCENE * len(apps), controls(len(apps), apps), fmt=fmt, bg="#101010", ink="#ffffff", accent="#ff9d1f",
+    D = template_defaults()[layout]
+    base = {"layout": layout, "lines": list(D["l"].values()), "accent": D["accent"], "bg": D["bg"], "tile": D["tile"]}
+    if layout == "zhongkui":
+        base.update({"accent2": D["accent"], "deco": "#292325"})
+    beats = [(i * SCENE, "sv-visual", dict(dict(base, appearance=a), **extra)) for i, a in enumerate(apps)]
+    return ppm.build(title + ", trois apparitions", slug, beats, SCENE * len(apps), controls(len(apps), apps, layout), fmt=fmt, bg="#101010", ink="#ffffff", accent="#ff9d1f",
                      doc=f"16 October 2026: {title}. Three appearances of the same visual ({', '.join(apps)}); foreground only.")
 
 

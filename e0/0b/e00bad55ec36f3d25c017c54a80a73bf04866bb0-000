@@ -125,14 +125,14 @@
     zhongkui(pl, p) {
       // 17 October 2026: the title is set with ZhongKui Brush (procedural font, window.ZSBrushFont) or, with `decalque 1`, with the traced outlines of the reference (window.ZSZhongKui).
       // The grey calligraphy and the seal are traced vectors too. Every number is a parameter (tweaks: cap width taper flare rough wobble slant decalque x1 top1 x2 top2 track1 subCap subTop subTrack calliOpacity calliGrain ...).
-      const tw = p.tw, it = [], F = window.ZSBrushFont, Z = window.ZSZhongKui, red = p.accent;
+      const tw = p.tw, it = [], F = window.ZSBrushFont, Z = window.ZSZhongKui, red = p.accent, num0 = (v, d) => (v === undefined || v === null || v === "" || isNaN(Number(v)) ? d : Number(v));
       pl = abs(pl, { left: "0", top: "0", width: "1600px", height: "668px", transformOrigin: "800px 320px" }); p.camera = pl;
       abs(pl, { left: "0", top: "0", width: "1600px", height: "668px", background: "#050405" });
       abs(pl, { left: "0", top: "0", width: "1600px", height: "668px", background: "radial-gradient(ellipse 60% 70% at 78% 50%, rgba(60,56,56,0.2), rgba(0,0,0,0) 70%)" });
       const defs = svgEl("svg", { width: 0, height: 0, style: "position:absolute" }, pl), df = svgEl("defs", {}, defs);
       const mkRough = (id, scale, freq, seed) => { const fl = svgEl("filter", { id, x: "-20%", y: "-20%", width: "140%", height: "140%" }, df); svgEl("feTurbulence", { type: "fractalNoise", baseFrequency: freq, numOctaves: 2, seed }, fl); svgEl("feDisplacementMap", { in: "SourceGraphic", scale }, fl); };
-      mkRough("zk-b", tw("rough", 1.4), "0.07", p.seed % 89);
-      { const sf = svgEl("filter", { id: "zk-soft", filterUnits: "userSpaceOnUse", x: -1000, y: -1000, width: 4000, height: 4000 }, df); svgEl("feGaussianBlur", { stdDeviation: tw("brushSoft", 2.2) }, sf); }
+      mkRough("zk-b", tw("rough", num0(p.brush && p.brush.rough, 1.4)), "0.07", p.seed % 89);
+      { const sf = svgEl("filter", { id: "zk-soft", filterUnits: "userSpaceOnUse", x: -1000, y: -1000, width: 4000, height: 4000 }, df); svgEl("feGaussianBlur", { stdDeviation: tw("brushSoft", num0(p.brushSoft, 2.2)) }, sf); }
       // the grey calligraphy: traced silhouette, a worn-brush grain carved out of it (grain = share of speckles)
       const cal = abs(pl, { left: "0", top: "0", width: "1600px", height: "668px", opacity: 0 });
       const sv = svgEl("svg", { width: 1600, height: 668, viewBox: "0 0 1600 668", style: "position:absolute;left:0;top:0" }, cal), sdf = svgEl("defs", {}, sv);
@@ -141,7 +141,7 @@
       const gt = 0.3 + 0.36 * tw("calliGrain", 0);  // grain = share of speckles carved out of the ink (0 solid, 0.5 half worn)
       svgEl("feColorMatrix", { in: "n", type: "matrix", values: `0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  14 0 0 0 ${-14 * gt}`, result: "m" }, cf);
       svgEl("feComposite", { in: "SourceGraphic", in2: "m", operator: "in" }, cf);
-      if (Z) svgEl("path", { d: Z.calligraphy.d, fill: "rgb(" + Z.calligraphy.mean.map((v) => Math.round(v * tw("calliLevel", 1))).join(",") + ")", "fill-rule": "evenodd", filter: tw("calliGrain", 0) > 0 ? "url(#zk-cal)" : "none", opacity: tw("calliOpacity", 1) }, sv);
+      if (Z) svgEl("path", { d: Z.calligraphy.d, fill: p.deco || "rgb(" + Z.calligraphy.mean.map((v) => Math.round(v * tw("calliLevel", 1))).join(",") + ")", "fill-rule": "evenodd", filter: tw("calliGrain", 0) > 0 ? "url(#zk-cal)" : "none", opacity: tw("calliOpacity", 1) }, sv);
       it.push({ n: cal, shape: true, fadeOnly: true });
       // the seal
       if (Z && tw("sealOn", 1)) { const sb = Z.seal.bbox, sl = abs(pl, { left: "0", top: "0", width: "1600px", height: "668px" }); const ss = svgEl("svg", { width: 1600, height: 668, viewBox: "0 0 1600 668", style: "position:absolute;left:0;top:0" }, sl); svgEl("path", { d: Z.seal.d, fill: "#773032", "fill-rule": "evenodd" }, ss); svgEl("path", { d: Z.seal.carve, fill: "#220b0d", "fill-rule": "evenodd", opacity: tw("sealCarve", 0.9) }, ss); void sb; it.push({ n: sl, shape: true }); }
@@ -172,14 +172,15 @@
         [...text].forEach((ch, i) => { const t = Z.letters[ch]; if (!t) return; const bb = t.bbox; letterBox(holder, i, bb[0], bb[1], bb[2], bb[3], (g) => svgEl("path", { d: t.d }, g), ""); });
         return holder;
       };
-      const base = { cap: tw("cap", 103), width: tw("width", 12), taper: tw("taper", 0.55), flare: tw("flare", 0.12), rough: tw("rough", 1.4), wobble: tw("wobble", 0), slant: tw("slant", 0), seed: p.seed };
+      const bp = p.brush || {}, num = (v, d) => (v === undefined || v === null || v === "" || isNaN(Number(v)) ? d : Number(v));
+      const base = { cap: tw("cap", 103), width: tw("width", num(bp.width, 12.3)), taper: tw("taper", num(bp.taper, 0.55)), flare: tw("flare", num(bp.flare, 0.12)), rough: tw("rough", num(bp.rough, 1.4)), wobble: tw("wobble", num(bp.wobble, 0)), slant: tw("slant", num(bp.slant, 0)), seed: p.seed };
       const dec = tw("decalque", 0) === 1 && Z, same = (t, d) => String(t).toUpperCase() === d;
       const line = (text, dflt, x, top, track, positions) => dec ? traceLine(String(text).toUpperCase()) : fontLine(text, Object.assign({}, base, { x, top, tracking: track, kern: { UI: tw("kernUI", 38) }, positions: same(text, dflt) && tw("measured", 1) === 1 ? positions : undefined }));
       it.push({ n: line(p.l1, "ZHONG", tw("x1", 476), tw("top1", 236), tw("track1", 24), [476, 608, 742, 894, 1019]) });
       it.push({ n: line(p.l3, "KUI", tw("x2", 614), tw("top2", 374), tw("track2", 24), [614, 752, 924]) });
       // the subtitle: the same font at a small size, wide-spaced; positions measured on the reference for BLACK MYTH
       const sub = fontLine(p.l2, Object.assign({}, base, { cap: tw("subCap", 18), width: tw("subWidth", 12), taper: tw("subTaper", 0.55), flare: tw("subFlare", 0.12), style: "fine", rough: 0, wobble: 0, slant: 0, x: tw("subX", 505), top: tw("subTop", 349), tracking: tw("subTrack", 211), kern: {}, positions: same(p.l2, "BLACK MYTH") && tw("measured", 1) === 1 ? [505, 558, 610, 665, 719, undefined, 859, 929, 997, 1062] : undefined }));
-      sub.style.opacity = tw("subOpacity", 0.92); it.push({ n: sub });
+      sub.style.opacity = tw("subOpacity", 1); if (p.accent2) sub.querySelectorAll("g").forEach((g) => g.setAttribute("fill", p.accent2)); it.push({ n: sub });
       return it;
     },
   };
@@ -250,18 +251,20 @@
     id: "sv-visual", label: "Visuel fixe : une mise en page, trois apparitions", group: "Visuels fixes", duration: 4,
     params: [
       SEL("layout", "Visuel", "ichiban", LAYOUTS, 1), SEL("appearance", "Apparition", "letters", APPEARANCES, 1), P("lines", "Textes (un par ligne, dans l'ordre du visuel)", "lines", [], 1), P("accent", "Couleur d'accent", "color", "", 1), P("font", "Police des titres (vide = celle du visuel ; les polices système ne sont que locales)", "text", "", 2),
-      P("bg", "Fond de la tuile", "color", "", 2), P("tile", "Couleur du panneau", "color", "", 2),
+      P("bg", "Fond de la tuile", "color", "", 2), P("tile", "Couleur du panneau", "color", "", 2), P("accent2", "Couleur du sous-titre", "color", "", 2), P("deco", "Couleur du décor (calligraphie)", "color", "", 2),
       N("stagger", "Décalage entre éléments (s)", 0.18, 0, 1.5, 0.01, 2, "s"), N("dur", "Durée d'une apparition (s)", 0.7, 0.1, 3, 0.05, 2, "s"), N("delay", "Attente avant la première (s)", 0.15, 0, 3, 0.05, 2, "s"),
       N("charStagger", "Décalage entre lettres (s)", 0.035, 0, 0.3, 0.005, 3, "s"), N("distance", "Distance du mouvement (px)", 46, 0, 400, 1, 3, "px"), N("blur", "Flou au départ (px)", 9, 0, 60, 1, 3, "px"),
       N("scaleFrom", "Échelle au départ", 0.4, 0.1, 3, 0.05, 3), N("rotate", "Rotation au départ (°)", 0, -90, 90, 1, 3, "°"), SEL("ease", "Courbe", "auto", EASES, 3), SEL("direction", "Sens du balayage", "left", ["left", "right", "up", "down", "center"], 3),
       N("glitch", "Amplitude du glitch (px)", 14, 0, 80, 1, 3, "px"), N("seed", "Graine de l'encre", 7, 1, 999, 1, 3),
+      N("brushSpeed", "Vitesse du pinceau (px/s)", 1300, 100, 6000, 50, 3, "px/s"), N("brushSoft", "Douceur du bord du pinceau (px)", 2.2, 0, 8, 0.1, 3, "px"), N("push", "Recul de caméra pendant l'écriture", 0.05, 0, 0.3, 0.005, 3),
       P("tweaks", "Réglages du visuel (nom valeur) : ichiban size1 size2 sx1 sx2 border outline fill ; bleach titleSize bodySize bigSize bigScaleX ; paget scale panelTop panelBottom ; pale-raven size top pitch panelWidth edgeRough ; phase size bandX bandY bandW bandH rough dots smoke glow ; yawen size1 size2 ls2 ; indy size y ls", "lines", [], 3),
       P("tallBox", "Cadrage en format haut (x0 y0 x1 y1, vide = défaut du visuel)", "text", "", 3), N("film0", "Début dans le film (s)", 0, 0, 60, 0.01, 4, "s"),
+      N("brushWidth", "Épaisseur du trait (pinceau)", 12.3, 4, 24, 0.1, 4), N("brushTaper", "Effilage de la fin du trait", 0.55, 0, 1, 0.01, 4), N("brushFlare", "Attaque du pinceau", 0.12, 0, 0.5, 0.01, 4), N("brushRough", "Rugosité du bord", 1.4, 0, 8, 0.1, 4), N("brushWobble", "Tremblement du trait", 0, 0, 4, 0.1, 4), N("brushSlant", "Inclinaison des lettres (°)", 0, -20, 20, 0.5, 4),
     ],
     build(ctx) {
       const { el, p, tl, t0 } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
       const D = DEFAULTS[p.layout] || DEFAULTS.ichiban, sz = SIZE[p.layout] || [1920, 1080], tws = parseTweaks(p.tweaks);
-      const keys = Object.keys(D.l), params = { font: p.font, accent: p.accent || D.accent, tile: p.tile || D.tile, seed: p.seed || D.seed || 7, tw: (k, def) => (tws[k] !== undefined ? tws[k] : def) };
+      const keys = Object.keys(D.l), params = { font: p.font, accent: p.accent || D.accent, accent2: p.accent2, deco: p.deco, tile: p.tile || D.tile, seed: p.seed || D.seed || 7, brush: { width: p.brushWidth, taper: p.brushTaper, flare: p.brushFlare, rough: p.brushRough, wobble: p.brushWobble, slant: p.brushSlant }, brushSoft: p.brushSoft, tw: (k, def) => (tws[k] !== undefined ? tws[k] : def) };
       keys.forEach((k, i) => { params[k] = p.lines && p.lines[i] !== undefined && p.lines[i] !== "" ? p.lines[i] : D.l[k]; });
       h.css(el, { background: p.bg || D.bg });
       let k, ox, oy;
@@ -272,8 +275,8 @@
       const plane = abs(st, { left: ox + "px", top: oy + "px", width: sz[0] + "px", height: sz[1] + "px", transformOrigin: "0 0", transform: `scale(${k})`, overflow: tall && sz[0] / sz[1] > 1.25 ? "visible" : "hidden" });
       const items = (L[p.layout] || L.ichiban)(plane, params);
       // a slow camera pull-back while the title is written, settled at scale 1 (the reference framing) for the hold
-      if (params.camera) { const push = tws.push !== undefined ? tws.push : 0.05; if (push > 0) tl.fromTo(params.camera, { scale: 1 + push, transformOrigin: "800px 320px" }, { scale: 1, duration: (ctx.dur || 4.2) * 0.7, ease: "power1.out" }, t0); }
-      appear(tl, items, p.appearance, t0, { stagger: p.stagger, dur: p.dur, delay: p.delay, charStagger: p.charStagger, distance: p.distance, blur: p.blur, scaleFrom: p.scaleFrom, rotate: p.rotate, ease: p.ease, direction: p.direction, glitch: p.glitch, brushSpeed: tws.brushSpeed });
+      if (params.camera) { const push = tws.push !== undefined ? tws.push : (p.push === undefined || p.push === "" ? 0.05 : Number(p.push)); if (push > 0) tl.fromTo(params.camera, { scale: 1 + push, transformOrigin: "800px 320px" }, { scale: 1, duration: (ctx.dur || 4.2) * 0.7, ease: "power1.out" }, t0); }
+      appear(tl, items, p.appearance, t0, { stagger: p.stagger, dur: p.dur, delay: p.delay, charStagger: p.charStagger, distance: p.distance, blur: p.blur, scaleFrom: p.scaleFrom, rotate: p.rotate, ease: p.ease, direction: p.direction, glitch: p.glitch, brushSpeed: tws.brushSpeed !== undefined ? tws.brushSpeed : p.brushSpeed });
     },
   });
   ZS.stills = { LAYOUTS, APPEARANCES, DEFAULTS };
