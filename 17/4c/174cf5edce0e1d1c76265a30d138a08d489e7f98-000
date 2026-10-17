@@ -9,6 +9,6 @@ def r1(path):
     import re
     return re.sub(r"-?\d+\.\d+", lambda m: ("%.1f" % float(m.group(0))).rstrip("0").rstrip("."), path)
 out = {"letters": {k: {"d": r1(v["d"]), "bbox": [round(x, 1) for x in v["bbox"]]} for k, v in d.items() if k not in ("seal", "sealCarve", "calligraphy")},
-       "seal": {"d": r1(d["seal"]["d"]), "carve": r1(d["sealCarve"]["d"]), "bbox": [round(x, 1) for x in d["seal"]["bbox"]]}, "calligraphy": {"d": r1(d["calligraphy"]["d"])}}
+       "seal": {"d": r1(d["seal"]["d"]), "carve": r1(d["sealCarve"]["d"]), "bbox": [round(x, 1) for x in d["seal"]["bbox"]]}, "calligraphy": {"d": r1(d["calligraphy"]["d"]), "mean": d["calligraphy"]["mean"]}}
 js = "// 17 October 2026: the decalque of the Zhong Kui title (letters, seal, grey calligraphy), vectorised from the reference still by Scripts/ZhongKuiTrace.py. Paths in reference pixels (1600 x 668).\n// FR : decalque vectoriel du titre Zhong Kui (lettres, sceau, calligraphie grise).\nwindow.ZSZhongKui = " + json.dumps(out, separators=(",", ":")) + ";\n"
 open(ROOT + "/motion/runtime/zs-templates-brushfont-2.js", "w").write(js); print(len(js) // 1024, "KiB")

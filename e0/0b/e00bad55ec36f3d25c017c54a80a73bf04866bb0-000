@@ -128,7 +128,7 @@
       const tw = p.tw, it = [], F = window.ZSBrushFont, Z = window.ZSZhongKui, red = p.accent;
       pl = abs(pl, { left: "0", top: "0", width: "1600px", height: "668px", transformOrigin: "800px 320px" }); p.camera = pl;
       abs(pl, { left: "0", top: "0", width: "1600px", height: "668px", background: "#050405" });
-      abs(pl, { left: "0", top: "0", width: "1600px", height: "668px", background: "radial-gradient(ellipse 60% 70% at 78% 50%, rgba(60,56,56,0.35), rgba(0,0,0,0) 70%)" });
+      abs(pl, { left: "0", top: "0", width: "1600px", height: "668px", background: "radial-gradient(ellipse 60% 70% at 78% 50%, rgba(60,56,56,0.2), rgba(0,0,0,0) 70%)" });
       const defs = svgEl("svg", { width: 0, height: 0, style: "position:absolute" }, pl), df = svgEl("defs", {}, defs);
       const mkRough = (id, scale, freq, seed) => { const fl = svgEl("filter", { id, x: "-20%", y: "-20%", width: "140%", height: "140%" }, df); svgEl("feTurbulence", { type: "fractalNoise", baseFrequency: freq, numOctaves: 2, seed }, fl); svgEl("feDisplacementMap", { in: "SourceGraphic", scale }, fl); };
       mkRough("zk-b", tw("rough", 1.4), "0.07", p.seed % 89);
@@ -138,10 +138,10 @@
       const sv = svgEl("svg", { width: 1600, height: 668, viewBox: "0 0 1600 668", style: "position:absolute;left:0;top:0" }, cal), sdf = svgEl("defs", {}, sv);
       const cf = svgEl("filter", { id: "zk-cal", x: "0", y: "0", width: "100%", height: "100%" }, sdf);
       svgEl("feTurbulence", { type: "fractalNoise", baseFrequency: tw("calliFreq", 0.16) + " " + tw("calliFreq", 0.16) * 1.6, numOctaves: 2, seed: p.seed % 97, result: "n" }, cf);
-      const gt = 0.3 + 0.36 * tw("calliGrain", 0.07);  // grain = share of speckles carved out of the ink (0 solid, 0.5 half worn)
+      const gt = 0.3 + 0.36 * tw("calliGrain", 0);  // grain = share of speckles carved out of the ink (0 solid, 0.5 half worn)
       svgEl("feColorMatrix", { in: "n", type: "matrix", values: `0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  14 0 0 0 ${-14 * gt}`, result: "m" }, cf);
       svgEl("feComposite", { in: "SourceGraphic", in2: "m", operator: "in" }, cf);
-      if (Z) svgEl("path", { d: Z.calligraphy.d, fill: "#" + "292324", "fill-rule": "evenodd", filter: "url(#zk-cal)", opacity: tw("calliOpacity", 1) }, sv);
+      if (Z) svgEl("path", { d: Z.calligraphy.d, fill: "rgb(" + Z.calligraphy.mean.map((v) => Math.round(v * tw("calliLevel", 1))).join(",") + ")", "fill-rule": "evenodd", filter: tw("calliGrain", 0) > 0 ? "url(#zk-cal)" : "none", opacity: tw("calliOpacity", 1) }, sv);
       it.push({ n: cal, shape: true, fadeOnly: true });
       // the seal
       if (Z && tw("sealOn", 1)) { const sb = Z.seal.bbox, sl = abs(pl, { left: "0", top: "0", width: "1600px", height: "668px" }); const ss = svgEl("svg", { width: 1600, height: 668, viewBox: "0 0 1600 668", style: "position:absolute;left:0;top:0" }, sl); svgEl("path", { d: Z.seal.d, fill: "#773032", "fill-rule": "evenodd" }, ss); svgEl("path", { d: Z.seal.carve, fill: "#220b0d", "fill-rule": "evenodd", opacity: tw("sealCarve", 0.9) }, ss); void sb; it.push({ n: sl, shape: true }); }
