@@ -1,0 +1,14 @@
+"""Write the traced Zhong Kui shapes as a runtime data file (17 October 2026): motion/runtime/zs-templates-brushfont-2.js sets window.ZSZhongKui = {letters, seal, calligraphy}
+from the output of ZhongKuiTrace.py (decalque of the title letters, the seal and the grey calligraphy). Paths are in reference pixels (the 1600 x 668 still).
+Run with /Users/zenray/.venvs/zenray-motion/bin/python -I."""
+import json
+ROOT = "/Users/zenray/Create/Build/Productions/GithubProductions/ZenRayMotionDesign"
+TR = "/Users/zenray/.claude/tmp/tmp-zenray-motion-design/zhongkui-font/traced.json"
+d = json.load(open(TR))
+def r1(path):
+    import re
+    return re.sub(r"-?\d+\.\d+", lambda m: ("%.1f" % float(m.group(0))).rstrip("0").rstrip("."), path)
+out = {"letters": {k: {"d": r1(v["d"]), "bbox": [round(x, 1) for x in v["bbox"]]} for k, v in d.items() if k not in ("seal", "sealCarve", "calligraphy")},
+       "seal": {"d": r1(d["seal"]["d"]), "carve": r1(d["sealCarve"]["d"]), "bbox": [round(x, 1) for x in d["seal"]["bbox"]]}, "calligraphy": {"d": r1(d["calligraphy"]["d"])}}
+js = "// 17 October 2026: the decalque of the Zhong Kui title (letters, seal, grey calligraphy), vectorised from the reference still by Scripts/ZhongKuiTrace.py. Paths in reference pixels (1600 x 668).\n// FR : decalque vectoriel du titre Zhong Kui (lettres, sceau, calligraphie grise).\nwindow.ZSZhongKui = " + json.dumps(out, separators=(",", ":")) + ";\n"
+open(ROOT + "/motion/runtime/zs-templates-brushfont-2.js", "w").write(js); print(len(js) // 1024, "KiB")

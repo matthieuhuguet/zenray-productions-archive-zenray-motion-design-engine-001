@@ -11,6 +11,7 @@ from scipy import ndimage as ndi
 BOXES = {  # letter key -> (x0, y0, x1, y1) in reference pixels, padded around the ink
     "Z": (468, 222, 582, 350), "H": (598, 226, 708, 350), "O": (732, 222, 862, 350), "N": (880, 226, 992, 350), "G": (1008, 222, 1128, 350),
     "K": (606, 364, 714, 490), "U": (742, 364, 856, 490), "I": (910, 364, 966, 490),
+    "seal": (770, 100, 824, 200),
 }
 
 def redness(im):
@@ -61,13 +62,20 @@ def main():
         c = red[y0:y1, x0:x1]
         up = ndi.zoom(c, a.scale, order=3)
         up = ndi.gaussian_filter(up, a.scale * 0.6)
-        m = up > 0.45
+        m = up > (0.1 if k == "seal" else 0.45)
         m = ndi.binary_closing(m, iterations=a.scale)
-        m = ndi.binary_fill_holes(m) if k not in ("O", "G", "U") else m  # keep the counters of O and G open
+        m = ndi.binary_fill_holes(m) if k not in ("O", "G", "U", "seal") else m  # keep the counters of O and G open
         lab, n = ndi.label(m)
         if n > 1:
             sizes = ndi.sum(m, lab, range(1, n + 1)); keep = [i + 1 for i, s in enumerate(sizes) if s > 0.04 * sizes.max()]
             m = np.isin(lab, keep)
+        if k == "seal":  # a solid silhouette (red block) and, apart, the dark carved characters inside it
+            sil = ndi.binary_fill_holes(ndi.binary_closing(m, iterations=a.scale * 3))
+            lab2, n2 = ndi.label(sil); sizes2 = ndi.sum(sil, lab2, range(1, n2 + 1)); sil = lab2 == (1 + int(np.argmax(sizes2)))
+            carve = sil & ~(ndi.gaussian_filter(ndi.zoom(c, a.scale, order=3), a.scale * 0.5) > 0.5)
+            carve = ndi.binary_opening(carve, iterations=1)
+            dc, tfc = trace(carve, a.scale); res["sealCarve"] = {"d": path_to_px(dc, tfc, a.scale, x0, y0)}
+            m = sil
         d, tf = trace(m, a.scale)
         px = path_to_px(d, tf, a.scale, x0, y0)
         ys, xs = np.nonzero(m)

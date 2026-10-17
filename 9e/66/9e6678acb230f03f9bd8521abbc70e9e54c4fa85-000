@@ -16,7 +16,7 @@ from PIL import Image
 REFCACHE = Path("~/.claude/tmp/tmp-zenray-motion-design-refcache").expanduser()
 
 
-def ingest(slug: str, src: str, crop: list | None) -> dict:
+def ingest(slug: str, src: str, crop: "list | None") -> dict:
     im = Image.open(src).convert("RGB")
     if crop:
         x, y, w, h = crop

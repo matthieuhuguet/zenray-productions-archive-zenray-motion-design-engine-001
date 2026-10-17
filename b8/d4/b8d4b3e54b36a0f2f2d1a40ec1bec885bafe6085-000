@@ -18,8 +18,10 @@ def main():
     traced = json.load(open(TR + "/traced.json")); iou = json.load(open(TR + "/iou.json"))
     still = Image.open(STILL).convert("RGB"); crops = {k: b64(still.crop(b)) for k, b in ORIGIN.items()}
     title = b64(still.crop((440, 215, 1150, 500)))
+    def frame(p): return b64(Image.open(p).convert("RGB").crop((0, 139, 1920, 941)).resize((960, 401), Image.LANCZOS))
+    frames = {"ref": b64(still.resize((960, 401), Image.LANCZOS)), "font": frame("/tmp/zk_frame_font.png"), "dec": frame("/tmp/zk_frame_dec.png")}
     lib = open(ROOT + "/motion/runtime/zs-templates-brushfont-1.js").read()
-    data = {"traced": traced, "origin": ORIGIN, "captop": CAPTOP, "iou": iou, "crops": crops, "title": title}
+    data = {"traced": traced, "origin": ORIGIN, "captop": CAPTOP, "iou": iou, "crops": crops, "title": title, "frames": frames}
     html = HTML.replace("/*LIB*/", lib).replace("/*DATA*/", json.dumps(data))
     open(a.out, "w").write(html); print(a.out, len(html) // 1024, "KiB")
 
@@ -43,8 +45,9 @@ h1{font-size:22px;margin:24px 0 4px}h2{font-size:15px;margin:34px 0 8px;color:va
 <div class="panel" id="panel"></div>
 <h2>1. Les huit lettres mesurées</h2><div id="rows"></div>
 <h2>2. Le titre composé</h2><div class="trio"><div class="cell"><span class="t">référence</span><img id="titleRef"></div><div class="cell"><span class="t">décalque (vecteur)</span><svg id="titleTrace"></svg></div><div class="cell"><span class="t">police procédurale (texte tapé)</span><svg id="titleFont"></svg></div></div>
-<h2>3. L'alphabet complet</h2><p class="n">Lettres du titre : mesurées (étiquette « mesurée »). Les autres lettres sont dessinées dans la même direction (traits, effilage, pinceau) : à valider à l'œil.</p><div class="alpha" id="alpha"></div>
-<h2>4. Texte libre</h2><div style="margin:6px 0"><input id="free" value="BLACK MYTH WUKONG" style="width:100%;max-width:560px;background:#17151a;color:#ece8e4;border:1px solid #2a262d;border-radius:8px;padding:8px"></div><div class="big"><svg id="freeSvg"></svg></div>
+<h2>3. Le visuel en motion (image à 2,5 s)</h2><p class="n">Le visuel complet reproduit dans l'app : calligraphie grise et sceau décalqués, titre posé avec la police (réglable) ou avec le décalque (<code>decalque 1</code>). Scores de recouvrement mesurés : police 0,962, décalque 0,999 (titre) ; sous-titre en police 0,949.</p><div class="trio"><div class="cell"><span class="t">référence</span><img id="fr0"></div><div class="cell"><span class="t">motion, police procédurale</span><img id="fr1"></div><div class="cell"><span class="t">motion, décalque</span><img id="fr2"></div></div>
+<h2>4. L'alphabet complet</h2><p class="n">Lettres du titre : mesurées (étiquette « mesurée »). Les autres lettres sont dessinées dans la même direction (traits, effilage, pinceau) : à valider à l'œil.</p><div class="alpha" id="alpha"></div>
+<h2>5. Texte libre</h2><div style="margin:6px 0"><input id="free" value="BLACK MYTH WUKONG" style="width:100%;max-width:560px;background:#17151a;color:#ece8e4;border:1px solid #2a262d;border-radius:8px;padding:8px"></div><div class="big"><svg id="freeSvg"></svg></div>
 <h2>Valeurs</h2><pre id="vals" style="background:#17151a;border-radius:10px;padding:12px;overflow:auto;color:#cfc8c4"></pre>
 <script>/*LIB*/</script>
 <script>
@@ -70,8 +73,8 @@ function draw(){
     const c4=cell("superposition");const s4=mk(c4);el("path",{d:D.traced[k].d.replace(/(-?[\d.]+),(-?[\d.]+)/g,(m,a,b)=>(a-x0).toFixed(2)+","+(b-y0).toFixed(2)),fill:"#ff5050",opacity:.85},s4);const g4=el("g",{style:"mix-blend-mode:screen"},s4);glyphPaths(k,ox,oy).forEach(d=>el("path",{d,fill:"#4aa0ff",opacity:.85},g4));
   });
   // title composed
-  document.getElementById("titleRef").src=D.title;
-  const T=document.getElementById("titleTrace");T.innerHTML="";T.setAttribute("viewBox","440 215 710 285");Object.keys(D.traced).forEach(k=>el("path",{d:D.traced[k].d,fill:RED},T));
+  document.getElementById("titleRef").src=D.title;document.getElementById("fr0").src=D.frames.ref;document.getElementById("fr1").src=D.frames.font;document.getElementById("fr2").src=D.frames.dec;
+  const T=document.getElementById("titleTrace");T.innerHTML="";T.setAttribute("viewBox","440 215 710 285");Object.keys(D.origin).forEach(k=>el("path",{d:D.traced[k].d,fill:RED},T));
   const TF=document.getElementById("titleFont");TF.innerHTML="";TF.setAttribute("viewBox","440 215 710 285");const f2=roughFilter(TF,"rt");const gg=el("g",f2?{filter:f2}:{},TF);
   const line=(text,cx,top)=>{const r=F.layout(text,opts()),sx=cx-r.width/2;r.polygons.forEach(p=>el("path",{d:F.toPath(p.poly,sx,top),fill:RED},gg))};
   line("ZHONG",798,236);line("KUI",780,374);

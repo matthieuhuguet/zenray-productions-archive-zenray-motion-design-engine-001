@@ -4,7 +4,7 @@
 // stroke width about 12 units for a cap height of 100, thicker on the heavy diagonals, strokes ending in a short tapered flick.
 // FR : police pinceau procedurale ; chaque lettre est un squelette de traits, dessine en polygone a largeur variable ; epaisseur, effilage, chasse et ecriture sont des parametres.
 (function (root) {
-  // glyph = { w: width, s: [stroke, ...] }; stroke = [[x, y, widthMultiplier?], ...] (y down, cap height 100). A stroke with a first point equal to its last one is a closed loop.
+  // glyph = { w: width, s: [stroke, ...] }; stroke = [[x, y, mL?, mR?], ...] (y down, cap height 100): mL is the width multiplier of the left side of the stroke, mR of the right side (default mR = mL, default mL = 1), so a fitted silhouette can be asymmetric. A stroke with a first point equal to its last one is a closed loop.
   const G = {
     A: { w: 102, s: [[[14, 100], [54, 3]], [[54, 3], [96, 100, 1.1]], [[30, 68], [80, 64]]] },
     B: { w: 84, s: [[[18, 0], [16, 100]], [[18, 3], [56, 0], [74, 20], [58, 47], [18, 50]], [[18, 50], [62, 50], [80, 73], [62, 98], [16, 100]]] },
@@ -16,7 +16,7 @@
     H: { w: 97, s: [[[18, 9.5], [19, 98, 0.9]], [[86, 8, 1.2], [87, 90, 1.1]], [[24, 48.5, 0.8], [89, 45.5, 1.1]]] },
     I: { w: 31, s: [[[23, 6], [23, 100.5]]] },
     J: { w: 68, s: [[[52, 0], [50, 80], [38, 98], [14, 92]]] },
-    K: { w: 99, s: [[[17, 7.5, 0.9], [16, 96, 1.1]], [[86, 8, 1.1], [26, 56, 0.8]], [[26, 40, 0.7], [91, 88, 1.5]]] },
+    K: { w: 99, s: [[[17, 7.5, 0.9], [16, 96, 1.1]], [[84, 10, 1.1], [34, 49, 0.9], [19, 55, 0.8]], [[34, 48, 1], [91, 88, 1.5]]] },
     L: { w: 72, s: [[[18, 0], [16, 100]], [[16, 98], [70, 94]]] },
     M: { w: 118, s: [[[16, 100], [16, 2]], [[16, 4], [62, 70, 1.1]], [[62, 70], [108, 4]], [[108, 2], [108, 100]]] },
     N: { w: 99, s: [[[16.5, 7.5, 1.1], [16, 96.5]], [[17, 12, 0.9], [80, 72, 1.1]], [[86, 93, 0.9], [85, 3.5, 1.2]]] },
@@ -42,14 +42,14 @@
 
   // Catmull-Rom through the control points (with width multipliers), returned as dense [x, y, m]
   function sample(pts, steps) {
-    if (pts.length === 2) { const out = []; for (let i = 0; i <= steps * 2; i++) { const t = i / (steps * 2); out.push([pts[0][0] + (pts[1][0] - pts[0][0]) * t, pts[0][1] + (pts[1][1] - pts[0][1]) * t, (pts[0][2] || 1) + ((pts[1][2] || 1) - (pts[0][2] || 1)) * t]); } return out; }
-    const P = pts.map((p) => [p[0], p[1], p[2] || 1]), n = P.length, out = [];
+    const P = pts.map((p) => { const l = p[2] === undefined ? 1 : p[2]; return [p[0], p[1], l, p[3] === undefined ? l : p[3]]; }), n = P.length, out = [];
+    if (n === 2) { for (let i = 0; i <= steps * 2; i++) { const t = i / (steps * 2); out.push(P[0].map((v, j) => v + (P[1][j] - v) * t)); } return out; }
     const at = (i) => P[Math.min(n - 1, Math.max(0, i))];
     for (let i = 0; i < n - 1; i++) {
       const p0 = at(i - 1), p1 = at(i), p2 = at(i + 1), p3 = at(i + 2);
       for (let s = 0; s < steps; s++) {
         const t = s / steps, t2 = t * t, t3 = t2 * t, f = (a, b, c, d) => 0.5 * ((2 * b) + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
-        out.push([f(p0[0], p1[0], p2[0], p3[0]), f(p0[1], p1[1], p2[1], p3[1]), f(p0[2], p1[2], p2[2], p3[2])]);
+        out.push([0, 1, 2, 3].map((j) => f(p0[j], p1[j], p2[j], p3[j])));
       }
     }
     out.push(P[n - 1]);
@@ -65,12 +65,12 @@
     for (let i = 0; i < n; i++) {
       const t = dist[i] / total, a = line[Math.max(0, i - 1)], b = line[Math.min(n - 1, i + 1)];
       let dx = b[0] - a[0], dy = b[1] - a[1]; const m = Math.hypot(dx, dy) || 1; dx /= m; dy /= m;
-      let f = line[i][2];
+      let f = 1;
       f *= 1 + o.flare * (1 - smooth(0, 0.14, t));                       // a blunt, slightly heavy start (the brush lands)
       f *= 1 - o.taper * 0.65 * smooth(closed ? 0.9 : 0.72, 1, t);        // a tapered flick at the end
       f *= 1 + o.wobbleW * Math.sin(phase + t * 9.0);
-      const hw = Math.max(0.6, o.width * f / 2), wx = o.wobble ? Math.sin(phase * 2 + t * 7) * o.wobble : 0;
-      L.push([line[i][0] + dy * hw + wx, line[i][1] - dx * hw]); R.push([line[i][0] - dy * hw + wx, line[i][1] + dx * hw]);
+      const hwL = Math.max(0.6, o.width * f * line[i][2] / 2), hwR = Math.max(0.6, o.width * f * line[i][3] / 2), wx = o.wobble ? Math.sin(phase * 2 + t * 7) * o.wobble : 0;
+      L.push([line[i][0] + dy * hwL + wx, line[i][1] - dx * hwL]); R.push([line[i][0] - dy * hwR + wx, line[i][1] + dx * hwR]);
     }
     // round caps: a full round landing at the start, a small round at the flick end (cap = kind * (normal * cos + direction * sin) * halfwidth)
     const cap = (i, kind, hw) => {
@@ -93,10 +93,13 @@
     [...String(text).toUpperCase()].forEach((ch, i) => {
       const g = G[ch] || G[" "];
       x += kern[prev + ch] || 0; prev = ch;
-      g.s.forEach((st, si) => {
-        const poly = strokePolygon(st, o, rand).map((p) => [(p[0] + (o.slant ? Math.tan(o.slant * Math.PI / 180) * (100 - p[1]) : 0) + x) * k, p[1] * k]);
-        out.push({ ch, i, si, poly });
-      });
+      const raw = g.s.map((st) => strokePolygon(st, o, rand).map((p) => [p[0] + (o.slant ? Math.tan(o.slant * Math.PI / 180) * (100 - p[1]) : 0), p[1]]));
+      // o.positions[i] pins the ink-left edge of letter i (in output px), measured from a reference; without it the glyph advance and tracking place the letter
+      let xo = x;
+      if (o.positions && o.positions[i] !== undefined && raw.length) xo = o.positions[i] / k - Math.min.apply(null, raw.map((poly) => Math.min.apply(null, poly.map((p) => p[0]))));
+      // the centre line of each stroke (what a brush-writing appearance follows), same placement as the polygon
+      const centres = g.s.map((st) => sample(st, o.steps).map((p) => [p[0] + (o.slant ? Math.tan(o.slant * Math.PI / 180) * (100 - p[1]) : 0), p[1]]));
+      raw.forEach((poly, si) => out.push({ ch, i, si, poly: poly.map((p) => [(p[0] + xo) * k, p[1] * k]), c: centres[si].map((p) => [(p[0] + xo) * k, p[1] * k]) }));
       x += g.w + o.tracking;
     });
     return { polygons: out, width: (x - o.tracking) * k, height: o.cap };
