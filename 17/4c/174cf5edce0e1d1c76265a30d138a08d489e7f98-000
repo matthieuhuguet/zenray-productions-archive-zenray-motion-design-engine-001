@@ -5,9 +5,31 @@ import json
 ROOT = "/Users/zenray/Create/Build/Productions/GithubProductions/ZenRayMotionDesign"
 TR = "/Users/zenray/.claude/tmp/tmp-zenray-motion-design/zhongkui-font/traced.json"
 d = json.load(open(TR))
-def r1(path):
+def rel(path):
+    """Absolute M/L/C/Z path -> relative m/l/c/z with one decimal: about half the bytes (the paths are applied by the browser, which accepts relative commands)."""
     import re
-    return re.sub(r"-?\d+\.\d+", lambda m: ("%.1f" % float(m.group(0))).rstrip("0").rstrip("."), path)
+    toks = re.findall(r"[MLCZ]|-?\d+(?:\.\d+)?", path); out, i, cx, cy, sx, sy = [], 0, 0.0, 0.0, 0.0, 0.0
+    def f(v):
+        t = ("%.1f" % v).rstrip("0").rstrip(".")
+        return "0" if t in ("-0", "") else t
+    # deltas are taken against the ROUNDED current point, so rounding never drifts along the path
+    while i < len(toks):
+        c = toks[i]; i += 1
+        if c == "Z": out.append("z"); cx, cy = sx, sy; continue
+        n = 6 if c == "C" else 2; v = [float(x) for x in toks[i:i + n]]; i += n
+        def d(val, cur): return round(round(val, 1) - round(cur, 1), 1)
+        if c in ("M", "L"):
+            dx, dy = d(v[0], cx), d(v[1], cy); out.append(c.lower() + f(dx) + " " + f(dy)); cx, cy = round(cx, 1) + dx, round(cy, 1) + dy
+            if c == "M": sx, sy = cx, cy
+        else:
+            vals = []; px, py = round(cx, 1), round(cy, 1)
+            for j in range(6):
+                base = px if j % 2 == 0 else py; dv = d(v[j], base) if False else round(round(v[j], 1) - base, 1); vals.append(dv)
+            out.append("c" + " ".join(f(x) for x in vals)); cx, cy = px + vals[4], py + vals[5]
+    return "".join(out)
+
+def r1(path):
+    return rel(path)
 out = {"letters": {k: {"d": r1(v["d"]), "bbox": [round(x, 1) for x in v["bbox"]]} for k, v in d.items() if k not in ("seal", "sealCarve", "calligraphy")},
        "seal": {"d": r1(d["seal"]["d"]), "carve": r1(d["sealCarve"]["d"]), "bbox": [round(x, 1) for x in d["seal"]["bbox"]]}, "calligraphy": {"d": r1(d["calligraphy"]["d"]), "mean": d["calligraphy"]["mean"]}}
 js = "// 17 October 2026: the decalque of the Zhong Kui title (letters, seal, grey calligraphy), vectorised from the reference still by Scripts/ZhongKuiTrace.py. Paths in reference pixels (1600 x 668).\n// FR : decalque vectoriel du titre Zhong Kui (lettres, sceau, calligraphie grise).\nwindow.ZSZhongKui = " + json.dumps(out, separators=(",", ":")) + ";\n"

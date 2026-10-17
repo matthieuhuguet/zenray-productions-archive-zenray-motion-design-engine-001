@@ -207,7 +207,7 @@
       if (kind === "brush" && n._brush && n._brush.length) {
         // one continuous brush: strokes follow each other at a constant speed (px/s along the centre line), the lifted brush travels faster to the next stroke, no easing between strokes,
         // so the writing flows instead of stepping; the leading edge of the reveal is softened (zk-soft)
-        const sp = (o.brushSpeed || 1000) * Math.max(1, 103 / Number(n.dataset.cap || 103)), lift = sp * 2.6, ms = n._brush.slice().sort((a, b) => Number(a.dataset.letter) - Number(b.dataset.letter) || Number(a.dataset.stroke) - Number(b.dataset.stroke));
+        const sp = (o.brushSpeed || 1300) * Math.max(1, 103 / Number(n.dataset.cap || 103)), lift = sp * 2.6, ms = n._brush.slice().sort((a, b) => Number(a.dataset.letter) - Number(b.dataset.letter) || Number(a.dataset.stroke) - Number(b.dataset.stroke));
         let tc = t0 + o.delay + cum, prev = null;
         ms.forEach((m) => {
           const L = Number(m.dataset.len), sx = Number(m.dataset.sx), sy = Number(m.dataset.sy);
