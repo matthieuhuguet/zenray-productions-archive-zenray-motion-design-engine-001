@@ -27,7 +27,7 @@ CFG = {
     "paget-character-concept-ppm": [("orange words", (0.06, 0.18, 0.4, 0.9), ("rgb", (255, 157, 31), 70)), ("white words", (0.06, 0.08, 0.36, 0.75), ("light", 225))],
     "bleach-tybw-ppm": [("chip and kicker", (0.64, 0.08, 0.9, 0.14), ("notrgb", (241, 98, 7), 150)), ("title", (0.5, 0.2, 1.0, 0.38), ("notrgb", (241, 98, 7), 150)),
                         ("body", (0.5, 0.38, 1.0, 0.6), ("notrgb", (241, 98, 7), 90)), ("big word", (0.5, 0.7, 1.0, 1.0), ("dark", 70))],
-    "yawen-visual-designer-ppm": [("white title", (0.12, 0.3, 0.88, 0.55), ("light", 215))],
+    "yawen-visual-designer-ppm": [("white title", (0.12, 0.28, 0.88, 0.42), ("light", 215)), ("marketing line", (0.12, 0.48, 0.88, 0.56), ("light", 215)), ("footer", (0.05, 0.86, 0.5, 0.97), ("light", 200))],
     "paget-indiana-jones-ppm": [("white title", (0.04, 0.8, 0.96, 0.96), ("light", 150))],
     "fe-pale-ravens-perch-ppm": [("cream title", (0.03, 0.1, 0.4, 0.9), ("rgb", (247, 236, 211), 55))],
     "fe-phases-ppm": [("cyan word", (0.15, 0.38, 0.8, 0.65), ("cyan",))],

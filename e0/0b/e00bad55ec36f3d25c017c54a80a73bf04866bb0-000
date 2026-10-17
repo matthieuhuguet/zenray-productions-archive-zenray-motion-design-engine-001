@@ -101,11 +101,18 @@
       return it;
     },
     yawen(pl, p) {
-      const it = [], tw = p.tw;
-      it.push({ n: T(pl, { text: p.l1, x: 960, y: tw("y1", 370), size: tw("size1", 138), font: "InstrumentSerif", weight: 400, color: "#f4f6f8", align: "center", ls: tw("ls1", 0.055) + "em", lh: 1, sx: tw("sx1", 1.2), css: { webkitTextStroke: tw("stroke1", 4.5) + "px #f4f6f8" } }) });
-      it.push({ n: T(pl, { text: p.l2, x: 960, y: 530, size: tw("size2", 44), font: "Fraunces", weight: 500, color: "#eef2f6", align: "center", ls: tw("ls2", 0.17) + "em", lh: 1 }) });
-      it.push({ n: T(pl, { text: "◉  " + p.l3, x: 130, y: 976, size: 19, font: "Geist", weight: 500, color: "#e6eaee", ls: "0.03em" }) });
-      it.push({ n: T(pl, { text: "✉  " + p.l4, x: 130, y: 1009, size: 19, font: "Geist", weight: 500, color: "#e6eaee", ls: "0.03em" }) });
+      const it = [], tw = p.tw, F = tw("footSize", 20);
+      it.push({ n: T(pl, { text: p.l1, x: tw("x1", 960), y: tw("y1", 360), size: tw("size1", 160), font: "InstrumentSerif", weight: 400, color: "#f4f6f8", align: "center", ls: tw("ls1", 0.055) + "em", lh: 1, sx: tw("sx1", 1.035), css: { webkitTextStroke: tw("stroke1", 4.5) + "px #f4f6f8" } }) });
+      it.push({ n: T(pl, { text: p.l2, x: tw("x2", 960), y: tw("y2", 529), size: tw("size2", 44), font: "Fraunces", weight: 500, color: "#eef2f6", align: "center", ls: tw("ls2", 0.17) + "em", lh: 1 }) });
+      // the footer: a round icon (person, then briefcase) and its line; both drawn
+      [[p.l3, 972], [p.l4, 1005]].forEach(([t, y], i) => {
+        const y0 = tw("footY", y), ic = abs(pl, { left: tw("footX", 131) + "px", top: y0 + 2 + "px", width: F + "px", height: F + "px" });
+        const sv = svgEl("svg", { width: F, height: F, viewBox: "0 0 20 20" }, ic);
+        if (i === 0) { svgEl("circle", { cx: 10, cy: 10, r: 9, fill: "#f4f6f8" }, sv); svgEl("circle", { cx: 10, cy: 8, r: 3.2, fill: "#0b1a22" }, sv); svgEl("path", { d: "M4.5,15.5 C5,12 15,12 15.5,15.5 C13,18 7,18 4.5,15.5 Z", fill: "#0b1a22" }, sv); }
+        else { svgEl("rect", { x: 1.5, y: 5, width: 17, height: 12, rx: 2, fill: "#f4f6f8" }, sv); svgEl("rect", { x: 7, y: 2.5, width: 6, height: 4, rx: 1, fill: "none", stroke: "#f4f6f8", "stroke-width": 1.6 }, sv); svgEl("rect", { x: 1.5, y: 10, width: 17, height: 1.4, fill: "#0b1a22" }, sv); }
+        it.push({ n: ic, shape: true });
+        it.push({ n: T(pl, { text: t, x: tw("footX", 131) + F + 9, y: y0, size: F, font: "Geist", weight: 500, color: "#e6eaee", ls: tw("footLs", 0.03) + "em" }) });
+      });
       return it;
     },
     // Black Myth: Wukong, Zhong Kui: red brush title over a huge grey ink glyph, a small seal above. The ink glyph is drawn procedurally (rough strokes, no picture).
