@@ -1,0 +1,23 @@
+"""Readable line-by-line fit of a still-visual motion (16 October 2026): runs MaskIoU and prints, for each mask, the ink bands of the reference and of the motion with the suggested correction
+(scale of the width, shift of the left edge and of the top edge, in design pixels). FR : rapport de calage ligne par ligne.
+Usage: python3 Scripts/FitReport.py <project-id> [--at 4]"""
+import json
+import subprocess
+import sys
+
+out = subprocess.run([sys.executable, str(__import__("pathlib").Path(__file__).with_name("MaskIoU.py")), *sys.argv[1:]], capture_output=True, text=True)
+try:
+    d = json.loads(out.stdout.strip().splitlines()[-1])
+except Exception:
+    print(out.stdout, out.stderr[-600:]); raise SystemExit(1)
+print(f"{d['project']}  score {d['score']}  size {d['size']}")
+for m in d["masks"]:
+    print(f"  mask {m['mask']}: iou {m['iou']}  diou {m['diou']}  recall {m['recall']}  precision {m['precision']}  px ref {m['ref_px']} / motion {m['motion_px']}")
+    rb, mb = m["ref_bands"], m["motion_bands"]
+    for i in range(max(len(rb), len(mb))):
+        r = rb[i] if i < len(rb) else None; q = mb[i] if i < len(mb) else None
+        if r and q:
+            rw, qw = r[3] - r[2], q[3] - q[2]
+            print(f"    band {i}: ref x {r[2]}-{r[3]} y {r[0]}-{r[1]} | motion x {q[2]}-{q[3]} y {q[0]}-{q[1]} | width x{rw / max(1, qw):.3f}  dx {r[2] - q[2]:+d}  dy {r[0] - q[0]:+d}  height x{(r[1] - r[0]) / max(1, q[1] - q[0]):.3f}")
+        else:
+            print(f"    band {i}: ref {r} | motion {q}")

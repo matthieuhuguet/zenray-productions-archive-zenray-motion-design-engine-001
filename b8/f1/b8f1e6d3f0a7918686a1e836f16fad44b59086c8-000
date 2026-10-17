@@ -1,0 +1,72 @@
+"""Coordinate-descent fit of a still-visual motion to its reference (16 October 2026).
+
+The knobs are the `tweaks` of the template (name value lines): the optimizer moves one at a time by +-step, keeps the move when the ink alignment (MaskIoU score) goes up, halves the steps when a whole pass
+brings nothing, and writes the best values back as the tweaks of every scene of the project, so the result stays a normal, editable parameter set. FR : calage automatique des reglages procéduraux.
+Usage: python3 Scripts/FitOptimize.py <project-id> name:init:step[:min:max] ... [--passes 3] [--max-evals 40]
+"""
+import argparse
+import json
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "motion"))
+sys.path.insert(0, str(REPO / "Scripts"))
+import MaskIoU  # noqa: E402
+import server  # noqa: E402
+
+
+def set_tweaks(pid: str, vals: dict) -> None:
+    p = server.read_project(pid)
+    lines = [f"{k} {round(v, 4)}" for k, v in vals.items()]
+    for sc in p["scenes"]:
+        sc["params"]["tweaks"] = lines
+    server.write_project(pid, p)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("project")
+    ap.add_argument("knobs", nargs="+")
+    ap.add_argument("--passes", type=int, default=3)
+    ap.add_argument("--max-evals", type=int, default=40)
+    ap.add_argument("--at", type=float, default=4.0)
+    a = ap.parse_args()
+    knobs = {}
+    for k in a.knobs:
+        q = k.split(":")
+        knobs[q[0]] = {"v": float(q[1]), "step": float(q[2]), "lo": float(q[3]) if len(q) > 3 else -1e9, "hi": float(q[4]) if len(q) > 4 else 1e9}
+    cur = {k: v["v"] for k, v in knobs.items()}
+    set_tweaks(a.project, cur)
+    best = MaskIoU.evaluate(a.project, a.at)["score"]
+    evals, log = 1, [(dict(cur), best)]
+    print(json.dumps({"start": best, "values": cur}), flush=True)
+    for _ in range(a.passes):
+        improved = False
+        for name, kb in knobs.items():
+            for sign in (1, -1):
+                if evals >= a.max_evals:
+                    break
+                trial = dict(cur)
+                trial[name] = min(kb["hi"], max(kb["lo"], cur[name] + sign * kb["step"]))
+                if trial[name] == cur[name]:
+                    continue
+                set_tweaks(a.project, trial)
+                sc = MaskIoU.evaluate(a.project, a.at)["score"]
+                evals += 1
+                if sc > best + 1e-4:
+                    best, cur, improved = sc, trial, True
+                    print(json.dumps({"improved": name, "score": best, "values": cur}), flush=True)
+                    break
+        for kb in knobs.values():
+            if not improved:
+                kb["step"] /= 2
+        if evals >= a.max_evals:
+            break
+    set_tweaks(a.project, cur)
+    final = MaskIoU.evaluate(a.project, a.at)
+    print(json.dumps({"final": final["score"], "values": cur, "evals": evals}))
+
+
+if __name__ == "__main__":
+    main()

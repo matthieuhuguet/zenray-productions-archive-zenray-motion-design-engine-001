@@ -64,8 +64,8 @@
     },
     ichiban(pl, p) {
       const it = [], tw = p.tw;
-      it.push({ n: sticker(pl, { text: p.line1, x: 46, y: 52, size: tw("size1", 168), font: "Sora", weight: 800, color: "#ffffff", ls: "-0.03em", border: tw("border", 34), outline: tw("outline", 15), fillStroke: tw("fill", 8), sx: tw("sx1", 0.70), lh: 1 }) });
-      it.push({ n: sticker(pl, { text: p.line2, x: 41, y: 232, size: tw("size2", 250), font: "Sora", weight: 800, color: p.accent, ls: "-0.03em", border: tw("border", 36), outline: tw("outline2", 0), fillStroke: tw("fill", 8), sx: tw("sx2", 0.68), lh: 1 }) });
+      it.push({ n: sticker(pl, { text: p.line1, x: tw("x1", 46), y: tw("y1", 52), size: tw("size1", 168), font: "Sora", weight: 800, color: "#ffffff", ls: tw("ls1", -0.03) + "em", border: tw("border1", 48), outline: tw("outline1", 28), fillStroke: tw("fill1", 8), sx: tw("sx1", 0.70), lh: 1 }) });
+      it.push({ n: sticker(pl, { text: p.line2, x: tw("x2", 52), y: tw("y2", 226), size: tw("size2", 250), font: "Sora", weight: 800, color: p.accent, ls: tw("ls2", -0.03) + "em", border: tw("border2", 36), outline: tw("outline2", 0), fillStroke: tw("fill2", 8), sx: tw("sx2", 0.68), lh: 1 }) });
       return it;
     },
     paget(pl, p) {
@@ -129,7 +129,7 @@
       it.push({ n: rough(T(pl, { text: p.l3, x: 800, y: tw("y3", 372), size: tw("size3", 108), font: "Unbounded", weight: 500, color: red, align: "center", ls: "0.06em", lh: 1, sx: tw("sx3", 1) })) });
       return it;
     },
-    indy(pl, p) { const tw = p.tw; return [{ n: T(pl, { text: p.l1, x: 540, y: tw("y", 872), size: tw("size", 88), font: "PlayfairDisplay", weight: 400, color: "#dde1ec", align: "center", ls: tw("ls", 0.25) + "em", lh: 1 }) }]; },
+    indy(pl, p) { const tw = p.tw; return [{ n: T(pl, { text: p.l1, x: tw("x", 547), y: tw("y", 874), size: tw("size", 84.6), font: "PlayfairDisplay", weight: 400, color: "#dde1ec", align: "center", ls: tw("ls", 0.294) + "em", lh: 1 }) }]; },
   };
   const DEFAULTS = {
     bleach: { l: { code: "#43", kicker: "Episode 43", subtitle: "Blood for my bone", title: "hAschwAlth", body: "眠りについたユーハバッハから『全知全能』を託されたハッシュヴァルトが、\nその力を解放し依代と化した姿。眼球から溢れ出すユーハバッハの力は、\n彼の身を纏い、姿までも変貌を遂げる。その強大な力は精神にまで影響を\n及ぼし、普段の冷静沈着な様子からは想像もできぬほど、好戦的な態度\nと口調を見せるようになる。" }, bg: "#f26207", accent: "#f26207", tile: "#2a2a2a" },
@@ -198,11 +198,11 @@
       keys.forEach((k, i) => { params[k] = p.lines && p.lines[i] !== undefined && p.lines[i] !== "" ? p.lines[i] : D.l[k]; });
       h.css(el, { background: p.bg || D.bg });
       let k, ox, oy;
-      if (tall || sz[0] / sz[1] > 2) {
+      if ((tall && sz[0] / sz[1] > 1.25) || sz[0] / sz[1] > 2) {
         const bx = String(p.tallBox || "").trim().split(/\s+/).map(Number), box = bx.length === 4 && bx.every((v) => !isNaN(v)) ? bx : (tall && TALLBOXES[p.layout]) || BOXES[p.layout] || [0, 0, sz[0], sz[1]];
         const bw = box[2] - box[0], bh = box[3] - box[1]; k = Math.min((w * (tall ? 0.94 : 0.9)) / bw, (sh * 0.94) / bh); ox = w / 2 - ((box[0] + box[2]) / 2) * k; oy = sh / 2 - ((box[1] + box[3]) / 2) * k;
       } else { k = Math.min(w / sz[0], sh / sz[1]); ox = (w - sz[0] * k) / 2; oy = (sh - sz[1] * k) / 2; }
-      const plane = abs(st, { left: ox + "px", top: oy + "px", width: sz[0] + "px", height: sz[1] + "px", transformOrigin: "0 0", transform: `scale(${k})`, overflow: tall ? "visible" : "hidden" });
+      const plane = abs(st, { left: ox + "px", top: oy + "px", width: sz[0] + "px", height: sz[1] + "px", transformOrigin: "0 0", transform: `scale(${k})`, overflow: tall && sz[0] / sz[1] > 1.25 ? "visible" : "hidden" });
       const items = (L[p.layout] || L.ichiban)(plane, params);
       appear(tl, items, p.appearance, t0, { stagger: p.stagger, dur: p.dur, delay: p.delay, charStagger: p.charStagger, distance: p.distance, blur: p.blur, scaleFrom: p.scaleFrom, rotate: p.rotate, ease: p.ease, direction: p.direction, glitch: p.glitch });
     },
