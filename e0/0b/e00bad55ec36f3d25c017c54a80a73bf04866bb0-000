@@ -91,13 +91,13 @@
       const rose = (cx, cy, r) => { svgEl("circle", { cx, cy, r, fill: "none", stroke: "#8fc7c8", "stroke-opacity": 0.16, "stroke-width": 2 }, g); svgEl("circle", { cx, cy, r: r * 0.66, fill: "none", stroke: "#8fc7c8", "stroke-opacity": 0.14, "stroke-width": 1.5 }, g); svgEl("path", { d: `M${cx},${cy - r} L${cx + r * 0.1},${cy - r * 0.1} L${cx + r},${cy} L${cx + r * 0.1},${cy + r * 0.1} L${cx},${cy + r} L${cx - r * 0.1},${cy + r * 0.1} L${cx - r},${cy} L${cx - r * 0.1},${cy - r * 0.1} Z`, fill: "#8fc7c8", "fill-opacity": 0.12 }, g); };
       rose(330, 210, 230); rose(520, 520, 200); rose(700, 960, 220);
       it.push({ n: sv, shape: true, svg: true });
-      [p.l1, p.l2, p.l3].forEach((t, i) => it.push({ n: T(pl, { text: t, x: 112, y: tw("top", 240) + i * tw("pitch", 181), size: tw("size", 190), font: "PlayfairDisplay", weight: 700, italic: true, color: "#f7ecd3", ls: "-0.02em", lh: 1 }) }));
+      [p.l1, p.l2, p.l3].forEach((t, i) => { const k = i + 1; it.push({ n: T(pl, { text: t, x: tw("x" + k, 112), y: tw("y" + k, tw("top", 240) + i * tw("pitch", 181)), size: tw("s" + k, tw("size", 190)), font: "PlayfairDisplay", weight: 700, italic: true, color: "#f7ecd3", ls: tw("ls" + k, -0.02) + "em", lh: 1, sx: tw("sx" + k, 1) }) }); });
       return it;
     },
     phase(pl, p) {
       const it = [], tw = p.tw;
       const band = abs(pl, { left: "0", top: "0", width: "1920px", height: "1080px" }); inkBand(band, { x: tw("bandX", 190), y: tw("bandY", 290), w: tw("bandW", 1560), h: tw("bandH", 540), seed: p.seed, rough: tw("rough", 60), color: p.accent, dots: tw("dots", 520), smoke: tw("smoke", 16) }); it.push({ n: band, shape: true, svgBand: true });
-      const word = T(pl, { text: p.text, x: 960, y: 462, size: tw("size", 134), font: "PlayfairDisplay", weight: 700, italic: true, color: p.accent, align: "center", ls: "0.01em", lh: 1, upper: true, css: { textShadow: `0 0 ${tw("glow", 18)}px ${p.accent}, 0 0 ${tw("glow", 18) * 2.2}px ${p.accent}88` } }); it.push({ n: word });
+      const word = T(pl, { text: p.text, x: tw("wordX", 960), y: tw("wordY", 462), size: tw("size", 134), font: "PlayfairDisplay", weight: 700, italic: true, color: p.accent, align: "center", ls: tw("ls", 0.01) + "em", lh: 1, upper: true, sx: tw("sx", 1), css: { textShadow: `0 0 ${tw("glow", 18)}px ${p.accent}, 0 0 ${tw("glow", 18) * 2.2}px ${p.accent}88` } }); it.push({ n: word });
       return it;
     },
     yawen(pl, p) {
