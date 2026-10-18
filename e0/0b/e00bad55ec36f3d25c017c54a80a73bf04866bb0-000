@@ -745,10 +745,13 @@
         const mid = chars.length ? chars.reduce((sum, c) => sum + parseFloat(c.style.left || 0) + parseFloat(c.style.width || 0) / 2, 0) / chars.length : 0;
         chars.forEach((c) => { const cx = parseFloat(c.style.left || 0) + parseFloat(c.style.width || 0) / 2; fto(tl, c, { opacity: 0, x: -(cx - mid) * (o.distance / 100), filter: `blur(${o.blur}px)` }, { opacity: 1, x: 0, filter: "blur(0px)", duration: d * 2.2, ease: E("power3.out") }, t + Number(c.dataset.i || 0) * csg * 0.4); });
       } else if (kind === "dissolve") {  // a noise threshold: the holder is shown through an animated turbulence mask, so the letters appear grain by grain with a fuzzy edge, then the filter is removed
-        const fid = "dz" + (dissolveId++), sv = svgEl("svg", { width: 0, height: 0, style: "position:absolute" }, n.parentNode), fl = svgEl("filter", { id: fid, x: "-5%", y: "-5%", width: "110%", height: "110%", "color-interpolation-filters": "sRGB" }, svgEl("defs", {}, sv));
-        svgEl("feTurbulence", { type: "fractalNoise", baseFrequency: "0.07", numOctaves: 4, seed: (Math.round(o.seed || 7) + i * 13) % 97, result: "nz" }, fl); svgEl("feColorMatrix", { in: "nz", type: "matrix", values: "0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1 0 0 0 0", result: "na" }, fl);
+        // 19 October 2026 (performance): the filter region is the ink of the line, not the whole plane (the turbulence is computed over its region at every frame: it was 2.2 million pixels per line)
+        const fid = "dz" + (dissolveId++), reg = dissolveRegion(n), sv = svgEl("svg", { width: 0, height: 0, style: "position:absolute" }, n.parentNode), fl = svgEl("filter", { id: fid, filterUnits: "userSpaceOnUse", x: reg.x, y: reg.y, width: reg.w, height: reg.h, "color-interpolation-filters": "sRGB" }, svgEl("defs", {}, sv));
+        svgEl("feTurbulence", { type: "fractalNoise", baseFrequency: "0.07", numOctaves: 3, seed: (Math.round(o.seed || 7) + i * 13) % 97, result: "nz" }, fl); svgEl("feColorMatrix", { in: "nz", type: "matrix", values: "0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1 0 0 0 0", result: "na" }, fl);
         const ct = svgEl("feComponentTransfer", { in: "na", result: "mk" }, fl), fa = svgEl("feFuncA", { type: "linear", slope: 9, intercept: -8.2 }, ct); svgEl("feComposite", { in: "SourceGraphic", in2: "mk", operator: "in" }, fl);
-        n.style.filter = `url(#${fid})`; fto(tl, fa, { attr: { intercept: -8.2 } }, { attr: { intercept: 4 }, duration: d * 2.2, ease: E("power1.inOut") }, t); tl.set(n, { filter: "none" }, t + d * 2.2 + 0.02);
+        // the filter only exists while the line dissolves: before its turn the line is hidden with no filter, after it the filter is removed (a filter that costs nothing when it shows nothing)
+        n.style.visibility = "hidden"; n.style.filter = "none"; tl.set(n, { visibility: "visible", filter: `url(#${fid})` }, t);
+        fto(tl, fa, { attr: { intercept: -8.2 } }, { attr: { intercept: 4 }, duration: d * 2.2, ease: E("power1.inOut") }, t); tl.set(n, { filter: "none" }, t + d * 2.2 + 0.02);
       } else if (kind === "slam") {  // a heavy stamp: each glyph drops from a larger scale with a slight tilt and lands at once
         each({ opacity: 0, scale: 1.35, y: -o.distance * 0.7, rotation: o.rotate || 4, filter: `blur(${o.blur}px)`, transformOrigin: "50% 60%" }, { opacity: 1, scale: 1, y: 0, rotation: 0, filter: "blur(0px)", duration: d * 0.55 }, E("expo.out"));
       } else if (kind === "mask-up") {  // the curtain rise: each glyph climbs from under its baseline and is revealed from the bottom up (the clip grows upward while the glyph rises)
@@ -766,6 +769,13 @@
     });
   }
 
+  // the ink of a holder: the union of its glyph boxes (or its own box) with a margin, in the coordinates of the holder
+  function dissolveRegion(n) {
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; const chs = [...n.querySelectorAll(".ch")].filter((c) => c.style.left && c.style.width);
+    chs.forEach((c) => { const l = parseFloat(c.style.left), t = parseFloat(c.style.top), w = parseFloat(c.style.width), hh = parseFloat(c.style.height); x0 = Math.min(x0, l); y0 = Math.min(y0, t); x1 = Math.max(x1, l + w); y1 = Math.max(y1, t + hh); });
+    if (!chs.length) { x0 = n.offsetLeft; y0 = n.offsetTop; x1 = x0 + n.offsetWidth; y1 = y0 + n.offsetHeight; }
+    const pad = 60; return { x: Math.floor(x0 - pad), y: Math.floor(y0 - pad), w: Math.ceil(x1 - x0 + 2 * pad), h: Math.ceil(y1 - y0 + 2 * pad) };
+  }
   const BOXES = { bleach: [880, 90, 1920, 1080], ichiban: [30, 20, 960, 480], paget: [90, 190, 700, 1050], "pale-raven": [90, 250, 900, 1010], phase: [90, 300, 1830, 840], yawen: [110, 340, 1800, 1030], indy: [40, 780, 1040, 990], zhongkui: [330, 90, 1230, 580], rdr: [30, 95, 905, 465], yotei: [200, 190 + 60, 880, 190 + 590], ytitle: [20, 10, 900, 282], lol: [90, 40, 1910, 1060], inox1: [380, 280, 1640, 830], inox2: [740, 380, 1330, 760], inox3: [700, 380, 1300, 740], nolan: [470, 500, 1530, 720] };
   const TALLBOXES = { zhongkui: [470, 100, 1130, 490], phase: [380, 330, 1540, 700] };
   const EASES = ["auto", "power3.out", "power4.out", "expo.out", "back.out(1.7)", "back.out(3)", "elastic.out(1,0.4)", "bounce.out", "sine.inOut", "power2.inOut", "steps(6)"];

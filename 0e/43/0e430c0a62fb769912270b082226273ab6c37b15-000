@@ -47,6 +47,9 @@ STILLS = {
     "ghost-of-yotei-title-apparition-01": ("Ghost of Yōtei, title apparition 01", "still-ytitle", "ytitle", "16x9", ["petals-sweep", "petals-gather", "petals-bloom"], {}),
     "league-of-legends-cinematic-01": ("League of Legends, cinematic 01", "still-lol", "lol", "16x9", ["mask-up"], {"distance": 90, "charStagger": 0.045, "dur": 0.9, "stagger": 0.35}),
     "inoxtag-collection-01": ("Inoxtag, collection 01", "still-inox1", "inox1", "16x9", ["slam"], {"charStagger": 0.05, "stagger": 0.45, "dur": 0.8, "blur": 6}),
+    # 19 October 2026: a variation of Inoxtag 01 for the Louisiana Bayou church: same colour, the dissolve of Inoxtag 03, the texts of the project (the date of the day, the names of the components), the unrelated pieces hidden
+    "louisiana-bayou-church-module": ("Louisiana Bayou, church module (variation d'Inoxtag 01)", "still-inox1", "inox1", "16x9", ["dissolve"], {"dur": 0.8,
+        "lines": ["ZENRAY", "LOUISIANA", "BAYOU", "CHURCH", "19 OCTOBRE 2026", "CHURCH MODULE", "V1", "7,6 M", "WOODFACADE · ARMATURE · ROOF · PORCHSTAIRS"], "tweaks": ["kanji_Show 0", "globe_Show 0", "l7_Show 0"]}),
     "inoxtag-collection-02": ("Inoxtag, collection 02", "still-inox2", "inox2", "16x9", ["mask-down"], {"distance": 90, "charStagger": 0.07, "dur": 0.9, "stagger": 0.3}),
     "inoxtag-collection-03": ("Inoxtag, collection 03", "still-inox3", "inox3", "16x9", ["dissolve"], {"dur": 0.8}),
     "christopher-nolan-collection-01": ("Christopher Nolan, collection 01", "still-nolan", "nolan", "16x9", ["track"], {"distance": 28, "blur": 7, "dur": 1.0, "charStagger": 0.12}),
@@ -120,7 +123,12 @@ def build_one(pid: str, title: str, slug: str, layout: str, fmt: str, apps: list
         base.update({"accent2": D["accent2"], "deco": "#ffffff"})
     SC = SCENE_BY_LAYOUT.get(layout, SCENE)
     beats = [(i * SC, "sv-visual", dict(dict(base, appearance=a), **extra)) for i, a in enumerate(apps)]
-    return ppm.build(title + ", trois apparitions", slug, beats, SC * len(apps), controls(len(apps), apps, layout), fmt=fmt, bg="#101010", ink="#ffffff", accent="#ff9d1f",
+    ctl = controls(len(apps), apps, layout)
+    if "lines" in extra:  # a variation: the default (the reset value) of every text field is its own text
+        for c in ctl:
+            if c.get("type") == "text" and c.get("slots"):
+                c["slots"] = list(extra["lines"]); i = int(c["targets"][0].get("index", 0)) if c.get("targets") else 0; c["default"] = extra["lines"][i] if i < len(extra["lines"]) else c.get("default")
+    return ppm.build(title + ", trois apparitions", slug, beats, SC * len(apps), ctl, fmt=fmt, bg="#101010", ink="#ffffff", accent="#ff9d1f",
                      doc=f"16 October 2026: {title}. Three appearances of the same visual ({', '.join(apps)}); foreground only.")
 
 
