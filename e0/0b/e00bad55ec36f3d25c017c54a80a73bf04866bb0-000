@@ -206,6 +206,11 @@
       sub.style.opacity = tw("subOpacity", 1); if (p.accent2) sub.querySelectorAll("g").forEach((g) => g.setAttribute("fill", p.accent2)); it.push({ n: sub });
       return it;
     },
+    indy(pl, p) {
+      const tw = p.tw, TR = tracedFor(p, "indy");
+      if (TR) return TR.layers.map((ly) => ({ n: traceLayer(pl, ly.glyphs, TR.w, TR.h) }));
+      return [{ n: T(pl, { text: p.l1, x: tw("x", 547), y: tw("y", 874), size: tw("size", 84.6), font: "PlayfairDisplay", weight: 400, color: "#dde1ec", align: "center", ls: tw("ls", 0.294) + "em", lh: 1 }) }];
+    },
   };
   const DEFAULTS = {
     bleach: { l: { code: "#43", kicker: "Episode 43", subtitle: "Blood for my bone", title: "hAschwAlth", body: "眠りについたユーハバッハから『全知全能』を託されたハッシュヴァルトが、\nその力を解放し依代と化した姿。眼球から溢れ出すユーハバッハの力は、\n彼の身を纏い、姿までも変貌を遂げる。その強大な力は精神にまで影響を\n及ぼし、普段の冷静沈着な様子からは想像もできぬほど、好戦的な態度\nと口調を見せるようになる。" }, bg: "#f26207", accent: "#f26207", tile: "#2a2a2a" },
