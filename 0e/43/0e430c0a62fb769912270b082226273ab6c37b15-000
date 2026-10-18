@@ -31,7 +31,7 @@ def layout_controls(layout: str) -> list:
     import subprocess
     from pathlib import Path
     rt = Path(__file__).resolve().parents[1] / "runtime"
-    req = "".join("require(%r);" % str(f) for f in sorted(rt.glob("zs-templates-card-*-1.js")))
+    req = "".join("require(%r);" % str(f) for f in sorted(list(rt.glob("zs-templates-card-*-1.js")) + list(rt.glob("zs-templates-alpha-*-1.js"))))  # the cards and the alphabets (their measured roughness is the default of a slider)
     code = "global.window={ZS:{h:{},register(){}}};global.document={};require(%r);%sconsole.log(JSON.stringify(window.ZS.stills.controls(%r)))" % (str(rt / "zs-templates-stills-1.js"), req, layout)
     return json.loads(subprocess.check_output(["node", "-e", code], text=True))
 

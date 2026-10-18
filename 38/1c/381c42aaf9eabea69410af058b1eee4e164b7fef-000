@@ -5,11 +5,12 @@
   const WIDTH = { I: 0.42, J: 0.9, M: 1.3, W: 1.4, "1": 0.7, ".": 0.3, ",": 0.3, ":": 0.3, "'": 0.3, "-": 0.8, "+": 0.9, "/": 0.8, "!": 0.34, "°": 0.6, "·": 0.3, "_": 1.0 };
   function skeleton(b, W, H, a, c) {  // a = half stroke, c = corner cut; coordinates in the glyph box (0,0 top left), inset by half a stroke so the outer extent is the box
     const xl = a, xr = W - a, xm = W / 2, yt = a, yb = H - a, ym = H / 2, cc = Math.min(c, (xr - xl) / 2, (yb - yt) / 4);
+    const cd = Math.min(Math.max(cc * 2.2, (yb - yt) * 0.2), (xr - xl) / 2);  // the D always has its two right corners cut, else it is the same box as the O
     const M = (x, y) => `M${x.toFixed(2)},${y.toFixed(2)}`, Ln = (x, y) => ` L${x.toFixed(2)},${y.toFixed(2)}`, box = () => M(xl + cc, yt) + Ln(xr - cc, yt) + Ln(xr, yt + cc) + Ln(xr, yb - cc) + Ln(xr - cc, yb) + Ln(xl + cc, yb) + Ln(xl, yb - cc) + Ln(xl, yt + cc) + " Z";
     const S = {
       A: M(xl, yb) + Ln(xl, yt + cc) + Ln(xl + cc, yt) + Ln(xr - cc, yt) + Ln(xr, yt + cc) + Ln(xr, yb) + M(xl, ym + a) + Ln(xr, ym + a),
       B: box() + M(xl, ym) + Ln(xr, ym), C: M(xr, yt) + Ln(xl + cc, yt) + Ln(xl, yt + cc) + Ln(xl, yb - cc) + Ln(xl + cc, yb) + Ln(xr, yb),
-      D: M(xl, yt) + Ln(xr - cc * 2.2, yt) + Ln(xr, yt + cc * 2.2) + Ln(xr, yb - cc * 2.2) + Ln(xr - cc * 2.2, yb) + Ln(xl, yb) + " Z", E: M(xr, yt) + Ln(xl, yt) + Ln(xl, yb) + Ln(xr, yb) + M(xl, ym) + Ln(xr - a, ym), F: M(xr, yt) + Ln(xl, yt) + Ln(xl, yb) + M(xl, ym) + Ln(xr - a, ym),
+      D: M(xl, yt) + Ln(xr - cd, yt) + Ln(xr, yt + cd) + Ln(xr, yb - cd) + Ln(xr - cd, yb) + Ln(xl, yb) + " Z", E: M(xr, yt) + Ln(xl, yt) + Ln(xl, yb) + Ln(xr, yb) + M(xl, ym) + Ln(xr - a, ym), F: M(xr, yt) + Ln(xl, yt) + Ln(xl, yb) + M(xl, ym) + Ln(xr - a, ym),
       G: M(xr, yt) + Ln(xl + cc, yt) + Ln(xl, yt + cc) + Ln(xl, yb - cc) + Ln(xl + cc, yb) + Ln(xr, yb) + Ln(xr, ym) + Ln(xm, ym), H: M(xl, yt) + Ln(xl, yb) + M(xr, yt) + Ln(xr, yb) + M(xl, ym) + Ln(xr, ym),
       I: M(xm, yt) + Ln(xm, yb), J: M(xr, yt) + Ln(xr, yb - cc) + Ln(xr - cc, yb) + Ln(xl + cc, yb) + Ln(xl, yb - cc) + Ln(xl, ym + a), K: M(xl, yt) + Ln(xl, yb) + M(xr, yt) + Ln(xl, ym) + Ln(xr, yb),
       L: M(xl, yt) + Ln(xl, yb) + Ln(xr, yb), M: M(xl, yb) + Ln(xl, yt) + Ln(xm, ym) + Ln(xr, yt) + Ln(xr, yb), N: M(xl, yb) + Ln(xl, yt) + Ln(xr, yb) + Ln(xr, yt),

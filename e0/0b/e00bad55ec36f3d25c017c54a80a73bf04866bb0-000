@@ -449,7 +449,7 @@
   // { k, capH (padded box height of the traced letters), cap (ink cap height), gap, space (box gaps measured on the original), fb (block font parameters), upper }.
   function shareRow(tw, ln, text, tab, A) {
     const pad = ln.pad === undefined ? 4 : ln.pad, useT = tw(ln.k + "_UseTraced", 1) >= 0.5, up = ln.upper === false ? text : text.toUpperCase(), cap = ln.cap || ln.capH - 2 * pad, u = cap / 1000;  // pad = the margin of the traced boxes (4 px on the cards, 0 when the boxes are tight)
-    const gap = Math.max(tw(ln.k + "Gap", ln.gap) + 2 * pad, 0.012 * ln.capH), space = tw(ln.k + "Space", ln.space) + 2 * pad, dilU = A ? A.dil + tw(ln.k + "_AddWeight", 0) * 1000 / cap : 0, rough = A ? A.rough * tw(ln.k + "_AddRough", 100) / 100 : 0, brough = ((ln.fb && ln.fb.rough) || 0) * tw(ln.k + "_AddRough", 100) / 100;
+    const gap = Math.max(tw(ln.k + "Gap", ln.gap) + 2 * pad, 0.012 * ln.capH), space = tw(ln.k + "Space", ln.space) + 2 * pad, dilU = A ? A.dil + tw(ln.k + "_AddWeight", 0) * 1000 / cap : 0, rough = A ? tw(ln.k + "_AddRough", A.rough * 100) / 100 : 0, brough = tw(ln.k + "_AddRough", ((ln.fb && ln.fb.rough) || 0) * 100) / 100;  // _AddRough is a % of the cap height (the default is what was measured on the traced letters)
     const row = [...up].map((ch) => {
       if (ch === " ") return { ch, kind: " " };
       const sp = window.ZSBlock.split(ch), tx = useT ? tab[ch] : null, ax = A && A.glyphs[ch], tb = useT && sp ? tab[sp.base] : null, ab = A && sp && A.glyphs[sp.base];  // traced letter, then the precomposed letter of the alphabet, then a base letter with a drawn accent
@@ -601,24 +601,25 @@
       HOLD.forEach((q) => { if (q[0] === "Track" && ln && ln.type === "text") return; out.push({ id: k + "_" + q[0], type: "number", label: q[1], group: "Lettrage · " + label, default: q[2], min: q[3], max: q[4], step: q[5], closed: true, targets: [{ key: "tweaks", tweak: k + "_" + q[0] }] }); });
     });
     // the sliders of the lines set by the shared engine when a text is edited (size, position, gaps, width, condensing, added letters): generated from the same numbers the layout reads
-    const W0 = (SIZE[layout] || [2000])[0], eng = (name, k, d, alpha, noXY) => {
+    const W0 = (SIZE[layout] || [2000])[0], measured = (alphaId, fb) => { const A = alphaId && window.ZSAlpha && window.ZSAlpha[alphaId]; return Math.round((A ? A.rough : ((fb && fb.rough) || 0)) * 1000) / 10; }, ROUGH = ["_AddRough", "Rugosité des lettres ajoutées (% de la hauteur)", 0, 12, 0.1];
+    const eng = (name, k, d, alpha, noXY) => {
       const g = "Ligne modifiée · " + name, add = (suffix, label, def, lo, hi, st) => out.push({ id: k + suffix, type: "number", label, group: g, default: def, min: lo, max: hi, step: st, closed: true, targets: [{ key: "tweaks", tweak: k + suffix }] });
       if (!noXY) { add("X", "Centre de la ligne (px)", d.cx, 0, W0, 1); add("Y", "Haut de la ligne (px)", d.top, 0, (SIZE[layout] || [0, 1300])[1], 1); }
-      add("K", "Taille de la ligne (échelle)", 1, 0.3, 2.5, 0.01); add("Gap", "Espace entre les lettres (px)", d.gap, -60, 200, 1); add("Space", "Espace entre les mots (px)", d.space, 0, 320, 1); if (d.maxw) add("MaxW", "Largeur maximale avant de condenser (px)", Math.min(d.maxw, W0), 10, W0, 5);  // a line with no limit (9999) shows the width of the plane
+      add("K", "Taille de la ligne (échelle, dans la limite de la largeur maximale)", 1, 0.3, 2.5, 0.01); add("Gap", "Espace entre les lettres (px)", d.gap, -60, 200, 1); add("Space", "Espace entre les mots (px)", d.space, 0, 320, 1); if (d.maxw) add("MaxW", "Largeur maximale avant de condenser (px)", Math.min(d.maxw, W0), 10, W0, 5);  // a line with no limit (9999) shows the width of the plane
       add("_Condense", "Condensation minimale (%)", 72, 40, 100, 1);
-      if (alpha !== false) { add("_UseTraced", "Lettres décalquées (1) ou alphabet seul (0)", 1, 0, 1, 1); add("_AddWeight", "Graisse des lettres ajoutées (px)", 0, -12, 24, 0.5); add("_AddRough", "Rugosité des lettres ajoutées (%)", 100, 0, 400, 5); }
+      if (alpha !== false) { add("_UseTraced", "Lettres décalquées (1) ou alphabet seul (0)", 1, 0, 1, 1); add("_AddWeight", "Graisse des lettres ajoutées (px)", 0, -12, 24, 0.5); add(ROUGH[0], ROUGH[1], measured(d.alpha, d.fb), ROUGH[2], ROUGH[3], ROUGH[4]); }
     };
     (ENGINE[layout] || []).forEach((ln) => eng(ln.name, ln.k, ln, true));
-    if (cd) { const gdone = {}; cd.lines.forEach((ln) => { if (ln.type === "text") return;
+    if (cd) { const gdone = {}; cd.lines.forEach((ln) => { if (ln.type === "text" || ln.fixed) return;  // a live text has its own geometry, a fixed line (a logo, a symbol) is never recomposed
       if (ln.group && !gdone[ln.group]) { gdone[ln.group] = 1; const g = cd.lines.filter((q) => q.group === ln.group), d0 = { cx: (Math.min.apply(null, g.map((q) => q.x0)) + Math.max.apply(null, g.map((q) => q.x1))) / 2, top: 0, gap: 0, space: 0, maxw: ln.gmax || 0 };
         const gg = "Lignes en rangée · " + g.map((q) => q.name || q.k).join(" + "), ad = (suffix, label, def, lo, hi, st) => out.push({ id: ln.group + suffix, type: "number", label, group: gg, default: def, min: lo, max: hi, step: st, closed: true, targets: [{ key: "tweaks", tweak: ln.group + suffix }] });
-        ad("X", "Centre de la rangée (px)", Math.round(d0.cx), 0, W0, 1); ad("K", "Taille de la rangée (échelle)", 1, 0.3, 2.5, 0.01); if (d0.maxw) ad("MaxW", "Largeur maximale avant de condenser (px)", Math.min(d0.maxw, W0), 10, W0, 5); ad("_Condense", "Condensation minimale (%)", 72, 40, 100, 1); }
-      const al = (cd.alpha || {})[ln.face], base = { cx: ln.align === "left" ? ln.x0 + 4 : ln.align === "right" ? ln.x1 - 4 : ln.cx, top: 0, gap: ln.gap, space: ln.space, maxw: ln.maxw };
+        ad("X", "Centre de la rangée (px)", Math.round(d0.cx), 0, W0, 1); ad("K", "Taille de la rangée (échelle, dans la limite de la largeur maximale)", 1, 0.3, 2.5, 0.01); if (d0.maxw) ad("MaxW", "Largeur maximale avant de condenser (px)", Math.min(d0.maxw, W0), 10, W0, 5); ad("_Condense", "Condensation minimale (%)", 72, 40, 100, 1); }
+      const al = (cd.alpha || {})[ln.face], base = { cx: ln.align === "left" ? ln.x0 + 4 : ln.align === "right" ? ln.x1 - 4 : ln.cx, top: 0, gap: ln.gap, space: ln.space, maxw: ln.maxw, alpha: (cd.alpha || {})[ln.face], fb: ln.fb };
       if (ln.group) { const g = "Ligne modifiée · " + (ln.name || ln.k), add = (suffix, label, def, lo, hi, st) => out.push({ id: ln.k + suffix, type: "number", label, group: g, default: def, min: lo, max: hi, step: st, closed: true, targets: [{ key: "tweaks", tweak: ln.k + suffix }] });
-        add("Gap", "Espace entre les lettres (px)", ln.gap, -60, 200, 1); add("Space", "Espace entre les mots (px)", ln.space, 0, 320, 1); if (al) { add("_UseTraced", "Lettres décalquées (1) ou alphabet seul (0)", 1, 0, 1, 1); add("_AddWeight", "Graisse des lettres ajoutées (px)", 0, -12, 24, 0.5); add("_AddRough", "Rugosité des lettres ajoutées (%)", 100, 0, 400, 5); } }
+        add("Gap", "Espace entre les lettres (px)", ln.gap, -60, 200, 1); add("Space", "Espace entre les mots (px)", ln.space, 0, 320, 1); if (al) { add("_UseTraced", "Lettres décalquées (1) ou alphabet seul (0)", 1, 0, 1, 1); add("_AddWeight", "Graisse des lettres ajoutées (px)", 0, -12, 24, 0.5); add(ROUGH[0], ROUGH[1], measured(al, ln.fb), ROUGH[2], ROUGH[3], ROUGH[4]); } }
       else eng(ln.name || ln.k, ln.k, base, !!al, true); }); }
     if (layout === "rdr") ["l2", "l3", "l4"].forEach((k, i) => { const g = "Ligne modifiée · " + ["Titre, ligne 1", "Titre, ligne 2", "Chiffre"][i], add = (suffix, label, def, lo, hi, st) => out.push({ id: k + suffix, type: "number", label, group: g, default: def, min: lo, max: hi, step: st, closed: true, targets: [{ key: "tweaks", tweak: k + suffix }] });
-      add("Gap", "Espace entre les lettres (px)", [-5, -3.75, 6][i], -60, 200, 1); add("Space", "Espace entre les mots (px)", Math.round(0.32 * [151, 114, 267][i]), 0, 320, 1); add("_UseTraced", "Lettres décalquées (1) ou alphabet seul (0)", 1, 0, 1, 1); add("_AddWeight", "Graisse des lettres ajoutées (px)", 0, -12, 24, 0.5); add("_AddRough", "Rugosité des lettres ajoutées (%)", 100, 0, 400, 5); });
+      add("Gap", "Espace entre les lettres (px)", [-5, -3.75, 6][i], -60, 200, 1); add("Space", "Espace entre les mots (px)", Math.round(0.32 * [151, 114, 267][i]), 0, 320, 1); add("_UseTraced", "Lettres décalquées (1) ou alphabet seul (0)", 1, 0, 1, 1); add("_AddWeight", "Graisse des lettres ajoutées (px)", 0, -12, 24, 0.5); add(ROUGH[0], ROUGH[1], measured("rdr-big"), ROUGH[2], ROUGH[3], ROUGH[4]); });
     (LAYOUT_TWEAKS[layout] || []).forEach((q) => out.push({ id: q[1], type: "number", label: q[2], group: "Réglages · " + q[0], default: q[3], min: q[4], max: q[5], step: q[6], closed: true, targets: [{ key: "tweaks", tweak: q[1] }] }));
     return out;
   }
@@ -660,8 +661,9 @@
     const dots = gl.map((g) => g.cx * ux + g.cy * uy), d0 = Math.min.apply(null, dots), span = Math.max(1, Math.max.apply(null, dots) - d0); gl.forEach((g, i) => { g.s = (dots[i] - d0) / span; });
     gl.slice().sort((a, b) => a.cx - b.cx || a.cy - b.cy).forEach((g, i) => { g.rank = i; });
     const bloom = kind === "petals-bloom", gather = kind === "petals-gather";
+    const step = Math.min(Math.max(0.1, FD / gl.length), Math.max(0.01, ((o.sceneDur || 6) - o.delay - o.dur * 1.1 - 0.5) / gl.length));  // one letter after the other, but a long text still ends inside the scene
     gl.forEach((g) => {  // the letters: swept in by the front of the wind (sweep), or condensed when the petals land (gather), or one after the other (bloom)
-      g.t = bloom ? T0 + g.rank * Math.max(0.1, FD / gl.length) : T0 + (gather ? 0.9 : 0) + g.s * FD;
+      g.t = bloom ? T0 + g.rank * step : T0 + (gather ? 0.9 : 0) + g.s * FD;
       if (kind === "petals-sweep") fto(tl, g.c, { opacity: 0, x: -ux * 34, y: -uy * 34, skewX: ux >= 0 ? -14 : 14, filter: "blur(7px)" }, { opacity: 1, x: 0, y: 0, skewX: 0, filter: "blur(0px)", duration: o.dur * 0.9, ease: "power3.out" }, g.t);
       else if (gather) fto(tl, g.c, { opacity: 0, filter: "blur(5px)" }, { opacity: 1, filter: "blur(0px)", duration: o.dur * 0.9, ease: "power2.out" }, g.t);
       else fto(tl, g.c, { opacity: 0, scale: 0.94, filter: "blur(8px)", transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, filter: "blur(0px)", duration: o.dur * 1.1, ease: "power3.out" }, g.t);
