@@ -1,0 +1,32 @@
+"""League of Legends cinematic title card (18 October 2026): SOMBRES COMPLOTS (cream, heavy condensed), the season logo (L25 . emblem S1) and the label CINEMATIQUE. Native still 2000 x 1096.
+Run: /Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/CardLol.py"""
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import numpy as np
+from scipy import ndimage as ndi
+import CardTrace as C
+
+img, A = C.load("lol"); H, W = A.shape[:2]; L = ndi.gaussian_filter(A.mean(2), 0.5); mn = A.min(2)
+box = lambda *a: C.box_mask((H, W), *a)  # noqa: E731
+# 1. the title: cream white, nearly neutral warm, brighter than anything else around it
+tm = (mn >= 205); tm = ndi.binary_opening(tm, iterations=1)
+title = C.glyphs_of(tm, L, box(160, 755, 1860, 1045), list("SOMBRESCOMPLOTS"), mincontrast=60.0, minpx=150)
+cream = C.color_of(A, ndi.binary_erosion(tm & box(160, 755, 1860, 1045), iterations=3))
+# 2. the logo: white on a dark red blur (blurrier, softer threshold). Every connected shape is a piece of the logo.
+lm = (mn >= 165) & box(100, 50, 420, 125); lm = ndi.binary_opening(lm, iterations=1)
+import StickerTrace as ST
+shapes = [m for m in ST.letter_shapes(lm.astype(float), box(100, 50, 420, 125), minpx=10, merge_dx=0.9) if m.sum() >= 30]
+print("logo pieces", len(shapes), [int(m.sum()) for m in shapes])
+logo = []
+for i, m in enumerate(shapes):
+    mc = ndi.binary_closing(m, iterations=1); rf = C.refine(mc, L, band=1, sig=4.0, mincontrast=50.0); d, b = C.trace(rf > 0.5, soft=rf, sigma=0.5); logo.append({"c": "*%d" % i, "d": d, "b": b})
+# 3. the label CINEMATIQUE (letter spaced, the accent of the E merged)
+bm = (mn >= 110) & box(1500, 55, 1910, 112); bm = ndi.binary_opening(bm, iterations=1)
+label = C.glyphs_of(bm, L, box(1500, 55, 1910, 112), list("CINEMATIQUE"), mincontrast=50.0, minpx=20, sigma=0.6, band=1, opening=0, cut=0.5, merge_dx=0.3)
+white = C.color_of(A, ndi.binary_erosion(lm, iterations=1))
+fbt = {"font": "Unbounded", "weight": 800, "fs": 1.05, "by": 0.97}
+lines = [C.line_data("l1", "SOMBRES COMPLOTS", "title", 0, title, "center", fbt, maxw=1700),
+         C.line_data("l2", "CINÉMATIQUE", "label", 1, label, "right", {"font": "Sora", "weight": 600, "fs": 1.0, "by": 0.95}),
+         {"k": "logo", "text": "L25 · S1", "face": "logo", "ci": 1, "align": "left", "x0": min(g["b"][0] for g in logo), "x1": max(g["b"][2] for g in logo), "cx": 0, "top": 0, "capH": 1, "gap": 0, "space": 0, "glyphs": logo, "fb": {}, "fixed": True, "upper": False, "maxw": 9999}]
+C.emit("lol", W, H, {"main": cream, "second": white}, lines, note="SOMBRES COMPLOTS, logo L25 S1, label.")

@@ -1,0 +1,19 @@
+"""Three edited-text variants of a still visual (18 October 2026): builds temporary projects with other texts, renders their final frame through MaskIoU and tiles them. The required check before a visual is announced (an edited text never breaks the design).
+Usage: EditVariants.py <layout> <appearance> <cfg-project> <still-slug> <out.png> '["l1","l2"]' '["..."]' '["..."]' [--at 4.5]. The temporary projects are deleted. FR : trois variantes de texte modifie."""
+import json, shutil, subprocess, sys
+from pathlib import Path
+from PIL import Image
+ROOT = Path(__file__).resolve().parents[1]; sys.path.insert(0, str(ROOT / "motion" / "reproductions")); sys.path.insert(0, str(ROOT / "motion"))
+import stills, ppm  # noqa: E402
+a = sys.argv[1:]; at = "4.5"
+if "--at" in a: i = a.index("--at"); at = a[i + 1]; del a[i:i + 2]
+layout, app, cfg, still, out = a[:5]; variants = [json.loads(v) for v in a[5:]]; frames = []
+for n, lines in enumerate(variants):
+    pid = "ev%d-%s" % (n, layout)
+    ppm.run(pid + "-ppm", stills.build_one(pid, "variant " + pid, still, layout, "16x9", [app], {"lines": lines, "design": "original"}))
+    d = Path("/tmp/ev_%s" % pid); d.mkdir(exist_ok=True)
+    subprocess.run([sys.executable, str(ROOT / "Scripts" / "MaskIoU.py"), pid + "-ppm", "--at", at, "--out", str(d), "--cfg", cfg, "--still", still], capture_output=True, cwd=ROOT); frames.append(Image.open(d / "ink-motion-frame.png").convert("RGB"))
+    shutil.rmtree(Path("/Users/zenray/.claude/tmp/tmp-zenray-motion-design/motion-projects") / (pid + "-ppm"), ignore_errors=True)
+w, h = frames[0].size; k = 0.5; sheet = Image.new("RGB", (int(w * k), int(h * k) * len(frames) + 4 * (len(frames) - 1)), "#f0f")
+for i, f in enumerate(frames): sheet.paste(f.resize((int(w * k), int(h * k)), Image.LANCZOS), (0, i * (int(h * k) + 4)))
+sheet.save(out); print(out)

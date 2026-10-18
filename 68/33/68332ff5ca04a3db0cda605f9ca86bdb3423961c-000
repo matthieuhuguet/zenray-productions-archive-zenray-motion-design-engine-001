@@ -1,0 +1,76 @@
+"""Shared tools of the title-card visuals (18 October 2026): isolate the foreground lettering of a still as a custom font, one glyph = one connected shape with its box, and write it as window.ZSCards.<key>.
+The data is read by the generic card layout of the template sv-visual (zs-templates-stills-1.js): original design = the glyphs at their traced places, edited text = the same glyphs recomposed on a line (alignment, scale, gaps measured here).
+Method (the same as the Ghost of Yotei title): a coverage field, never a hard mask: a mask from the colour of the ink, then the contour refined on the LUMINANCE between the local ink level and the local background level, cut at 0.5 after a cubic enlargement (sub-pixel, smooth).
+Run with /Users/zenray/.venvs/zenray-motion/bin/python -I from a per-visual script (CardLol.py ...). FR : outils communs des cartes titre : lettrage isole, glyphes, donnees pour le gabarit."""
+import json, sys
+from pathlib import Path
+import numpy as np
+from PIL import Image
+from scipy import ndimage as ndi
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "Scripts")); sys.path.insert(0, str(ROOT / "motion"))
+import StickerTrace as ST  # noqa: E402
+import TraceStill as TS  # noqa: E402
+
+STILLS = Path("~/.claude/tmp/tmp-zenray-motion-design-refcache/_stills").expanduser()
+SC = 8
+
+def load(name):
+    img = np.asarray(Image.open(STILLS / ("native-%s.png" % name)).convert("RGB")); return img, img.astype(int)
+
+def box_mask(shape, x0, y0, x1, y1):
+    m = np.zeros(shape, bool); m[max(0, y0):y1, max(0, x0):x1] = True; return m
+
+def clean(m, minblob=14, minhole=20):
+    lab, n = ndi.label(m); sizes = ndi.sum(m, lab, range(1, n + 1)); m = np.isin(lab, [i + 1 for i, s in enumerate(sizes) if s >= minblob])
+    inv = ~m; lab, n = ndi.label(inv); sizes = ndi.sum(inv, lab, range(1, n + 1)); return m | np.isin(lab, [i + 1 for i, s in enumerate(sizes) if s < minhole])
+
+def refine(m0, L, band=3, sig=6.0, mincontrast=40.0, polarity=1):
+    """Contour refinement on the luminance. polarity 1: ink brighter than its background (white letters); -1: ink darker."""
+    inner = ndi.binary_erosion(m0, iterations=band); outer = ~ndi.binary_dilation(m0, iterations=band)
+    def loc(mask):
+        num = ndi.gaussian_filter(np.where(mask, L, 0.0), sig); den = ndi.gaussian_filter(mask.astype(float), sig); return num / np.maximum(den, 1e-3)
+    lin, lout = loc(inner), loc(outer)
+    cov = np.clip((L - lout) / (lin - lout + np.where(lin - lout >= 0, 1e-3, -1e-3)), 0, 1); w = np.clip(np.abs(lin - lout) / mincontrast, 0, 1)
+    base = ndi.gaussian_filter(m0.astype(float), 0.8); near = ndi.binary_dilation(m0, iterations=band) & ~inner
+    fld = np.where(inner, 1.0, np.where(near, w * cov + (1 - w) * base, 0.0)); return ndi.gaussian_filter(fld, 0.4)
+
+def trace(mask, soft=None, sigma=0.4, cut=0.5):
+    if cut != 0.5 and soft is not None: soft = np.clip(soft + (0.5 - cut), 0, 1)  # a lower cut thickens the contour (the glow around a soft letter hides its true edge)
+    return ST.trace_shape(mask, SC, soft=soft, sigma=sigma)
+
+def color_of(A, mask):
+    lum = A.mean(2); sel = mask & (lum > np.percentile(lum[mask], 55)); return TS.hexc(np.median(A[sel], axis=0))
+
+def glyphs_of(mask0, L, region, chars, band=3, polarity=1, minpx=14, mincontrast=40.0, opening=1, closing=2, sigma=0.4, merge_dx=0.55, cut=0.5):
+    """The glyphs of one line: connected shapes of the mask inside the region (an accent merged into its letter), split at their thinnest column until there are as many as characters, traced from the refined field."""
+    reg = mask0 & region; shapes = ST.letter_shapes(reg.astype(float), region, minpx=minpx, merge_dx=merge_dx)
+    shapes = [m for m in shapes if m.sum() >= minpx]
+    if len(shapes) > len(chars): shapes = sorted(sorted(shapes, key=lambda m: -int(m.sum()))[:len(chars)], key=lambda m: np.nonzero(m.any(0))[0].min())
+    shapes = ST.split_to(shapes, len(chars)); out = []
+    for ch, m in zip(chars, shapes):
+        mc = ndi.binary_opening(ndi.binary_closing(clean(m, 6, 12), iterations=closing), iterations=opening) if opening else clean(m, 6, 12)
+        rf = refine(mc, L, band=band, sig=max(3.0, 2.0 * band), mincontrast=mincontrast, polarity=polarity); mr = rf > cut
+        d, b = trace(mr, soft=rf, sigma=sigma, cut=cut); out.append({"c": ch, "d": d, "b": b})
+    return out
+
+def line_data(k, text, face, ci, glyphs, align="center", fb=None, fixed=False, upper=True, maxw=None):
+    """A line of glyphs with the measures the recomposition needs (the original stays at the traced places)."""
+    chars = [c for c in text if c != " "]; assert len(chars) == len(glyphs), (k, len(chars), len(glyphs))
+    gs = sorted(glyphs, key=lambda g: g["b"][0]); gaps, spaces = [], []
+    sp_after = []  # adjacency i (glyph i to glyph i+1) crosses a word space in the text
+    for ch_i, ch in enumerate(text):
+        if ch == " ": sp_after.append(sum(1 for c in text[:ch_i] if c != " ") - 1)
+    for i in range(1, len(gs)):
+        gap = gs[i]["b"][0] - gs[i - 1]["b"][2]; (spaces if (i - 1) in sp_after else gaps).append(gap)
+    x0 = min(g["b"][0] for g in gs); x1 = max(g["b"][2] for g in gs); capH = float(np.median([g["b"][3] - g["b"][1] for g in gs])); top = float(np.median([g["b"][1] for g in gs]))
+    return {"k": k, "text": text, "face": face, "ci": ci, "align": align, "x0": x0, "x1": x1, "cx": (x0 + x1) / 2, "top": top, "capH": capH, "gap": float(np.median(gaps)) if gaps else 0.0,
+            "space": float(np.median(spaces)) if spaces else capH * 0.35, "glyphs": gs, "fb": fb or {}, "fixed": fixed, "upper": upper, "maxw": maxw or (x1 - x0) * 1.25}
+
+def emit(key, W, H, colors, lines, note=""):
+    out = {"w": W, "h": H, "colors": colors, "lines": lines}
+    p = ROOT / "motion" / "runtime" / ("zs-templates-card-%s-1.js" % key)
+    p.write_text("// 18 October 2026: title card %s (Scripts/CardTrace.py): isolated lettering as a custom font. %s FR : carte titre, lettrage isole en police personnalisee.\n(window.ZSCards = window.ZSCards || {}).%s = %s;\n" % (key, note, key, json.dumps(out, separators=(",", ":"))))
+    print(p, p.stat().st_size // 1024, "KiB")
+    for ln in lines: print(" ", ln["k"], repr(ln["text"]), "glyphs", len(ln["glyphs"]), "x", int(ln["x0"]), int(ln["x1"]), "capH", int(ln["capH"]), "gap", round(ln["gap"], 1), "space", round(ln["space"], 1))

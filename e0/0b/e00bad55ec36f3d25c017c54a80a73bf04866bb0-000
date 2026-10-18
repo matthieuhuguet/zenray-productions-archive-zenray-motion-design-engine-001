@@ -12,8 +12,8 @@
   const svgEl = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); Object.keys(attrs || {}).forEach((k) => e.setAttribute(k, attrs[k])); if (parent) parent.appendChild(e); return e; };
   const abs = (parent, css, text) => { const e = h.css(h.el("div", "zs-abs", parent), css); if (text !== undefined) { if (/[<&]/.test(String(text))) e.innerHTML = text; else e.textContent = text; } return e; };
   const rnd = (seed) => () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
-  const APPEARANCES = ["wipe", "letters", "rise", "ink", "drop", "pop", "typewriter", "zoom", "glitch", "brush", "petals-sweep", "petals-gather", "petals-bloom"];
-  const LAYOUTS = ["bleach", "ichiban", "paget", "pale-raven", "phase", "yawen", "indy", "zhongkui", "rdr", "yotei", "ytitle"];
+  const APPEARANCES = ["wipe", "letters", "rise", "ink", "drop", "pop", "typewriter", "zoom", "glitch", "brush", "petals-sweep", "petals-gather", "petals-bloom", "mask-up"];
+  const LAYOUTS = ["bleach", "ichiban", "paget", "pale-raven", "phase", "yawen", "indy", "zhongkui", "rdr", "yotei", "ytitle", "lol"];
 
   // ---- text pieces; `split` makes one span per character so an appearance can move the letters one by one
   function T(parent, o) {
@@ -387,13 +387,47 @@
     "pale-raven": { l: { l1: "Pale", l2: "Raven's", l3: "Perch" }, bg: "#0c1011", accent: "#f7ecd3", tile: "#0f5560" },
     phase: { l: { text: "ENEMY PHASE" }, bg: "#9a8878", accent: "#f2555a", tile: "#000", seed: 7 },
     yawen: { l: { l1: "VISUAL·DESIGNER", l2: "MARKETING·GAMES·DIGITAL", l3: "Yawen | Marketing Visual Designer (Games / Digital)", l4: "lyw19837059505@gmail.com" }, bg: "#1c2f38", accent: "#ffffff", tile: "#000" },
+    lol: { l: { l1: "SOMBRES COMPLOTS", l2: "CINÉMATIQUE" }, bg: "#0b0a0b", accent: "#fffffb", accent2: "#fdfcf7", tile: "#000" },
     ytitle: { l: { l0: "GHOST", l1: "OF YŌTEI" }, bg: "#6b7875", accent: "#dcdddd", accent2: "#e1b63f", tile: "#000" },
     yotei: { l: { l0: "GHOST", l1: "OF YŌTEI", l2: "COMPLETE EDITION", l3: "Retournez à Ezo", l4: "Découvrez l'expérience définitive de Ghost of Yōtei, enrichie d'un tout\nnouveau mode de jeu et d'une extension de l'histoire.", l5: "Acheter maintenant" }, bg: "#f8f5ee", accent: "#0f100f", tile: "#000" },
     rdr: { l: { l1: "ROCKSTAR GAMES PRESENTS", l2: "RED DEAD", l3: "REDEMPTION", l4: "II" }, bg: "#ca0512", accent: "#ffffff", tile: "#030101" },
     indy: { l: { l1: "INDIANA JONES" }, bg: "#17233a", accent: "#dde1ec", tile: "#000" },
     zhongkui: { l: { l1: "ZHONG", l2: "BLACK MYTH", l3: "KUI" }, bg: "#050405", accent: "#8f3638", tile: "#000", seed: 5 },
   };
-  const SIZE = { indy: [1080, 1080], zhongkui: [1600, 668], rdr: [2000, 871], yotei: [2000, 1125], ytitle: [920, 290] };
+  const SIZE = { indy: [1080, 1080], zhongkui: [1600, 668], rdr: [2000, 871], yotei: [2000, 1125], ytitle: [920, 290], lol: [2000, 1096] };
+
+  // ---- title cards (18 October 2026): lettering isolated as a custom font (window.ZSCards.<key>, Scripts/CardTrace.py). One generic layout for every card: each line is a holder of glyph boxes (`.ch`); a line whose text is the original one keeps its
+  // traced places, an edited line (or the custom mode) is recomposed on its own alignment (left, centre or right as the card does), scaled down to fit, with the measured gaps; a character the font does not have is set in a real face of the card.
+  const CARD_KEYS = ["lol"];
+  function glyphBoxes(parent, list, defCol) {  // list of [glyph, x, y, scale, colour]; a glyph with `fb` is a text fallback
+    list.forEach(([g, x, y, k, col], i) => {
+      if (g.fb) { const c = abs(parent, { left: x + "px", top: y + "px", width: g.w + "px", height: g.h + "px", overflow: "visible" }); c.className += " ch"; c.dataset.i = String(i);
+        const v = svgEl("svg", { width: g.w, height: g.h, viewBox: `0 0 ${g.w} ${g.h}`, style: "position:absolute;left:0;top:0;overflow:visible" }, c), t = svgEl("text", { x: g.w / 2, y: g.h * g.by, "text-anchor": "middle", "font-size": g.h * g.fs, fill: col || defCol }, v);
+        t.style.fontFamily = h.font(g.font); t.style.fontWeight = String(g.weight); t.textContent = g.ch; return; }
+      const [bx0, by0, bx1, by1] = g.b, w = (bx1 - bx0) * k, hh = (by1 - by0) * k, c = abs(parent, { left: x + "px", top: y + "px", width: w + "px", height: hh + "px", overflow: "visible" }); c.className += " ch"; c.dataset.i = String(i);
+      const v = svgEl("svg", { width: w, height: hh, viewBox: `${bx0} ${by0} ${bx1 - bx0} ${by1 - by0}`, style: "position:absolute;left:0;top:0;overflow:visible" }, c); svgEl("path", { d: g.d, fill: col || defCol, "fill-rule": "evenodd" }, v);
+    });
+  }
+  function cardLayout(key) {
+    return (pl, p) => {
+      const Z = window.ZSCards && window.ZSCards[key], D0 = DEFAULTS[key], tw = p.tw, it = [];
+      if (!Z) return it;
+      const cols = [p.accent || Z.colors.main, p.accent2 || Z.colors.second, p.deco || Z.colors.main], tables = {};
+      Z.lines.forEach((ln) => { const t = tables[ln.face] = tables[ln.face] || {}; ln.glyphs.forEach((g) => { if (!t[g.c]) t[g.c] = g; }); });
+      Z.lines.forEach((ln) => {
+        const holder = abs(pl, { left: "0", top: "0", width: Z.w + "px", height: Z.h + "px" }), col = cols[ln.ci] || cols[0], inD = ln.k in D0.l, text = inD ? String(p[ln.k]) : ln.text;
+        if (ln.fixed || (p.design !== "custom" && text === ln.text)) { glyphBoxes(holder, ln.glyphs.map((g) => [g, g.b[0], g.b[1], 1, col]), col); it.push({ n: holder, aux: !!ln.aux }); return; }
+        const tab = tables[ln.face], up = ln.upper ? text.toUpperCase() : text, gap = tw(ln.k + "Gap", ln.gap), space = Math.max(0, tw(ln.k + "Space", ln.space) - 2 * gap), base = ln.top + ln.capH;
+        const row = [...up].map((ch) => { const g = tab[ch]; return { ch, g, w: ch === " " ? space : g ? g.b[2] - g.b[0] : ln.capH * 0.62 }; });
+        const tot1 = row.reduce((s, q, i) => s + q.w + (i ? gap : 0), 0), k = Math.min(tw(ln.k + "K", 1), ln.maxw / Math.max(1, tot1)), total = tot1 * k;
+        let x = ln.align === "left" ? tw(ln.k + "X", ln.x0) : ln.align === "right" ? tw(ln.k + "X", ln.x1) - total : tw(ln.k + "X", ln.cx) - total / 2; const list = [];
+        row.forEach((q) => { if (q.ch !== " ") list.push(q.g ? [q.g, x, base - (base - q.g.b[1]) * k, k, col] : [Object.assign({ fb: true, ch: q.ch, w: q.w * k, h: ln.capH * k }, ln.fb), x, base - ln.capH * k, k, col]); x += (q.w + gap) * k; });
+        glyphBoxes(holder, list, col); it.push({ n: holder, aux: !!ln.aux });
+      });
+      return it;
+    };
+  }
+  CARD_KEYS.forEach((k) => { L[k] = cardLayout(k); });
 
   // ---- the appearances (seek-safe tweens only). Every effect reads its numbers from `o`: distance, blur, scale, rotation, per-letter stagger, direction, ease, glitch amplitude.
   const WIPE = { left: "inset(0 100% 0 0)", right: "inset(0 0 0 100%)", up: "inset(100% 0 0 0)", down: "inset(0 0 100% 0)", center: "inset(0 50% 0 50%)" };
@@ -481,6 +515,8 @@
         fto(tl, n, { opacity: 0, scale: shape ? Math.min(o.scaleFrom, 0.5) : Math.max(o.scaleFrom, 1.1), filter: `blur(${o.blur * 1.6}px)`, rotation: o.rotate / 2, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, filter: "blur(0px)", rotation: 0, duration: d * 1.1, ease: E(shape ? "back.out(1.6)" : "power3.out") }, t);
       } else if (kind === "drop") {
         each({ opacity: 0, y: -o.distance * 3.5, rotation: o.rotate }, { opacity: 1, y: 0, rotation: 0, duration: d * 0.8 }, E("bounce.out"), 1.4);
+      } else if (kind === "mask-up") {  // the curtain rise: each glyph climbs from under its baseline and is revealed from the bottom up (the clip grows upward while the glyph rises)
+        each({ y: o.distance * 1.6, clipPath: "inset(100% 0 0 0)" }, { y: 0, clipPath: "inset(-10% -10% -10% -10%)", duration: d * 1.15 }, E("power4.out"));
       } else if (kind === "pop") {
         each({ opacity: 0, scale: Math.min(o.scaleFrom, 0.9), rotation: o.rotate }, { opacity: 1, scale: 1, rotation: 0, duration: d * 0.6 }, E("back.out(2.4)"));
       } else if (kind === "typewriter") {
@@ -494,7 +530,7 @@
     });
   }
 
-  const BOXES = { bleach: [880, 90, 1920, 1080], ichiban: [30, 20, 960, 480], paget: [90, 190, 700, 1050], "pale-raven": [90, 250, 900, 1010], phase: [90, 300, 1830, 840], yawen: [110, 340, 1800, 1030], indy: [40, 780, 1040, 990], zhongkui: [330, 90, 1230, 580], rdr: [30, 95, 905, 465], yotei: [200, 190 + 60, 880, 190 + 590], ytitle: [20, 10, 900, 282] };
+  const BOXES = { bleach: [880, 90, 1920, 1080], ichiban: [30, 20, 960, 480], paget: [90, 190, 700, 1050], "pale-raven": [90, 250, 900, 1010], phase: [90, 300, 1830, 840], yawen: [110, 340, 1800, 1030], indy: [40, 780, 1040, 990], zhongkui: [330, 90, 1230, 580], rdr: [30, 95, 905, 465], yotei: [200, 190 + 60, 880, 190 + 590], ytitle: [20, 10, 900, 282], lol: [90, 40, 1910, 1060] };
   const TALLBOXES = { zhongkui: [470, 100, 1130, 490], phase: [380, 330, 1540, 700] };
   const EASES = ["auto", "power3.out", "power4.out", "expo.out", "back.out(1.7)", "back.out(3)", "elastic.out(1,0.4)", "bounce.out", "sine.inOut", "power2.inOut", "steps(6)"];
   const parseTweaks = (lines) => { const m = {}; (lines || []).forEach((l) => { const q = String(l).trim().split(/\s+/); if (q.length >= 2 && !isNaN(Number(q[q.length - 1]))) m[q.slice(0, -1).join(" ")] = Number(q[q.length - 1]); }); return m; };
