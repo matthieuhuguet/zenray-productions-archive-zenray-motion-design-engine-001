@@ -252,7 +252,7 @@
       // a letter that the font does not have is set in a heavy condensed face in the same colour; the black plate with its worn edge is drawn around the text (a tab for the small line, a body for the big ones) and the II follows the longest line.
       const G = {}; (window.ZSRdr ? window.ZSRdr.lines : []).forEach((ln) => { if (ln.name === "l2" || ln.name === "l3") ln.letters.forEach((l) => { if (!G[l.c]) G[l.c] = l; }); });
       const I2 = window.ZSRdr ? window.ZSRdr.lines.find((ln) => ln.name === "ii") : null, white2 = p.accent || white, red2 = p.accent2 || (window.ZSRdr ? window.ZSRdr.ii : "#ed0000"), plateCol = p.tile;
-      const hold = abs(pl, { left: "0", top: "0", width: "2000px", height: "871px" }), lay = abs(pl, { left: "0", top: "0", width: "2000px", height: "871px" });
+      const grp = abs(pl, { left: "0", top: "0", width: "2000px", height: "871px" }), hold = abs(grp, { left: "0", top: "0", width: "2000px", height: "871px" }), lay = abs(grp, { left: "0", top: "0", width: "2000px", height: "871px" });  // grp: the whole logo, scaled down as one piece when the text is too long for the frame
       const sv0 = svgEl("svg", { width: 2000, height: 871, viewBox: "0 0 2000 871", style: "position:absolute;left:0;top:0;overflow:visible" }, hold), df0 = svgEl("defs", {}, sv0), rid = "rd" + (traceGradId++);
       const rf = svgEl("filter", { id: rid, filterUnits: "userSpaceOnUse", x: 0, y: 0, width: 2000, height: 871 }, df0); svgEl("feTurbulence", { type: "fractalNoise", baseFrequency: "0.035 0.05", numOctaves: 3, seed: (p.seed || 7) % 97, result: "n" }, rf); svgEl("feDisplacementMap", { in: "SourceGraphic", in2: "n", scale: tw("plateRough", 7) }, rf);
       let gi = 0;
@@ -264,8 +264,11 @@
       const iiW = (I2 ? (I2.letters[1].b[2] - I2.letters[0].b[0]) * iiCap / (I2.letters[0].b[3] - I2.letters[0].b[1]) : iiCap * 0.62), l4 = String(p.l4), R4 = l4.toUpperCase() === "II" ? null : shareRow(tw, ln4, l4, G, AL);
       const ii4 = l4.toUpperCase() === "II" ? iiW : R4.tot1 + 8, plateR = iiX + ii4 + tw("padR", 16), plateL = X0 - tw("padL", 18), plateB = y3 + cap3 + tw("padB", 20), bodyT = y2 - tw("padT", 16), tabT = tw("tabTop", 113), l1w = String(p.l1).length * 0.62 * tw("size1", 34) * tw("sx1", 0.82) + 20;
       const pg = svgEl("g", { filter: `url(#${rid})` }, sv0); svgEl("rect", { x: plateL, y: bodyT, width: plateR - plateL, height: plateB - bodyT, fill: plateCol }, pg); svgEl("rect", { x: plateL, y: tabT, width: Math.max(260, l1w + 40), height: bodyT - tabT + 8, fill: plateCol }, pg);
+      rf.setAttribute("width", String(Math.max(2000, Math.ceil(plateR) + 120)));  // the filter region follows the plate: a long text pushes the plate past 2000 px and the region would cut it
+      const fitK = Math.min(1, (tw("maxRight", 1920) - plateL) / Math.max(1, plateR - plateL));  // a text too long for the frame shrinks the whole logo, from the left of its plate
+      if (fitK < 1) { grp.style.transformOrigin = `${plateL}px ${tabT}px`; grp.style.transform = `scale(${fitK})`; }
       it.push({ n: hold, shape: true, key: "plate" });
-      it.push({ n: T(pl, { text: p.l1, x: X0 + 2, y: tw("y1", 126), size: tw("size1", 34), font: "Fraunces", weight: 700, color: white2, ls: "0.01em", lh: 1, upper: true, sx: tw("sx1", 0.82) }), key: "l1", anchor: "left" });
+      it.push({ n: T(grp, { text: p.l1, x: X0 + 2, y: tw("y1", 126), size: tw("size1", 34), font: "Fraunces", weight: 700, color: white2, ls: "0.01em", lh: 1, upper: true, sx: tw("sx1", 0.82) }), key: "l1", anchor: "left" });
       [[R2, ln2, y2, X0 + 4, white2], [R3, ln3, y3, X0 + 4, white2]].forEach(([R, ln, y, x0, col]) => { const lst = rowEntries(R.row, ln, 1, x0, y + ln.capH, col); glyphBoxes(lay, lst, col, gi); gi += lst.length; });
       if (l4.toUpperCase() === "II" && I2) {I2.letters.forEach((l) => { const [bx0, by0, bx1, by1] = l.b, w = bx1 - bx0, hh = by1 - by0, k = iiCap / hh, c = abs(lay, { left: iiX + (bx0 - I2.letters[0].b[0]) * k + "px", top: y2 + "px", width: w * k + "px", height: iiCap + "px", overflow: "visible" }); c.className += " ch"; c.dataset.i = String(gi++);
         const v = svgEl("svg", { width: w * k, height: iiCap, viewBox: `${bx0} ${by0} ${w} ${hh}`, style: "position:absolute;left:0;top:0;overflow:visible" }, c); svgEl("path", { d: l.d, fill: red2, "fill-rule": "evenodd" }, v); }); }
@@ -475,11 +478,31 @@
     });
     return list;
   }
-  // A longer text first CONDENSES (down to MinCondense, 72 % by default: the heavy faces stay readable), then shrinks uniformly: the composition keeps its footprint and the height of its letters as long as it can.
+  // A line that exceeds its room (see roomFor) first CONDENSES down to the minimum condensing, which is 100 % by default (no squeeze: the letters keep their proportions), then shrinks uniformly towards its baseline.
   const fitOf = (need, minC) => (need >= minC ? { sy: 1, fx: need } : { sy: need / minC, fx: minC });
+  // How wide a line may grow when its text is longer (a title of 6 letters over a title of 5): ROOM_GROWTH times its original width, so the letters keep their size and their proportions, but never beyond what is left of the plane (with a margin)
+  // on the side(s) the line grows to, nor into a neighbour that shares its band (a small text, another line): a centred line grows both ways, a left one to the right, a right one to the left. Only a line that exceeds its room shrinks
+  // (uniformly, never squeezed: the condensing is off at 100 %).
+  const ROOM_GROWTH = 2.2, ROOM_MARGIN = 0.04, ROOM_GAP = 0.02, CONDENSE_DEFAULT = 100;
+  function cardBoxes(Z) {  // the box of every line of a card: glyph lines from their glyphs, live texts from an estimate of their width (0.58 em per character plus the letter spacing)
+    return Z.lines.map((ln) => {
+      if (ln.type === "text") { const w = String(ln.text).length * ln.size * (0.58 + (ln.ls || 0)), top = ln.y - (ln.dy || 0) * ln.size, x0 = ln.align === "right" ? ln.x - w : ln.align === "center" ? ln.x - w / 2 : ln.x; return { ln, x0, x1: x0 + w, y0: top, y1: top + ln.size * 1.15 }; }
+      const bs = ln.glyphs.map((g) => g.b); return { ln, x0: Math.min.apply(null, bs.map((q) => q[0])), x1: Math.max.apply(null, bs.map((q) => q[2])), y0: Math.min.apply(null, bs.map((q) => q[1])), y1: Math.max.apply(null, bs.map((q) => q[3])) };
+    });
+  }
+  // own = the original width of the line (or of the row), band = its vertical extent, [x0, x1] its original ink, align = where it is anchored, skip = the lines that belong to it
+  function roomFor(Z, boxes, own, align, x0, x1, cx, y0, y1, skip) {
+    if (!own || own >= 9000) return own || 1e9;
+    const W = Z.w, m = ROOM_MARGIN * W, gap = ROOM_GAP * W; let Lm = m, Rm = W - m;
+    boxes.forEach((b) => { if (skip(b.ln) || b.y1 <= y0 + 1 || b.y0 >= y1 - 1) return; if (b.x1 <= x0 + 2) Lm = Math.max(Lm, b.x1 + gap); else if (b.x0 >= x1 - 2) Rm = Math.min(Rm, b.x0 - gap); });
+    const side = align === "left" ? Rm - x0 : align === "right" ? x1 - Lm : 2 * Math.min(cx - Lm, Rm - cx);
+    return Math.round(Math.max(own, Math.min(side, ROOM_GROWTH * own)));
+  }
+  const lineRoom = (Z, ln, boxes) => roomFor(Z, boxes, ln.maxw, ln.align, ln.x0, ln.x1, ln.cx, ln.top, ln.top + ln.capH, (q) => q === ln || (ln.group && q.group === ln.group));
+  const groupRoom = (Z, g, boxes) => { const x0 = Math.min.apply(null, g.map((q) => q.x0)), x1 = Math.max.apply(null, g.map((q) => q.x1)); return roomFor(Z, boxes, g[0].gmax, "center", x0, x1, (x0 + x1) / 2, Math.min.apply(null, g.map((q) => q.top)), Math.max.apply(null, g.map((q) => q.top + q.capH)), (q) => q.group === g[0].group); };
   // one edited line set by the shared engine, centred on o.cx (`<k>X` moves it) with its top at o.top (`<k>Y`): measured, condensed then shrunk to fit o.maxw (`<k>MaxW`), placed in a holder of glyph boxes. Returns the entries and the placement.
   function setLine(parent, tw, ln, text, tab, A, o) {  // o = { cx, top, maxw, col, W, H, i0 }
-    const R = shareRow(tw, ln, text, tab, A), ku = tw(ln.k + "K", 1), need = Math.min(1, tw(ln.k + "MaxW", o.maxw) / Math.max(1, R.tot1 * ku)), ft = fitOf(need, tw(ln.k + "_Condense", 72) / 100), kk = ku * ft.sy, total = R.tot1 * kk, cx = tw(ln.k + "X", o.cx), x0 = cx - total / 2;
+    const R = shareRow(tw, ln, text, tab, A), ku = tw(ln.k + "K", 1), need = Math.min(1, tw(ln.k + "MaxW", o.maxw) / Math.max(1, R.tot1 * ku)), ft = fitOf(need, tw(ln.k + "_Condense", CONDENSE_DEFAULT) / 100), kk = ku * ft.sy, total = R.tot1 * kk, cx = tw(ln.k + "X", o.cx), x0 = cx - total / 2;
     const cond = abs(parent, { left: "0", top: "0", width: o.W + "px", height: o.H + "px", transformOrigin: `${cx}px 0px` }); if (ft.fx !== 1) cond.style.transform = `scaleX(${ft.fx})`;  // the condensing happens in this inner box
     const base = tw(ln.k + "Y", o.top) + ln.capH, list = rowEntries(R.row, ln, kk, x0, base, o.col); glyphBoxes(cond, list, o.col, o.i0 || 0);
     return { list, kk, fx: ft.fx, cx, total, x0, base, cond };
@@ -516,7 +539,7 @@
     return (pl, p) => {
       const Z = window.ZSCards && window.ZSCards[key], D0 = DEFAULTS[key], tw = p.tw, it = [];
       if (!Z) return it;
-      const cols = [p.accent || Z.colors.main, p.accent2 || Z.colors.second, p.deco || Z.colors.main], tables = {};
+      const cols = [p.accent || Z.colors.main, p.accent2 || Z.colors.second, p.deco || Z.colors.main], tables = {}, boxes = cardBoxes(Z);
       Z.lines.forEach((ln) => { const t = tables[ln.face] = tables[ln.face] || {}; ln.glyphs.forEach((g) => { if (!t[g.c]) t[g.c] = g; }); });
       const alphaOf = (ln) => { const id = (Z.alpha || {})[ln.face]; return (id && window.ZSAlpha && window.ZSAlpha[id]) || null; };
       const rowOf = (ln, text) => shareRow(tw, ln, text, tables[ln.face], alphaOf(ln));
@@ -525,7 +548,7 @@
       Z.lines.forEach((ln) => { if (ln.group) (groups[ln.group] = groups[ln.group] || []).push(ln); });
       Object.keys(groups).forEach((gk) => {
         const g = groups[gk]; if (p.design !== "custom" && g.every((ln) => String(p[ln.k]) === ln.text)) return;
-        const rows = g.map((ln) => rowOf(ln, String(p[ln.k]))), total1 = rows.reduce((s2, r, i) => s2 + r.tot1 + (i ? g[i].gb + 8 : 0), 0), ku = tw(gk + "K", 1), need = Math.min(1, tw(gk + "MaxW", g[0].gmax || 1e9) / Math.max(1, total1 * ku)), ft = fitOf(need, tw(gk + "_Condense", 72) / 100), k = ku * ft.sy;
+        const rows = g.map((ln) => rowOf(ln, String(p[ln.k]))), total1 = rows.reduce((s2, r, i) => s2 + r.tot1 + (i ? g[i].gb + 8 : 0), 0), ku = tw(gk + "K", 1), need = Math.min(1, tw(gk + "MaxW", groupRoom(Z, g, boxes)) / Math.max(1, total1 * ku)), ft = fitOf(need, tw(gk + "_Condense", CONDENSE_DEFAULT) / 100), k = ku * ft.sy;
         const gcx = tw(gk + "X", (Math.min.apply(null, g.map((ln) => ln.x0)) + Math.max.apply(null, g.map((ln) => ln.x1))) / 2); let x = gcx - total1 * k / 2;
         g.forEach((ln, i) => { x += (i ? g[i].gb + 8 : 0) * k; flow[ln.k] = { x, k, fx: ft.fx, ax: gcx }; x += rows[i].tot1 * k; });
       });
@@ -535,7 +558,7 @@
           const size = tw(ln.k + "Size", ln.size); it.push({ n: T(pl, { text, x: tw(ln.k + "X", ln.x), y: tw(ln.k + "Y", ln.y) - ln.dy * size, size, font: ln.font, weight: ln.weight, color: col, ls: (tw(ln.k + "Ls", ln.ls)) + "em", lh: 1, align: ln.align }), aux: !!ln.aux, key: ln.k, name: ln.name, anchor: ln.align }); return; }
         if (ln.fixed || (!flow[ln.k] && p.design !== "custom" && text === ln.text)) { glyphBoxes(holder, ln.glyphs.map((g) => [g, g.b[0], g.b[1], 1, col]), col); it.push({ n: holder, aux: !!ln.aux, key: ln.k, name: ln.name, anchor: ln.align }); return; }
         const { row, tot1 } = rowOf(ln, text), base = ln.top + ln.capH, f = flow[ln.k]; let kk, fx;  // base = the padded baseline of the traced boxes
-        if (f) { kk = f.k; fx = f.fx; } else { const ku = tw(ln.k + "K", 1), need = Math.min(1, tw(ln.k + "MaxW", ln.maxw) / Math.max(1, tot1 * ku)), ft = fitOf(need, tw(ln.k + "_Condense", 72) / 100); kk = ku * ft.sy; fx = ft.fx; }
+        if (f) { kk = f.k; fx = f.fx; } else { const ku = tw(ln.k + "K", 1), need = Math.min(1, tw(ln.k + "MaxW", lineRoom(Z, ln, boxes)) / Math.max(1, tot1 * ku)), ft = fitOf(need, tw(ln.k + "_Condense", CONDENSE_DEFAULT) / 100); kk = ku * ft.sy; fx = ft.fx; }
         const total = tot1 * kk, x0 = f ? f.x : ln.align === "left" ? tw(ln.k + "X", ln.x0 + 4) : ln.align === "right" ? tw(ln.k + "X", ln.x1 - 4) - total : tw(ln.k + "X", ln.cx) - total / 2, ax = f ? f.ax : ln.align === "left" ? x0 : ln.align === "right" ? x0 + total : x0 + total / 2; let list;
         const cond = abs(holder, { left: "0", top: "0", width: Z.w + "px", height: Z.h + "px", transformOrigin: `${ax}px 0px` }); if (fx !== 1) cond.style.transform = `scaleX(${fx})`;  // the condensing happens in this inner box: nothing else animates its transform
         list = rowEntries(row, ln, kk, x0, base, col);
@@ -576,7 +599,7 @@
   // the sliders of a layout, written in ONE place (what the code reads is what the panel offers): texts, then the design handles of every holder, then the sliders of the layout itself
   const LAYOUT_TWEAKS = {
     rdr: [["Plaque", "plateRough", "Rugosité du bord de la plaque", 7, 0, 20, 0.5], ["Texte modifié", "gap", "Espace entre lettres (px)", -5, -30, 40, 0.5], ["Texte modifié", "cap2", "Hauteur de la ligne 1 (px)", 151, 60, 300, 1], ["Texte modifié", "cap3", "Hauteur de la ligne 2 (px)", 114, 40, 260, 1],
-      ["Texte modifié", "space", "Largeur d'un espace (em)", 0.32, 0.1, 0.8, 0.01], ["Texte modifié", "x", "Position gauche du texte (px)", 72, 0, 400, 1], ["Plaque", "padL", "Marge gauche de la plaque", 18, 0, 80, 1], ["Plaque", "padR", "Marge droite de la plaque", 16, 0, 80, 1],
+      ["Texte modifié", "space", "Largeur d'un espace (em)", 0.32, 0.1, 0.8, 0.01], ["Texte modifié", "x", "Position gauche du texte (px)", 72, 0, 400, 1], ["Texte modifié", "maxRight", "Bord droit maximal du logo (px) : au-delà, le logo rétrécit", 1920, 600, 2000, 10], ["Plaque", "padL", "Marge gauche de la plaque", 18, 0, 80, 1], ["Plaque", "padR", "Marge droite de la plaque", 16, 0, 80, 1],
       ["Plaque", "padT", "Marge haute de la plaque", 16, 0, 80, 1], ["Plaque", "padB", "Marge basse de la plaque", 20, 0, 80, 1]],
     yotei: [["Décor", "bandBottom", "Hauteur de la bande dorée (px)", 78, 0, 200, 1], ["Décor", "bandSoft", "Douceur du bord de la bande (px)", 1.2, 0, 10, 0.1], ["Décor", "dotGrid", "Pas de la trame de cercles (px)", 21, 10, 40, 1], ["Décor", "dotR", "Rayon des cercles (px)", 6, 2, 12, 0.5], ["Décor", "dotOpacity", "Opacité de la trame", 0.6, 0, 1, 0.01],
       ["Feuilles", "leafOn", "Feuilles (0 = cachées, 1 = visibles)", 1, 0, 1, 1], ["Feuilles", "leafScale", "Taille des feuilles", 1, 0.3, 2, 0.05], ["Feuilles", "leafOpacity", "Opacité des feuilles", 1, 0, 1, 0.01], ["Feuilles", "veinOpacity", "Opacité des nervures", 0.3, 0, 1, 0.01], ["Feuilles", "drift", "Dérive des feuilles (px)", 30, 0, 120, 1],
@@ -606,15 +629,15 @@
       const g = "Ligne modifiée · " + name, add = (suffix, label, def, lo, hi, st) => out.push({ id: k + suffix, type: "number", label, group: g, default: def, min: lo, max: hi, step: st, closed: true, targets: [{ key: "tweaks", tweak: k + suffix }] });
       if (!noXY) { add("X", "Centre de la ligne (px)", d.cx, 0, W0, 1); add("Y", "Haut de la ligne (px)", d.top, 0, (SIZE[layout] || [0, 1300])[1], 1); }
       add("K", "Taille de la ligne (échelle, dans la limite de la largeur maximale)", 1, 0.3, 2.5, 0.01); add("Gap", "Espace entre les lettres (px)", d.gap, -60, 200, 1); add("Space", "Espace entre les mots (px)", d.space, 0, 320, 1); if (d.maxw) add("MaxW", "Largeur maximale avant de condenser (px)", Math.min(d.maxw, W0), 10, W0, 5);  // a line with no limit (9999) shows the width of the plane
-      add("_Condense", "Condensation minimale (%)", 72, 40, 100, 1);
+      add("_Condense", "Condensation minimale (%) : 100 = lettres jamais écrasées, la ligne rétrécit en gardant ses proportions", CONDENSE_DEFAULT, 40, 100, 1);
       if (alpha !== false) { add("_UseTraced", "Lettres décalquées (1) ou alphabet seul (0)", 1, 0, 1, 1); add("_AddWeight", "Graisse des lettres ajoutées (px)", 0, -12, 24, 0.5); add(ROUGH[0], ROUGH[1], measured(d.alpha, d.fb), ROUGH[2], ROUGH[3], ROUGH[4]); }
     };
     (ENGINE[layout] || []).forEach((ln) => eng(ln.name, ln.k, ln, true));
-    if (cd) { const gdone = {}; cd.lines.forEach((ln) => { if (ln.type === "text" || ln.fixed) return;  // a live text has its own geometry, a fixed line (a logo, a symbol) is never recomposed
-      if (ln.group && !gdone[ln.group]) { gdone[ln.group] = 1; const g = cd.lines.filter((q) => q.group === ln.group), d0 = { cx: (Math.min.apply(null, g.map((q) => q.x0)) + Math.max.apply(null, g.map((q) => q.x1))) / 2, top: 0, gap: 0, space: 0, maxw: ln.gmax || 0 };
+    if (cd) { const gdone = {}, boxes = cardBoxes(cd); cd.lines.forEach((ln) => { if (ln.type === "text" || ln.fixed) return;  // a live text has its own geometry, a fixed line (a logo, a symbol) is never recomposed
+      if (ln.group && !gdone[ln.group]) { gdone[ln.group] = 1; const g = cd.lines.filter((q) => q.group === ln.group), d0 = { cx: (Math.min.apply(null, g.map((q) => q.x0)) + Math.max.apply(null, g.map((q) => q.x1))) / 2, top: 0, gap: 0, space: 0, maxw: ln.gmax ? groupRoom(cd, g, boxes) : 0 };
         const gg = "Lignes en rangée · " + g.map((q) => q.name || q.k).join(" + "), ad = (suffix, label, def, lo, hi, st) => out.push({ id: ln.group + suffix, type: "number", label, group: gg, default: def, min: lo, max: hi, step: st, closed: true, targets: [{ key: "tweaks", tweak: ln.group + suffix }] });
-        ad("X", "Centre de la rangée (px)", Math.round(d0.cx), 0, W0, 1); ad("K", "Taille de la rangée (échelle, dans la limite de la largeur maximale)", 1, 0.3, 2.5, 0.01); if (d0.maxw) ad("MaxW", "Largeur maximale avant de condenser (px)", Math.min(d0.maxw, W0), 10, W0, 5); ad("_Condense", "Condensation minimale (%)", 72, 40, 100, 1); }
-      const al = (cd.alpha || {})[ln.face], base = { cx: ln.align === "left" ? ln.x0 + 4 : ln.align === "right" ? ln.x1 - 4 : ln.cx, top: 0, gap: ln.gap, space: ln.space, maxw: ln.maxw, alpha: (cd.alpha || {})[ln.face], fb: ln.fb };
+        ad("X", "Centre de la rangée (px)", Math.round(d0.cx), 0, W0, 1); ad("K", "Taille de la rangée (échelle, dans la limite de la largeur maximale)", 1, 0.3, 2.5, 0.01); if (d0.maxw) ad("MaxW", "Largeur maximale avant de condenser (px)", Math.min(d0.maxw, W0), 10, W0, 5); ad("_Condense", "Condensation minimale (%) : 100 = lettres jamais écrasées, la ligne rétrécit en gardant ses proportions", CONDENSE_DEFAULT, 40, 100, 1); }
+      const al = (cd.alpha || {})[ln.face], base = { cx: ln.align === "left" ? ln.x0 + 4 : ln.align === "right" ? ln.x1 - 4 : ln.cx, top: 0, gap: ln.gap, space: ln.space, maxw: lineRoom(cd, ln, boxes), alpha: (cd.alpha || {})[ln.face], fb: ln.fb };
       if (ln.group) { const g = "Ligne modifiée · " + (ln.name || ln.k), add = (suffix, label, def, lo, hi, st) => out.push({ id: ln.k + suffix, type: "number", label, group: g, default: def, min: lo, max: hi, step: st, closed: true, targets: [{ key: "tweaks", tweak: ln.k + suffix }] });
         add("Gap", "Espace entre les lettres (px)", ln.gap, -60, 200, 1); add("Space", "Espace entre les mots (px)", ln.space, 0, 320, 1); if (al) { add("_UseTraced", "Lettres décalquées (1) ou alphabet seul (0)", 1, 0, 1, 1); add("_AddWeight", "Graisse des lettres ajoutées (px)", 0, -12, 24, 0.5); add(ROUGH[0], ROUGH[1], measured(al, ln.fb), ROUGH[2], ROUGH[3], ROUGH[4]); } }
       else eng(ln.name || ln.k, ln.k, base, !!al, true); }); }
