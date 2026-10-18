@@ -39,10 +39,13 @@ CFG = {
     "ghost-of-yotei-ppm": [("headline", (0.1, 0.5, 0.31, 0.56), ("dark", 90)), ("body", (0.1, 0.57, 0.45, 0.67), ("dark", 110)), ("logo", (0.1, 0.3, 0.37, 0.52), ("dark", 90)), ("button", (0.11, 0.62, 0.24, 0.77), ("chan", [190, 255, 0, 100, 0, 60]))],
     "ghost-of-yotei-title-apparition-01-ppm": [("white letters", (0.04, 0.25, 0.96, 0.6), ("chan", [200, 255, 200, 255, 206, 255])), ("gold leaf", (0.4, 0.3, 0.6, 0.5), ("chan", [190, 255, 140, 230, 0, 120])), ("OF YOTEI", (0.34, 0.66, 0.66, 0.75), ("chan", [185, 255, 190, 255, 175, 255]))],
     "league-of-legends-cinematic-01-ppm": [("title", (0.08, 0.68, 0.96, 0.95), ("light", 215)), ("label", (0.74, 0.04, 0.96, 0.11), ("light", 160)), ("logo", (0.04, 0.04, 0.23, 0.12), ("light", 160))],
+    "inoxtag-collection-01-ppm": [("big red", (0.2, 0.31, 0.81, 0.7), ("chan", [180, 255, 0, 110, 0, 110])), ("date and time", (0.4, 0.26, 0.64, 0.31), ("chan", [160, 255, 0, 120, 0, 120])), ("coordinates", (0.56, 0.69, 0.82, 0.75), ("chan", [160, 255, 0, 120, 0, 120])), ("kanji", (0.2, 0.69, 0.28, 0.77), ("chan", [180, 255, 0, 110, 0, 110]))],
+    "inoxtag-collection-02-ppm": [("numerals", (0.38, 0.38, 0.585, 0.7), ("light", 235)), ("small", (0.52, 0.35, 0.66, 0.5), ("light", 190))],
+    "inoxtag-collection-03-ppm": [("CUBA", (0.34, 0.43, 0.66, 0.62), ("light", 225)), ("captions", (0.43, 0.37, 0.57, 0.43), ("light", 200))],
     "bmw-zhong-kui-ppm": [("red title", (0.29, 0.33, 0.71, 0.74), ("red", 45, 110)), ("subtitle", (0.3, 0.515, 0.7, 0.56), ("red", 18, 55)), ("calligraphy", (0.18, 0.12, 0.78, 0.9), ("grey", 20, 90))],
 }
 REF_STILL = {"ichiban-japan-ppm": "still-ichiban-japan", "paget-character-concept-ppm": "still-paget-character-concept", "bleach-tybw-ppm": "still-bleach-tybw", "yawen-visual-designer-ppm": "still-yawen-visual-designer",
-             "paget-indiana-jones-ppm": "still-paget-indiana-jones", "fe-pale-ravens-perch-ppm": "still-fe-pale-ravens-perch", "fe-phases-ppm": "still-fe-player-phase", "bmw-zhong-kui-ppm": "still-zhong-kui", "rdr2-ppm": "still-rdr2", "ghost-of-yotei-ppm": "still-yotei", "ghost-of-yotei-title-apparition-01-ppm": "still-ytitle", "league-of-legends-cinematic-01-ppm": "still-lol"}
+             "paget-indiana-jones-ppm": "still-paget-indiana-jones", "fe-pale-ravens-perch-ppm": "still-fe-pale-ravens-perch", "fe-phases-ppm": "still-fe-player-phase", "bmw-zhong-kui-ppm": "still-zhong-kui", "rdr2-ppm": "still-rdr2", "ghost-of-yotei-ppm": "still-yotei", "ghost-of-yotei-title-apparition-01-ppm": "still-ytitle", "league-of-legends-cinematic-01-ppm": "still-lol", "inoxtag-collection-01-ppm": "still-inox1", "inoxtag-collection-02-ppm": "still-inox2", "inoxtag-collection-03-ppm": "still-inox3"}
 
 
 def mask(img: np.ndarray, region, pred) -> np.ndarray:

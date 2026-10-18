@@ -1,0 +1,33 @@
+"""Register a title card in the template and the projects (18 October 2026): patches the layout list, the defaults, the plane size and the framing box of zs-templates-stills-1.js, the entry and the scene length of motion/reproductions/stills.py,
+the mask configuration of MaskIoU.py, and writes the reference still. Usage: AddCard.py '<json>' with {key, pid, title, still, native, w, h, texts: {l1: ..}, bg, accent, accent2, appearance, extra, scene, box: [x0,y0,x1,y1], masks: [[name, [fx0,fy0,fx1,fy1], pred]]}.
+FR : enregistre une carte titre dans le gabarit et les projets."""
+import json, re, sys
+from pathlib import Path
+from PIL import Image
+ROOT = Path(__file__).resolve().parents[1]; a = json.loads(sys.argv[1]); key = a["key"]
+p = ROOT / "motion" / "runtime" / "zs-templates-stills-1.js"; s = p.read_text()
+if '"%s"' % key not in s.split("const LAYOUTS")[1].split("]")[0]:
+    s = re.sub(r'(const LAYOUTS = \[[^\]]*?)\];', lambda m: m.group(1) + ', "%s"];' % key, s, count=1)
+    s = re.sub(r'(const CARD_KEYS = \[[^\]]*?)\];', lambda m: m.group(1) + ', "%s"];' % key, s, count=1)
+    d = "    %s: { l: %s, bg: %s, accent: %s, accent2: %s, tile: \"#000\" },\n" % (key, json.dumps(a["texts"], ensure_ascii=False), json.dumps(a["bg"]), json.dumps(a["accent"]), json.dumps(a["accent2"]))
+    s = s.replace("    lol: { l: {", d + "    lol: { l: {", 1)
+    s = re.sub(r'(const SIZE = \{[^\n]*?) \};', lambda m: m.group(1) + ', %s: [%d, %d] };' % (key, a["w"], a["h"]), s, count=1)
+    s = re.sub(r'(const BOXES = \{[^\n]*?) \};', lambda m: m.group(1) + ', %s: [%s] };' % (key, ", ".join(map(str, a["box"]))), s, count=1)
+p.write_text(s)
+q = ROOT / "motion" / "reproductions" / "stills.py"; t = q.read_text()
+if '"%s": (' % a["pid"] not in t:
+    t = t.replace('    "yawen-visual-designer":', '    "%s": (%s, "%s", "%s", "16x9", %s, %s),\n    "yawen-visual-designer":' % (a["pid"], json.dumps(a["title"], ensure_ascii=False), a["still"], key, json.dumps([a["appearance"]]), json.dumps(a.get("extra", {}))), 1)
+    t = t.replace('if layout in ("lol", "inox1"):', 'if layout in ("lol", "inox1", "%s"):' % key).replace('if layout in ("lol",):', 'if layout in ("lol", "%s"):' % key, 1) if False else t
+    t = re.sub(r'if layout in \(([^)]*)\):', lambda m: m.group(0) if '"%s"' % key in m.group(1) else 'if layout in (%s, "%s"):' % (m.group(1).rstrip(", "), key), t)
+    t = re.sub(r'(SCENE_BY_LAYOUT = \{[^}]*)\}', lambda m: m.group(1) + ', "%s": %s}' % (key, a.get("scene", 5.0)), t, count=1)
+    t = t.replace('"petals-bloom", "mask-up", "slam"]', '"petals-bloom", "mask-up", "slam", "mask-down", "dissolve", "track"]')
+q.write_text(t)
+m = ROOT / "Scripts" / "MaskIoU.py"; u = m.read_text()
+if '"%s-ppm"' % a["pid"] not in u:
+    cfg = '    "%s-ppm": [%s],\n' % (a["pid"], ", ".join('(%s, %s, %s)' % (json.dumps(n), tuple(r), tuple(pr) if isinstance(pr, list) and pr and isinstance(pr[0], str) else tuple(pr)) for n, r, pr in a["masks"]))
+    cfg = cfg.replace("'", '"')
+    u = u.replace('    "bmw-zhong-kui-ppm":', cfg + '    "bmw-zhong-kui-ppm":', 1)
+    u = re.sub(r'(REF_STILL = \{.*?)\}\n', lambda mm: mm.group(1) + ', "%s-ppm": "%s"}\n' % (a["pid"], a["still"]), u, count=1, flags=re.S)
+m.write_text(u)
+o = Path("~/.claude/tmp/tmp-zenray-motion-design-refcache/_stills").expanduser(); im = Image.open(o / ("native-%s.png" % a["native"])); im.resize((1920, round(im.height * 1920 / im.width)), Image.LANCZOS).save(o / (a["still"] + ".png"))
+print("registered", key)

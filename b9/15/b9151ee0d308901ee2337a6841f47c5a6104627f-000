@@ -146,6 +146,21 @@
       "id": "ghost-of-yotei-title-apparition-01-ppm",
       "group": "Visuels fixes · trois apparitions",
       "reference": "still-ytitle"
+    },
+    {
+      "id": "league-of-legends-cinematic-01-ppm",
+      "group": "Visuels fixes · une apparition",
+      "reference": "still-lol"
+    },
+    {
+      "id": "inoxtag-collection-01-ppm",
+      "group": "Visuels fixes · une apparition",
+      "reference": "still-inox1"
+    },
+    {
+      "id": "inoxtag-collection-02-ppm",
+      "group": "Visuels fixes · une apparition",
+      "reference": "still-inox2"
     }
   ],
   "formats": [

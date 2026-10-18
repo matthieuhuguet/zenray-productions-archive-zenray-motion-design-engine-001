@@ -9,7 +9,7 @@ import ppm
 from ppm import T
 
 SCENE = 4.2
-SCENE_BY_LAYOUT = {"zhongkui": 7.5, "yotei": 6.0, "ytitle": 6.0, "lol": 5.0}  # the brush writes the whole title: its scenes are longer
+SCENE_BY_LAYOUT = {"zhongkui": 7.5, "yotei": 6.0, "ytitle": 6.0, "lol": 5.0, "inox1": 5.0, "inox2": 5.0, "inox3": 5.0}  # the brush writes the whole title: its scenes are longer
 
 
 def template_defaults() -> dict:
@@ -30,6 +30,9 @@ STILLS = {
     "ghost-of-yotei": ("Ghost of Yotei, Complete Edition", "still-yotei", "yotei", "16x9", ["letters", "rise", "wipe"], {}),
     "ghost-of-yotei-title-apparition-01": ("Ghost of Yōtei, title apparition 01", "still-ytitle", "ytitle", "16x9", ["petals-sweep", "petals-gather", "petals-bloom"], {}),
     "league-of-legends-cinematic-01": ("League of Legends, cinematic 01", "still-lol", "lol", "16x9", ["mask-up"], {"distance": 90, "charStagger": 0.045, "dur": 0.9, "stagger": 0.35}),
+    "inoxtag-collection-01": ("Inoxtag, collection 01", "still-inox1", "inox1", "16x9", ["slam"], {"charStagger": 0.05, "stagger": 0.45, "dur": 0.8, "blur": 6}),
+    "inoxtag-collection-02": ("Inoxtag, collection 02", "still-inox2", "inox2", "16x9", ["mask-down"], {"distance": 90, "charStagger": 0.07, "dur": 0.9, "stagger": 0.3}),
+    "inoxtag-collection-03": ("Inoxtag, collection 03", "still-inox3", "inox3", "16x9", ["dissolve"], {"dur": 0.8}),
     "yawen-visual-designer": ("Yawen, Visual Designer marketing 01", "still-yawen-visual-designer", "yawen", "16x9", ["letters", "glitch", "rise"], {"tweaks": ["size1 144", "sx1 0.86", "ls1 0.03", "ax 372", "bx 884", "y1 359", "y2 529", "size2 46", "ls2 0.19", "sx2 0.95"]}),
     "bmw-zhong-kui": ("Black Myth: Wukong, Zhong Kui", "still-zhong-kui", "zhongkui", "16x9", ["brush", "ink", "zoom"], {}),
     "paget-indiana-jones": ("David Paget, Indiana Jones", "still-paget-indiana-jones", "indy", "1x1", ["letters", "zoom", "typewriter"], {}),
@@ -67,10 +70,10 @@ def controls(n: int, apps: "list | None" = None, layout: str = "") -> list:
         c += [{"id": "accent2", "label": "Couleur de la feuille", "type": "color", "group": "Couleurs", "targets": allt("accent2")},
               {"id": "deco", "label": "Couleur des pétales", "type": "color", "group": "Couleurs", "targets": allt("deco")},
               num("petals", "Nombre de pétales", 0, 500, 5), num("petalSize", "Taille des pétales (px)", 2, 30, 0.5), num("windAngle", "Direction du vent (°, 0 = vers la droite)", -180, 180, 1), num("windReach", "Portée du vent (px)", 50, 1500, 10)]
-    if layout in ("lol",):  # the cards: the second colour as a real control
+    if layout in ("lol", "inox1", "inox2", "inox3"):  # the cards: the second colour as a real control
         c.append({"id": "accent2", "label": "Couleur du texte secondaire", "type": "color", "group": "Couleurs", "targets": allt("accent2")})
     for i, a in enumerate(apps or []):
-        c.append({"id": f"appearance{i + 1}", "label": f"Apparition de la scène {i + 1}", "type": "select", "group": "Apparitions", "options": ["wipe", "letters", "rise", "ink", "drop", "pop", "typewriter", "zoom", "glitch", "brush", "petals-sweep", "petals-gather", "petals-bloom", "mask-up"], "targets": [T(ids[i], "appearance")]})
+        c.append({"id": f"appearance{i + 1}", "label": f"Apparition de la scène {i + 1}", "type": "select", "group": "Apparitions", "options": ["wipe", "letters", "rise", "ink", "drop", "pop", "typewriter", "zoom", "glitch", "brush", "petals-sweep", "petals-gather", "petals-bloom", "mask-up", "slam", "mask-down", "dissolve", "track"], "targets": [T(ids[i], "appearance")]})
     return c
 
 
@@ -79,7 +82,7 @@ def build_one(pid: str, title: str, slug: str, layout: str, fmt: str, apps: list
     base = {"layout": layout, "design": "original", "lines": list(D["l"].values()), "accent": D["accent"], "bg": D["bg"], "tile": D["tile"]}
     if layout == "zhongkui":
         base.update({"accent2": D["accent"], "deco": "#292325"})
-    if layout in ("lol",):
+    if layout in ("lol", "inox1", "inox2", "inox3"):
         base.update({"accent2": D["accent2"]})
     if layout == "ytitle":
         base.update({"accent2": D["accent2"], "deco": "#ffffff"})

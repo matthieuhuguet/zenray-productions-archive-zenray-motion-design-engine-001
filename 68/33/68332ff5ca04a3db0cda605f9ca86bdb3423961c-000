@@ -41,9 +41,9 @@ def trace(mask, soft=None, sigma=0.4, cut=0.5):
     return ST.trace_shape(mask, SC, soft=soft, sigma=sigma)
 
 def color_of(A, mask):
-    lum = A.mean(2); sel = mask & (lum > np.percentile(lum[mask], 55)); return TS.hexc(np.median(A[sel], axis=0))
+    lum = A.mean(2); sel = mask & (lum >= np.percentile(lum[mask], 55)); return TS.hexc(np.median(A[sel], axis=0))
 
-def glyphs_of(mask0, L, region, chars, band=3, polarity=1, minpx=14, mincontrast=40.0, opening=1, closing=2, sigma=0.4, merge_dx=0.55, cut=0.5):
+def glyphs_of(mask0, L, region, chars, band=3, polarity=1, minpx=14, mincontrast=40.0, opening=1, closing=2, sigma=0.4, merge_dx=0.55, cut=0.5, plain=None):
     """The glyphs of one line: connected shapes of the mask inside the region (an accent merged into its letter), split at their thinnest column until there are as many as characters, traced from the refined field."""
     reg = mask0 & region; shapes = ST.letter_shapes(reg.astype(float), region, minpx=minpx, merge_dx=merge_dx)
     shapes = [m for m in shapes if m.sum() >= minpx]
@@ -51,11 +51,11 @@ def glyphs_of(mask0, L, region, chars, band=3, polarity=1, minpx=14, mincontrast
     shapes = ST.split_to(shapes, len(chars)); out = []
     for ch, m in zip(chars, shapes):
         mc = ndi.binary_opening(ndi.binary_closing(clean(m, 6, 12), iterations=closing), iterations=opening) if opening else clean(m, 6, 12)
-        rf = refine(mc, L, band=band, sig=max(3.0, 2.0 * band), mincontrast=mincontrast, polarity=polarity); mr = rf > cut
+        rf = refine(mc, L, band=band, sig=max(3.0, 2.0 * band), mincontrast=mincontrast, polarity=polarity) if plain is None else np.clip((L - plain[0]) / float(plain[1] - plain[0]), 0, 1) * ndi.binary_dilation(mc, iterations=4); mr = rf > cut  # plain=(lo, hi): a fixed-level field on the given channel, for clean geometric letters on a noisy background
         d, b = trace(mr, soft=rf, sigma=sigma, cut=cut); out.append({"c": ch, "d": d, "b": b})
     return out
 
-def line_data(k, text, face, ci, glyphs, align="center", fb=None, fixed=False, upper=True, maxw=None):
+def line_data(k, text, face, ci, glyphs, align="center", fb=None, fixed=False, upper=True, maxw=None, group=None, gb=0.0, gmax=None):
     """A line of glyphs with the measures the recomposition needs (the original stays at the traced places)."""
     chars = [c for c in text if c != " "]; assert len(chars) == len(glyphs), (k, len(chars), len(glyphs))
     gs = sorted(glyphs, key=lambda g: g["b"][0]); gaps, spaces = [], []
@@ -65,12 +65,26 @@ def line_data(k, text, face, ci, glyphs, align="center", fb=None, fixed=False, u
     for i in range(1, len(gs)):
         gap = gs[i]["b"][0] - gs[i - 1]["b"][2]; (spaces if (i - 1) in sp_after else gaps).append(gap)
     x0 = min(g["b"][0] for g in gs); x1 = max(g["b"][2] for g in gs); capH = float(np.median([g["b"][3] - g["b"][1] for g in gs])); top = float(np.median([g["b"][1] for g in gs]))
+    for g in gs: g["sc"] = capH; g["sb"] = top + capH  # the cap height and the baseline of the line a glyph comes from: a glyph taken by another line of the same face is rescaled to that line
     return {"k": k, "text": text, "face": face, "ci": ci, "align": align, "x0": x0, "x1": x1, "cx": (x0 + x1) / 2, "top": top, "capH": capH, "gap": float(np.median(gaps)) if gaps else 0.0,
-            "space": float(np.median(spaces)) if spaces else capH * 0.35, "glyphs": gs, "fb": fb or {}, "fixed": fixed, "upper": upper, "maxw": maxw or (x1 - x0) * 1.25}
+            "space": float(np.median(spaces)) if spaces else capH * 0.35, "glyphs": gs, "fb": fb or {}, "fixed": fixed, "upper": upper, "maxw": maxw or (x1 - x0) * 1.25, "group": group, "gb": gb, "gmax": gmax}
 
 def emit(key, W, H, colors, lines, note=""):
     out = {"w": W, "h": H, "colors": colors, "lines": lines}
     p = ROOT / "motion" / "runtime" / ("zs-templates-card-%s-1.js" % key)
     p.write_text("// 18 October 2026: title card %s (Scripts/CardTrace.py): isolated lettering as a custom font. %s FR : carte titre, lettrage isole en police personnalisee.\n(window.ZSCards = window.ZSCards || {}).%s = %s;\n" % (key, note, key, json.dumps(out, separators=(",", ":"))))
     print(p, p.stat().st_size // 1024, "KiB")
-    for ln in lines: print(" ", ln["k"], repr(ln["text"]), "glyphs", len(ln["glyphs"]), "x", int(ln["x0"]), int(ln["x1"]), "capH", int(ln["capH"]), "gap", round(ln["gap"], 1), "space", round(ln["space"], 1))
+    for ln in lines: print(" ", ln["k"], repr(ln["text"]), "glyphs", len(ln["glyphs"]), "x", int(ln.get("x0", ln.get("x", 0))), int(ln.get("x1", 0)), "capH", int(ln["capH"]), "gap", round(ln.get("gap", 0), 1), "space", round(ln.get("space", 0), 1))
+
+def textline(mask, region, k, text, align, fontname, weight, ci=0, grow=1.0, capfix=0.0):
+    """A small line set in a REAL face (too small to trace cleanly): the cap height and the width are measured on the mask, the size comes from the cap height of the face, the letter spacing fills the measured width.
+    The data carries the vertical offset `dy` (em) from the top of a line box of height 1 to the top of the capitals, so the template puts the caps exactly on the measured line."""
+    from PIL import ImageFont
+    f = ImageFont.truetype(str(ROOT / "motion" / "fonts" / ("%s.ttf" % fontname)), 100)
+    try: f.set_variation_by_axes([weight])
+    except Exception: pass
+    capb = f.getbbox("H"); capr = (capb[3] - capb[1]) / 100.0; m = mask & region; ys, xs = np.nonzero(m)
+    x0, x1, y0, y1 = int(xs.min()), int(xs.max()) + 1, int(ys.min()), int(ys.max()) + 1; cap = (y1 - y0) + capfix
+    size = cap / capr * grow; nat = f.getlength(text) * size / 100.0; n = len(text); ls = (x1 - x0 - nat) / max(1, n - 1); asc, desc = (v / 100.0 for v in f.getmetrics()); dy = (1 - (asc + desc)) / 2 + asc - capr
+    print(k, repr(text), "bbox", x0, y0, x1, y1, "cap", cap, "size", round(size, 1), "ls px", round(ls, 2))
+    return {"dy": round(dy, 4), "k": k, "type": "text", "text": text, "face": "small", "ci": ci, "align": align, "x": (x0 if align == "left" else x1), "y": y0, "cap": cap, "size": round(size, 2), "ls": round(ls / size, 4), "font": fontname, "weight": weight, "fixed": False, "upper": False, "glyphs": [], "capH": cap}

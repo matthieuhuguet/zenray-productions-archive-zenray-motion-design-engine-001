@@ -12,8 +12,8 @@
   const svgEl = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); Object.keys(attrs || {}).forEach((k) => e.setAttribute(k, attrs[k])); if (parent) parent.appendChild(e); return e; };
   const abs = (parent, css, text) => { const e = h.css(h.el("div", "zs-abs", parent), css); if (text !== undefined) { if (/[<&]/.test(String(text))) e.innerHTML = text; else e.textContent = text; } return e; };
   const rnd = (seed) => () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
-  const APPEARANCES = ["wipe", "letters", "rise", "ink", "drop", "pop", "typewriter", "zoom", "glitch", "brush", "petals-sweep", "petals-gather", "petals-bloom", "mask-up"];
-  const LAYOUTS = ["bleach", "ichiban", "paget", "pale-raven", "phase", "yawen", "indy", "zhongkui", "rdr", "yotei", "ytitle", "lol"];
+  const APPEARANCES = ["wipe", "letters", "rise", "ink", "drop", "pop", "typewriter", "zoom", "glitch", "brush", "petals-sweep", "petals-gather", "petals-bloom", "mask-up", "slam", "mask-down", "dissolve", "track"];
+  const LAYOUTS = ["bleach", "ichiban", "paget", "pale-raven", "phase", "yawen", "indy", "zhongkui", "rdr", "yotei", "ytitle", "lol", "inox1", "inox2", "inox3"];
 
   // ---- text pieces; `split` makes one span per character so an appearance can move the letters one by one
   function T(parent, o) {
@@ -22,7 +22,7 @@
     // no CSS transform for the centring or the stretch: GSAP owns the whole transform (xPercent, scaleX) from the start, so the end of a tween leaves EXACTLY the same matrix (a CSS translateX(-50%) parsed by GSAP left a -0.008 px residual: the lettering shifted by a pixel at the end of its appearance)
     if (o.align === "center") css.left = o.x + "px";
     const n = abs(parent, css, "");
-    if (window.gsap) { const set = {}; if (o.align === "center") set.xPercent = -50; if (o.sx) set.scaleX = o.sx; if (Object.keys(set).length) window.gsap.set(n, Object.assign({ x: 0, force3D: true, transformOrigin: o.align === "center" ? "50% 0" : "0 0" }, set)); }
+    if (window.gsap) { const set = {}; if (o.align === "center") set.xPercent = -50; if (o.align === "right") set.xPercent = -100; if (o.sx) set.scaleX = o.sx; if (Object.keys(set).length) window.gsap.set(n, Object.assign({ x: 0, force3D: true, transformOrigin: o.align === "center" ? "50% 0" : o.align === "right" ? "100% 0" : "0 0" }, set)); }
     else { if (o.align === "center") css.transform = "translateX(-50%)"; if (o.sx) css.transform = (css.transform ? css.transform + " " : "") + `scaleX(${o.sx})`; n.style.transform = css.transform || ""; }
     const text = String(o.text).replace(/\\n/g, "\n");
     if (o.split !== false) { n.innerHTML = ""; [...text].forEach((c, ci) => { const s = document.createElement("span"); s.className = "ch"; s.dataset.i = String(ci); s.textContent = c; s.style.display = "inline-block"; if (c === "\n") { s.style.display = "inline"; } if (c === " ") s.style.whiteSpace = "pre"; n.appendChild(s); }); } else n.textContent = text;
@@ -51,6 +51,7 @@
 
   // ---- the "original" design of a visual: the traced foreground (Scripts/TraceStill.py), one `.ch` box per glyph, used while the texts are the original ones and the mode is not "custom"
   const tracedFor = (p, key, store) => { const Tr = window[store || "ZSTrace"] && window[store || "ZSTrace"][key]; if (!Tr || p.design === "custom") return null; const D = DEFAULTS[p.layout]; return Object.keys(D.l).every((k) => String(p[k]) === String(D.l[k])) ? Tr : null; };
+  let dissolveId = 0;
   let traceGradId = 0, zkId = 0;  // module-level counters: the three scenes of a project live in ONE document, an id repeated from scene to scene (a mask, a gradient) resolves to the first one, which belongs to another scene
   const traceLayer = (parent, glyphs, w0, h0, grad, blur, op) => {
     const holder = abs(parent, { left: "0", top: "0", width: (w0 || 1920) + "px", height: (h0 || 1080) + "px" });  // full plane size: a wipe (clip-path) on an empty box would hide everything
@@ -387,6 +388,9 @@
     "pale-raven": { l: { l1: "Pale", l2: "Raven's", l3: "Perch" }, bg: "#0c1011", accent: "#f7ecd3", tile: "#0f5560" },
     phase: { l: { text: "ENEMY PHASE" }, bg: "#9a8878", accent: "#f2555a", tile: "#000", seed: 7 },
     yawen: { l: { l1: "VISUAL·DESIGNER", l2: "MARKETING·GAMES·DIGITAL", l3: "Yawen | Marketing Visual Designer (Games / Digital)", l4: "lyw19837059505@gmail.com" }, bg: "#1c2f38", accent: "#ffffff", tile: "#000" },
+    inox1: { l: { l1: "KITAE", l2: "L'AME", l3: "DU", l4: "KATANA", l5: "24 OCTOBRE 2024", l6: "10:00", l7: "AM", l8: "20°C", l9: "35.44773685, 139.64250768" }, bg: "#0a0a0a", accent: "#ea332c", accent2: "#ea332c", tile: "#000" },
+    inox2: { l: {"l1": "J+89", "l2": "SEMAINE", "l3": "12", "l4": "MOIS", "l5": "2"}, bg: "#0a0c0e", accent: "#ffffff", accent2: "#ffffff", tile: "#000" },
+    inox3: { l: {"l1": "CUBA", "l2": "135M", "l3": "VIÑALES"}, bg: "#090b0c", accent: "#ffffff", accent2: "#ffffff", tile: "#000" },
     lol: { l: { l1: "SOMBRES COMPLOTS", l2: "CINÉMATIQUE" }, bg: "#0b0a0b", accent: "#fffffb", accent2: "#fdfcf7", tile: "#000" },
     ytitle: { l: { l0: "GHOST", l1: "OF YŌTEI" }, bg: "#6b7875", accent: "#dcdddd", accent2: "#e1b63f", tile: "#000" },
     yotei: { l: { l0: "GHOST", l1: "OF YŌTEI", l2: "COMPLETE EDITION", l3: "Retournez à Ezo", l4: "Découvrez l'expérience définitive de Ghost of Yōtei, enrichie d'un tout\nnouveau mode de jeu et d'une extension de l'histoire.", l5: "Acheter maintenant" }, bg: "#f8f5ee", accent: "#0f100f", tile: "#000" },
@@ -394,18 +398,20 @@
     indy: { l: { l1: "INDIANA JONES" }, bg: "#17233a", accent: "#dde1ec", tile: "#000" },
     zhongkui: { l: { l1: "ZHONG", l2: "BLACK MYTH", l3: "KUI" }, bg: "#050405", accent: "#8f3638", tile: "#000", seed: 5 },
   };
-  const SIZE = { indy: [1080, 1080], zhongkui: [1600, 668], rdr: [2000, 871], yotei: [2000, 1125], ytitle: [920, 290], lol: [2000, 1096] };
+  const SIZE = { indy: [1080, 1080], zhongkui: [1600, 668], rdr: [2000, 871], yotei: [2000, 1125], ytitle: [920, 290], lol: [2000, 1096], inox1: [2000, 1096], inox2: [2000, 1115], inox3: [2000, 1044] };
 
   // ---- title cards (18 October 2026): lettering isolated as a custom font (window.ZSCards.<key>, Scripts/CardTrace.py). One generic layout for every card: each line is a holder of glyph boxes (`.ch`); a line whose text is the original one keeps its
   // traced places, an edited line (or the custom mode) is recomposed on its own alignment (left, centre or right as the card does), scaled down to fit, with the measured gaps; a character the font does not have is set in a real face of the card.
-  const CARD_KEYS = ["lol"];
+  const CARD_KEYS = ["lol", "inox1", "inox2", "inox3"];
   function glyphBoxes(parent, list, defCol) {  // list of [glyph, x, y, scale, colour]; a glyph with `fb` is a text fallback
-    list.forEach(([g, x, y, k, col], i) => {
-      if (g.fb) { const c = abs(parent, { left: x + "px", top: y + "px", width: g.w + "px", height: g.h + "px", overflow: "visible" }); c.className += " ch"; c.dataset.i = String(i);
-        const v = svgEl("svg", { width: g.w, height: g.h, viewBox: `0 0 ${g.w} ${g.h}`, style: "position:absolute;left:0;top:0;overflow:visible" }, c), t = svgEl("text", { x: g.w / 2, y: g.h * g.by, "text-anchor": "middle", "font-size": g.h * g.fs, fill: col || defCol }, v);
-        t.style.fontFamily = h.font(g.font); t.style.fontWeight = String(g.weight); t.textContent = g.ch; return; }
+    list.forEach(([g, x, y, k, col, acc], i) => {
+      if (g.fb) {  // a letter the font does not have: drawn by the procedural block font with the strokes of the card
+        const bg = window.ZSBlock.glyph(g.ch, g.h, g.o), c = abs(parent, { left: x + "px", top: y + "px", width: bg.w + "px", height: g.h + "px", overflow: "visible" }); c.className += " ch"; c.dataset.i = String(i);
+        const v = svgEl("svg", { width: bg.w, height: g.h, viewBox: `0 0 ${bg.w} ${g.h}`, style: "position:absolute;left:0;top:0;overflow:visible" }, c); svgEl("path", { d: bg.d, fill: "none", stroke: col || defCol, "stroke-width": bg.sw, "stroke-linejoin": "miter", "stroke-linecap": "butt" }, v); return; }
       const [bx0, by0, bx1, by1] = g.b, w = (bx1 - bx0) * k, hh = (by1 - by0) * k, c = abs(parent, { left: x + "px", top: y + "px", width: w + "px", height: hh + "px", overflow: "visible" }); c.className += " ch"; c.dataset.i = String(i);
       const v = svgEl("svg", { width: w, height: hh, viewBox: `${bx0} ${by0} ${bx1 - bx0} ${by1 - by0}`, style: "position:absolute;left:0;top:0;overflow:visible" }, c); svgEl("path", { d: g.d, fill: col || defCol, "fill-rule": "evenodd" }, v);
+      if (acc) { const va = svgEl("svg", { width: w, height: hh, viewBox: `0 0 ${w} ${hh}`, style: "position:absolute;left:0;top:0;overflow:visible" }, c);  // the accent of a letter taken from the font: drawn above it with the strokes of the card
+        svgEl("path", { d: window.ZSBlock.mark(acc.m, w - 8 * k, acc.cap, acc.o), fill: "none", stroke: col || defCol, "stroke-width": (acc.o.sw || 0.14) * acc.cap * 0.55, "stroke-linejoin": "miter", transform: `translate(${4 * k},${4 * k})` }, va); }
     });
   }
   function cardLayout(key) {
@@ -414,14 +420,29 @@
       if (!Z) return it;
       const cols = [p.accent || Z.colors.main, p.accent2 || Z.colors.second, p.deco || Z.colors.main], tables = {};
       Z.lines.forEach((ln) => { const t = tables[ln.face] = tables[ln.face] || {}; ln.glyphs.forEach((g) => { if (!t[g.c]) t[g.c] = g; }); });
+      const rowOf = (ln, text) => {  // the characters of a line with their widths at scale 1 (a glyph of another line of the same face is rescaled to this line)
+        const tab = tables[ln.face], up = ln.upper ? text.toUpperCase() : text, gap = tw(ln.k + "Gap", ln.gap), space = Math.max(0, tw(ln.k + "Space", ln.space) - 2 * gap);
+        const row = [...up].map((ch) => { const sp = !tab[ch] ? window.ZSBlock.split(ch) : null, g = tab[ch] || (sp && tab[sp.base]) || null, r = g ? ln.capH / (g.sc || ln.capH) : 1;
+          return { ch, g, r, acc: sp && g ? sp.mark : null, w: ch === " " ? space : g ? (g.b[2] - g.b[0]) * r : window.ZSBlock.glyph(ch, ln.capH, ln.fb).w }; });
+        return { row, gap, tot1: row.reduce((s2, q, i) => s2 + q.w + (i ? gap : 0), 0) };
+      };
+      // lines of a group (a row of words that follow each other, like L'AME DU KATANA) are composed as ONE flow centred where the original row was, scaled together to fit: a longer word pushes its neighbours instead of covering them
+      const groups = {}, flow = {};
+      Z.lines.forEach((ln) => { if (ln.group) (groups[ln.group] = groups[ln.group] || []).push(ln); });
+      Object.keys(groups).forEach((gk) => {
+        const g = groups[gk]; if (p.design !== "custom" && g.every((ln) => String(p[ln.k]) === ln.text)) return;
+        const rows = g.map((ln) => rowOf(ln, String(p[ln.k]))), total1 = rows.reduce((s2, r, i) => s2 + r.tot1 + (i ? g[i].gb : 0), 0), k = Math.min(tw(gk + "K", 1), (g[0].gmax || 1e9) / Math.max(1, total1)), gcx = (Math.min.apply(null, g.map((ln) => ln.x0)) + Math.max.apply(null, g.map((ln) => ln.x1))) / 2;
+        let x = tw(gk + "X", gcx) - total1 * k / 2; g.forEach((ln, i) => { x += (i ? g[i].gb : 0) * k; flow[ln.k] = { x, k }; x += rows[i].tot1 * k; });
+      });
       Z.lines.forEach((ln) => {
         const holder = abs(pl, { left: "0", top: "0", width: Z.w + "px", height: Z.h + "px" }), col = cols[ln.ci] || cols[0], inD = ln.k in D0.l, text = inD ? String(p[ln.k]) : ln.text;
-        if (ln.fixed || (p.design !== "custom" && text === ln.text)) { glyphBoxes(holder, ln.glyphs.map((g) => [g, g.b[0], g.b[1], 1, col]), col); it.push({ n: holder, aux: !!ln.aux }); return; }
-        const tab = tables[ln.face], up = ln.upper ? text.toUpperCase() : text, gap = tw(ln.k + "Gap", ln.gap), space = Math.max(0, tw(ln.k + "Space", ln.space) - 2 * gap), base = ln.top + ln.capH;
-        const row = [...up].map((ch) => { const g = tab[ch]; return { ch, g, w: ch === " " ? space : g ? g.b[2] - g.b[0] : ln.capH * 0.62 }; });
-        const tot1 = row.reduce((s, q, i) => s + q.w + (i ? gap : 0), 0), k = Math.min(tw(ln.k + "K", 1), ln.maxw / Math.max(1, tot1)), total = tot1 * k;
-        let x = ln.align === "left" ? tw(ln.k + "X", ln.x0) : ln.align === "right" ? tw(ln.k + "X", ln.x1) - total : tw(ln.k + "X", ln.cx) - total / 2; const list = [];
-        row.forEach((q) => { if (q.ch !== " ") list.push(q.g ? [q.g, x, base - (base - q.g.b[1]) * k, k, col] : [Object.assign({ fb: true, ch: q.ch, w: q.w * k, h: ln.capH * k }, ln.fb), x, base - ln.capH * k, k, col]); x += (q.w + gap) * k; });
+        if (ln.type === "text") {  // a small line set in a real face fitted to the measured cap height and width: it is live text, so editing it never breaks anything
+          const size = tw(ln.k + "Size", ln.size); it.push({ n: T(pl, { text, x: tw(ln.k + "X", ln.x), y: tw(ln.k + "Y", ln.y) - ln.dy * size, size, font: ln.font, weight: ln.weight, color: col, ls: (tw(ln.k + "Ls", ln.ls)) + "em", lh: 1, align: ln.align }), aux: !!ln.aux }); return; }
+        if (ln.fixed || (!flow[ln.k] && p.design !== "custom" && text === ln.text)) { glyphBoxes(holder, ln.glyphs.map((g) => [g, g.b[0], g.b[1], 1, col]), col); it.push({ n: holder, aux: !!ln.aux }); return; }
+        const { row, gap, tot1 } = rowOf(ln, text), base = ln.top + ln.capH, f = flow[ln.k];
+        const k = f ? f.k : Math.min(tw(ln.k + "K", 1), ln.maxw / Math.max(1, tot1)), total = tot1 * k;
+        let x = f ? f.x : ln.align === "left" ? tw(ln.k + "X", ln.x0) : ln.align === "right" ? tw(ln.k + "X", ln.x1) - total : tw(ln.k + "X", ln.cx) - total / 2; const list = [];
+        row.forEach((q) => { if (q.ch !== " ") list.push(q.g ? [q.g, x, base + (q.g.b[1] - (q.g.sb === undefined ? base : q.g.sb)) * q.r * k, k * q.r, col, q.acc ? { m: q.acc, o: ln.fb, cap: ln.capH * k } : null] : [{ fb: true, ch: q.ch, h: ln.capH * k, o: ln.fb }, x, base - ln.capH * k, k, col]); x += (q.w + gap) * k; });
         glyphBoxes(holder, list, col); it.push({ n: holder, aux: !!ln.aux });
       });
       return it;
@@ -495,6 +516,10 @@
     items = items.filter((it) => !it.still);  // a still item (a background) is never animated
     items.forEach((it, i) => {
       const t = t0 + o.delay + i * o.stagger, n = it.n, chars = [...n.querySelectorAll(".ch")], shape = !!it.shape, d = o.dur, E = (def) => (o.ease && o.ease !== "auto" ? o.ease : def);
+      if (it.aux) {  // a small companion line of a card (date, coordinates, kanji...): it comes after the main lines, letter by letter, softly
+        const mainN = items.filter((x) => !x.aux).length, ai = items.filter((x) => x.aux).indexOf(it), ta = t0 + o.delay + mainN * o.stagger + 0.2 + ai * 0.12;
+        (chars.length ? chars : [n]).forEach((c, ci) => fto(tl, c, { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, ta + ci * 0.02)); return;
+      }
       const perChar = chars.length && !shape, targets = perChar ? chars : [n], csg = Math.min(o.charStagger, 0.9 / Math.max(1, chars.length));  // a long text is written within about 0.9 s
       const each = (from, to, ease, mult) => { if (perChar) chars.forEach((c) => fto(tl, c, from, Object.assign({ ease }, to), t + Number(c.dataset.i || 0) * csg * (mult || 1))); else fto(tl, n, from, Object.assign({ ease }, to), t); };
       if (it.fadeOnly) { fto(tl, n, { opacity: 0, scale: 1.06, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, duration: d * 1.8, ease: "power2.out" }, t); return; }
@@ -515,6 +540,18 @@
         fto(tl, n, { opacity: 0, scale: shape ? Math.min(o.scaleFrom, 0.5) : Math.max(o.scaleFrom, 1.1), filter: `blur(${o.blur * 1.6}px)`, rotation: o.rotate / 2, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, filter: "blur(0px)", rotation: 0, duration: d * 1.1, ease: E(shape ? "back.out(1.6)" : "power3.out") }, t);
       } else if (kind === "drop") {
         each({ opacity: 0, y: -o.distance * 3.5, rotation: o.rotate }, { opacity: 1, y: 0, rotation: 0, duration: d * 0.8 }, E("bounce.out"), 1.4);
+      } else if (kind === "mask-down") {  // the same curtain from above: each glyph comes down from over its top edge and is revealed from the top down
+        each({ y: -o.distance * 1.6, clipPath: "inset(0 0 100% 0)" }, { y: 0, clipPath: "inset(-10% -10% -10% -10%)", duration: d * 1.15 }, E("power4.out"));
+      } else if (kind === "track") {  // slow tracking: the letters start closer to the centre of their line, blurred and transparent, and drift apart to their places
+        const mid = chars.length ? chars.reduce((sum, c) => sum + parseFloat(c.style.left || 0) + parseFloat(c.style.width || 0) / 2, 0) / chars.length : 0;
+        chars.forEach((c) => { const cx = parseFloat(c.style.left || 0) + parseFloat(c.style.width || 0) / 2; fto(tl, c, { opacity: 0, x: -(cx - mid) * (o.distance / 100), filter: `blur(${o.blur}px)` }, { opacity: 1, x: 0, filter: "blur(0px)", duration: d * 2.2, ease: E("power3.out") }, t + Number(c.dataset.i || 0) * csg * 0.4); });
+      } else if (kind === "dissolve") {  // a noise threshold: the holder is shown through an animated turbulence mask, so the letters appear grain by grain with a fuzzy edge, then the filter is removed
+        const fid = "dz" + (dissolveId++), sv = svgEl("svg", { width: 0, height: 0, style: "position:absolute" }, n.parentNode), fl = svgEl("filter", { id: fid, x: "-5%", y: "-5%", width: "110%", height: "110%", "color-interpolation-filters": "sRGB" }, svgEl("defs", {}, sv));
+        svgEl("feTurbulence", { type: "fractalNoise", baseFrequency: "0.07", numOctaves: 4, seed: (Math.round(o.seed || 7) + i * 13) % 97, result: "nz" }, fl); svgEl("feColorMatrix", { in: "nz", type: "matrix", values: "0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1 0 0 0 0", result: "na" }, fl);
+        const ct = svgEl("feComponentTransfer", { in: "na", result: "mk" }, fl), fa = svgEl("feFuncA", { type: "linear", slope: 9, intercept: -8.2 }, ct); svgEl("feComposite", { in: "SourceGraphic", in2: "mk", operator: "in" }, fl);
+        n.style.filter = `url(#${fid})`; fto(tl, fa, { attr: { intercept: -8.2 } }, { attr: { intercept: 4 }, duration: d * 2.2, ease: E("power1.inOut") }, t); tl.set(n, { filter: "none" }, t + d * 2.2 + 0.02);
+      } else if (kind === "slam") {  // a heavy stamp: each glyph drops from a larger scale with a slight tilt and lands at once
+        each({ opacity: 0, scale: 1.35, y: -o.distance * 0.7, rotation: o.rotate || 4, filter: `blur(${o.blur}px)`, transformOrigin: "50% 60%" }, { opacity: 1, scale: 1, y: 0, rotation: 0, filter: "blur(0px)", duration: d * 0.55 }, E("expo.out"));
       } else if (kind === "mask-up") {  // the curtain rise: each glyph climbs from under its baseline and is revealed from the bottom up (the clip grows upward while the glyph rises)
         each({ y: o.distance * 1.6, clipPath: "inset(100% 0 0 0)" }, { y: 0, clipPath: "inset(-10% -10% -10% -10%)", duration: d * 1.15 }, E("power4.out"));
       } else if (kind === "pop") {
@@ -530,7 +567,7 @@
     });
   }
 
-  const BOXES = { bleach: [880, 90, 1920, 1080], ichiban: [30, 20, 960, 480], paget: [90, 190, 700, 1050], "pale-raven": [90, 250, 900, 1010], phase: [90, 300, 1830, 840], yawen: [110, 340, 1800, 1030], indy: [40, 780, 1040, 990], zhongkui: [330, 90, 1230, 580], rdr: [30, 95, 905, 465], yotei: [200, 190 + 60, 880, 190 + 590], ytitle: [20, 10, 900, 282], lol: [90, 40, 1910, 1060] };
+  const BOXES = { bleach: [880, 90, 1920, 1080], ichiban: [30, 20, 960, 480], paget: [90, 190, 700, 1050], "pale-raven": [90, 250, 900, 1010], phase: [90, 300, 1830, 840], yawen: [110, 340, 1800, 1030], indy: [40, 780, 1040, 990], zhongkui: [330, 90, 1230, 580], rdr: [30, 95, 905, 465], yotei: [200, 190 + 60, 880, 190 + 590], ytitle: [20, 10, 900, 282], lol: [90, 40, 1910, 1060], inox1: [380, 280, 1640, 830], inox2: [740, 380, 1330, 760], inox3: [700, 380, 1300, 740] };
   const TALLBOXES = { zhongkui: [470, 100, 1130, 490], phase: [380, 330, 1540, 700] };
   const EASES = ["auto", "power3.out", "power4.out", "expo.out", "back.out(1.7)", "back.out(3)", "elastic.out(1,0.4)", "bounce.out", "sine.inOut", "power2.inOut", "steps(6)"];
   const parseTweaks = (lines) => { const m = {}; (lines || []).forEach((l) => { const q = String(l).trim().split(/\s+/); if (q.length >= 2 && !isNaN(Number(q[q.length - 1]))) m[q.slice(0, -1).join(" ")] = Number(q[q.length - 1]); }); return m; };

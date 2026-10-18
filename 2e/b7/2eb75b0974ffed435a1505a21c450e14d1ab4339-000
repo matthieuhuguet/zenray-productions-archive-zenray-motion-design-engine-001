@@ -25,8 +25,8 @@ for i, m in enumerate(shapes):
 bm = (mn >= 110) & box(1500, 55, 1910, 112); bm = ndi.binary_opening(bm, iterations=1)
 label = C.glyphs_of(bm, L, box(1500, 55, 1910, 112), list("CINEMATIQUE"), mincontrast=50.0, minpx=20, sigma=0.6, band=1, opening=0, cut=0.5, merge_dx=0.3)
 white = C.color_of(A, ndi.binary_erosion(lm, iterations=1))
-fbt = {"font": "Unbounded", "weight": 800, "fs": 1.05, "by": 0.97}
+fbt = {"w": 0.40, "sw": 0.145, "c": 0.02}
 lines = [C.line_data("l1", "SOMBRES COMPLOTS", "title", 0, title, "center", fbt, maxw=1700),
-         C.line_data("l2", "CINÉMATIQUE", "label", 1, label, "right", {"font": "Sora", "weight": 600, "fs": 1.0, "by": 0.95}),
+         C.line_data("l2", "CINÉMATIQUE", "label", 1, label, "right", {"w": 0.88, "sw": 0.12, "c": 0.0}),
          {"k": "logo", "text": "L25 · S1", "face": "logo", "ci": 1, "align": "left", "x0": min(g["b"][0] for g in logo), "x1": max(g["b"][2] for g in logo), "cx": 0, "top": 0, "capH": 1, "gap": 0, "space": 0, "glyphs": logo, "fb": {}, "fixed": True, "upper": False, "maxw": 9999}]
 C.emit("lol", W, H, {"main": cream, "second": white}, lines, note="SOMBRES COMPLOTS, logo L25 S1, label.")

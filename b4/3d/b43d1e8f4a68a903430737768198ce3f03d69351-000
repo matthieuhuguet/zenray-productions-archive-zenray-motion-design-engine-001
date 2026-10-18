@@ -1,0 +1,52 @@
+"""Inoxtag collection 01 (KITAE, L'AME DU KATANA): heavy red distressed lettering plus small wide red lines, the kanji and a globe, as a custom font (18 October 2026). Native still 2000 x 1096.
+Red on a photo: the ink is picked by REDNESS (R high, G and B low), the contour refined on the same red-against-anything channel. Run: /Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/CardInox1.py"""
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import numpy as np
+from scipy import ndimage as ndi
+import CardTrace as C
+import StickerTrace as ST
+
+img, A = C.load("inox1"); H, W = A.shape[:2]; R, G, B = A[..., 0], A[..., 1], A[..., 2]
+box = lambda *a: C.box_mask((H, W), *a)  # noqa: E731
+Y = ndi.gaussian_filter(0.7 * R - 0.5 * G - 0.2 * B, 0.5)   # redness as a luminance-like channel: the ink sits near 129, every background of the photo below 50
+mask = (R > 165) & (R - G > 95) & (R - B > 95); mask = ndi.binary_opening(mask, iterations=1)
+red = C.color_of(A, ndi.binary_erosion(mask & box(780, 335, 1620, 760), iterations=3))
+def line(region, chars, **kw): return C.glyphs_of(mask, Y, region, list(chars), **kw)
+big = dict(mincontrast=40.0, minpx=60, opening=1, closing=2, sigma=0.5)
+kitae = line(box(780, 330, 1230, 548), "KITAE", **big)
+lame = line(box(400, 545, 830, 760), "L'AME", **big)
+du = line(box(840, 590, 975, 710), "DU", **dict(big, opening=4, closing=1))
+katana = line(box(985, 545, 1610, 760), "KATANA", **big)
+print("big lines ok")
+
+# --- small lines: wide bold red caps and digits, set in a REAL face (Manrope ExtraBold) fitted to the measured cap height and width: too small to trace cleanly
+from PIL import ImageFont
+UNB = ImageFont.truetype(str(C.ROOT / "motion" / "fonts" / "Manrope.ttf"), 100); UNB.set_variation_by_axes([800])
+CAPR = (UNB.getbbox("H")[3] - UNB.getbbox("H")[1]) / 100.0
+def textline(k, text, region, align, ci=0, thr=(150, 70), grow=1.0):
+    m = (R > thr[0]) & (R - G > thr[1]) & (R - B > thr[1]) & region; ys, xs = np.nonzero(m)
+    x0, x1, y0, y1 = int(xs.min()), int(xs.max()) + 1, int(ys.min()), int(ys.max()) + 1; cap = (y1 - y0) if k != "l8" else (y1 - y0)
+    size = cap / CAPR * grow; nat = UNB.getlength(text) * size / 100.0; n = len(text); ls = (x1 - x0 - nat) / max(1, n - 1)
+    print(k, repr(text), "bbox", x0, y0, x1, y1, "cap", cap, "size", round(size, 1), "ls px", round(ls, 2))
+    asc, desc = (v / 100.0 for v in UNB.getmetrics()); capb = UNB.getbbox("H"); capr = (capb[3] - capb[1]) / 100.0; dy = (1 - (asc + desc)) / 2 + asc - capr  # distance from the top of the line box (line-height 1) to the top of the capitals, in em
+    return {"dy": round(dy, 4), "k": k, "type": "text", "text": text, "face": "small", "ci": ci, "align": align, "x": (x0 if align == "left" else x1), "y": y0 - 0.0, "cap": cap, "size": round(size, 2), "ls": round(ls / size, 4), "font": "Manrope", "weight": 800, "fixed": False, "upper": False, "glyphs": [], "capH": cap}
+t_date = textline("l5", "24 OCTOBRE 2024", box(775, 295, 1045, 328), "left", grow=1.04)
+t_time = textline("l6", "10:00", box(1100, 295, 1198, 328), "left", grow=1.12)
+t_am = textline("l7", "AM", box(1198, 295, 1232, 328), "left")
+t_temp = textline("l8", "20°C", box(438, 480, 560, 525), "left")
+t_coord = textline("l9", "35.44773685, 139.64250768", box(1190, 762, 1605, 797), "right")
+# --- the kanji (two characters, each one connected or nearly connected group of strokes) and the globe: fixed shapes
+km = ndi.binary_opening(mask, iterations=1) & box(405, 762, 520, 822); cols = km.sum(0); mid = len(cols) // 2; xs0 = np.nonzero(km.any(0))[0]; lo, hi = xs0.min(), xs0.max(); cut = int(lo + (hi - lo) * 0.38 + np.argmin(cols[int(lo + (hi - lo) * 0.38):int(lo + (hi - lo) * 0.62)]))
+kanji = []
+for i, m in enumerate([km & (np.arange(W)[None, :] < cut), km & (np.arange(W)[None, :] >= cut)]):
+    mc = ndi.binary_closing(m, iterations=1); rf = C.refine(mc, Y, band=2, sig=4.0, mincontrast=40.0); d, b = C.trace(rf > 0.5, soft=rf, sigma=0.5); kanji.append({"c": "鍛え"[i], "d": d, "b": b})
+gm = ((R > 130) & (R - G > 60) & (R - B > 55)) & box(1125, 760, 1190, 797); gm = ndi.binary_closing(gm, iterations=1)
+rf = C.refine(gm, Y, band=1, sig=4.0, mincontrast=30.0); gd, gb = C.trace(rf > 0.5, soft=rf, sigma=0.5); globe = [{"c": "o", "d": gd, "b": gb}]
+fixed = lambda k, text, glyphs: {"k": k, "text": text, "face": k, "ci": 0, "align": "left", "x0": min(g["b"][0] for g in glyphs), "x1": max(g["b"][2] for g in glyphs), "cx": 0, "top": 0, "capH": 1, "gap": 0, "space": 0, "glyphs": glyphs, "fb": {}, "fixed": True, "upper": False, "maxw": 9999}
+fbb = {"w": 0.5, "sw": 0.2, "c": 0.0}
+lines = [C.line_data("l1", "KITAE", "big", 0, kitae, "center", fbb, maxw=620), C.line_data("l2", "L'AME", "big", 0, lame, "left", fbb, maxw=520, group="row2", gb=0.0, gmax=1260), C.line_data("l3", "DU", "big", 0, du, "center", fbb, maxw=200, group="row2", gb=24.0), C.line_data("l4", "KATANA", "big", 0, katana, "right", fbb, maxw=760, group="row2", gb=25.0),
+         t_date, t_time, t_am, t_temp, t_coord, fixed("kanji", "鍛え", kanji), fixed("globe", "o", globe)]
+for ln in lines: ln["aux"] = ln["k"] in ("l5", "l6", "l7", "l8", "l9", "kanji", "globe")
+C.emit("inox1", W, H, {"main": red, "second": red}, lines, note="KITAE, L'AME DU KATANA, small lines, kanji, globe.")
