@@ -202,12 +202,12 @@
       const glyphs = Y.letters.map((l) => ({ d: l.d, f: ink, b: [l.b[0], l.b[1] + OY, l.b[2], l.b[3] + OY] }));
       const nlk = (txt) => String(txt).toUpperCase() === "GHOST";
       if (nlk(p.l0 === undefined ? "GHOST" : p.l0) && p.design !== "custom" && Y.letters.length === 5) {
-        const gh = traceLayer(pl, Y.letters.map((l) => ({ d: l.d, f: ink, b: l.b })), 2000, 743); gh.style.top = OY + "px"; it.push({ n: gh });
+        const gh = traceLayer(pl, Y.letters.map((l) => ({ d: l.d, f: ink, b: l.b })), 2000, 743); gh.style.top = OY + "px"; it.push({ n: gh, key: "logo", name: "Logo GHOST" });
         const eh = abs(pl, { left: "0", top: OY + "px", width: "2000px", height: "743px" }), es = svgEl("svg", { width: 2000, height: 743, viewBox: "0 0 2000 743", style: "position:absolute;left:0;top:0;overflow:visible" }, eh);
         if (logoGold.length) { const L = logoGold.slice().sort((a, b) => b.s - a.s)[0], sz = tw("emblemSize", 40), sx = tw("emblemX", 464), sy = tw("emblemY", 152); const g = svgEl("g", { transform: `translate(${sx},${sy}) rotate(${tw("emblemRot", -8)}) scale(${sz})` }, es); leafPaths(g, L.c); }
-        it.push({ n: eh, shape: true });
-      } else { it.push({ n: T(pl, { text: p.l0 || "GHOST", x: cx0, y: OY + tw("y0", 78), size: tw("size0", 110), font: "Sora", weight: 800, color: ink, align: "center", ls: tw("ls0", 0.3) + "em", lh: 1, upper: true, sx: tw("sx0", Math.min(1, 490 / (Math.max(1, String(p.l0 || "GHOST").length) * tw("size0", 110) * (0.8 + tw("ls0", 0.3))))) }) }); }
-      it.push({ n: T(pl, { text: p.l1, x: cx0, y: OY + tw("y1", 208), size: tw("size1", 22), font: "Fraunces", weight: 500, color: ink, align: "center", ls: tw("ls1", 0.38) + "em", lh: 1, upper: true }) });
+        it.push({ n: eh, shape: true, key: "emblem" });
+      } else { it.push({ n: T(pl, { text: p.l0 || "GHOST", x: cx0, y: OY + tw("y0", 78), size: tw("size0", 110), font: "Sora", weight: 800, color: ink, align: "center", ls: tw("ls0", 0.3) + "em", lh: 1, upper: true, sx: tw("sx0", Math.min(1, 490 / (Math.max(1, String(p.l0 || "GHOST").length) * tw("size0", 110) * (0.8 + tw("ls0", 0.3))))) }), key: "logo" }); }
+      it.push({ n: T(pl, { text: p.l1, x: cx0, y: OY + tw("y1", 208), size: tw("size1", 22), font: "Fraunces", weight: 500, color: ink, align: "center", ls: tw("ls1", 0.38) + "em", lh: 1, upper: true }), key: "l1" });
       // the brush stroke: a ragged body with dry streaks at the left end, and its text
       const S = Y.stroke, sb = S.b, sh = abs(pl, { left: "0", top: "0", width: "2000px", height: "1125px" }), ss = svgEl("svg", { width: 2000, height: 1125, viewBox: "0 0 2000 1125", style: "position:absolute;left:0;top:0;overflow:visible" }, sh), sdf = svgEl("defs", {}, ss);
       const sid = uid + "s", sg = svgEl("linearGradient", { id: sid, x1: sb[0], y1: 0, x2: sb[2], y2: 0, gradientUnits: "userSpaceOnUse" }, sdf); [[0, S.c3], [0.5, S.c], [1, S.c2]].forEach((q) => svgEl("stop", { offset: q[0], "stop-color": q[1] }, sg));
@@ -215,13 +215,13 @@
       const y0 = OY + sb[1], y1 = OY + sb[3], x0 = sb[0] - tw("strokeExtend", 16), x1 = sb[2], R = rnd(p.seed || 7), body = [[x0 + 60, y0 + 2], [x1 - 8, y0 + 0], [x1, y0 + 4], [x1 - 4, y1 - 3], [x0 + 70, y1]], g2 = svgEl("g", { filter: `url(#${sid}f)` }, ss);
       svgEl("path", { d: "M" + body.map((q) => q.join(",")).join(" L") + " Z", fill: `url(#${sid})` }, g2);
       for (let k = 0; k < 9; k++) { const yy = y0 + 2 + (k + 0.5) * (y1 - y0 - 4) / 9, len = 20 + R() * 60; svgEl("rect", { x: x0 + 8 + R() * 30, y: yy, width: 55 + len, height: 1.8 + R() * 2.4, fill: `url(#${sid})`, opacity: 0.55 + R() * 0.35 }, g2); }
-      it.push({ n: sh, shape: true });
-      it.push({ n: T(pl, { text: p.l2, x: cx0, y: OY + tw("y2", 260), size: tw("size2", 14.5), font: "Fraunces", weight: 500, color: "#f6f0e2", align: "center", ls: tw("ls2", 0.36) + "em", lh: 1, upper: true }) });
+      it.push({ n: sh, shape: true, key: "stroke" });
+      it.push({ n: T(pl, { text: p.l2, x: cx0, y: OY + tw("y2", 260), size: tw("size2", 14.5), font: "Fraunces", weight: 500, color: "#f6f0e2", align: "center", ls: tw("ls2", 0.36) + "em", lh: 1, upper: true }), key: "l2" });
       // the headline, the body and the button
-      it.push({ n: T(pl, { text: p.l3, x: tw("tx", 226), y: OY + tw("y3", 348), size: tw("size3", 49), font: "InterVariable", weight: tw("weight3", 260), color: C.head, ls: "-0.005em", lh: 1 }) });
-      it.push({ n: T(pl, { text: p.l4, x: tw("tx", 226), y: OY + tw("y4", 421), size: tw("size4", 18.8), font: "InterVariable", weight: 400, color: C.body, ls: tw("ls4", 0) + "em", lh: tw("lh4", 1.45) }) });
+      it.push({ n: T(pl, { text: p.l3, x: tw("tx", 226), y: OY + tw("y3", 348), size: tw("size3", 49), font: "InterVariable", weight: tw("weight3", 260), color: C.head, ls: "-0.005em", lh: 1 }), key: "l3" });
+      it.push({ n: T(pl, { text: p.l4, x: tw("tx", 226), y: OY + tw("y4", 421), size: tw("size4", 18.8), font: "InterVariable", weight: 400, color: C.body, ls: tw("ls4", 0) + "em", lh: tw("lh4", 1.45) }), key: "l4" });
       const B = Y.button, bt = abs(pl, { left: B[0] + "px", top: OY + B[1] + "px", width: B[2] - B[0] + "px", height: B[3] - B[1] + "px", borderRadius: (B[3] - B[1]) / 2 + "px", background: p.accent3 || C.button, display: "grid", placeItems: "center" });
-      abs(bt, { left: "0", top: "0", width: "100%", height: "100%", display: "grid", placeItems: "center", color: "#fff", fontFamily: h.font("InterVariable"), fontWeight: tw("weight5", 600), fontSize: tw("size5", 19.4) + "px", whiteSpace: "pre" }, p.l5); it.push({ n: bt, shape: true });
+      abs(bt, { left: "0", top: "0", width: "100%", height: "100%", display: "grid", placeItems: "center", color: "#fff", fontFamily: h.font("InterVariable"), fontWeight: tw("weight5", 600), fontSize: tw("size5", 19.4) + "px", whiteSpace: "pre" }, p.l5); it.push({ n: bt, shape: true, key: "btn" });
       // the leaves drift slowly (seek-safe tweens registered for build)
       p.after = (tl, t0, dur, E) => lc.forEach(([g, ox, oy], i) => { const rr = rnd(97 + i * 13), dx = (rr() - 0.5) * tw("drift", 30), dy = (rr() - 0.5) * tw("drift", 30), rot = (rr() - 0.5) * 16; E(tl, g, { x: 0, y: 0, rotation: 0, svgOrigin: ox + " " + oy }, { x: dx, y: dy, rotation: rot, duration: dur, ease: "sine.inOut" }, t0); });
       it.unshift({ n: lh, shape: true, still: true });
@@ -233,8 +233,8 @@
       const it = [], tw = p.tw, D0 = DEFAULTS.rdr, TR = window.ZSRdr && p.design !== "custom" && Object.keys(D0.l).every((k) => String(p[k]) === String(D0.l[k])) ? window.ZSRdr : null, white = "#ffffff";
       if (TR) {
         const hold = abs(pl, { left: "0", top: "0", width: TR.w + "px", height: TR.h + "px" }), sv = svgEl("svg", { width: TR.w, height: TR.h, viewBox: `0 0 ${TR.w} ${TR.h}`, style: "position:absolute;left:0;top:0;overflow:visible" }, hold);
-        svgEl("path", { d: TR.plate.d, fill: p.tile, "fill-rule": "evenodd" }, sv); it.push({ n: hold, shape: true });
-        TR.lines.forEach((ln) => { const col = ln.name === "ii" ? (p.accent2 || TR.ii) : (p.accent || white); it.push({ n: traceLayer(pl, ln.letters.map((l) => ({ d: l.d, f: col, b: l.b })), TR.w, TR.h) }); });
+        svgEl("path", { d: TR.plate.d, fill: p.tile, "fill-rule": "evenodd" }, sv); it.push({ n: hold, shape: true, key: "plate" });
+        TR.lines.forEach((ln) => { const col = ln.name === "ii" ? (p.accent2 || TR.ii) : (p.accent || white); it.push({ n: traceLayer(pl, ln.letters.map((l) => ({ d: l.d, f: col, b: l.b })), TR.w, TR.h), key: ln.name, anchor: "left" }); });
         return it;
       }
       // EDITED TEXT (or the custom mode): the design is recomposed from the same parts, so it stays the logo whatever the text. Every letter that exists in the isolated font (R E D A M P T I O N) is used as is, scaled to the line;
@@ -258,14 +258,14 @@
       const w2 = lineW(l2, cap2, gap), w3 = lineW(l3, cap3, gap * 0.75), wmax = Math.max(w2, w3), iiX = X0 + wmax + tw("iiGap", 6), iiCap = y3 + cap3 - y2, iiW = (I2 ? (I2.letters[1].b[2] - I2.letters[0].b[0]) * iiCap / (I2.letters[0].b[3] - I2.letters[0].b[1]) : iiCap * 0.62);
       const l4 = String(p.l4).toUpperCase(), ii4 = l4 === "II" ? iiW : lineW(l4, iiCap, 6), plateR = iiX + ii4 + tw("padR", 16), plateL = X0 - tw("padL", 18), plateB = y3 + cap3 + tw("padB", 20), bodyT = y2 - tw("padT", 16), tabT = tw("tabTop", 113), l1w = lineW(String(p.l1).toUpperCase(), 31, 0) * 0.82 + 20;
       const pg = svgEl("g", { filter: `url(#${rid})` }, sv0); svgEl("rect", { x: plateL, y: bodyT, width: plateR - plateL, height: plateB - bodyT, fill: plateCol }, pg); svgEl("rect", { x: plateL, y: tabT, width: Math.max(260, l1w + 40), height: bodyT - tabT + 8, fill: plateCol }, pg);
-      it.push({ n: hold, shape: true });
-      it.push({ n: T(pl, { text: p.l1, x: X0 + 2, y: tw("y1", 126), size: tw("size1", 34), font: "Fraunces", weight: 700, color: white2, ls: "0.01em", lh: 1, upper: true, sx: tw("sx1", 0.82) }) });
+      it.push({ n: hold, shape: true, key: "plate" });
+      it.push({ n: T(pl, { text: p.l1, x: X0 + 2, y: tw("y1", 126), size: tw("size1", 34), font: "Fraunces", weight: 700, color: white2, ls: "0.01em", lh: 1, upper: true, sx: tw("sx1", 0.82) }), key: "l1", anchor: "left" });
       let xx = X0; [...l2].forEach((ch) => { if (ch === " ") { xx += cap2 * tw("space", 0.32); return; } xx += place(ch, xx, y2, cap2, white2) + gap; });
       xx = X0; [...l3].forEach((ch) => { if (ch === " ") { xx += cap3 * tw("space", 0.32); return; } xx += place(ch, xx, y3, cap3, white2) + gap * 0.75; });
       if (l4 === "II" && I2) { I2.letters.forEach((l) => { const [bx0, by0, bx1, by1] = l.b, w = bx1 - bx0, hh = by1 - by0, k = iiCap / hh, c = abs(lay, { left: iiX + (bx0 - I2.letters[0].b[0]) * k + "px", top: y2 + "px", width: w * k + "px", height: iiCap + "px", overflow: "visible" }); c.className += " ch"; c.dataset.i = String(gi++);
         const v = svgEl("svg", { width: w * k, height: iiCap, viewBox: `${bx0} ${by0} ${w} ${hh}`, style: "position:absolute;left:0;top:0;overflow:visible" }, c); svgEl("path", { d: l.d, fill: red2, "fill-rule": "evenodd" }, v); }); }
       else { xx = iiX; [...l4].forEach((ch) => { xx += place(ch, xx, y2, iiCap, red2) + 4; }); }
-      it.push({ n: lay });
+      it.push({ n: lay, key: "l2", anchor: "left" });
       return it;
     },
     ytitle(pl, p) {
@@ -292,7 +292,7 @@
       const gl = layer(), lf = layer(), sl = layer();
       if (orig) {
         const gp = mk(gl, Z.ghost.map((g) => [g, g.b[0], g.b[1], 1, white])), lp = mk(lf, [[Z.leaf, Z.leaf.b[0], Z.leaf.b[1], 1, gold]]), sp = mk(sl, Z.sub.map((g) => [g, g.b[0], g.b[1], 1, subc]));
-        it.push({ n: gl, pts: gp }, { n: lf, pts: lp }, { n: sl, pts: sp }, { n: tmx(tw("tmX", 845), tw("tmY", 146), white) });
+        it.push({ n: gl, pts: gp, key: "ghost" }, { n: lf, pts: lp, key: "leaf" }, { n: sl, pts: sp, key: "sub" }, { n: tmx(tw("tmX", 845), tw("tmY", 146), white), key: "tm" });
         return it;
       }
       const t0s = String(p.l0).toUpperCase(), t1s = String(p.l1).toUpperCase(), cx = tw("cx", 458), top = tw("top", 55), stop = tw("subTop", 233), scx = tw("subCx", 458), maxW = tw("maxW", 840);
@@ -306,10 +306,10 @@
       L0.its.forEach((q) => { if (q.ch !== " ") { gList.push(q.g ? [q.g, x, top + (q.g.b[1] - 55) * k, k, white] : [{ fb: true, ch: q.ch, w: q.w, h: 109 * k, fs: 1.27, by: 0.963, font: "Sora", weight: 700 }, x, top, k, white]);
         if (q.g && q.ch === "O") lList.push([Z.leaf, x + (Z.leaf.b[0] - q.g.b[0]) * k, top + (Z.leaf.b[1] - 55) * k, k, gold]); last = x + q.w; } x += q.w + gap; });
       x = scx - L1.total / 2; L1.its.forEach((q) => { if (q.ch !== " ") sList.push(q.g ? [q.g, x, stop + (q.g.b[1] - 233) * sk, sk, subc] : [{ fb: true, ch: q.ch, w: q.w, h: 35 * sk, fs: 1.09, by: 0.886, font: "PlayfairDisplay", weight: 600 }, x, stop, sk, subc]); x += q.w + sgap; });
-      it.push({ n: gl, pts: mk(gl, gList) });
-      if (lList.length) it.push({ n: lf, pts: mk(lf, lList) });
-      it.push({ n: sl, pts: mk(sl, sList) });
-      if (last !== null) it.push({ n: tmx(last + 2 * k, top + 94 * k, white) });
+      it.push({ n: gl, pts: mk(gl, gList), key: "ghost" });
+      if (lList.length) it.push({ n: lf, pts: mk(lf, lList), key: "leaf" });
+      it.push({ n: sl, pts: mk(sl, sList), key: "sub" });
+      if (last !== null) it.push({ n: tmx(last + 2 * k, top + 94 * k, white), key: "tm" });
       return it;
     },
     zhongkui(pl, p) {
@@ -399,6 +399,11 @@
     indy: { l: { l1: "INDIANA JONES" }, bg: "#17233a", accent: "#dde1ec", tile: "#000" },
     zhongkui: { l: { l1: "ZHONG", l2: "BLACK MYTH", l3: "KUI" }, bg: "#050405", accent: "#8f3638", tile: "#000", seed: 5 },
   };
+  // the human names of the texts of each visual (the labels of the text fields of the editor)
+  const NAMES = { rdr: { l1: "Ligne du haut (ROCKSTAR GAMES PRESENTS)", l2: "Titre, ligne 1 (RED DEAD)", l3: "Titre, ligne 2 (REDEMPTION)", l4: "Chiffre rouge (II)" }, yotei: { l0: "Logo GHOST", l1: "OF YŌTEI", l2: "Texte sur le trait (COMPLETE EDITION)", l3: "Titre", l4: "Paragraphe", l5: "Bouton" }, ytitle: { l0: "Lettres GHOST", l1: "Sous-titre (OF YŌTEI)" },
+    lol: { l1: "Titre", l2: "Label en haut à droite" }, inox1: { l1: "KITAE", l2: "L'AME", l3: "DU", l4: "KATANA", l5: "Date", l6: "Heure", l7: "AM / PM", l8: "Température", l9: "Coordonnées" }, inox2: { l1: "Compteur (J+89)", l2: "Légende du haut (SEMAINE)", l3: "Numéro de semaine", l4: "Légende du bas (MOIS)", l5: "Numéro de mois" },
+    inox3: { l1: "Nom du pays (CUBA)", l2: "Altitude (135M)", l3: "Ville (VIÑALES)" }, nolan: { l1: "Ville (TOKYO)" } };
+  Object.keys(NAMES).forEach((k) => { if (DEFAULTS[k]) DEFAULTS[k].names = NAMES[k]; });
   const SIZE = { indy: [1080, 1080], zhongkui: [1600, 668], rdr: [2000, 871], yotei: [2000, 1125], ytitle: [920, 290], lol: [2000, 1096], inox1: [2000, 1096], inox2: [2000, 1115], inox3: [2000, 1044], nolan: [2000, 1250] };
 
   // ---- title cards (18 October 2026): lettering isolated as a custom font (window.ZSCards.<key>, Scripts/CardTrace.py). One generic layout for every card: each line is a holder of glyph boxes (`.ch`); a line whose text is the original one keeps its
@@ -438,18 +443,77 @@
       Z.lines.forEach((ln) => {
         const holder = abs(pl, { left: "0", top: "0", width: Z.w + "px", height: Z.h + "px" }), col = cols[ln.ci] || cols[0], inD = ln.k in D0.l, text = inD ? String(p[ln.k]) : ln.text;
         if (ln.type === "text") {  // a small line set in a real face fitted to the measured cap height and width: it is live text, so editing it never breaks anything
-          const size = tw(ln.k + "Size", ln.size); it.push({ n: T(pl, { text, x: tw(ln.k + "X", ln.x), y: tw(ln.k + "Y", ln.y) - ln.dy * size, size, font: ln.font, weight: ln.weight, color: col, ls: (tw(ln.k + "Ls", ln.ls)) + "em", lh: 1, align: ln.align }), aux: !!ln.aux }); return; }
-        if (ln.fixed || (!flow[ln.k] && p.design !== "custom" && text === ln.text)) { glyphBoxes(holder, ln.glyphs.map((g) => [g, g.b[0], g.b[1], 1, col]), col); it.push({ n: holder, aux: !!ln.aux }); return; }
+          const size = tw(ln.k + "Size", ln.size); it.push({ n: T(pl, { text, x: tw(ln.k + "X", ln.x), y: tw(ln.k + "Y", ln.y) - ln.dy * size, size, font: ln.font, weight: ln.weight, color: col, ls: (tw(ln.k + "Ls", ln.ls)) + "em", lh: 1, align: ln.align }), aux: !!ln.aux, key: ln.k, name: ln.name, anchor: ln.align }); return; }
+        if (ln.fixed || (!flow[ln.k] && p.design !== "custom" && text === ln.text)) { glyphBoxes(holder, ln.glyphs.map((g) => [g, g.b[0], g.b[1], 1, col]), col); it.push({ n: holder, aux: !!ln.aux, key: ln.k, name: ln.name, anchor: ln.align }); return; }
         const { row, gap, tot1 } = rowOf(ln, text), base = ln.top + ln.capH, f = flow[ln.k];
         const k = f ? f.k : Math.min(tw(ln.k + "K", 1), ln.maxw / Math.max(1, tot1)), total = tot1 * k;
         let x = f ? f.x : ln.align === "left" ? tw(ln.k + "X", ln.x0) : ln.align === "right" ? tw(ln.k + "X", ln.x1) - total : tw(ln.k + "X", ln.cx) - total / 2; const list = [];
         row.forEach((q) => { if (q.ch !== " ") list.push(q.g ? [q.g, x, base + (q.g.b[1] - (q.g.sb === undefined ? base : q.g.sb)) * q.r * k, k * q.r, col, q.acc ? { m: q.acc, o: ln.fb, cap: ln.capH * k } : null] : [{ fb: true, ch: q.ch, h: ln.capH * k, o: ln.fb }, x, base - ln.capH * k, k, col]); x += (q.w + gap) * k; });
-        glyphBoxes(holder, list, col); it.push({ n: holder, aux: !!ln.aux });
+        glyphBoxes(holder, list, col); it.push({ n: holder, aux: !!ln.aux, key: ln.k, name: ln.name, anchor: ln.align });
       });
       return it;
     };
   }
   CARD_KEYS.forEach((k) => { L[k] = cardLayout(k); });
+
+  // ---- the DESIGN of a lettering as parameters (19 October 2026): every holder of glyphs (a line, a logo, a plate) can be scaled, stretched, slanted, moved, thickened or thinned, rounded, roughened and tracked from sliders, so a traced design is as
+  // editable as a procedural one. The tweaks are named `<key>_<Handle>` (l1_Weight, ghost_Scale ...) and stored in the free-text `tweaks` of the scene; the controls panel turns them into labelled sliders (ZS.stills.controls).
+  // A handle that is left at its default changes nothing and creates nothing (no wrapper, no filter).
+  const HOLD = [["Scale", "Taille (%)", 100, 20, 300, 1], ["StretchX", "Largeur (%)", 100, 40, 250, 1], ["StretchY", "Hauteur (%)", 100, 40, 250, 1], ["Skew", "Inclinaison (°)", 0, -30, 30, 0.5], ["Dx", "Décalage horizontal (px)", 0, -700, 700, 1],
+    ["Dy", "Décalage vertical (px)", 0, -500, 500, 1], ["Weight", "Graisse (px, négatif = plus fin)", 0, -14, 28, 0.5], ["Round", "Arrondi des angles (px)", 0, 0, 24, 0.5], ["Rough", "Rugosité du bord (px)", 0, 0, 16, 0.5], ["Track", "Interlettrage (px)", 0, -60, 160, 1]];
+  let designId = 0;
+  function designize(it, tw, W, H, seed) {
+    const K = it.key, n = it.n; if (!K || !n || !n.parentNode) return;
+    const v = (nm, d) => tw(K + "_" + nm, d), sc = v("Scale", 100) / 100, sx = v("StretchX", 100) / 100, sy = v("StretchY", 100) / 100, sk = v("Skew", 0), dx = v("Dx", 0), dy = v("Dy", 0), wg = Math.max(-28, Math.min(28, v("Weight", 0))), rd = v("Round", 0), rg = v("Rough", 0), tr = v("Track", 0);
+    if (sc === 1 && sx === 1 && sy === 1 && !sk && !dx && !dy && !wg && !rd && !rg && !tr) return;
+    const chs = [...n.querySelectorAll(".ch")].filter((c) => c.style.left && c.style.width).sort((a, b) => Number(a.dataset.i || 0) - Number(b.dataset.i || 0));
+    if (tr && chs.length > 1) { const mid = (chs.length - 1) / 2; chs.forEach((c, i) => { c.style.left = parseFloat(c.style.left) + tr * (i - mid) + "px"; }); }  // tracking: the glyph boxes move apart around the middle of the line
+    let x0 = 1e9, x1 = -1e9, y1 = -1e9; (chs.length ? chs : [n]).forEach((e) => { const l = parseFloat(e.style.left || 0), t = parseFloat(e.style.top || 0), w = parseFloat(e.style.width || 0), hh = parseFloat(e.style.height || 0); x0 = Math.min(x0, l); x1 = Math.max(x1, l + w); y1 = Math.max(y1, t + hh); });
+    if (!isFinite(x0)) { x0 = 0; x1 = W; y1 = H; }
+    const ax = it.anchor === "left" ? x0 : it.anchor === "right" ? x1 : (x0 + x1) / 2, ay = y1, par = n.parentNode;  // scaling grows from the baseline and from the alignment point of the line
+    const wrap = abs(par, { left: "0", top: "0", width: W + "px", height: H + "px", transformOrigin: `${ax}px ${ay}px` }); par.insertBefore(wrap, n); wrap.appendChild(n);
+    const tr2 = []; if (dx || dy) tr2.push(`translate(${dx}px,${dy}px)`); if (sk) tr2.push(`skewX(${sk}deg)`); if (sc !== 1 || sx !== 1 || sy !== 1) tr2.push(`scale(${sc * sx},${sc * sy})`); if (tr2.length) wrap.style.transform = tr2.join(" ");
+    if (wg || rd || rg) {
+      const id = "dg" + (designId++), svg = svgEl("svg", { width: 0, height: 0, style: "position:absolute" }, wrap), f = svgEl("filter", { id, filterUnits: "userSpaceOnUse", x: -200, y: -200, width: W + 400, height: H + 400, "color-interpolation-filters": "sRGB" }, svgEl("defs", {}, svg)); let cur = "SourceGraphic";
+      if (wg) { svgEl("feMorphology", { operator: wg > 0 ? "dilate" : "erode", radius: Math.abs(wg), in: cur, result: "dgm" }, f); cur = "dgm"; }  // weight: the outline grows or shrinks by the same distance everywhere
+      if (rd) { svgEl("feGaussianBlur", { stdDeviation: rd, in: cur, result: "dgb" }, f); const ct = svgEl("feComponentTransfer", { in: "dgb", result: "dgr" }, f); svgEl("feFuncA", { type: "linear", slope: 9, intercept: -4 }, ct); cur = "dgr"; }  // roundness: blur then cut again
+      if (rg) { svgEl("feTurbulence", { type: "fractalNoise", baseFrequency: "0.04 0.055", numOctaves: 3, seed: Math.round(seed || 7) % 97, result: "dgn" }, f); svgEl("feDisplacementMap", { in: cur, in2: "dgn", scale: rg * 2, xChannelSelector: "R", yChannelSelector: "G" }, f); }  // roughness: a noise displaces the edge
+      wrap.style.filter = `url(#${id})`;
+    }
+    it.n = n;
+  }
+  // the sliders of a layout, written in ONE place (what the code reads is what the panel offers): texts, then the design handles of every holder, then the sliders of the layout itself
+  const LAYOUT_TWEAKS = {
+    rdr: [["Plaque", "plateRough", "Rugosité du bord de la plaque", 7, 0, 20, 0.5], ["Texte modifié", "gap", "Espace entre lettres (px)", -5, -30, 40, 0.5], ["Texte modifié", "cap2", "Hauteur de la ligne 1 (px)", 151, 60, 300, 1], ["Texte modifié", "cap3", "Hauteur de la ligne 2 (px)", 114, 40, 260, 1],
+      ["Texte modifié", "space", "Largeur d'un espace (em)", 0.32, 0.1, 0.8, 0.01], ["Texte modifié", "x", "Position gauche du texte (px)", 72, 0, 400, 1], ["Plaque", "padL", "Marge gauche de la plaque", 18, 0, 80, 1], ["Plaque", "padR", "Marge droite de la plaque", 16, 0, 80, 1],
+      ["Plaque", "padT", "Marge haute de la plaque", 16, 0, 80, 1], ["Plaque", "padB", "Marge basse de la plaque", 20, 0, 80, 1]],
+    yotei: [["Décor", "bandBottom", "Hauteur de la bande dorée (px)", 78, 0, 200, 1], ["Décor", "bandSoft", "Douceur du bord de la bande (px)", 1.2, 0, 10, 0.1], ["Décor", "dotGrid", "Pas de la trame de cercles (px)", 21, 10, 40, 1], ["Décor", "dotR", "Rayon des cercles (px)", 6, 2, 12, 0.5], ["Décor", "dotOpacity", "Opacité de la trame", 0.6, 0, 1, 0.01],
+      ["Feuilles", "leafOn", "Feuilles (0 = cachées, 1 = visibles)", 1, 0, 1, 1], ["Feuilles", "leafScale", "Taille des feuilles", 1, 0.3, 2, 0.05], ["Feuilles", "leafOpacity", "Opacité des feuilles", 1, 0, 1, 0.01], ["Feuilles", "veinOpacity", "Opacité des nervures", 0.3, 0, 1, 0.01], ["Feuilles", "drift", "Dérive des feuilles (px)", 30, 0, 120, 1],
+      ["Emblème", "emblemSize", "Taille de la feuille de l'emblème", 40, 10, 100, 1], ["Emblème", "emblemX", "Position X de l'emblème", 464, 300, 700, 1], ["Emblème", "emblemY", "Position Y de l'emblème", 152, 50, 300, 1], ["Emblème", "emblemRot", "Rotation de l'emblème (°)", -8, -45, 45, 1],
+      ["Trait de pinceau", "strokeExtend", "Prolongement du trait à gauche (px)", 16, 0, 120, 1], ["Trait de pinceau", "strokeRough", "Rugosité du trait", 9, 0, 30, 0.5],
+      ["Textes", "y0", "GHOST (texte modifié) : position Y", 78, 0, 200, 1], ["Textes", "size0", "GHOST (texte modifié) : taille", 110, 40, 220, 1], ["Textes", "ls0", "GHOST (texte modifié) : espacement (em)", 0.3, 0, 1, 0.01], ["Textes", "y1", "OF YŌTEI : position Y", 208, 100, 320, 1], ["Textes", "size1", "OF YŌTEI : taille", 22, 8, 60, 0.5], ["Textes", "ls1", "OF YŌTEI : espacement (em)", 0.38, 0, 1, 0.01],
+      ["Textes", "y2", "COMPLETE EDITION : position Y", 260, 150, 380, 1], ["Textes", "size2", "COMPLETE EDITION : taille", 14.5, 8, 40, 0.5], ["Textes", "ls2", "COMPLETE EDITION : espacement (em)", 0.36, 0, 1, 0.01],
+      ["Textes", "tx", "Titre et paragraphe : position X", 226, 100, 500, 1], ["Textes", "y3", "Titre : position Y", 348, 250, 480, 1], ["Textes", "size3", "Titre : taille", 49, 20, 120, 1], ["Textes", "weight3", "Titre : graisse", 260, 100, 800, 10], ["Textes", "y4", "Paragraphe : position Y", 421, 300, 560, 1], ["Textes", "size4", "Paragraphe : taille", 18.8, 10, 40, 0.2], ["Textes", "ls4", "Paragraphe : espacement (em)", 0, -0.05, 0.3, 0.005], ["Textes", "lh4", "Paragraphe : interligne", 1.45, 1, 2.2, 0.01],
+      ["Bouton", "size5", "Texte du bouton : taille", 19.4, 10, 40, 0.2], ["Bouton", "weight5", "Texte du bouton : graisse", 600, 100, 800, 10]],
+    ytitle: [["Texte modifié", "cap", "Hauteur des capitales (px)", 109, 40, 200, 1], ["Texte modifié", "gap", "Espace entre lettres (px)", 52, 0, 140, 1], ["Texte modifié", "top", "Position Y de la ligne GHOST", 55, 0, 160, 1], ["Texte modifié", "cx", "Centre de la ligne GHOST", 458, 200, 700, 1], ["Texte modifié", "maxW", "Largeur maximale (px)", 840, 300, 900, 5],
+      ["Sous-titre", "subCap", "Hauteur des capitales du sous-titre", 35, 12, 70, 0.5], ["Sous-titre", "subTop", "Position Y du sous-titre", 233, 160, 280, 1], ["Sous-titre", "subGap", "Espace entre lettres du sous-titre", 9, 0, 40, 0.5], ["Sous-titre", "subSpace", "Largeur d'un espace du sous-titre", 25, 5, 80, 1], ["Sous-titre", "subCx", "Centre du sous-titre", 458, 200, 700, 1],
+      ["Marque TM", "tmSize", "Taille du TM", 9.5, 5, 24, 0.5], ["Marque TM", "tmX", "Position X du TM", 845, 700, 900, 1], ["Marque TM", "tmY", "Position Y du TM", 146, 100, 200, 1]],
+  };
+  const HOLDERS = { rdr: [["plate", "Plaque noire"], ["l1", "Ligne du haut"], ["l2", "RED DEAD (ou titre modifié)"], ["l3", "REDEMPTION"], ["ii", "Le II rouge"]], yotei: [["logo", "Logo GHOST"], ["emblem", "Feuille de l'emblème"], ["l1", "OF YŌTEI"], ["stroke", "Trait de pinceau"], ["l2", "COMPLETE EDITION"], ["l3", "Titre"], ["l4", "Paragraphe"], ["btn", "Bouton"]],
+    ytitle: [["ghost", "Lettres GHOST"], ["leaf", "Feuille dorée"], ["sub", "OF YŌTEI"], ["tm", "Marque TM"]] };
+  function layoutControls(layout) {
+    const D = DEFAULTS[layout], out = [], names = D.names || {}, keys = Object.keys(D.l), slots = keys.map((k) => D.l[k]), cd = window.ZSCards && window.ZSCards[layout];
+    keys.forEach((k, i) => out.push({ id: "text_" + k, type: "text", label: names[k] || k, group: "Textes", default: D.l[k], slots, targets: [{ key: "lines", index: i }] }));
+    const hold = cd ? cd.lines.map((ln) => [ln.k, ln.name || ln.k, ln]) : (HOLDERS[layout] || []).map((h2) => [h2[0], h2[1], null]);
+    hold.forEach(([k, label, ln]) => {
+      if (ln && ln.type === "text") {  // a live text: its own geometry
+        [["X", "Position X (px)", ln.x, 0, 2000, 1], ["Y", "Position Y (px)", ln.y, 0, 1300, 1], ["Size", "Taille (px)", ln.size, 6, 140, 0.5], ["Ls", "Espacement des lettres (em)", ln.ls, -0.2, 1.2, 0.005]].forEach((q) => out.push({ id: k + q[0], type: "number", label: q[1], group: "Texte · " + label, default: q[2], min: q[3], max: q[4], step: q[5], closed: true, targets: [{ key: "tweaks", tweak: k + q[0] }] }));
+      }
+      HOLD.forEach((q) => { if (q[0] === "Track" && ln && ln.type === "text") return; out.push({ id: k + "_" + q[0], type: "number", label: q[1], group: "Lettrage · " + label, default: q[2], min: q[3], max: q[4], step: q[5], closed: true, targets: [{ key: "tweaks", tweak: k + "_" + q[0] }] }); });
+    });
+    (LAYOUT_TWEAKS[layout] || []).forEach((q) => out.push({ id: q[1], type: "number", label: q[2], group: "Réglages · " + q[0], default: q[3], min: q[4], max: q[5], step: q[6], closed: true, targets: [{ key: "tweaks", tweak: q[1] }] }));
+    return out;
+  }
 
   // ---- the appearances (seek-safe tweens only). Every effect reads its numbers from `o`: distance, blur, scale, rotation, per-letter stagger, direction, ease, glitch amplitude.
   const WIPE = { left: "inset(0 100% 0 0)", right: "inset(0 0 0 100%)", up: "inset(100% 0 0 0)", down: "inset(0 0 100% 0)", center: "inset(0 50% 0 50%)" };
@@ -494,7 +558,7 @@
       else if (gather) fto(tl, g.c, { opacity: 0, filter: "blur(5px)" }, { opacity: 1, filter: "blur(0px)", duration: o.dur * 0.9, ease: "power2.out" }, g.t);
       else fto(tl, g.c, { opacity: 0, scale: 0.94, filter: "blur(8px)", transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, filter: "blur(0px)", duration: o.dur * 1.1, ease: "power3.out" }, g.t);
     });
-    const host = items[0].n.parentNode, layer = abs(host, { left: "0", top: "0", width: W + "px", height: Hh + "px", pointerEvents: "none" }), sv = svgEl("svg", { width: W, height: Hh, viewBox: `0 0 ${W} ${Hh}`, style: "position:absolute;left:0;top:0;overflow:visible" }, layer);
+    const host = o.host || items[0].n.parentNode, layer = abs(host, { left: "0", top: "0", width: W + "px", height: Hh + "px", pointerEvents: "none" }), sv = svgEl("svg", { width: W, height: Hh, viewBox: `0 0 ${W} ${Hh}`, style: "position:absolute;left:0;top:0;overflow:visible" }, layer);
     const all = []; gl.forEach((g, gi) => g.pts.forEach((q) => all.push({ gi, x: q[0], y: q[1] })));  // petals are shared out between the glyphs by their number of points (their area)
     const N = Math.min(Math.round(o.petals === undefined || o.petals === "" ? 150 : o.petals), 600), size = o.petalSize || 9, col = o.petalColor || "#ffffff";
     for (let n = 0; n < N && all.length; n++) {
@@ -601,11 +665,12 @@
       } else { k = Math.min(w / sz[0], sh / sz[1]); ox = (w - sz[0] * k) / 2; oy = (sh - sz[1] * k) / 2; }
       const plane = abs(st, { left: ox + "px", top: oy + "px", width: sz[0] + "px", height: sz[1] + "px", transformOrigin: "0 0", transform: `scale(${k})`, overflow: (tall && sz[0] / sz[1] > 1.25) || p.layout === "ytitle" ? "visible" : "hidden" });
       const items = (L[p.layout] || L.ichiban)(plane, params);
+      items.forEach((x) => designize(x, params.tw, sz[0], sz[1], params.seed));  // the design handles (size, width, slant, weight, roundness, roughness, tracking...) of every holder
       // a slow camera pull-back while the title is written, settled at scale 1 (the reference framing) for the hold
       if (params.camera) { const push = tws.push !== undefined ? tws.push : (p.push === undefined || p.push === "" ? 0.05 : Number(p.push)); if (push > 0) fto(tl, params.camera, { scale: 1 + push, transformOrigin: "800px 320px" }, { scale: 1, duration: (ctx.dur || 4.2) * 0.7, ease: "power1.out" }, t0); }
-      appear(tl, items, p.appearance, t0, { stagger: p.stagger, dur: p.dur, delay: p.delay, charStagger: p.charStagger, distance: p.distance, blur: p.blur, scaleFrom: p.scaleFrom, rotate: p.rotate, ease: p.ease, direction: p.direction, glitch: p.glitch, brushSpeed: tws.brushSpeed !== undefined ? tws.brushSpeed : p.brushSpeed, brushHesitate: p.brushHesitate, sceneDur: ctx.dur, plane: sz, seed: params.seed, petals: tws.petals !== undefined ? tws.petals : p.petals, petalSize: tws.petalSize !== undefined ? tws.petalSize : p.petalSize, windAngle: tws.windAngle !== undefined ? tws.windAngle : p.windAngle, windReach: tws.windReach !== undefined ? tws.windReach : p.windReach, petalColor: p.deco || "#ffffff" });
+      appear(tl, items, p.appearance, t0, { stagger: p.stagger, dur: p.dur, delay: p.delay, charStagger: p.charStagger, distance: p.distance, blur: p.blur, scaleFrom: p.scaleFrom, rotate: p.rotate, ease: p.ease, direction: p.direction, glitch: p.glitch, brushSpeed: tws.brushSpeed !== undefined ? tws.brushSpeed : p.brushSpeed, brushHesitate: p.brushHesitate, sceneDur: ctx.dur, plane: sz, host: plane, seed: params.seed, petals: tws.petals !== undefined ? tws.petals : p.petals, petalSize: tws.petalSize !== undefined ? tws.petalSize : p.petalSize, windAngle: tws.windAngle !== undefined ? tws.windAngle : p.windAngle, windReach: tws.windReach !== undefined ? tws.windReach : p.windReach, petalColor: p.deco || "#ffffff" });
       if (params.after) params.after(tl, t0, ctx.dur || 7, fto);
     },
   });
-  ZS.stills = { LAYOUTS, APPEARANCES, DEFAULTS };
+  ZS.stills = { LAYOUTS, APPEARANCES, DEFAULTS, controls: layoutControls };
 })();

@@ -442,10 +442,33 @@
   // each one driving every scene value it names. A person changes a headline, a colour or a product name here, without opening a scene.
   // control = { id, label, type, group, default, min, max, step, options, targets: [{ scene, child?, key }] }
   const targetParams = (p, t) => { const sc = p.scenes.find((x) => x.id === t.scene); if (!sc) return null; const o = t.child != null && sc.children ? sc.children[t.child] : sc; return o ? (o.params = o.params || {}) : null; };
+  // 19 October 2026: a control can drive (a) a scene value, (b) one named line of the free-text `tweaks` ({key: "tweaks", tweak: "l1Weight"}: the line "l1Weight 3"), (c) one slot of a list ({key: "lines", index: 2}: the third text).
+  // A control carries its real default (`default`, and `slots` for a list), so the field always shows what the scene really plays, even when the scene stores nothing: an empty field was the "impossible to edit" bug of the title cards.
+  const tweakLines = (v) => (Array.isArray(v) ? v : String(v || "").split("\n")).map((x) => String(x).trim()).filter(Boolean);
+  const tweakName = (l) => l.split(/\s+/).slice(0, -1).join(" ");
+  function readTarget(o, t) {
+    const pr = o.params || {};
+    if (t.tweak) { const hit = tweakLines(pr[t.key || "tweaks"]).find((l) => tweakName(l) === t.tweak); return hit ? Number(hit.split(/\s+/).pop()) : undefined; }
+    if (t.index != null) { const a = Array.isArray(pr[t.key]) ? pr[t.key] : (pr[t.key] != null && pr[t.key] !== "" ? String(pr[t.key]).split("\n") : null); return a && a[t.index] !== undefined ? a[t.index] : undefined; }
+    return pr[t.key];
+  }
+  function writeTarget(pr, t, v, reset, c) {
+    if (t.tweak) {
+      const key = t.key || "tweaks", L = tweakLines(pr[key]).filter((l) => tweakName(l) !== t.tweak); if (!reset && v !== undefined && v !== "") L.push(t.tweak + " " + v);
+      if (L.length) pr[key] = L; else delete pr[key]; return;
+    }
+    if (t.index != null) {
+      const full = c && Array.isArray(c.slots) ? c.slots : [], cur = Array.isArray(pr[t.key]) ? pr[t.key].slice() : (pr[t.key] != null && pr[t.key] !== "" ? String(pr[t.key]).split("\n") : full.slice());
+      while (cur.length < full.length) cur.push(full[cur.length]); cur[t.index] = reset ? (full[t.index] !== undefined ? full[t.index] : "") : v; pr[t.key] = cur; return;
+    }
+    if (reset) delete pr[t.key]; else pr[t.key] = v;
+  }
   function controlValue(c) {
     const t = (c.targets || [])[0]; if (!t) return c.default;
     const sc = S.project.scenes.find((x) => x.id === t.scene), o = sc && (t.child != null && sc.children ? sc.children[t.child] : sc), tpl = o && ZS.templates[o.template];
     if (!tpl) return c.default;
+    const own = readTarget(o, t); if (own !== undefined && own !== "") return own;
+    if (c.default !== undefined) return c.default;
     const r = ZS.resolve(tpl, o.params || {}, ZS.theme(S.project));
     return r[t.key] !== undefined ? r[t.key] : c.default;
   }
@@ -455,11 +478,11 @@
     const groups = {};
     cs.forEach((c) => { (groups[c.group || "Réglages"] = groups[c.group || "Réglages"] || []).push(c); });
     Object.entries(groups).forEach(([g, list]) => {
-      const det = document.createElement("details"); det.open = true; det.innerHTML = `<summary>${esc(g)} · ${list.length}</summary>`;
+      const det = document.createElement("details"); det.open = !list.some((c) => c.closed); det.innerHTML = `<summary>${esc(g)} · ${list.length}</summary>`;
       list.forEach((c) => {
         const shown = controlValue(c), def = { key: c.id, label: c.label, type: c.type || "text", min: c.min, max: c.max, step: c.step, unit: c.unit, options: c.options, default: c.default };
         det.appendChild(field(def, shown, shown, (v, reset) => change((p) => {
-          (c.targets || []).forEach((t) => { const pr = targetParams(p, t); if (!pr) return; if (reset) delete pr[t.key]; else pr[t.key] = v; });
+          (c.targets || []).forEach((t) => { const pr = targetParams(p, t); if (!pr) return; writeTarget(pr, t, v, reset, c); });
         }, { keepPanel: !reset })));
       });
       panel.appendChild(det);

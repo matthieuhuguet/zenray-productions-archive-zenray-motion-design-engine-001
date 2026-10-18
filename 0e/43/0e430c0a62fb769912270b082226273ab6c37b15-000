@@ -20,6 +20,20 @@ def template_defaults() -> dict:
     js = Path(__file__).resolve().parents[1] / "runtime" / "zs-templates-stills-1.js"
     code = "global.window={ZS:{h:{},register(){}}};global.document={};require(%r);console.log(JSON.stringify(window.ZS.stills.DEFAULTS))" % str(js)
     return json.loads(subprocess.check_output(["node", "-e", code], text=True))
+PARAM_LAYOUTS = ("rdr", "yotei", "ytitle", "lol", "inox1", "inox2", "inox3", "nolan")  # the visuals whose whole design is exposed as labelled sliders (19 October 2026)
+
+
+def layout_controls(layout: str) -> list:
+    """The texts, the design handles of every holder of glyphs and the sliders of a layout, written by the template itself (ZS.stills.controls): what the code reads is what the editor offers."""
+    import json
+    import subprocess
+    from pathlib import Path
+    rt = Path(__file__).resolve().parents[1] / "runtime"
+    req = "".join("require(%r);" % str(f) for f in sorted(rt.glob("zs-templates-card-*-1.js")))
+    code = "global.window={ZS:{h:{},register(){}}};global.document={};require(%r);%sconsole.log(JSON.stringify(window.ZS.stills.controls(%r)))" % (str(rt / "zs-templates-stills-1.js"), req, layout)
+    return json.loads(subprocess.check_output(["node", "-e", code], text=True))
+
+
 # id -> (title, slug of the reference still, layout, format, the three appearances, per-scene extras)
 STILLS = {
     "bleach-tybw": ("Bleach Thousand-Year Blood War, page de personnage", "still-bleach-tybw", "bleach", "16x9", ["wipe", "letters", "zoom"], {"tweaks": ["bigSize 505", "bigScaleX 0.3394", "bigX 902", "bigY 722", "bigLs -0.07"]}),
@@ -75,6 +89,17 @@ def controls(n: int, apps: "list | None" = None, layout: str = "") -> list:
         c.append({"id": "accent2", "label": "Couleur du texte secondaire", "type": "color", "group": "Couleurs", "targets": allt("accent2")})
     for i, a in enumerate(apps or []):
         c.append({"id": f"appearance{i + 1}", "label": f"Apparition de la scène {i + 1}", "type": "select", "group": "Apparitions", "options": ["wipe", "letters", "rise", "ink", "drop", "pop", "typewriter", "zoom", "glitch", "brush", "petals-sweep", "petals-gather", "petals-bloom", "mask-up", "slam", "mask-down", "dissolve", "track"], "targets": [T(ids[i], "appearance")]})
+    if layout in PARAM_LAYOUTS:  # texts as one labelled field each, then every design handle: nothing is left to guess or to type as "name value"
+        D = template_defaults()[layout]; c = [x for x in c if x["id"] not in ("lines", "tweaks")]
+        for x in c:
+            if x["id"] == "accent": x["default"] = D["accent"]
+            if x["id"] == "bg": x["default"] = D["bg"]
+            if x["id"] == "accent2": x["default"] = D.get("accent2", D["accent"])
+        extra = []
+        for jc in layout_controls(layout):
+            jc = dict(jc); tg = jc.pop("targets"); jc["targets"] = [dict({"scene": sid}, **t) for sid in ids for t in tg]; extra.append(jc)
+        texts = [x for x in extra if x["type"] == "text"]; rest = [x for x in extra if x["type"] != "text"]
+        c = c[:1] + texts + c[1:] + rest
     return c
 
 

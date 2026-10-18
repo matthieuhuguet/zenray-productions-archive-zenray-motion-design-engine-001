@@ -69,7 +69,15 @@ def line_data(k, text, face, ci, glyphs, align="center", fb=None, fixed=False, u
     return {"k": k, "text": text, "face": face, "ci": ci, "align": align, "x0": x0, "x1": x1, "cx": (x0 + x1) / 2, "top": top, "capH": capH, "gap": float(np.median(gaps)) if gaps else 0.0,
             "space": float(np.median(spaces)) if spaces else capH * 0.35, "glyphs": gs, "fb": fb or {}, "fixed": fixed, "upper": upper, "maxw": maxw or (x1 - x0) * 1.25, "group": group, "gb": gb, "gmax": gmax}
 
+NAMES = {  # the human name of every line of a card, shown in the editor (19 October 2026)
+    "lol": {"l1": "Titre SOMBRES COMPLOTS", "l2": "Label CINÉMATIQUE", "logo": "Logo L25 · S1"},
+    "inox1": {"l1": "KITAE", "l2": "L'AME", "l3": "DU", "l4": "KATANA", "l5": "Date", "l6": "Heure", "l7": "AM", "l8": "Température", "l9": "Coordonnées", "kanji": "Kanji 鍛え", "globe": "Globe"},
+    "inox2": {"l1": "J+89 (compteur)", "l2": "SEMAINE", "l3": "Numéro de semaine", "l4": "MOIS", "l5": "Numéro de mois"},
+    "inox3": {"l1": "CUBA", "l2": "Altitude", "l3": "Ville", "tri": "Triangle"},
+    "nolan": {"l1": "TOKYO"},
+}
 def emit(key, W, H, colors, lines, note=""):
+    for ln in lines: ln["name"] = NAMES.get(key, {}).get(ln["k"], ln["k"])
     out = {"w": W, "h": H, "colors": colors, "lines": lines}
     p = ROOT / "motion" / "runtime" / ("zs-templates-card-%s-1.js" % key)
     p.write_text("// 18 October 2026: title card %s (Scripts/CardTrace.py): isolated lettering as a custom font. %s FR : carte titre, lettrage isole en police personnalisee.\n(window.ZSCards = window.ZSCards || {}).%s = %s;\n" % (key, note, key, json.dumps(out, separators=(",", ":"))))
