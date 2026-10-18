@@ -126,7 +126,7 @@ def pale(a):
 
 def paget(a):
     H, W = a.shape[:2]; dark = (24, 24, 24)
-    return [dict(name="white words", field=cov_color(a, (250, 250, 250), dark), region=box(H, W, 100, 220, 668, 740) & ~box(H, W, 100, 880, 700, 1000)),
+    return [dict(name="white words", field=cov_color(a, (250, 250, 250), dark), region=box(H, W, 116, 220, 668, 740) & ~box(H, W, 100, 880, 700, 1000)),
             dict(name="orange words", field=cov_color(a, (255, 157, 31), dark), region=box(H, W, 100, 290, 668, 880)),
             dict(name="handle and icons", field=cov_light(a, None, 15, box(H, W, 112, 1000, 530, 1044), 99.0), region=box(H, W, 112, 1000, 530, 1044), color=(214, 214, 214)),
             dict(name="button", field=cov_color(a, (255, 157, 31), dark), region=box(H, W, 112, 880, 492, 995)),

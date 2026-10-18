@@ -51,7 +51,7 @@
 
   // ---- the "original" design of a visual: the traced foreground (Scripts/TraceStill.py), one `.ch` box per glyph, used while the texts are the original ones and the mode is not "custom"
   const tracedFor = (p, key, store) => { const Tr = window[store || "ZSTrace"] && window[store || "ZSTrace"][key]; if (!Tr || p.design === "custom") return null; const D = DEFAULTS[p.layout]; return Object.keys(D.l).every((k) => String(p[k]) === String(D.l[k])) ? Tr : null; };
-  let traceGradId = 0;
+  let traceGradId = 0, zkId = 0;  // module-level counters: the three scenes of a project live in ONE document, an id repeated from scene to scene (a mask, a gradient) resolves to the first one, which belongs to another scene
   const traceLayer = (parent, glyphs, w0, h0, grad, blur, op) => {
     const holder = abs(parent, { left: "0", top: "0", width: (w0 || 1920) + "px", height: (h0 || 1080) + "px" });  // full plane size: a wipe (clip-path) on an empty box would hide everything
     let fillOf = null; const inner = (blur || op) ? abs(holder, { left: "0", top: "0", width: (w0 || 1920) + "px", height: (h0 || 1080) + "px" }) : holder;  // the blur and the opacity live on an inner box: the appearances animate the holder's own filter and opacity
@@ -187,7 +187,6 @@
         const v = svgEl("svg", { width: w, height: hgt, viewBox: `0 0 ${w} ${hgt}`, style: "position:absolute;left:0;top:0;overflow:visible" + (filter ? ";filter:url(#" + filter + ")" : "") }, c);
         const gg = svgEl("g", { transform: `translate(${pad - minX},${pad - minY})`, fill: red, "fill-rule": "evenodd" }, v); drawInto(gg, c); return c;
       };
-      let zkId = 0;
       const fontLine = (text, o) => {
         const holder = abs(pl, { left: "0", top: "0", width: "1600px", height: "668px" });
         const r = F.layout(text, { width: o.width, taper: o.taper, flare: o.flare, cap: o.cap, tracking: o.tracking, kern: o.kern, positions: o.positions, wobble: o.wobble, slant: o.slant, seed: o.seed, style: o.style });
