@@ -264,7 +264,8 @@
       const iiW = (I2 ? (I2.letters[1].b[2] - I2.letters[0].b[0]) * iiCap / (I2.letters[0].b[3] - I2.letters[0].b[1]) : iiCap * 0.62), l4 = String(p.l4), R4 = l4.toUpperCase() === "II" ? null : shareRow(tw, ln4, l4, G, AL);
       const ii4 = l4.toUpperCase() === "II" ? iiW : R4.tot1 + 8, plateR = iiX + ii4 + tw("padR", 16), plateL = X0 - tw("padL", 18), plateB = y3 + cap3 + tw("padB", 20), bodyT = y2 - tw("padT", 16), tabT = tw("tabTop", 113), l1w = String(p.l1).length * 0.62 * tw("size1", 34) * tw("sx1", 0.82) + 20;
       const pg = svgEl("g", { filter: `url(#${rid})` }, sv0); svgEl("rect", { x: plateL, y: bodyT, width: plateR - plateL, height: plateB - bodyT, fill: plateCol }, pg); svgEl("rect", { x: plateL, y: tabT, width: Math.max(260, l1w + 40), height: bodyT - tabT + 8, fill: plateCol }, pg);
-      rf.setAttribute("width", String(Math.max(2000, Math.ceil(plateR) + 120)));  // the filter region follows the plate: a long text pushes the plate past 2000 px and the region would cut it
+      const holdW = Math.max(2000, Math.ceil(plateR) + 120);  // a long text pushes the plate past 2000 px: the holders (their box is the clip of the wipe) and the filter region follow it, or the plate would be cut while the letters are not
+      rf.setAttribute("width", String(holdW)); sv0.setAttribute("width", String(holdW)); sv0.setAttribute("viewBox", `0 0 ${holdW} 871`); [grp, hold, lay].forEach((e) => { e.style.width = holdW + "px"; });
       const fitK = Math.min(1, (tw("maxRight", 1920) - plateL) / Math.max(1, plateR - plateL));  // a text too long for the frame shrinks the whole logo, from the left of its plate
       if (fitK < 1) { grp.style.transformOrigin = `${plateL}px ${tabT}px`; grp.style.transform = `scale(${fitK})`; }
       it.push({ n: hold, shape: true, key: "plate" });
