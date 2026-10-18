@@ -12,8 +12,8 @@
   const svgEl = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); Object.keys(attrs || {}).forEach((k) => e.setAttribute(k, attrs[k])); if (parent) parent.appendChild(e); return e; };
   const abs = (parent, css, text) => { const e = h.css(h.el("div", "zs-abs", parent), css); if (text !== undefined) { if (/[<&]/.test(String(text))) e.innerHTML = text; else e.textContent = text; } return e; };
   const rnd = (seed) => () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
-  const APPEARANCES = ["wipe", "letters", "rise", "ink", "drop", "pop", "typewriter", "zoom", "glitch", "brush"];
-  const LAYOUTS = ["bleach", "ichiban", "paget", "pale-raven", "phase", "yawen", "indy", "zhongkui", "rdr", "yotei"];
+  const APPEARANCES = ["wipe", "letters", "rise", "ink", "drop", "pop", "typewriter", "zoom", "glitch", "brush", "petals-sweep", "petals-gather", "petals-bloom"];
+  const LAYOUTS = ["bleach", "ichiban", "paget", "pale-raven", "phase", "yawen", "indy", "zhongkui", "rdr", "yotei", "ytitle"];
 
   // ---- text pieces; `split` makes one span per character so an appearance can move the letters one by one
   function T(parent, o) {
@@ -267,6 +267,50 @@
       it.push({ n: lay });
       return it;
     },
+    ytitle(pl, p) {
+      // Ghost of Yotei, TITLE (18 October 2026): the GHOST lettering with the gold ginkgo in its ring, and OF YOTEI, as a custom font (window.ZSYTitle, Scripts/YoteiTitleTrace.py). Each glyph is a `.ch` box that also carries sample points (`pts`)
+      // from which the petals of the wind appearances take off. Original design: the glyphs at their traced places. Edited text or custom design: the same glyphs recomposed on a centred line; a letter the font does not have is set in a real face.
+      const Z = window.ZSYTitle, D0 = DEFAULTS.ytitle, tw = p.tw, it = [];
+      if (!Z) return it;
+      const white = p.accent || Z.white, gold = p.accent2 || Z.gold, subc = p.accent && p.accent !== D0.accent ? p.accent : Z.subColor;
+      const orig = p.design !== "custom" && Object.keys(D0.l).every((k) => String(p[k]) === String(D0.l[k]));
+      const layer = () => abs(pl, { left: "0", top: "0", width: Z.w + "px", height: Z.h + "px" });
+      const mk = (parent, list) => {  // [glyph, x, y, scale, colour]: one `.ch` per glyph, its sample points moved with it; a glyph with `.fb` is a real-face fallback (text)
+        const pts = [];
+        list.forEach(([g, x, y, k, col], i) => {
+          if (g.fb) { const c = abs(parent, { left: x + "px", top: y + "px", width: g.w + "px", height: g.h + "px", overflow: "visible" }); c.className += " ch"; c.dataset.i = String(i); const v = svgEl("svg", { width: g.w, height: g.h, viewBox: `0 0 ${g.w} ${g.h}`, style: "position:absolute;left:0;top:0;overflow:visible" }, c);
+            const t = svgEl("text", { x: g.w / 2, y: g.h * g.by, "text-anchor": "middle", "font-size": g.h * g.fs, fill: col }, v); t.style.fontFamily = h.font(g.font); t.style.fontWeight = String(g.weight); t.textContent = g.ch; pts.push([]); return; }
+          const [bx0, by0, bx1, by1] = g.b, w = (bx1 - bx0) * k, hh = (by1 - by0) * k, c = abs(parent, { left: x + "px", top: y + "px", width: w + "px", height: hh + "px", overflow: "visible" }); c.className += " ch"; c.dataset.i = String(i);
+          const v = svgEl("svg", { width: w, height: hh, viewBox: `${bx0} ${by0} ${bx1 - bx0} ${by1 - by0}`, style: "position:absolute;left:0;top:0;overflow:visible" }, c); svgEl("path", { d: g.d, fill: col, "fill-rule": "evenodd" }, v);
+          pts.push((g.p || []).map((q) => [x + (q[0] - bx0) * k, y + (q[1] - by0) * k]));
+        });
+        return pts;
+      };
+      const GH = {}, SU = {}; Z.ghost.forEach((g) => { GH[g.c] = g; }); Z.sub.forEach((g) => { if (!SU[g.c]) SU[g.c] = g; });
+      const tmx = (x, y, col) => T(pl, { text: "TM", x, y, size: tw("tmSize", 9.5), weight: 600, font: "InterVariable", color: col, split: false, lh: 1 });
+      const gl = layer(), lf = layer(), sl = layer();
+      if (orig) {
+        const gp = mk(gl, Z.ghost.map((g) => [g, g.b[0], g.b[1], 1, white])), lp = mk(lf, [[Z.leaf, Z.leaf.b[0], Z.leaf.b[1], 1, gold]]), sp = mk(sl, Z.sub.map((g) => [g, g.b[0], g.b[1], 1, subc]));
+        it.push({ n: gl, pts: gp }, { n: lf, pts: lp }, { n: sl, pts: sp }, { n: tmx(tw("tmX", 845), tw("tmY", 146), white) });
+        return it;
+      }
+      const t0s = String(p.l0).toUpperCase(), t1s = String(p.l1).toUpperCase(), cx = tw("cx", 458), top = tw("top", 55), stop = tw("subTop", 233), scx = tw("subCx", 458), maxW = tw("maxW", 840);
+      // a long text is scaled down to fit the plane: the width of a line is proportional to its scale, so one measure at scale 1 gives the fit
+      const len1 = (txt, tab, gp, space, fbw) => { const a = [...txt].map((ch) => (ch === " " ? space : (tab[ch] ? tab[ch].b[2] - tab[ch].b[0] : fbw))); return a.reduce((s, v, i) => s + v + (i ? gp : 0), 0); };
+      const k = Math.min(tw("cap", 109) / 109, maxW / Math.max(1, len1(t0s, GH, tw("gap", 52), tw("space", 70), 100))), gap = tw("gap", 52) * k;
+      const sk = Math.min(tw("subCap", 35) / 35, maxW / Math.max(1, len1(t1s, SU, tw("subGap", 9), tw("subSpace", 25), 26))), sgap = tw("subGap", 9) * sk, sspace = tw("subSpace", 25) * sk;
+      const run = (txt, tab, kk, gp, space, fbw) => { const its = [...txt].map((ch) => ({ ch, g: tab[ch], w: ch === " " ? space : (tab[ch] ? (tab[ch].b[2] - tab[ch].b[0]) * kk : fbw) })); return { its, total: its.reduce((s, q, i) => s + q.w + (i ? gp : 0), 0) }; };
+      const L0 = run(t0s, GH, k, gap, tw("space", 70) * k, 100 * k), L1 = run(t1s, SU, sk, sgap, sspace, 26 * sk);
+      const gList = [], lList = [], sList = []; let x = cx - L0.total / 2, last = null;
+      L0.its.forEach((q) => { if (q.ch !== " ") { gList.push(q.g ? [q.g, x, top + (q.g.b[1] - 55) * k, k, white] : [{ fb: true, ch: q.ch, w: q.w, h: 109 * k, fs: 1.27, by: 0.963, font: "Sora", weight: 700 }, x, top, k, white]);
+        if (q.g && q.ch === "O") lList.push([Z.leaf, x + (Z.leaf.b[0] - q.g.b[0]) * k, top + (Z.leaf.b[1] - 55) * k, k, gold]); last = x + q.w; } x += q.w + gap; });
+      x = scx - L1.total / 2; L1.its.forEach((q) => { if (q.ch !== " ") sList.push(q.g ? [q.g, x, stop + (q.g.b[1] - 233) * sk, sk, subc] : [{ fb: true, ch: q.ch, w: q.w, h: 35 * sk, fs: 1.09, by: 0.886, font: "PlayfairDisplay", weight: 600 }, x, stop, sk, subc]); x += q.w + sgap; });
+      it.push({ n: gl, pts: mk(gl, gList) });
+      if (lList.length) it.push({ n: lf, pts: mk(lf, lList) });
+      it.push({ n: sl, pts: mk(sl, sList) });
+      if (last !== null) it.push({ n: tmx(last + 2 * k, top + 94 * k, white) });
+      return it;
+    },
     zhongkui(pl, p) {
       // 17 October 2026: the title is set with ZhongKui Brush (procedural font, window.ZSBrushFont) or, with `decalque 1`, with the traced outlines of the reference (window.ZSZhongKui).
       // The grey calligraphy and the seal are traced vectors too. Every number is a parameter (tweaks: cap width taper flare rough wobble slant decalque x1 top1 x2 top2 track1 subCap subTop subTrack calliOpacity calliGrain ...).
@@ -343,12 +387,13 @@
     "pale-raven": { l: { l1: "Pale", l2: "Raven's", l3: "Perch" }, bg: "#0c1011", accent: "#f7ecd3", tile: "#0f5560" },
     phase: { l: { text: "ENEMY PHASE" }, bg: "#9a8878", accent: "#f2555a", tile: "#000", seed: 7 },
     yawen: { l: { l1: "VISUAL·DESIGNER", l2: "MARKETING·GAMES·DIGITAL", l3: "Yawen | Marketing Visual Designer (Games / Digital)", l4: "lyw19837059505@gmail.com" }, bg: "#1c2f38", accent: "#ffffff", tile: "#000" },
+    ytitle: { l: { l0: "GHOST", l1: "OF YŌTEI" }, bg: "#6b7875", accent: "#dcdddd", accent2: "#e1b63f", tile: "#000" },
     yotei: { l: { l0: "GHOST", l1: "OF YŌTEI", l2: "COMPLETE EDITION", l3: "Retournez à Ezo", l4: "Découvrez l'expérience définitive de Ghost of Yōtei, enrichie d'un tout\nnouveau mode de jeu et d'une extension de l'histoire.", l5: "Acheter maintenant" }, bg: "#f8f5ee", accent: "#0f100f", tile: "#000" },
     rdr: { l: { l1: "ROCKSTAR GAMES PRESENTS", l2: "RED DEAD", l3: "REDEMPTION", l4: "II" }, bg: "#ca0512", accent: "#ffffff", tile: "#030101" },
     indy: { l: { l1: "INDIANA JONES" }, bg: "#17233a", accent: "#dde1ec", tile: "#000" },
     zhongkui: { l: { l1: "ZHONG", l2: "BLACK MYTH", l3: "KUI" }, bg: "#050405", accent: "#8f3638", tile: "#000", seed: 5 },
   };
-  const SIZE = { indy: [1080, 1080], zhongkui: [1600, 668], rdr: [2000, 871], yotei: [2000, 1125] };
+  const SIZE = { indy: [1080, 1080], zhongkui: [1600, 668], rdr: [2000, 871], yotei: [2000, 1125], ytitle: [920, 290] };
 
   // ---- the appearances (seek-safe tweens only). Every effect reads its numbers from `o`: distance, blur, scale, rotation, per-letter stagger, direction, ease, glitch amplitude.
   const WIPE = { left: "inset(0 100% 0 0)", right: "inset(0 0 0 100%)", up: "inset(100% 0 0 0)", down: "inset(0 0 100% 0)", center: "inset(0 50% 0 50%)" };
@@ -372,8 +417,46 @@
     });
     return { steps, len: tc };
   }
+  // ---- the wind appearances (18 October 2026): white petals, sakura-like, taken from the glyphs by a wind. The petals leave from sample points of the glyphs (`pts`), every number is seeded and read from `o`, every tween is a fromTo (seek-safe).
+  const PETAL_PTS = [[0, -1], [0.85, -1.1], [1.1, -0.1], [0.55, 0.78], [0.38, 1.04], [0.13, 1], [0, 0.7], [-0.13, 1], [-0.38, 1.04], [-0.55, 0.78], [-1.1, -0.1], [-0.85, -1.1], [0, -1]];  // a heart-shaped petal with its cleft
+  const petalD = (sx, sy) => { const P = PETAL_PTS.map((q) => (q[0] * sx).toFixed(2) + "," + (q[1] * sy).toFixed(2)); return `M${P[0]} C${P[1]} ${P[2]} ${P[3]} C${P[4]} ${P[5]} ${P[6]} C${P[7]} ${P[8]} ${P[9]} C${P[10]} ${P[11]} ${P[12]} Z`; };
+  const petalEnv = (a, b) => (q) => (q < a ? q / a : q > b ? Math.max(0, (1 - q) / (1 - b)) : 1);  // opacity envelope used as an ease: in, hold, out
+  function petalFX(tl, items, kind, t0, o) {
+    const W = o.plane[0], Hh = o.plane[1], R = rnd(Math.max(1, Math.round(o.seed || 7)) * 7919 + 31), ang = (o.windAngle || 0) * Math.PI / 180, ux = Math.cos(ang), uy = Math.sin(ang), vx = -uy, vy = ux, reach = o.windReach || 420;
+    const T0 = t0 + o.delay, FD = Math.max(0.2, o.dur * 2.4), gl = [];
+    items.forEach((it) => {
+      if (!it.pts) { fto(tl, it.n, { opacity: 0 }, { opacity: 1, duration: o.dur * 0.6, ease: "power2.out" }, T0 + FD + 0.4); return; }  // a plain piece (the TM mark) fades in at the end
+      [...it.n.querySelectorAll(".ch")].forEach((c) => { const i = Number(c.dataset.i || 0); gl.push({ c, pts: it.pts[i] || [], cx: parseFloat(c.style.left) + parseFloat(c.style.width) / 2, cy: parseFloat(c.style.top) + parseFloat(c.style.height) / 2 }); });
+    });
+    if (!gl.length) return;
+    const dots = gl.map((g) => g.cx * ux + g.cy * uy), d0 = Math.min.apply(null, dots), span = Math.max(1, Math.max.apply(null, dots) - d0); gl.forEach((g, i) => { g.s = (dots[i] - d0) / span; });
+    gl.slice().sort((a, b) => a.cx - b.cx || a.cy - b.cy).forEach((g, i) => { g.rank = i; });
+    const bloom = kind === "petals-bloom", gather = kind === "petals-gather";
+    gl.forEach((g) => {  // the letters: swept in by the front of the wind (sweep), or condensed when the petals land (gather), or one after the other (bloom)
+      g.t = bloom ? T0 + g.rank * Math.max(0.1, FD / gl.length) : T0 + (gather ? 0.9 : 0) + g.s * FD;
+      if (kind === "petals-sweep") fto(tl, g.c, { opacity: 0, x: -ux * 34, y: -uy * 34, skewX: ux >= 0 ? -14 : 14, filter: "blur(7px)" }, { opacity: 1, x: 0, y: 0, skewX: 0, filter: "blur(0px)", duration: o.dur * 0.9, ease: "power3.out" }, g.t);
+      else if (gather) fto(tl, g.c, { opacity: 0, filter: "blur(5px)" }, { opacity: 1, filter: "blur(0px)", duration: o.dur * 0.9, ease: "power2.out" }, g.t);
+      else fto(tl, g.c, { opacity: 0, scale: 0.94, filter: "blur(8px)", transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, filter: "blur(0px)", duration: o.dur * 1.1, ease: "power3.out" }, g.t);
+    });
+    const host = items[0].n.parentNode, layer = abs(host, { left: "0", top: "0", width: W + "px", height: Hh + "px", pointerEvents: "none" }), sv = svgEl("svg", { width: W, height: Hh, viewBox: `0 0 ${W} ${Hh}`, style: "position:absolute;left:0;top:0;overflow:visible" }, layer);
+    const all = []; gl.forEach((g, gi) => g.pts.forEach((q) => all.push({ gi, x: q[0], y: q[1] })));  // petals are shared out between the glyphs by their number of points (their area)
+    const N = Math.min(Math.round(o.petals === undefined || o.petals === "" ? 150 : o.petals), 600), size = o.petalSize || 9, col = o.petalColor || "#ffffff";
+    for (let n = 0; n < N && all.length; n++) {
+      const q = all[Math.floor(R() * all.length)], g = gl[q.gi], s = size * (0.55 + R() * 0.95), op = 0.55 + R() * 0.4, r0 = R() * 360, spin = (R() - 0.5) * 900, gust = reach * (0.55 + R() * 0.9), side = (R() - 0.5) * reach * 0.4;
+      let ts, L, x0, y0, x1, y1, xe, ye;
+      if (gather) { L = 0.9 + R() * 1.0; ts = Math.max(T0, g.t - 0.05 + R() * 0.25 - L); x1 = q.x; y1 = q.y; x0 = q.x - ux * gust + vx * side; y0 = q.y - uy * gust + vy * side - reach * 0.05; xe = "power3.out"; ye = "power2.out"; }
+      else if (bloom) { ts = g.t + R() * 0.8; L = 1.4 + R() * 1.4; x0 = q.x; y0 = q.y; x1 = q.x + ux * gust * 0.6 + vx * side; y1 = q.y + uy * gust * 0.6 - reach * (0.2 + R() * 0.3); xe = "power1.in"; ye = "power2.out"; }
+      else { ts = g.t + R() * 0.55; L = 0.8 + R() * 1.1; x0 = q.x; y0 = q.y; x1 = q.x + ux * gust + vx * side; y1 = q.y + uy * gust + vy * side + reach * 0.05; xe = "power2.in"; ye = "power1.in"; }
+      const pg = svgEl("g", {}, sv), pa = svgEl("path", { d: petalD(s * 0.92, s), fill: col }, pg);
+      fto(tl, pg, { x: x0, rotation: r0 }, { x: x1, rotation: r0 + spin, duration: L, ease: xe }, ts);
+      fto(tl, pg, { y: y0 }, { y: y1, duration: L, ease: ye }, ts);
+      fto(tl, pg, { opacity: 0 }, { opacity: op, duration: L, ease: gather ? petalEnv(0.18, 0.78) : petalEnv(0.1, 0.55) }, ts);
+      fto(tl, pa, { scaleX: 1 }, { scaleX: 0.5 + R() * 0.3, duration: 0.28 + R() * 0.3, ease: "sine.inOut", repeat: Math.max(1, Math.floor(L / 0.4)), yoyo: true }, ts);
+    }
+  }
   function appear(tl, items, kind, t0, o) {
     let cum = 0;
+    if (/^petals-/.test(kind)) { petalFX(tl, items.filter((it) => !it.still), kind, t0, o); return; }
     if (kind === "brush") { const total = items.reduce((s, it) => s + (it.n._brush && it.n._brush.length ? brushPlan(it.n, o).len + 0.18 : 0), 0), budget = Math.max(1, (o.sceneDur || 7.5) - o.delay - 1.2); o.brushK = total > budget ? budget / total : 1; }
     items = items.filter((it) => !it.still);  // a still item (a background) is never animated
     items.forEach((it, i) => {
@@ -411,7 +494,7 @@
     });
   }
 
-  const BOXES = { bleach: [880, 90, 1920, 1080], ichiban: [30, 20, 960, 480], paget: [90, 190, 700, 1050], "pale-raven": [90, 250, 900, 1010], phase: [90, 300, 1830, 840], yawen: [110, 340, 1800, 1030], indy: [40, 780, 1040, 990], zhongkui: [330, 90, 1230, 580], rdr: [30, 95, 905, 465], yotei: [200, 190 + 60, 880, 190 + 590] };
+  const BOXES = { bleach: [880, 90, 1920, 1080], ichiban: [30, 20, 960, 480], paget: [90, 190, 700, 1050], "pale-raven": [90, 250, 900, 1010], phase: [90, 300, 1830, 840], yawen: [110, 340, 1800, 1030], indy: [40, 780, 1040, 990], zhongkui: [330, 90, 1230, 580], rdr: [30, 95, 905, 465], yotei: [200, 190 + 60, 880, 190 + 590], ytitle: [20, 10, 900, 282] };
   const TALLBOXES = { zhongkui: [470, 100, 1130, 490], phase: [380, 330, 1540, 700] };
   const EASES = ["auto", "power3.out", "power4.out", "expo.out", "back.out(1.7)", "back.out(3)", "elastic.out(1,0.4)", "bounce.out", "sine.inOut", "power2.inOut", "steps(6)"];
   const parseTweaks = (lines) => { const m = {}; (lines || []).forEach((l) => { const q = String(l).trim().split(/\s+/); if (q.length >= 2 && !isNaN(Number(q[q.length - 1]))) m[q.slice(0, -1).join(" ")] = Number(q[q.length - 1]); }); return m; };
@@ -429,6 +512,7 @@
       P("tweaks", "Réglages du visuel (nom valeur) : ichiban size1 size2 sx1 sx2 border outline fill ; bleach titleSize bodySize bigSize bigScaleX ; paget scale panelTop panelBottom ; pale-raven size top pitch panelWidth edgeRough ; phase size bandX bandY bandW bandH rough dots smoke glow ; yawen size1 size2 ls2 ; indy size y ls", "lines", [], 3),
       P("tallBox", "Cadrage en format haut (x0 y0 x1 y1, vide = défaut du visuel)", "text", "", 3), N("film0", "Début dans le film (s)", 0, 0, 60, 0.01, 4, "s"),
       N("brushWidth", "Épaisseur du trait (pinceau)", 12.3, 4, 24, 0.1, 4), N("brushTaper", "Effilage de la fin du trait", 0.55, 0, 1, 0.01, 4), N("brushFlare", "Attaque du pinceau", 0.12, 0, 0.5, 0.01, 4), N("brushRough", "Rugosité du bord", 1.4, 0, 8, 0.1, 4), N("brushWobble", "Tremblement du trait", 0, 0, 4, 0.1, 4), N("brushSlant", "Inclinaison des lettres (°)", 0, -20, 20, 0.5, 4),
+      N("petals", "Nombre de pétales (vent)", 150, 0, 500, 5, 4), N("petalSize", "Taille des pétales (px)", 9, 2, 30, 0.5, 4), N("windAngle", "Direction du vent (°, 0 = vers la droite)", -12, -180, 180, 1, 4), N("windReach", "Portée du vent (px)", 420, 50, 1500, 10, 4),
     ],
     build(ctx) {
       const { el, p, tl, t0 } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
@@ -437,15 +521,15 @@
       keys.forEach((k, i) => { params[k] = p.lines && p.lines[i] !== undefined && p.lines[i] !== "" ? p.lines[i] : D.l[k]; });
       h.css(el, { background: p.bg || D.bg });
       let k, ox, oy;
-      if ((tall && sz[0] / sz[1] > 1.25) || (sz[0] / sz[1] > 2 && p.layout !== "zhongkui" && p.layout !== "rdr")) {
+      if ((tall && sz[0] / sz[1] > 1.25) || (sz[0] / sz[1] > 2 && p.layout !== "zhongkui" && p.layout !== "rdr" && p.layout !== "ytitle")) {
         const bx = String(p.tallBox || "").trim().split(/\s+/).map(Number), box = bx.length === 4 && bx.every((v) => !isNaN(v)) ? bx : (tall && TALLBOXES[p.layout]) || BOXES[p.layout] || [0, 0, sz[0], sz[1]];
         const bw = box[2] - box[0], bh = box[3] - box[1]; k = Math.min((w * (tall ? 0.94 : 0.9)) / bw, (sh * 0.94) / bh); ox = w / 2 - ((box[0] + box[2]) / 2) * k; oy = sh / 2 - ((box[1] + box[3]) / 2) * k;
       } else { k = Math.min(w / sz[0], sh / sz[1]); ox = (w - sz[0] * k) / 2; oy = (sh - sz[1] * k) / 2; }
-      const plane = abs(st, { left: ox + "px", top: oy + "px", width: sz[0] + "px", height: sz[1] + "px", transformOrigin: "0 0", transform: `scale(${k})`, overflow: tall && sz[0] / sz[1] > 1.25 ? "visible" : "hidden" });
+      const plane = abs(st, { left: ox + "px", top: oy + "px", width: sz[0] + "px", height: sz[1] + "px", transformOrigin: "0 0", transform: `scale(${k})`, overflow: (tall && sz[0] / sz[1] > 1.25) || p.layout === "ytitle" ? "visible" : "hidden" });
       const items = (L[p.layout] || L.ichiban)(plane, params);
       // a slow camera pull-back while the title is written, settled at scale 1 (the reference framing) for the hold
       if (params.camera) { const push = tws.push !== undefined ? tws.push : (p.push === undefined || p.push === "" ? 0.05 : Number(p.push)); if (push > 0) fto(tl, params.camera, { scale: 1 + push, transformOrigin: "800px 320px" }, { scale: 1, duration: (ctx.dur || 4.2) * 0.7, ease: "power1.out" }, t0); }
-      appear(tl, items, p.appearance, t0, { stagger: p.stagger, dur: p.dur, delay: p.delay, charStagger: p.charStagger, distance: p.distance, blur: p.blur, scaleFrom: p.scaleFrom, rotate: p.rotate, ease: p.ease, direction: p.direction, glitch: p.glitch, brushSpeed: tws.brushSpeed !== undefined ? tws.brushSpeed : p.brushSpeed, brushHesitate: p.brushHesitate, sceneDur: ctx.dur });
+      appear(tl, items, p.appearance, t0, { stagger: p.stagger, dur: p.dur, delay: p.delay, charStagger: p.charStagger, distance: p.distance, blur: p.blur, scaleFrom: p.scaleFrom, rotate: p.rotate, ease: p.ease, direction: p.direction, glitch: p.glitch, brushSpeed: tws.brushSpeed !== undefined ? tws.brushSpeed : p.brushSpeed, brushHesitate: p.brushHesitate, sceneDur: ctx.dur, plane: sz, seed: params.seed, petals: tws.petals !== undefined ? tws.petals : p.petals, petalSize: tws.petalSize !== undefined ? tws.petalSize : p.petalSize, windAngle: tws.windAngle !== undefined ? tws.windAngle : p.windAngle, windReach: tws.windReach !== undefined ? tws.windReach : p.windReach, petalColor: p.deco || "#ffffff" });
       if (params.after) params.after(tl, t0, ctx.dur || 7, fto);
     },
   });

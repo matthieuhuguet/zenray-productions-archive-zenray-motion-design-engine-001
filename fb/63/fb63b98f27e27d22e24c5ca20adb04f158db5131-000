@@ -1,0 +1,17 @@
+"""Contact sheet of a project at given times (18 October 2026): renders each time through MaskIoU (the real runtime in a headless chrome) and tiles the frames. Usage: FramesSheet.py <project> <out.png> t1 t2 ... [--cols 3] [--cfg <MaskIoU config name> --still <still slug>]. FR : planche de frames d'une animation."""
+import subprocess, sys
+from pathlib import Path
+from PIL import Image
+ROOT = Path(__file__).resolve().parents[1]
+args = sys.argv[1:]; cols = 3; cfg = ""
+if "--cfg" in args: i = args.index("--cfg"); cfg = args[i + 1]; del args[i:i + 2]
+if "--still" in args: i = args.index("--still"); still = args[i + 1]; del args[i:i + 2]
+else: still = ""
+if "--cols" in args: i = args.index("--cols"); cols = int(args[i + 1]); del args[i:i + 2]
+proj, out, times = args[0], args[1], args[2:]; frames = []
+for t in times:
+    d = Path("/tmp/fs_%s_%s" % (proj, t)); d.mkdir(parents=True, exist_ok=True)
+    subprocess.run([sys.executable, str(ROOT / "Scripts" / "MaskIoU.py"), proj, "--at", t, "--out", str(d)] + (["--cfg", cfg, "--still", still] if cfg else []), capture_output=True, cwd=ROOT); frames.append(Image.open(d / "ink-motion-frame.png").convert("RGB"))
+w, h = frames[0].size; k = 0.5; tw, th = int(w * k), int(h * k); rows = (len(frames) + cols - 1) // cols; sheet = Image.new("RGB", (cols * tw + (cols - 1) * 4, rows * th + (rows - 1) * 4), "#f0f")
+for i, f in enumerate(frames): sheet.paste(f.resize((tw, th), Image.LANCZOS), ((i % cols) * (tw + 4), (i // cols) * (th + 4)))
+sheet.save(out); print(out)

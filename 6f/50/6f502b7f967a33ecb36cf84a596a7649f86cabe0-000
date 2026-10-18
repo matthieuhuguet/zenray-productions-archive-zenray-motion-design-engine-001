@@ -16,14 +16,26 @@ import TraceStill as TS  # noqa: E402
 
 STILL = Path("~/.claude/tmp/tmp-zenray-motion-design-refcache/_stills/native-ytitle.png").expanduser()
 SC = 8
+SIG = 0.4  # smoothing of the contour of the GHOST letters (px of the still): the mist and the compression chip the edge, the real distress is wider than this
 PTS = 70  # sample points per 1000 px2 of area is NOT used: a fixed budget per glyph, scaled by its area
 
-def trace(mask, soft=None): return ST.trace_shape(mask, SC, soft=soft)
+def trace(mask, soft=None, sigma=0.32): return ST.trace_shape(mask, SC, soft=soft, sigma=sigma)
 
 def points(mask, n, rng):
     ys, xs = np.nonzero(ndi.binary_erosion(mask, iterations=1) if mask.sum() > 200 else mask)
     if len(xs) == 0: return []
     k = min(n, len(xs)); idx = rng.choice(len(xs), k, replace=False); return [[int(xs[i]), int(ys[i])] for i in idx]
+
+def refine(m0, L, band=3, sig=6.0, mincontrast=40.0):
+    """Edge refinement on the LUMINANCE (the chroma of a compressed frame is half resolution, its edges are blocky): inside the band around the chroma mask, the coverage is where the luminance sits between the local letter level and the local
+    background level; where the two levels are too close (the letter over the pale sky) the chroma mask stays in charge. Returns a coverage field in [0, 1]."""
+    inner = ndi.binary_erosion(m0, iterations=band); outer = ~ndi.binary_dilation(m0, iterations=band)
+    def loc(mask):
+        num = ndi.gaussian_filter(np.where(mask, L, 0.0), sig); den = ndi.gaussian_filter(mask.astype(float), sig); return num / np.maximum(den, 1e-3)
+    lin, lout = loc(inner), loc(outer); den = np.maximum(np.abs(lin - lout), 1.0)
+    cov = np.clip((L - lout) / (lin - lout + np.where(lin - lout >= 0, 1e-3, -1e-3)), 0, 1); w = np.clip(np.abs(lin - lout) / mincontrast, 0, 1)
+    base = ndi.gaussian_filter(m0.astype(float), 0.8); near = ndi.binary_dilation(m0, iterations=band) & ~inner
+    fld = np.where(inner, 1.0, np.where(near, w * cov + (1 - w) * base, 0.0)); return ndi.gaussian_filter(fld, 0.4)
 
 def clean(m, minblob=14, minhole=20):
     lab, n = ndi.label(m); sizes = ndi.sum(m, lab, range(1, n + 1)); m = np.isin(lab, [i + 1 for i, s in enumerate(sizes) if s >= minblob])
@@ -35,7 +47,7 @@ def main():
     box = lambda x0, y0, x1, y1: (xx >= x0) & (xx < x1) & (yy >= y0) & (yy < y1)  # noqa: E731
     mn, mx = A.min(2), A.max(2); chroma = mx - mn
     # 1. white letters of GHOST: neutral and bright, a coverage field (never a hard mask)
-    f = np.clip((11 - chroma) / 5.0, 0, 1) * np.clip((mn - 165) / 25.0, 0, 1); f = ndi.median_filter(f, size=3); f = ndi.gaussian_filter(f, 0.6)
+    f = np.clip((11 - chroma) / 5.0, 0, 1) * np.clip((mn - 165) / 25.0, 0, 1); f = ndi.median_filter(f, size=5); f = ndi.gaussian_filter(f, 1.1)
     reg = box(10, 15, 900, 205); shapes = ST.letter_shapes(f, reg, minpx=8)
     info = [(int(m.sum()), int(np.nonzero(m.any(0))[0].min()), int(np.nonzero(m.any(0))[0].max()), int(np.nonzero(m.any(1))[0].min()), int(np.nonzero(m.any(1))[0].max())) for m in shapes]
     print("ghost shapes", len(shapes)); [print("  ", i) for i in info]
@@ -49,9 +61,10 @@ def main():
     white_px = A[np.zeros_like(ring)]
     allm = np.zeros_like(ring); [allm.__ior__(m) for _, m in order]
     lum = A.mean(2); white = np.median(A[allm & (lum > np.percentile(lum[allm], 55))], axis=0)
+    L2 = A.mean(2); lum = ndi.gaussian_filter(L2, 0.6)
     ghost = []
     for c, m in order:
-        d, b = trace(clean(m), soft=np.where(m, np.maximum(f, 0.7), 0.0)); ghost.append({"c": c, "d": d, "b": b, "p": points(m, 40 if c != "O" else 60, rng)})
+        mc = ndi.binary_opening(ndi.binary_closing(clean(m), iterations=2), iterations=1); rf = refine(mc, lum); mr = rf > 0.5; d, b = trace(mr, soft=rf, sigma=SIG); ghost.append({"c": c, "d": d, "b": b, "p": points(m, 40 if c != "O" else 60, rng)})
     # 2. the gold ginkgo leaf (one shape, with the slash gap and the sparks): coverage of gold against the grey of the ring interior
     gold = A[(A[..., 0] > 200) & (A[..., 2] < 110) & (A[..., 1] > 150)]; goldc = np.median(gold, axis=0)
     gm = ((A[..., 0] - A[..., 2]) > 70) & box(380, 40, 540, 190); gf = np.where(gm, np.clip(TS.cov_color(img, tuple(int(v) for v in goldc), (135, 140, 138)), 0, 1), 0.0); gf = ndi.gaussian_filter(gf, 0.5)

@@ -141,6 +141,11 @@
       "id": "ghost-of-yotei-ppm",
       "group": "Visuels fixes · trois apparitions",
       "reference": "still-yotei"
+    },
+    {
+      "id": "ghost-of-yotei-title-apparition-01-ppm",
+      "group": "Visuels fixes · trois apparitions",
+      "reference": "still-ytitle"
     }
   ],
   "formats": [
