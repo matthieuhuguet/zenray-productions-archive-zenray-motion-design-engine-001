@@ -126,32 +126,12 @@
       return it;
     },
     phase(pl, p) {
-      const it = [], tw = p.tw;
-      { // original design: the banner of the reference still of this colour (variant 1 player, 2 enemy, 3 next round), recreated PROCEDURALLY from its measured profile; the lettering is the isolated letters
-        const vk = Math.round(tw("variant", 0)), key = { 1: "player", 2: "enemy", 3: "next" }[vk], exp = { 1: "PLAYER PHASE", 2: "ENEMY PHASE", 3: "NEXT ROUND" }[vk], P = key && p.design !== "custom" && window.ZSPhase && window.ZSPhase[key];
-        if (P && String(p.text).toUpperCase() === exp) {
-          const R = rnd(p.seed || 7), holder = abs(pl, { left: "0", top: "0", width: P.w + "px", height: P.h + "px" }), sv = svgEl("svg", { width: P.w, height: P.h, viewBox: `0 0 ${P.w} ${P.h}`, style: "position:absolute;left:0;top:0;overflow:visible" }, holder), df = svgEl("defs", {}, sv);
-          const flt = (id, freq, scale, blur) => { const f = svgEl("filter", { id, filterUnits: "userSpaceOnUse", x: 0, y: 0, width: P.w, height: P.h }, df); svgEl("feTurbulence", { type: "fractalNoise", baseFrequency: freq, numOctaves: 3, seed: (p.seed || 7) % 97, result: "n" }, f); svgEl("feDisplacementMap", { in: "SourceGraphic", in2: "n", scale, xChannelSelector: "R", yChannelSelector: "G", result: "d" }, f); if (blur) svgEl("feGaussianBlur", { in: "d", stdDeviation: blur }, f); };
-          const id = "ph" + (traceGradId++); flt(id + "i", "0.011 0.03", tw("inkRough", 60), tw("inkSoft", 3)); flt(id + "s", "0.008 0.02", tw("smokeRough", 90), tw("smokeSoft", 16));
-          const pr = P.profile, top = pr.map((q) => q[0] + "," + q[1]), bot = pr.slice().reverse().map((q) => q[0] + "," + q[2]), shape = "M" + top.concat(bot).join(" L") + " Z";
-          svgEl("path", { d: shape, fill: "none", stroke: tw("smokeColor", 0) ? "#fff" : P.smoke, "stroke-width": 70, "stroke-linejoin": "round", opacity: tw("smokeOpacity", 0.38), filter: `url(#${id}s)` }, sv);
-          const g = svgEl("g", { filter: `url(#${id}i)` }, sv), cp = svgEl("clipPath", { id: id + "c" }, df); svgEl("path", { d: shape }, cp);
-          svgEl("path", { d: shape, fill: p.ink || P.ink }, g);
-          const mx = (pr[0][0] + pr[pr.length - 1][0]) / 2, my = (Math.min.apply(null, pr.map((q) => q[1])) + Math.max.apply(null, pr.map((q) => q[2]))) / 2, rg = svgEl("radialGradient", { id: id + "g", cx: 0.5, cy: 0.5, r: 0.5 }, df);
-          svgEl("stop", { offset: 0, "stop-color": p.accent, "stop-opacity": 1 }, rg); svgEl("stop", { offset: 1, "stop-color": p.accent, "stop-opacity": 0 }, rg);
-          svgEl("ellipse", { cx: mx, cy: P.letters.length ? (P.letters[0].b[1] + P.letters[0].b[3]) / 2 : my, rx: (pr[pr.length - 1][0] - pr[0][0]) * 0.42, ry: 120, fill: `url(#${id}g)`, opacity: tw("glowOpacity", 0.38), "clip-path": `url(#${id}c)`, filter: `url(#${id}i)` }, sv);
-          const nd = Math.round(tw("dots", 240)), x0 = pr[0][0], x1 = pr[pr.length - 1][0], ymin = Math.min.apply(null, pr.map((q) => q[1])) - 40, ymax = Math.max.apply(null, pr.map((q) => q[2])) + 40;
-          for (let k = 0; k < nd; k++) { const x = x0 + R() * (x1 - x0), yy = ymin + R() * (ymax - ymin); svgEl("circle", { cx: x, cy: yy, r: 0.9 + R() ** 4 * 6.5, fill: R() < 0.7 ? p.accent : "#fff", opacity: 0.25 + R() * 0.7 }, sv); }
-          it.push({ n: holder, shape: true });
-          const lh = abs(pl, { left: "0", top: "0", width: P.w + "px", height: P.h + "px" });
-          P.letters.forEach((L, i) => { const [x0b, y0b, x1b, y1b] = L.b, w = x1b - x0b, hh = y1b - y0b, c = abs(lh, { left: x0b + "px", top: y0b + "px", width: w + "px", height: hh + "px", overflow: "visible" }); c.className += " ch"; c.dataset.i = String(i);
-            const v = svgEl("svg", { width: w, height: hh, viewBox: `${x0b} ${y0b} ${w} ${hh}`, style: "position:absolute;left:0;top:0;overflow:visible" }, c); svgEl("path", { d: L.d, fill: p.accent, "fill-rule": "evenodd" }, v); });
-          it.push({ n: lh }); return it;
-        }
-      }
-      const band = abs(pl, { left: "0", top: "0", width: "1920px", height: "1080px" }); inkBand(band, { x: tw("bandX", 190), y: tw("bandY", 290), w: tw("bandW", 1560), h: tw("bandH", 540), seed: p.seed, rough: tw("rough", 60), color: p.accent, dots: tw("dots", 520), smoke: tw("smoke", 16) }); it.push({ n: band, shape: true, svgBand: true });
-      const word = T(pl, { text: p.text, x: tw("wordX", 960), y: tw("wordY", 462), size: tw("size", 134), font: "PlayfairDisplay", weight: 700, italic: true, color: p.accent, align: "center", ls: tw("ls", 0.01) + "em", lh: 1, upper: true, sx: tw("sx", 1), css: { textShadow: `0 0 ${tw("glow", 18)}px ${p.accent}, 0 0 ${tw("glow", 18) * 2.2}px ${p.accent}88` } }); it.push({ n: word });
-      return it;
+      // 18 October 2026: the banner is the LETTERING only, on a dark tile (the ink mask and the photo of the reference are dropped: they were never clean). The lettering is the italic display serif, uppercase, in the colour of the phase,
+      // with a soft glow; size, tracking, slant, stroke, glow and position are parameters, and any text works (centred).
+      const it = [], tw = p.tw, color = p.accent, glow = tw("glow", 22), cx = tw("wordX", 960);
+      const w = T(pl, { text: p.text, x: cx, y: tw("wordY", 462), size: tw("size", 150), font: "PlayfairDisplay", weight: tw("weight", 800), italic: true, color, align: "center", ls: tw("ls", 0.02) + "em", lh: 1, upper: true, sx: tw("sx", 1),
+        css: { textShadow: glow ? `0 0 ${glow}px ${color}aa, 0 0 ${glow * 2.4}px ${color}55` : "none", webkitTextStroke: tw("stroke", 0) + "px " + color } });
+      it.push({ n: w }); return it;
     },
     yawen(pl, p) {
       const it = [], tw = p.tw, F = tw("footSize", 20), TR = tracedFor(p, "yawen");

@@ -31,7 +31,7 @@ STILLS = {
     "paget-indiana-jones": ("David Paget, Indiana Jones", "still-paget-indiana-jones", "indy", "1x1", ["letters", "zoom", "typewriter"], {}),
 }
 PHASES = [("Player Phase", "still-fe-player-phase", "PLAYER PHASE", "#3ec6fa", 5), ("Enemy Phase", "still-fe-enemy-phase", "ENEMY PHASE", "#f55f64", 7), ("Next Round", "still-fe-next-round", "NEXT ROUND", "#fff8aa", 3)]
-PHASE_BG = ["#c9d3d6", "#d8c4c2", "#4a4026"]  # the flat tile of each phase: the light pavement behind the banner, the dark cave of the last one
+PHASE_BG = ["#080b12", "#0d0809", "#0b0c06"]  # a dark tile per phase (the ink and the photo are not reproduced): the lettering stands out
 
 
 def controls(n: int, apps: "list | None" = None, layout: str = "") -> list:
@@ -79,7 +79,7 @@ def phases_project() -> dict:
     beats = []
     for pi, (name, slug, text, col, seed) in enumerate(PHASES):
         for ai, a in enumerate(apps):
-            beats.append(((pi * 3 + ai) * 3.2, "sv-visual", {"layout": "phase", "design": "original", "appearance": a, "lines": [text], "accent": col, "seed": seed, "bg": PHASE_BG[pi], "dur": 0.8, "stagger": 0.1, "tweaks": ["wordX 977", "wordY 454.5", "ls 0", "variant %d" % (pi + 1)]}))
+            beats.append(((pi * 3 + ai) * 3.2, "sv-visual", {"layout": "phase", "design": "original", "appearance": a, "lines": [text], "accent": col, "seed": seed, "bg": PHASE_BG[pi], "dur": 0.8, "stagger": 0.1, "tweaks": ["wordX 960", "wordY 462"]}))
     p = ppm.build("Fire Emblem Fortune's Weave, bandeaux de phase, trois couleurs et trois apparitions", "still-fe-player-phase", beats, 3.2 * 9, controls(9, ['ink', 'letters', 'zoom'] * 3), fmt="16x9", bg="#101010", ink="#ffffff", accent="#3fb8ff",
                   doc="16 October 2026: the ink banner of the Player Phase, Enemy Phase and Next Round (same effect, the colour changes); three appearances each; foreground only.")
     for i, (pi, ai) in enumerate((pi, ai) for pi in range(3) for ai in range(3)):
