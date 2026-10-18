@@ -46,14 +46,17 @@ def box(H, W, x0, y0, x1, y1):
 
 def lum_of(a): return a.astype(float).mean(2)
 
-def cov_light(a, fg=250.0, size=21):
-    """Coverage of LIGHT ink on a darker, possibly varying background (a photo): between the local darkest value and the ink value."""
+def cov_light(a, fg=None, size=21, region=None, pct=98.0):
+    """Coverage of LIGHT ink on a darker, possibly varying background (a photo): between the local darkest value and the ink value.
+    The ink value is the strongest value really reached by the strokes of the region (a high percentile), never a guessed pure white: thin strokes never reach it."""
     L = lum_of(a); bg = ndi.gaussian_filter(ndi.minimum_filter(L, size), size / 4.0)
+    if fg is None: fg = float(np.percentile(L[region], pct)) if region is not None else 250.0
     return np.clip((L - bg) / np.maximum(fg - bg, 20.0), 0, 1)
 
-def cov_dark(a, fg=15.0, size=21):
-    """Coverage of DARK ink on a lighter background."""
+def cov_dark(a, fg=None, size=21, region=None, pct=2.0):
+    """Coverage of DARK ink on a lighter background (same rule: the ink value is the darkest value the strokes really reach)."""
     L = lum_of(a); bg = ndi.gaussian_filter(ndi.maximum_filter(L, size), size / 4.0)
+    if fg is None: fg = float(np.percentile(L[region], pct)) if region is not None else 15.0
     return np.clip((bg - L) / np.maximum(bg - fg, 20.0), 0, 1)
 
 def cov_color(a, fg, bg):
@@ -91,17 +94,16 @@ def trace_layer(a, layer, scale, sigma, dilate, minpx, W, H):
     hs = [b["b"][3] - b["b"][1] for b in glyphs] or [1]; band = max(6, float(np.median(hs)) * 0.6)  # reading order: lines, then left to right
     glyphs.sort(key=lambda b: (round(((b["b"][1] + b["b"][3]) / 2) / band), b["b"][0]))
     out = {"name": layer["name"], "glyphs": glyphs}
-    for k in ("grad", "stroke"):
+    for k in ("grad", "stroke", "blur", "op"):
         if k in layer: out[k] = layer[k]
     return out
 
 # ------------------------------------------------------------------ the builders, one per visual (regions are generous: no glyph is cut by one)
 def bleach(a):
-    H, W = a.shape[:2]
-    return [dict(name="chip and kicker", field=cov_dark(a, 10, 15), region=box(H, W, 1250, 92, 1570, 150)),
-            dict(name="title", field=cov_dark(a, 12, 41), region=box(H, W, 960, 230, 1860, 410)),
-            dict(name="body", field=cov_dark(a, 22, 15), region=box(H, W, 985, 418, 1840, 640)),
-            dict(name="big word", field=cov_dark(a, 5, 41), region=box(H, W, 880, 770, 1920, 1080))]
+    H, W = a.shape[:2]; R = lambda *b: box(H, W, *b)  # noqa: E731
+    r1, r2, r3, r4, r0 = R(1250, 92, 1322, 150), R(960, 230, 1860, 410), R(985, 418, 1840, 640), R(897, 770, 1920, 1080), R(1326, 100, 1570, 146)
+    return [dict(name="chip", field=cov_dark(a, None, 15, r1), region=r1), dict(name="kicker", field=cov_dark(a, None, 9, r0, 1.0), region=r0), dict(name="title", field=cov_dark(a, None, 41, r2), region=r2),
+            dict(name="body", field=cov_dark(a, None, 15, r3), region=r3), dict(name="big word", field=cov_dark(a, None, 41, r4), region=r4)]
 
 def yawen(a):
     H, W = a.shape[:2]
@@ -112,19 +114,21 @@ def yawen(a):
 def pale(a):
     H, W = a.shape[:2]; yy, xx = np.mgrid[0:H, 0:W]
     loose = (a[..., 1] > a[..., 0] + 10) & (a[..., 2] > a[..., 1] - 30) & (a[..., 0] < 70) & (a[..., 1] < 140) & (a[..., 1] >= 25) & (xx < 930) & (xx >= 42) & (yy < 968)
-    edge = np.array([np.nonzero(loose[y])[0].max() if loose[y].any() else 0 for y in range(H)], float); edge = ndi.median_filter(edge, size=21)
-    panel = (xx >= 42) & (xx <= edge[:, None]) & (yy < 968); panel = ndi.binary_opening(panel, iterations=1)
+    edge = np.array([np.nonzero(loose[y])[0].max() if loose[y].any() else 0 for y in range(H)], float); edge[968:] = np.median(edge[900:968]); edge = ndi.median_filter(edge, size=21)  # below the visual's last row (the video controls) the edge keeps its last value
+    panel = (xx >= 42) & (xx <= edge[:, None]); panel = ndi.binary_opening(panel, iterations=1)  # the whole height: the controls bar of the screenshot is not part of the visual
     stops = []
     xs = np.nonzero(panel.any(0))[0]
-    for fx in (0.05, 0.3, 0.55, 0.8, 0.97):
-        x = int(xs.min() + fx * (xs.max() - xs.min())); col = a[:, x - 6:x + 6][panel[:, x - 6:x + 6]].mean(axis=0); stops.append([fx, hexc(col)])
+    ok = panel & ~(lum_of(a) > 120)  # no title, no photo
+    for fx in (0.0, 0.25, 0.5, 0.75, 1.0):
+        x = int(xs.min() + 4 + fx * (xs.max() - xs.min() - 70)); sel = ok[200:900, x - 8:x + 8]; col = np.median(a[200:900, x - 8:x + 8][sel], axis=0); stops.append([fx, hexc(col)])
     return [dict(name="panel", field=soften(panel, 1.0), region=np.ones((H, W), bool), color=(20, 90, 95), grad=stops),
             dict(name="title", field=cov_light(a, 247, 31), region=box(H, W, 60, 240, 800, 800))]
 
 def paget(a):
     H, W = a.shape[:2]; dark = (24, 24, 24)
-    return [dict(name="white words", field=cov_color(a, (250, 250, 250), dark), region=box(H, W, 100, 220, 700, 740) & ~box(H, W, 100, 880, 700, 1000)),
-            dict(name="orange words", field=cov_color(a, (255, 157, 31), dark), region=box(H, W, 100, 290, 700, 880)),
+    return [dict(name="white words", field=cov_color(a, (250, 250, 250), dark), region=box(H, W, 100, 220, 668, 740) & ~box(H, W, 100, 880, 700, 1000)),
+            dict(name="orange words", field=cov_color(a, (255, 157, 31), dark), region=box(H, W, 100, 290, 668, 880)),
+            dict(name="handle and icons", field=cov_light(a, None, 15, box(H, W, 112, 1000, 530, 1044), 99.0), region=box(H, W, 112, 1000, 530, 1044), color=(214, 214, 214)),
             dict(name="button", field=cov_color(a, (255, 157, 31), dark), region=box(H, W, 112, 880, 492, 995)),
             dict(name="button label", field=cov_dark(a, 20, 45), region=box(H, W, 140, 900, 470, 975))]
 
@@ -132,7 +136,58 @@ def indy(a):
     H, W = a.shape[:2]
     return [dict(name="title", field=cov_light(a, 232, 25), region=box(H, W, 30, 840, 1050, 1010))]
 
-BUILDERS = {"bleach": bleach, "yawen": yawen, "pale": pale, "paget": paget, "indy": indy}
+def ichiban(a):
+    """Redecouvrir Kyushu: a sticker. Per pixel: pink fill, white fill, black outline, white border (the glow of the sticker). Silhouettes are softened masks (the sticker has hard clean edges)."""
+    H, W = a.shape[:2]; yy, xx = np.mgrid[0:H, 0:W]; A = a.astype(int)
+    r1 = (xx >= 14) & (xx < 960) & (yy < 226); r2 = (xx >= 14) & (xx < 800) & (yy >= 226) & (yy < 470); hair = (xx > 700) & (yy > 395)
+    pink = np.abs(A - np.array([255, 123, 123])).sum(2) < 80; dark = A.max(2) < 50; white = A.min(2) >= 246
+    pink2 = ndi.binary_closing(pink & r2, iterations=2)
+    ys = np.nonzero(pink2[:, 760])[0]; ybot = int(np.percentile(np.nonzero(pink2[:, 300])[0], 100))  # the bottom line of the word, read on a letter the hair does not cover
+    for x in range(700, 800):  # the hair of the photo hides the foot of the last letter: complete the stem down to the common baseline
+        col = np.nonzero(pink2[300:394, x])[0]
+        if len(col): pink2[394:ybot + 1, x] = True
+    dark1 = ndi.binary_closing(dark & r1, iterations=1); dark2 = dark & r2 & ~hair
+    fill1 = ndi.binary_closing(white & r1 & ndi.binary_fill_holes(ndi.binary_closing(dark1, iterations=3)) & ~dark1, iterations=2)
+    solid1 = dark1 | fill1; solid2 = pink2 | dark2
+    # the white border of a sticker is a uniform offset of its silhouette: a rounded dilation (distance transform), not a threshold of the noisy clouds behind it
+    clean = lambda m, it=2: ndi.median_filter(ndi.binary_opening(ndi.binary_closing(m, iterations=it), iterations=1), size=5)  # noqa: E731
+    solid1, solid2 = clean(solid1), clean(solid2)
+    d1, d2 = ndi.distance_transform_edt(~solid1), ndi.distance_transform_edt(~solid2)
+    border1 = (d1 <= 9) & r1; border2 = (d2 <= 15) & r2 & ~hair
+    dark1, dark2, fill1, pink2 = clean(dark1, 1), clean(dark2, 1), clean(fill1, 1), clean(pink2, 1)
+    full = np.ones((H, W), bool)
+    return [dict(name="white border", field=soften(border1 | border2 | solid1 | solid2, 1.0), region=full, color=(255, 255, 255)),
+            dict(name="black outline", field=soften(dark1 | dark2, 0.9), region=full, color=(8, 8, 8)),
+            dict(name="white fill", field=soften(fill1, 0.9), region=full, color=(255, 255, 255)),
+            dict(name="pink word", field=soften(pink2, 0.9), region=full, color=(255, 123, 123))]
+
+def _phase(a, ink_pred, text_col, text_region, ink_col, splat_col, splat_tol, blur, smoke_col=(80, 84, 92), band_y=(150, 760)):
+    H, W = a.shape[:2]; A = a.astype(int); yy, xx = np.mgrid[0:H, 0:W]
+    band = (yy > band_y[0]) & (yy < band_y[1]) & (xx > 130) & (xx < 1800)
+    ink = ink_pred(A) & band; ink = ndi.binary_closing(ink, iterations=5); ink = ndi.binary_opening(ink, iterations=2)
+    lab, n = ndi.label(ink); sizes = ndi.sum(ink, lab, range(1, n + 1)); ink = np.isin(lab, [i + 1 for i, v in enumerate(sizes) if v > 3000])
+    ink = ndi.binary_fill_holes(ndi.binary_closing(ink, iterations=10))
+    tr = text_region(H, W)
+    tcol = np.array(text_col, float); dist = np.abs(A - tcol).sum(2)
+    letters = np.clip(1.0 - (dist - 40) / 150.0, 0, 1) * tr  # a continuous coverage of the lettering colour
+    near_ink = ndi.binary_dilation(ink, iterations=60)
+    splat = np.clip(1.0 - (np.abs(A - np.array(splat_col, float)).sum(2) - splat_tol) / 110.0, 0, 1) * near_ink * ~tr
+    full = np.ones((H, W), bool)
+    return [dict(name="smoke", field=soften(ndi.binary_dilation(ink, iterations=28), 10.0), region=full, color=smoke_col, blur=16, op=0.4),
+            dict(name="ink", field=soften(ink, 6.0), region=full, color=ink_col, blur=blur),
+            dict(name="splatter", field=splat, region=np.ones((H, W), bool), color=splat_col),
+            dict(name="lettering", field=letters, region=tr, color=text_col)]
+
+def phase_player(a):
+    return _phase(a, lambda A: A.max(2) < 85, (62, 198, 250), lambda H, W: box(H, W, 400, 440, 1540, 620), (9, 16, 26), (58, 150, 255), 60, 5)
+
+def phase_enemy(a):
+    return _phase(a, lambda A: A.max(2) < 85, (245, 95, 100), lambda H, W: box(H, W, 400, 440, 1540, 620), (22, 9, 11), (235, 40, 50), 60, 5)
+
+def phase_next(a):
+    return _phase(a, lambda A: (A.max(2) < 70) & (A[..., 1] >= A[..., 0] - 4), (255, 248, 170), lambda H, W: box(H, W, 420, 300, 1500, 480), (9, 17, 12), (225, 205, 70), 70, 5, (60, 62, 30), (200, 560))
+
+BUILDERS = {"phase_player": phase_player, "phase_enemy": phase_enemy, "phase_next": phase_next, "ichiban": ichiban, "bleach": bleach, "yawen": yawen, "pale": pale, "paget": paget, "indy": indy}
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("project"); ap.add_argument("layout"); ap.add_argument("--builder", default=""); ap.add_argument("--still", default="")

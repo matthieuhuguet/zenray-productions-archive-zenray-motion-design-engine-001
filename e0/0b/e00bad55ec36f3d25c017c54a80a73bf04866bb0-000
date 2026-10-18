@@ -48,13 +48,14 @@
   }
 
   // ---- the "original" design of a visual: the traced foreground (Scripts/TraceStill.py), one `.ch` box per glyph, used while the texts are the original ones and the mode is not "custom"
-  const tracedFor = (p, key) => { const Tr = window.ZSTrace && window.ZSTrace[key]; if (!Tr || p.design === "custom") return null; const D = DEFAULTS[p.layout]; return Object.keys(D.l).every((k) => String(p[k]) === String(D.l[k])) ? Tr : null; };
+  const tracedFor = (p, key, store) => { const Tr = window[store || "ZSTrace"] && window[store || "ZSTrace"][key]; if (!Tr || p.design === "custom") return null; const D = DEFAULTS[p.layout]; return Object.keys(D.l).every((k) => String(p[k]) === String(D.l[k])) ? Tr : null; };
   let traceGradId = 0;
-  const traceLayer = (parent, glyphs, w0, h0, grad) => {
+  const traceLayer = (parent, glyphs, w0, h0, grad, blur, op) => {
     const holder = abs(parent, { left: "0", top: "0", width: (w0 || 1920) + "px", height: (h0 || 1080) + "px" });  // full plane size: a wipe (clip-path) on an empty box would hide everything
-    let fillOf = null;
-    if (grad && glyphs.length) { const gid = "tg" + (traceGradId++), xs0 = Math.min.apply(null, glyphs.map((g) => g.b[0])), xs1 = Math.max.apply(null, glyphs.map((g) => g.b[2])); const gs = svgEl("svg", { width: 0, height: 0, style: "position:absolute" }, holder), lg = svgEl("linearGradient", { id: gid, gradientUnits: "userSpaceOnUse", x1: xs0, y1: 0, x2: xs1, y2: 0 }, svgEl("defs", {}, gs)); grad.forEach((s) => svgEl("stop", { offset: s[0], "stop-color": s[1] }, lg)); fillOf = "url(#" + gid + ")"; }
-    glyphs.forEach((g, i) => { const [x0, y0, x1, y1] = g.b, w = x1 - x0, hh = y1 - y0, c = abs(holder, { left: x0 + "px", top: y0 + "px", width: w + "px", height: hh + "px", overflow: "visible" }); c.className += " ch"; c.dataset.i = String(i);
+    let fillOf = null; const inner = (blur || op) ? abs(holder, { left: "0", top: "0", width: (w0 || 1920) + "px", height: (h0 || 1080) + "px" }) : holder;  // the blur and the opacity live on an inner box: the appearances animate the holder's own filter and opacity
+    if (blur) inner.style.filter = `blur(${blur}px)`; if (op) inner.style.opacity = String(op);
+    if (grad && glyphs.length) { const gid = "tg" + (traceGradId++), xs0 = Math.min.apply(null, glyphs.map((g) => g.b[0])), xs1 = Math.max.apply(null, glyphs.map((g) => g.b[2])); const gs = svgEl("svg", { width: 0, height: 0, style: "position:absolute" }, inner), lg = svgEl("linearGradient", { id: gid, gradientUnits: "userSpaceOnUse", x1: xs0, y1: 0, x2: xs1, y2: 0 }, svgEl("defs", {}, gs)); grad.forEach((s) => svgEl("stop", { offset: s[0], "stop-color": s[1] }, lg)); fillOf = "url(#" + gid + ")"; }
+    glyphs.forEach((g, i) => { const [x0, y0, x1, y1] = g.b, w = x1 - x0, hh = y1 - y0, c = abs(inner, { left: x0 + "px", top: y0 + "px", width: w + "px", height: hh + "px", overflow: "visible" }); c.className += " ch"; c.dataset.i = String(i);
       const v = svgEl("svg", { width: w, height: hh, viewBox: `${x0} ${y0} ${w} ${hh}`, style: "position:absolute;left:0;top:0;overflow:visible" }, c); svgEl("path", { d: g.d, fill: fillOf || g.f, "fill-rule": "evenodd" }, v); });
     return holder;
   };
@@ -65,7 +66,13 @@
       abs(pl, { left: "0", top: "0", width: "1920px", height: "1080px", background: p.accent });
       abs(pl, { left: "48px", top: "0", width: "828px", height: "1080px", background: p.tile });
       const it = [], TR = tracedFor(p, "bleach");
-      if (TR) { TR.layers.forEach((ly) => it.push({ n: traceLayer(pl, ly.glyphs, TR.w, TR.h) })); return it; }
+      if (TR) {  // original design: the big shapes are traced; the 11 and 17 px kicker lines are set with the real font (a trace of text that small is never clean)
+        const Ly = (n) => TR.layers.find((l) => l.name === n), add = (n) => it.push({ n: traceLayer(pl, Ly(n).glyphs, TR.w, TR.h) });
+        add("chip");
+        it.push({ n: T(pl, { text: p.kicker, x: tw("chipX", 1264) + 70, y: tw("chipY", 107) + 1, size: 10, font: "Fraunces", weight: 500, color: "#4d1c04", ls: "0.07em", upper: true }) });
+        it.push({ n: T(pl, { text: p.subtitle, x: tw("chipX", 1264) + 70, y: tw("chipY", 107) + 18, size: 16, font: "Fraunces", weight: 500, color: "#4d1c04", ls: "0.06em", upper: true }) });
+        add("title"); add("body"); add("big word"); return it;
+      }
       const chip = abs(pl, { left: tw("chipX", 1264) + "px", top: tw("chipY", 107) + "px", width: "55px", height: "34px", background: "#0b0b0b" }); abs(chip, { left: "0", top: "8px", width: "55px", textAlign: "center", fontFamily: h.font("Syne"), fontWeight: 800, fontSize: "13px", color: "#fff" }, p.code); it.push({ n: chip, shape: true });
       it.push({ n: T(pl, { text: p.kicker, x: tw("chipX", 1264) + 70, y: tw("chipY", 107) + 1, size: 11, font: "Fraunces", weight: 600, color: "#111", ls: "0.08em", upper: true }) });
       it.push({ n: T(pl, { text: p.subtitle, x: tw("chipX", 1264) + 70, y: tw("chipY", 107) + 17, size: 17, font: "Fraunces", weight: 600, color: "#111", ls: "0.06em", upper: true }) });
@@ -75,8 +82,17 @@
       return it;
     },
     ichiban(pl, p) {
-      const it = [], tw = p.tw, TR = tracedFor(p, "ichiban");
-      if (TR) { TR.layers.forEach((ly) => it.push({ n: traceLayer(pl, ly.glyphs, TR.w, TR.h) })); return it; }
+      const it = [], tw = p.tw, TR = tracedFor(p, "ichiban", "ZSSticker");
+      if (TR) {  // original design: the isolated letters (a font traced on the reference); the black outline and the white border are STROKES of the letter shapes, so they are parameters, and a letter keeps all its layers together
+        const holder = abs(pl, { left: "0", top: "0", width: TR.w + "px", height: TR.h + "px" }), W1 = tw("stickerBorder1", 5), O1 = tw("stickerOutline1", 9), W2 = tw("stickerBorder2", 14), SX = tw("shadowX", 3), SY = tw("shadowY", 4), pad = 40;
+        const piece = (L, i, d, attrs) => { const [x0, y0, x1, y1] = L.b, w = x1 - x0 + pad * 2, hh = y1 - y0 + pad * 2, c = abs(holder, { left: x0 - pad + "px", top: y0 - pad + "px", width: w + "px", height: hh + "px", overflow: "visible" }); c.className += " ch"; c.dataset.i = String(i);
+          const v = svgEl("svg", { width: w, height: hh, viewBox: `${x0 - pad} ${y0 - pad} ${w} ${hh}`, style: "position:absolute;left:0;top:0;overflow:visible" }, c); svgEl("path", Object.assign({ d, "fill-rule": "evenodd", "stroke-linejoin": "round", "stroke-linecap": "round" }, attrs), v).setAttribute("transform", attrs.shift ? `translate(${attrs.shift[0]},${attrs.shift[1]})` : ""); };
+        const all = []; let gi = 0; TR.lines.forEach((ln, li) => ln.letters.forEach((L) => all.push({ L, li, i: gi++ })));
+        all.forEach((o) => piece(o.L, o.i, o.L.h, { fill: "#fff", stroke: "#fff", "stroke-width": 2 * (o.li === 0 ? W1 + O1 : W2), shift: [SX * 0.6, SY * 0.6] }));                       // the white border
+        all.filter((o) => o.li === 0).forEach((o) => piece(o.L, o.i, o.L.h, { fill: "#050505", stroke: "#050505", "stroke-width": 2 * O1, shift: [SX, SY] }));                  // the black outline and the hull behind the letters
+        all.forEach((o) => piece(o.L, o.i, o.L.d, { fill: o.li === 0 ? "#fff" : p.accent }));                                                                  // the letters
+        it.push({ n: holder }); return it;
+      }
       it.push({ n: sticker(pl, { text: p.line1, x: tw("x1", 46), y: tw("y1", 52), size: tw("size1", 168), font: p.font || "Sora", weight: tw("weight", 800), color: "#ffffff", ls: tw("ls1", -0.03) + "em", border: tw("border1", 48), outline: tw("outline1", 28), fillStroke: tw("fill1", 8), sx: tw("sx1", 0.70), lh: 1 }) });
       it.push({ n: sticker(pl, { text: p.line2, x: tw("x2", 52), y: tw("y2", 226), size: tw("size2", 250), font: p.font || "Sora", weight: tw("weight", 800), color: p.accent, ls: tw("ls2", -0.03) + "em", border: tw("border2", 36), outline: tw("outline2", 0), fillStroke: tw("fill2", 8), sx: tw("sx2", 0.68), lh: 1 }) });
       return it;
@@ -103,7 +119,7 @@
       const fl = svgEl("filter", { id: "pr-r", x: "-5%", y: "-5%", width: "110%", height: "110%" }, df); svgEl("feTurbulence", { type: "fractalNoise", baseFrequency: "0.02 0.05", numOctaves: 3, seed: 11 }, fl); svgEl("feDisplacementMap", { in: "SourceGraphic", scale: tw("edgeRough", 46), xChannelSelector: "R", yChannelSelector: "G" }, fl);
       const g = svgEl("g", {}, sv);
       if (!TR) svgEl("path", { d: (() => { const e = tw("panelWidth", 830) - 830; return `M0,0 L${820 + e},0 C${860 + e},160 ${780 + e},260 ${830 + e},420 C${870 + e},560 ${790 + e},700 ${850 + e},860 C${880 + e},960 ${830 + e},1020 ${860 + e},1080 L0,1080 Z`; })(), fill: "url(#pr-g)", filter: "url(#pr-r)" }, g);
-      const rose = (cx, cy, r) => { svgEl("circle", { cx, cy, r, fill: "none", stroke: "#8fc7c8", "stroke-opacity": 0.16, "stroke-width": 2 }, g); svgEl("circle", { cx, cy, r: r * 0.66, fill: "none", stroke: "#8fc7c8", "stroke-opacity": 0.14, "stroke-width": 1.5 }, g); svgEl("path", { d: `M${cx},${cy - r} L${cx + r * 0.1},${cy - r * 0.1} L${cx + r},${cy} L${cx + r * 0.1},${cy + r * 0.1} L${cx},${cy + r} L${cx - r * 0.1},${cy + r * 0.1} L${cx - r},${cy} L${cx - r * 0.1},${cy - r * 0.1} Z`, fill: "#8fc7c8", "fill-opacity": 0.12 }, g); };
+      const rose = (cx, cy, r) => { svgEl("circle", { cx, cy, r, fill: "none", stroke: "#8fc7c8", "stroke-opacity": 0.1, "stroke-width": 1.2 }, g); svgEl("circle", { cx, cy, r: r * 0.66, fill: "none", stroke: "#8fc7c8", "stroke-opacity": 0.09, "stroke-width": 1 }, g); svgEl("path", { d: `M${cx},${cy - r} L${cx + r * 0.1},${cy - r * 0.1} L${cx + r},${cy} L${cx + r * 0.1},${cy + r * 0.1} L${cx},${cy + r} L${cx - r * 0.1},${cy + r * 0.1} L${cx - r},${cy} L${cx - r * 0.1},${cy - r * 0.1} Z`, fill: "#8fc7c8", "fill-opacity": 0.07 }, g); };
       rose(330, 210, 230); rose(520, 520, 200); rose(700, 960, 220);
       it.push({ n: sv, shape: true, svg: true });
       if (TR) it.push({ n: traceLayer(pl, TR.layers[1].glyphs, TR.w, TR.h) }); else [p.l1, p.l2, p.l3].forEach((t, i) => { const k = i + 1; it.push({ n: T(pl, { text: t, x: tw("x" + k, 112), y: tw("y" + k, tw("top", 240) + i * tw("pitch", 181)), size: tw("s" + k, tw("size", 190)), font: "PlayfairDisplay", weight: 700, italic: true, color: "#f7ecd3", ls: tw("ls" + k, -0.02) + "em", lh: 1, sx: tw("sx" + k, 1) }) }); });
@@ -113,7 +129,7 @@
       const it = [], tw = p.tw;
       { // original design: the traced banner of the reference still of this colour (variant 1 player, 2 enemy, 3 next round), while the text is the original one
         const vk = Math.round(tw("variant", 0)), key = { 1: "phase_player", 2: "phase_enemy", 3: "phase_next" }[vk], exp = { 1: "PLAYER PHASE", 2: "ENEMY PHASE", 3: "NEXT ROUND" }[vk], TR = key && p.design !== "custom" && window.ZSTrace && window.ZSTrace[key];
-        if (TR && String(p.text).toUpperCase() === exp) { TR.layers.forEach((ly) => it.push({ n: traceLayer(pl, ly.glyphs, TR.w, TR.h) })); return it; }
+        if (TR && String(p.text).toUpperCase() === exp) { TR.layers.forEach((ly) => it.push({ n: traceLayer(pl, ly.glyphs, TR.w, TR.h, null, ly.blur, ly.op) })); return it; }
       }
       const band = abs(pl, { left: "0", top: "0", width: "1920px", height: "1080px" }); inkBand(band, { x: tw("bandX", 190), y: tw("bandY", 290), w: tw("bandW", 1560), h: tw("bandH", 540), seed: p.seed, rough: tw("rough", 60), color: p.accent, dots: tw("dots", 520), smoke: tw("smoke", 16) }); it.push({ n: band, shape: true, svgBand: true });
       const word = T(pl, { text: p.text, x: tw("wordX", 960), y: tw("wordY", 462), size: tw("size", 134), font: "PlayfairDisplay", weight: 700, italic: true, color: p.accent, align: "center", ls: tw("ls", 0.01) + "em", lh: 1, upper: true, sx: tw("sx", 1), css: { textShadow: `0 0 ${tw("glow", 18)}px ${p.accent}, 0 0 ${tw("glow", 18) * 2.2}px ${p.accent}88` } }); it.push({ n: word });

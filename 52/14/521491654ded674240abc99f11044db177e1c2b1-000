@@ -1,0 +1,94 @@
+"""Isolate the LETTERS of a sticker title and write them as a procedural font (18 October 2026, method for stickers: Redecouvrir Kyushu).
+
+Method (each step is checked on a side-by-side with the reference):
+ 1. isolate the FILL of every letter (pink, or white inside its black outline) from the colour of the fill alone: a continuous coverage field, smooth sub-pixel contour (never a hard mask);
+ 2. one letter = one connected shape (an accent is merged into its letter), kept with its box and its line;
+ 3. the sticker is NOT traced: the black outline and the white border are STROKES of the letter shapes (round joins), so their widths, colours and order are parameters; the black slits inside the
+    white letters are holes of the fill, over a black hull.
+Output: motion/runtime/zs-templates-sticker-<layout>-1.js, window.ZSSticker.<layout> = {w, h, lines: [{letters: [{d (fill), h (hull), b (box)}], border, outline, fill, outlineColor, borderColor}]}.
+Run with /Users/zenray/.venvs/zenray-motion/bin/python -I. Usage: StickerTrace.py ichiban-japan-ppm ichiban"""
+import argparse, json, sys
+from pathlib import Path
+import numpy as np
+from scipy import ndimage as ndi
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "Scripts")); sys.path.insert(0, str(ROOT / "motion"))
+import TraceStill as TS  # noqa: E402
+import ZhongKuiTrace as ZT  # noqa: E402
+
+SCALE = 8
+
+def letter_shapes(field, region, minpx=200, merge_dx=0.55):
+    """Connected shapes of a coverage field inside a region, accents merged into the letter below, left to right."""
+    gm = (field > 0.5) & region; lab, n = ndi.label(gm); objs = ndi.find_objects(lab); comps = []
+    for i, sl in enumerate(objs, start=1):
+        m = lab == i
+        if m.sum() < minpx and (sl[0].stop - sl[0].start) > 8: continue
+        comps.append({"id": i, "x0": sl[1].start, "x1": sl[1].stop, "y0": sl[0].start, "y1": sl[0].stop, "area": int(m.sum())})
+    big = [c for c in comps if c["area"] >= minpx * 4]
+    out = []
+    for c in comps:  # a small piece above a big one (an accent) joins it
+        if c["area"] < minpx * 4 and big:
+            near = max(big, key=lambda b: max(0, min(b["x1"], c["x1"]) - max(b["x0"], c["x0"])))
+            ov = max(0, min(near["x1"], c["x1"]) - max(near["x0"], c["x0"])) / max(1, c["x1"] - c["x0"])
+            if ov >= merge_dx: near.setdefault("extra", []).append(c["id"]); continue
+        if c in big: continue
+        big.append(c)
+    big.sort(key=lambda c: c["x0"])
+    for c in big:
+        ids = [c["id"]] + c.get("extra", []); out.append(np.isin(lab, ids))
+    return out
+
+def split_to(shapes, expected):
+    """Touching letters share one shape: cut the widest shape at its thinnest column (near its middle) until the expected number of letters is reached."""
+    shapes = list(shapes)
+    while len(shapes) < expected:
+        wid = [int(np.nonzero(m.any(0))[0].max() - np.nonzero(m.any(0))[0].min()) for m in shapes]; k = int(np.argmax(wid)); m = shapes[k]
+        xs = np.nonzero(m.any(0))[0]; x0, x1 = xs.min(), xs.max(); mid = (x0 + x1) // 2; w = max(12, (x1 - x0) // 5)
+        col = m.sum(0).astype(float); cut = int(mid - w + np.argmin(col[mid - w:mid + w + 1]))
+        l = m.copy(); r = m.copy(); l[:, cut:] = False; r[:, :cut] = False; shapes[k:k + 1] = [l, r]
+    shapes.sort(key=lambda m: np.nonzero(m.any(0))[0].min()); return shapes
+
+def trace_shape(mask, scale, sigma=0.32, soft=None):
+    H, W = mask.shape; ys, xs = np.nonzero(mask); y0, y1, x0, x1 = max(0, ys.min() - 4), min(H, ys.max() + 5), max(0, xs.min() - 4), min(W, xs.max() + 5)
+    f = (soft if soft is not None else mask.astype(float))[y0:y1, x0:x1]
+    up = np.clip(ndi.zoom(f, scale, order=3), 0, 1); up = ndi.gaussian_filter(up, sigma * scale) > 0.5
+    d, tf = ZT.trace(up, scale, turd=scale * 3, opt=0.45)
+    return TS.rel(ZT.path_to_px(d, tf, scale, x0, y0)), [int(x0), int(y0), int(x1), int(y1)]
+
+def ichiban(a):
+    H, W = a.shape[:2]; A = a.astype(int); yy, xx = np.mgrid[0:H, 0:W]
+    r1 = (xx >= 14) & (xx < 960) & (yy < 226); r2 = (xx >= 14) & (xx < 800) & (yy >= 226) & (yy < 470); hair = (xx > 700) & (yy > 395)
+    # line 2: the pink fill, coverage by projection between the white border and the pink
+    pf = TS.cov_color(a, (255, 123, 123), (255, 255, 255)); pink = (np.abs(A - np.array([255, 123, 123])).sum(2) < 120)
+    f2 = np.where(pink, np.clip(pf, 0, 1), 0.0) * r2
+    f2 = ndi.gaussian_filter(f2, 0.6)
+    ys = np.nonzero((f2 > 0.5)[:, 300])[0]; base = int(ys.max())
+    # the hair hides the foot of the last letters: the letters of this line stop at their common baseline, complete the last one by extending its columns down
+    lines = []
+    shapes2 = split_to(letter_shapes(f2, r2), 6)
+    # line 1: white letters inside a black outline; the fill is the white that the outline encloses
+    dark = A.max(2) < 55; hull = ndi.binary_fill_holes(ndi.binary_closing(dark & r1, iterations=3))
+    wf = np.clip((A.mean(2) - 60.0) / 190.0, 0, 1) * (hull & r1)
+    wf = np.where(dark, 0.0, wf); wf = ndi.gaussian_filter(wf, 0.5)
+    shapes1 = split_to(letter_shapes(wf, r1, minpx=120), 11)
+    # the hair of the photo hides the foot of the last U: the same letter appears third, its mask is the model (shifted)
+    m3 = shapes2[2]; x3 = np.nonzero(m3.any(0))[0].min(); x6 = np.nonzero(shapes2[5].any(0))[0].min(); full = np.zeros_like(m3); full[:, :] = np.roll(m3, int(x6 - x3), axis=1); shapes2[5] = full
+    return [("line1", shapes1, wf), ("line2", shapes2, f2)], (H, W)
+
+def main():
+    ap = argparse.ArgumentParser(); ap.add_argument("project"); ap.add_argument("layout"); ap.add_argument("--still", default="")
+    a = ap.parse_args(); img, W, H = TS.fitted_reference(a.project, a.still); lines, _ = ichiban(img); out = []
+    for name, shapes, field in lines:
+        letters = []
+        for m in shapes:
+            d, b = trace_shape(m, SCALE, soft=np.where(m, np.maximum(field, 0.6), 0.0))
+            hull = ndi.binary_fill_holes(m); dh, _ = trace_shape(hull, SCALE)
+            letters.append({"d": d, "h": dh, "b": b})
+        out.append({"name": name, "letters": letters}); print(name, len(letters), "letters", sum(len(l["d"]) for l in letters) // 1024, "KiB")
+    js = "// 18 October 2026: letters of the %s sticker, isolated as a font (Scripts/StickerTrace.py). FR : lettres isolees du sticker.\n(window.ZSSticker = window.ZSSticker || {}).%s = %s;\n" % (a.layout, a.layout, json.dumps({"w": W, "h": H, "lines": out}, separators=(",", ":")))
+    p = ROOT / "motion" / "runtime" / ("zs-templates-sticker-%s-1.js" % a.layout); p.write_text(js); print(p, len(js) // 1024, "KiB")
+
+if __name__ == "__main__":
+    main()
