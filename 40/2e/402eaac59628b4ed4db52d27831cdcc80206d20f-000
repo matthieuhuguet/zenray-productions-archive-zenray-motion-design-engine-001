@@ -1,0 +1,88 @@
+"""Which real typeface is closest to a traced lettering? (19 October 2026)
+The traced glyphs of a card (zs-templates-card-*.js) are rasterised from their paths; every installed or bundled font is rendered for the same characters; the score of a font is the mean overlap (IoU) of each letter once the font letter is fitted to the
+traced letter's box, minus a penalty for the difference of proportion (a heavy condensed face must not be matched by a wide one). The best faces become the alphabet that completes a custom font when the text is edited.
+Usage: FontMatch.py <traced.json> <card> <face> [--top 8]. Writes nothing; prints the ranking. FR : quelle vraie police ressemble le plus a un lettrage trace."""
+import json, re, sys, glob, os, math
+from pathlib import Path
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
+
+def parse_path(d):
+    toks = re.findall(r"[mlcz]|-?\d+(?:\.\d+)?", d); i = 0; subs = []; cur = []; x = y = sx = sy = 0.0
+    while i < len(toks):
+        c = toks[i]; i += 1
+        if c == "z":
+            if cur: subs.append(cur); cur = []
+            x, y = sx, sy; continue
+        n = 6 if c == "c" else 2; v = [float(t) for t in toks[i:i + n]]; i += n
+        if c == "m":
+            if cur: subs.append(cur)
+            x += v[0]; y += v[1]; sx, sy = x, y; cur = [(x, y)]
+        elif c == "l": x += v[0]; y += v[1]; cur.append((x, y))
+        else:
+            p0 = (x, y); p1 = (x + v[0], y + v[1]); p2 = (x + v[2], y + v[3]); p3 = (x + v[4], y + v[5])
+            for t in np.linspace(0, 1, 9)[1:]:
+                a = (1 - t) ** 3; b = 3 * (1 - t) ** 2 * t; cc = 3 * (1 - t) * t * t; dd = t ** 3
+                cur.append((a * p0[0] + b * p1[0] + cc * p2[0] + dd * p3[0], a * p0[1] + b * p1[1] + cc * p2[1] + dd * p3[1]))
+            x, y = p3
+    if cur: subs.append(cur)
+    return subs
+
+def raster(subs, scale):
+    xs = [p[0] for s in subs for p in s]; ys = [p[1] for s in subs for p in s]; x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+    W = max(2, int(round((x1 - x0) * scale)) + 2); H = max(2, int(round((y1 - y0) * scale)) + 2); acc = np.zeros((H, W), bool)
+    for s in subs:
+        im = Image.new("1", (W, H), 0); ImageDraw.Draw(im).polygon([((px - x0) * scale + 1, (py - y0) * scale + 1) for px, py in s], fill=1); acc ^= np.asarray(im, bool)  # even-odd
+    return acc, (x1 - x0, y1 - y0)
+
+def crop(m):
+    ys, xs = np.nonzero(m); return m[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+
+def font_mask(font, ch):
+    im = Image.new("L", (900, 900), 0); ImageDraw.Draw(im).text((100, 100), ch, font=font, fill=255); a = np.asarray(im) > 127
+    return crop(a) if a.any() else None
+
+def fit_iou(a, b):
+    """IoU of two masks after resizing b to the shape of a (box to box)."""
+    bb = np.asarray(Image.fromarray(b.astype(np.uint8) * 255).resize((a.shape[1], a.shape[0]), Image.BILINEAR)) > 127; inter = (a & bb).sum(); uni = (a | bb).sum(); return inter / max(1, uni)
+
+def score_font(font, traced):
+    ious, asp = [], []
+    for g in traced:
+        subs = parse_path(g["d"]); t, (w, h) = raster(subs, 160.0 / max(1.0, (max(p[1] for s in subs for p in s) - min(p[1] for s in subs for p in s))))
+        t = crop(t); f = font_mask(font, g["c"])
+        if f is None: return None
+        ious.append(fit_iou(t, f)); asp.append(math.log((f.shape[1] / f.shape[0]) / (t.shape[1] / t.shape[0])))
+    return float(np.mean(ious)), float(np.mean(np.abs(asp))), float(np.exp(-np.mean(asp)))  # IoU, proportion error, the horizontal factor that fixes the proportion
+
+def candidates():
+    roots = ["/System/Library/Fonts", "/System/Library/Fonts/Supplemental", str(Path("~/Library/Fonts").expanduser()), str(Path(__file__).resolve().parents[1] / "motion" / "fonts"), "/Library/Fonts"]
+    for r in roots:
+        for f in sorted(glob.glob(r + "/*")):
+            if f.lower().endswith((".ttf", ".otf", ".ttc")): yield f
+
+def main():
+    traced = json.load(open(sys.argv[1]))[sys.argv[2]][sys.argv[3]]; top = int(sys.argv[sys.argv.index("--top") + 1]) if "--top" in sys.argv else 8
+    seen = {}; res = []
+    for path in candidates():
+        for idx in range(0, 12):
+            try: font = ImageFont.truetype(path, 300, index=idx)
+            except Exception: break
+            name = "%s/%s" % (font.getname()[0], font.getname()[1]); variants = [None]
+            try: ax = font.get_variation_axes(); variants = [700, 900] if any(a["name"] in (b"Weight", "Weight") for a in ax) else [None]
+            except Exception: pass
+            for v in variants:
+                try:
+                    f2 = ImageFont.truetype(path, 300, index=idx)
+                    if v is not None: f2.set_variation_by_axes([v] + [a["default"] for a in f2.get_variation_axes()][1:])
+                    sc = score_font(f2, traced)
+                except Exception: continue
+                if sc is None: continue
+                key = name + ("@%s" % v if v else "")
+                if key in seen: continue
+                seen[key] = 1; res.append((sc[0] - 0.25 * sc[1], sc, key, os.path.basename(path), idx, v))
+    res.sort(reverse=True)
+    for r in res[:top]: print("%.3f iou %.3f propErr %.3f sx %.2f  %s  (%s idx %d var %s)" % (r[0], r[1][0], r[1][1], r[1][2], r[2], r[3], r[4], r[5]))
+
+if __name__ == "__main__":
+    main()

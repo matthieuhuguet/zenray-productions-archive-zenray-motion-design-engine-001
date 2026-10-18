@@ -1,0 +1,85 @@
+"""The ALPHABET that completes a custom font (19 October 2026).
+A traced lettering only has the letters of its image (KITAE L'AME DU KATANA gives K I T A E L M D U N): an edited text needs the others. A real typeface close to the traced one (Scripts/FontMatch.py ranks them) is turned into outlines, normalised to a cap height of 1000 units
+(y = 0 at the cap line, y = 1000 on the baseline), and FITTED to the traced letters: a horizontal stretch `sx` and a weight offset `dil` (the outline is grown or shrunk by dil units) found by maximising the overlap with the traced letters, and a roughness `rough` that
+reproduces the distress of their edges. The template draws a letter the traced font does not have from this alphabet, with the same cap height, stretch, weight and distress, so an edited text reads as ONE typeface.
+Usage: AlphaBuild.py <id> <font file> <index> <weight|-> <card> <face>   e.g. AlphaBuild.py inox1-big /System/Library/Fonts/Supplemental/Impact.ttf 0 - inox1 big
+Writes motion/runtime/zs-templates-alpha-<id>-1.js (window.ZSAlpha[<id>]). Run with /Users/zenray/.venvs/zenray-motion/bin/python -I. FR : alphabet complet issu d'une vraie police, cale sur les lettres tracees."""
+import json, math, sys
+from pathlib import Path
+import numpy as np
+from PIL import Image, ImageFont
+from scipy import ndimage as ndi
+from fontTools.ttLib import TTFont, TTCollection
+from fontTools.pens.svgPathPen import SVGPathPen
+from fontTools.pens.transformPen import TransformPen
+from fontTools.pens.boundsPen import BoundsPen
+
+ROOT = Path(__file__).resolve().parents[1]; sys.path.insert(0, str(ROOT / "Scripts"))
+import FontMatch as FM  # noqa: E402
+
+CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,;:!?'’\"-–—+/&@()[]%°·€$#*=<>_ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÑÒÓÔÕÖŒÙÚÛÜÝŸ«»"
+TRACED = Path("/tmp/faces/traced.json")
+
+def load_font(path, index, weight):
+    f = TTCollection(path).fonts[index] if path.lower().endswith(".ttc") else TTFont(path)
+    if weight is not None and "fvar" in f:
+        from fontTools.varLib import instancer
+        axes = {a.axisTag: a.defaultValue for a in f["fvar"].axes}; axes["wght"] = weight; f = instancer.instantiateVariableFont(f, axes, inplace=False)
+    return f
+
+def outlines(f):
+    cmap = f.getBestCmap(); gs = f.getGlyphSet(); upem = f["head"].unitsPerEm
+    bp = BoundsPen(gs); gs[cmap[ord("H")]].draw(bp); capH = bp.bounds[3]; s = 1000.0 / capH; out = {}
+    for ch in CHARSET:
+        g = cmap.get(ord(ch))
+        if not g: continue
+        pen = SVGPathPen(gs, ntos=lambda v: "%d" % round(v)); gs[g].draw(TransformPen(pen, (s, 0, 0, -s, 0, capH * s))); d = pen.getCommands()
+        if not d: continue
+        bp2 = BoundsPen(gs); gs[g].draw(bp2); b = bp2.bounds
+        out[ch] = {"d": d, "a": round(gs[g].width * s), "x0": round(b[0] * s), "x1": round(b[2] * s)}
+    return out, capH, upem
+
+def fit(font_pil, traced):
+    """Search (sx, dil) maximising the mean overlap between the traced letters and the stretched, thickened font letters (both normalised to a cap height of 200 px, ink boxes centred on each other)."""
+    T = []
+    for g in traced:
+        subs = FM.parse_path(g["d"]); ys = [p[1] for s_ in subs for p in s_]; t, _ = FM.raster(subs, 200.0 / max(1.0, max(ys) - min(ys))); t = FM.crop(t); f = FM.font_mask(font_pil, g["c"])
+        if f is None: continue
+        T.append((t, f))
+    best = (-1, 1.0, 0.0)
+    for sx in np.arange(0.5, 1.6, 0.02):
+        for dil in range(-6, 11, 1):
+            ious = []
+            for t, f in T:
+                h = t.shape[0]; fw = max(2, int(round(f.shape[1] * (h / f.shape[0]) * sx))); fi = np.asarray(Image.fromarray(f.astype(np.uint8) * 255).resize((fw, h), Image.BILINEAR)) > 127
+                if dil > 0: fi = ndi.binary_dilation(fi, iterations=dil)
+                elif dil < 0: fi = ndi.binary_erosion(fi, iterations=-dil)
+                H = max(h, fi.shape[0]) + 4; W = max(t.shape[1], fi.shape[1]) + 4; A = np.zeros((H, W), bool); B = np.zeros((H, W), bool)
+                oy = (H - t.shape[0]) // 2; ox = (W - t.shape[1]) // 2; A[oy:oy + t.shape[0], ox:ox + t.shape[1]] = t
+                oy = (H - fi.shape[0]) // 2; ox = (W - fi.shape[1]) // 2; B[oy:oy + fi.shape[0], ox:ox + fi.shape[1]] = fi
+                ious.append((A & B).sum() / max(1, (A | B).sum()))
+            m = float(np.mean(ious))
+            if m > best[0]: best = (m, float(sx), float(dil))
+    return best  # (mean IoU, sx, dil in px at cap 200)
+
+def roughness(traced):
+    """RMS deviation of the traced edges from their own smoothing (px at cap 200): the distress to reproduce on the added letters."""
+    devs = []
+    for g in traced:
+        subs = FM.parse_path(g["d"]); ys = [p[1] for s_ in subs for p in s_]; t, _ = FM.raster(subs, 200.0 / max(1.0, max(ys) - min(ys)))
+        sm = ndi.gaussian_filter(t.astype(float), 3.0) > 0.5; edge = ndi.binary_dilation(t, iterations=2) ^ ndi.binary_erosion(t, iterations=2); devs.append(float((t ^ sm)[edge].mean()))
+    return float(np.mean(devs))
+
+def main():
+    id_, path, index, weight, card, face = sys.argv[1:7]; index = int(index); weight = None if weight == "-" else float(weight)
+    traced = json.load(open(TRACED))[card][face]; f = load_font(path, index, weight); out, capH, upem = outlines(f)
+    pil = ImageFont.truetype(path, 300, index=index)
+    if weight is not None: pil.set_variation_by_axes([weight] + [a["default"] for a in pil.get_variation_axes()][1:])
+    iou, sx, dil = fit(pil, traced); rg = roughness(traced)
+    data = {"id": id_, "cap": 1000, "sx": round(sx, 3), "dil": round(dil / 200.0 * 1000, 1), "rough": round(rg, 4), "iou": round(iou, 3), "font": "%s idx %d wght %s" % (Path(path).name, index, weight), "glyphs": out}
+    p = ROOT / "motion" / "runtime" / ("zs-templates-alpha-%s-1.js" % id_)
+    p.write_text("// 19 October 2026: the alphabet of the face %s (Scripts/AlphaBuild.py): outlines of a real typeface fitted to the traced letters, cap height 1000, y = 0 at the cap line. FR : alphabet cale sur les lettres tracees.\n(window.ZSAlpha = window.ZSAlpha || {})[%s] = %s;\n" % (id_, json.dumps(id_), json.dumps(data, separators=(",", ":"), ensure_ascii=False)))
+    print(id_, "iou %.3f sx %.2f dil %.1f units rough %.4f" % (iou, sx, data["dil"], rg), "glyphs", len(out), p.stat().st_size // 1024, "KiB")
+
+if __name__ == "__main__":
+    main()
