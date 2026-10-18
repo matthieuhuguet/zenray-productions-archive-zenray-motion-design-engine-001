@@ -1,0 +1,21 @@
+// 19 October 2026: exports the traced lettering of every custom font (title cards, the Red Dead logo, the Ghost of Yotei logo and title) as the JSON that FontMatch.py and AlphaBuild.py read:
+// { <card>: { <face>: [ { c: letter, d: path, b: [x0, y0, x1, y1] (box with its margin), sc: height of the line the letter comes from } ] } }.
+// The runtime files are the single source of the traced letters; nothing else is read. Usage: node Scripts/FacesExport.mjs [out.json]   (default /tmp/faces/traced.json)
+// FR : exporte les lettres tracees de chaque police personnalisee pour FontMatch.py et AlphaBuild.py.
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import vm from "node:vm";
+
+const root = dirname(dirname(fileURLToPath(import.meta.url))), rt = join(root, "motion", "runtime"), ctx = {};
+ctx.window = ctx; vm.createContext(ctx);
+for (const f of readdirSync(rt).filter((n) => /^zs-templates-(card-|rdr|yotei|ytitle)/.test(n)).sort()) vm.runInContext(readFileSync(join(rt, f), "utf8"), ctx, { filename: f });
+const out = {}, glyph = (g, sc) => ({ c: g.c, d: g.d, b: g.b, sc });
+const add = (key, face, g, sc) => { ((out[key] = out[key] || {})[face] = out[key][face] || []).push(glyph(g, sc)); };
+Object.entries(ctx.ZSCards || {}).forEach(([key, Z]) => Z.lines.filter((ln) => ln.type !== "text").forEach((ln) => ln.glyphs.forEach((g) => add(key, ln.face, g, ln.capH))));
+if (ctx.ZSRdr) ctx.ZSRdr.lines.forEach((ln) => { if (ln.name === "ii") return; const face = ln.name === "l1" ? "small" : "big", sc = ln.letters[0].b[3] - ln.letters[0].b[1]; ln.letters.forEach((g) => add("rdr", face, g, sc)); });
+if (ctx.ZSYotei) { const sc = ctx.ZSYotei.letters[0].b[3] - ctx.ZSYotei.letters[0].b[1]; ctx.ZSYotei.letters.forEach((g) => add("yotei", "ghost", g, sc)); }
+if (ctx.ZSYTitle) { const Z = ctx.ZSYTitle; Z.ghost.forEach((g) => add("ytitle", "ghost", g, Z.ghost[0].b[3] - Z.ghost[0].b[1])); Z.sub.forEach((g) => add("ytitle", "sub", g, Z.sub[0].b[3] - Z.sub[0].b[1])); }
+const dest = process.argv[2] || "/tmp/faces/traced.json";
+mkdirSync(dirname(dest), { recursive: true }); writeFileSync(dest, JSON.stringify(out));
+console.log(dest, Object.entries(out).map(([k, v]) => k + ":" + Object.entries(v).map(([f, gl]) => f + "=" + gl.length).join(",")).join(" "));

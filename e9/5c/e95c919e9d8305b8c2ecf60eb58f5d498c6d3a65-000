@@ -1,0 +1,37 @@
+"""Does every slider of the line engine really move the picture? (19 October 2026)
+For one visual with an EDITED text, renders the final frame once with the defaults and once per slider of the engine (X Y K Gap Space MaxW _Condense _UseTraced _AddWeight _AddRough of every line), each pushed to a clearly different value,
+and prints the mean difference of the two frames. A slider whose difference is zero is dead: its tweak is not read by the layout (a wrong name, or the text does not use it). Exit code 1 when one is dead.
+Usage: ProbeEngine.py <layout> <appearance> <cfg-project> <still-slug> '<lines json>' [--at 5.2] [--only <regex>].  The temporary project is deleted. FR : chaque curseur du moteur de lignes deplace-t-il vraiment l'image ?"""
+import json, re, shutil, subprocess, sys
+from pathlib import Path
+import numpy as np
+from PIL import Image
+ROOT = Path(__file__).resolve().parents[1]; sys.path.insert(0, str(ROOT / "motion" / "reproductions")); sys.path.insert(0, str(ROOT / "motion"))
+import stills, ppm  # noqa: E402
+
+a = sys.argv[1:]; at = "5.2"; only = None
+if "--at" in a: i = a.index("--at"); at = a[i + 1]; del a[i:i + 2]
+if "--only" in a: i = a.index("--only"); only = re.compile(a[i + 1]); del a[i:i + 2]
+layout, app, cfg, still, lines = a[0], a[1], a[2], a[3], json.loads(a[4])
+ENGINE = re.compile(r"^(?P<k>[a-z0-9]+?)(?P<s>X|Y|K|Gap|Space|MaxW|_Condense|_UseTraced|_AddWeight|_AddRough)$")
+pid = "probe-" + layout; tmp = Path("/tmp/probe_" + layout); tmp.mkdir(exist_ok=True)
+
+def frame(tweaks):
+    ppm.run(pid + "-ppm", stills.build_one(pid, "probe", still, layout, "16x9", [app], {"lines": lines, "design": "custom", "tweaks": tweaks}))
+    subprocess.run([sys.executable, str(ROOT / "Scripts" / "MaskIoU.py"), pid + "-ppm", "--at", at, "--out", str(tmp), "--cfg", cfg, "--still", still], capture_output=True, cwd=ROOT)
+    return np.asarray(Image.open(tmp / "ink-motion-frame.png").convert("RGB")).astype(int)
+
+try:
+    base = frame([]); dead = []
+    for c in stills.layout_controls(layout):
+        m = ENGINE.match(c["id"])
+        if c["type"] != "number" or not m or (only and not only.search(c["id"])): continue
+        lo, hi, d = c["min"], c["max"], c["default"]; v = lo if c["id"].endswith("_UseTraced") else (d + 0.35 * (hi - lo) if d + 0.35 * (hi - lo) <= hi else d - 0.35 * (hi - lo))
+        if c["id"].endswith("MaxW"): v = max(lo, d * 0.45)  # a lower limit is what shows (a longer one changes nothing while the line fits)
+        if c["id"].endswith("_Condense"): v = 45  # only visible when the line is wider than its limit: pushed to the lowest value together with a narrow limit
+        tw = ["%s %s" % (c["id"], round(v, 3))] + (["%s 60" % c["id"].replace("_Condense", "MaxW")] if c["id"].endswith("_Condense") else [])
+        diff = float(np.abs(frame(tw) - base).mean()); print("%-18s %8.3f -> %8.3f  diff %.3f%s" % (c["id"], d, v, diff, "" if diff > 0.002 else "   DEAD"), flush=True)
+        if diff <= 0.002: dead.append(c["id"])
+    print("DEAD: %s" % dead if dead else "all sliders move the picture"); sys.exit(1 if dead else 0)
+finally:
+    shutil.rmtree(Path("/Users/zenray/.claude/tmp/tmp-zenray-motion-design/motion-projects") / (pid + "-ppm"), ignore_errors=True)

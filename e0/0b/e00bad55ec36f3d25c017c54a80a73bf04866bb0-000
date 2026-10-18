@@ -297,7 +297,7 @@
       const gl = layer(), lf = layer(), sl = layer();
       if (orig) {
         const gp = mk(gl, Z.ghost.map((g) => [g, g.b[0], g.b[1], 1, white])), lp = mk(lf, [[Z.leaf, Z.leaf.b[0], Z.leaf.b[1], 1, gold]]), sp = mk(sl, Z.sub.map((g) => [g, g.b[0], g.b[1], 1, subc]));
-        it.push({ n: gl, pts: gp, key: "ghost" }, { n: lf, pts: lp, key: "leaf" }, { n: sl, pts: sp, key: "sub" }, { n: tmx(tw("tmX", 845), tw("tmY", 146), white), key: "tm" });
+        it.push({ n: gl, pts: gp, key: "ghost" }, { n: lf, pts: lp, key: "leaf" }, { n: sl, pts: sp, key: "sub" }, { n: tmx(845 + tw("tmDx", 0), 146 + tw("tmDy", 0), white), key: "tm" });
         return it;
       }
       // EDITED TEXT: the shared engine. GHOST is set with the traced letters it has (G H O S T), the others come from the block font (squared strokes of 18 % of the cap height, like the brush logo); OF YOTEI with the traced letters and the alphabet of the face (Optima Bold fitted).
@@ -309,7 +309,7 @@
       const OG = GH.O, lList = OG ? L0.list.filter((e) => e[0] === OG).map((e) => [Z.leaf, e[1] + (Z.leaf.b[0] - OG.b[0]) * e[3], e[2] + (Z.leaf.b[1] - OG.b[1]) * e[3], e[3], gold]) : [];
       if (lList.length) { const lc = abs(lf, { left: "0", top: "0", width: Z.w + "px", height: Z.h + "px", transformOrigin: L0.cx + "px 0px" }); if (L0.fx !== 1) lc.style.transform = `scaleX(${L0.fx})`; it.push({ n: lf, pts: mk(lc, lList), key: "leaf" }); }
       it.push({ n: sl, pts: L1.list.map((e, i) => entryPts(e, i)), key: "sub" });
-      if (L0.list.length) it.push({ n: tmx(L0.cx + L0.total * L0.fx / 2 + 2 * L0.kk, L0.base - 18 * L0.kk, white), key: "tm" });
+      if (L0.list.length) it.push({ n: tmx(L0.cx + L0.total * L0.fx / 2 + 2 * L0.kk + tw("tmDx", 0), L0.base - 18 * L0.kk + tw("tmDy", 0), white), key: "tm" });
       return it;
     },
     zhongkui(pl, p) {
@@ -409,7 +409,7 @@
   const ENGINE = {
     ytitle: [{ k: "l0", name: "Lettres GHOST", capH: 109, gap: 52, space: 140, maxw: 840, top: 55, cx: 458, fb: { w: 1.0, sw: 0.18, c: 0, rough: 0.049 }, upper: true },
       { k: "l1", name: "Sous-titre (OF YŌTEI)", capH: 35, gap: 9, space: 25, maxw: 560, top: 233, cx: 458, fb: { w: 0.7, sw: 0.15, c: 0, rough: 0.048 }, alpha: "ytitle-sub", upper: true }],
-    yotei: [{ k: "l0", name: "Logo GHOST", capH: 70, gap: 29, space: 70, maxw: 560, top: 97, cx: 467, fb: { w: 1.0, sw: 0.18, c: 0, rough: 0.049 }, upper: true }],
+    yotei: [{ k: "l0", name: "Logo GHOST", capH: 70, gap: 29, space: 70, maxw: 480, top: 97, cx: 467, fb: { w: 1.0, sw: 0.18, c: 0, rough: 0.049 }, upper: true }],
   };
   const SIZE = { indy: [1080, 1080], zhongkui: [1600, 668], rdr: [2000, 871], yotei: [2000, 1125], ytitle: [920, 290], lol: [2000, 1096], inox1: [2000, 1096], inox2: [2000, 1115], inox3: [2000, 1044], nolan: [2000, 1250] };
 
@@ -586,7 +586,7 @@
       ["Textes", "y2", "COMPLETE EDITION : position Y", 260, 150, 380, 1], ["Textes", "size2", "COMPLETE EDITION : taille", 14.5, 8, 40, 0.5], ["Textes", "ls2", "COMPLETE EDITION : espacement (em)", 0.36, 0, 1, 0.01],
       ["Textes", "tx", "Titre et paragraphe : position X", 226, 100, 500, 1], ["Textes", "y3", "Titre : position Y", 348, 250, 480, 1], ["Textes", "size3", "Titre : taille", 49, 20, 120, 1], ["Textes", "weight3", "Titre : graisse", 260, 100, 800, 10], ["Textes", "y4", "Paragraphe : position Y", 421, 300, 560, 1], ["Textes", "size4", "Paragraphe : taille", 18.8, 10, 40, 0.2], ["Textes", "ls4", "Paragraphe : espacement (em)", 0, -0.05, 0.3, 0.005], ["Textes", "lh4", "Paragraphe : interligne", 1.45, 1, 2.2, 0.01],
       ["Bouton", "size5", "Texte du bouton : taille", 19.4, 10, 40, 0.2], ["Bouton", "weight5", "Texte du bouton : graisse", 600, 100, 800, 10]],
-    ytitle: [["Marque TM", "tmSize", "Taille du TM", 9.5, 5, 24, 0.5], ["Marque TM", "tmX", "Position X du TM (original)", 845, 700, 900, 1], ["Marque TM", "tmY", "Position Y du TM (original)", 146, 100, 200, 1]],
+    ytitle: [["Marque TM", "tmSize", "Taille du TM", 9.5, 5, 24, 0.5], ["Marque TM", "tmDx", "Décalage horizontal du TM (px)", 0, -200, 200, 1], ["Marque TM", "tmDy", "Décalage vertical du TM (px)", 0, -100, 100, 1]],
   };
   const HOLDERS = { rdr: [["plate", "Plaque noire"], ["l1", "Ligne du haut"], ["l2", "RED DEAD (ou titre modifié)"], ["l3", "REDEMPTION"], ["ii", "Le II rouge"]], yotei: [["logo", "Logo GHOST"], ["emblem", "Feuille de l'emblème"], ["l1", "OF YŌTEI"], ["stroke", "Trait de pinceau"], ["l2", "COMPLETE EDITION"], ["l3", "Titre"], ["l4", "Paragraphe"], ["btn", "Bouton"]],
     ytitle: [["ghost", "Lettres GHOST"], ["leaf", "Feuille dorée"], ["sub", "OF YŌTEI"], ["tm", "Marque TM"]] };

@@ -1,7 +1,7 @@
 """Which real typeface is closest to a traced lettering? (19 October 2026)
 The traced glyphs of a card (zs-templates-card-*.js) are rasterised from their paths; every installed or bundled font is rendered for the same characters; the score of a font is the mean overlap (IoU) of each letter once the font letter is fitted to the
 traced letter's box, minus a penalty for the difference of proportion (a heavy condensed face must not be matched by a wide one). The best faces become the alphabet that completes a custom font when the text is edited.
-Usage: FontMatch.py <traced.json> <card> <face> [--top 8]. Writes nothing; prints the ranking. FR : quelle vraie police ressemble le plus a un lettrage trace."""
+Usage: node Scripts/FacesExport.mjs /tmp/faces/traced.json, then FontMatch.py /tmp/faces/traced.json <card> <face> [--top 8]. Writes nothing; prints the ranking. FR : quelle vraie police ressemble le plus a un lettrage trace."""
 import json, re, sys, glob, os, math
 from pathlib import Path
 import numpy as np

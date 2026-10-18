@@ -3,8 +3,8 @@ A traced lettering only has the letters of its image (KITAE L'AME DU KATANA give
 (y = 0 at the cap line, y = 1000 on the baseline), and FITTED to the traced letters: a horizontal stretch `sx` and a weight offset `dil` (the outline is grown or shrunk by dil units) found by maximising the overlap with the traced letters, and a roughness `rough` that
 reproduces the distress of their edges. The template draws a letter the traced font does not have from this alphabet, with the same cap height, stretch, weight and distress, so an edited text reads as ONE typeface.
 Usage: AlphaBuild.py <id> <font file> <index> <weight|-> <card> <face> [rough]   (rough = the distress of the added letters as a fraction of the cap height, measured by default, 0.02 for a hand-cut face; e.g. AlphaBuild.py inox1-big /System/Library/Fonts/Supplemental/Impact.ttf 0 - inox1 big
-Writes motion/runtime/zs-templates-alpha-<id>-1.js (window.ZSAlpha[<id>]). Run with /Users/zenray/.venvs/zenray-motion/bin/python -I. FR : alphabet complet issu d'une vraie police, cale sur les lettres tracees."""
-import json, math, sys
+The traced letters are exported from the runtime files by Scripts/FacesExport.mjs (run automatically). Writes motion/runtime/zs-templates-alpha-<id>-1.js (window.ZSAlpha[<id>]). Run with /Users/zenray/.venvs/zenray-motion/bin/python -I. FR : alphabet complet issu d'une vraie police, cale sur les lettres tracees."""
+import json, math, subprocess, sys
 from pathlib import Path
 import numpy as np
 from PIL import Image, ImageFont
@@ -78,6 +78,7 @@ def roughness(traced):
 
 def main():
     id_, path, index, weight, card, face = sys.argv[1:7]; index = int(index); weight = None if weight == "-" else float(weight); rough_override = float(sys.argv[7]) if len(sys.argv) > 7 else None
+    subprocess.run(["node", str(ROOT / "Scripts" / "FacesExport.mjs"), str(TRACED)], check=True, capture_output=True)  # the traced letters come from the runtime files, the single source (always fresh)
     traced = json.load(open(TRACED))[card][face]; f = load_font(path, index, weight); out, capH, upem = outlines(f)
     pil = ImageFont.truetype(path, 300, index=index)
     if weight is not None: pil.set_variation_by_axes([weight] + [a["default"] for a in pil.get_variation_axes()][1:])
