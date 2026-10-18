@@ -1,0 +1,83 @@
+"""Ghost of Yotei TITLE (the GHOST lettering with the gold ginkgo in the ring, and OF YOTEI) as a custom font + emblem (18 October 2026), method isoler puis recreer.
+Foreground only: the landscape is NOT reproduced. The white letters are isolated by neutrality (the pale sky is warm, the letters are neutral grey) and brightness, the leaf by its gold, the small serif line by brightness.
+Native crop of the still: 920 x 290 (crop of the 1920 x 1080 frame at 500, 270). Output: motion/runtime/zs-templates-ytitle-1.js, window.ZSYTitle = {w, h, white, gold, bg, ghost: [{c,d,b,p}], leaf, tm, sub}; p = seeded sample points inside the glyph (petals leave from them).
+Run with /Users/zenray/.venvs/zenray-motion/bin/python -I."""
+import json, sys
+from pathlib import Path
+import numpy as np
+from PIL import Image
+from scipy import ndimage as ndi
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "Scripts")); sys.path.insert(0, str(ROOT / "motion"))
+import ZhongKuiTrace as ZT  # noqa: E402
+import StickerTrace as ST  # noqa: E402
+import TraceStill as TS  # noqa: E402
+
+STILL = Path("~/.claude/tmp/tmp-zenray-motion-design-refcache/_stills/native-ytitle.png").expanduser()
+SC = 8
+PTS = 70  # sample points per 1000 px2 of area is NOT used: a fixed budget per glyph, scaled by its area
+
+def trace(mask, soft=None): return ST.trace_shape(mask, SC, soft=soft)
+
+def points(mask, n, rng):
+    ys, xs = np.nonzero(ndi.binary_erosion(mask, iterations=1) if mask.sum() > 200 else mask)
+    if len(xs) == 0: return []
+    k = min(n, len(xs)); idx = rng.choice(len(xs), k, replace=False); return [[int(xs[i]), int(ys[i])] for i in idx]
+
+def clean(m, minblob=14, minhole=20):
+    lab, n = ndi.label(m); sizes = ndi.sum(m, lab, range(1, n + 1)); m = np.isin(lab, [i + 1 for i, s in enumerate(sizes) if s >= minblob])
+    inv = ~m; lab, n = ndi.label(inv); sizes = ndi.sum(inv, lab, range(1, n + 1)); small = [i + 1 for i, s in enumerate(sizes) if s < minhole]
+    return m | np.isin(lab, small)
+
+def main():
+    img = np.asarray(Image.open(STILL).convert("RGB")); A = img.astype(int); H, W = A.shape[:2]; yy, xx = np.mgrid[0:H, 0:W]; rng = np.random.default_rng(7)
+    box = lambda x0, y0, x1, y1: (xx >= x0) & (xx < x1) & (yy >= y0) & (yy < y1)  # noqa: E731
+    mn, mx = A.min(2), A.max(2); chroma = mx - mn
+    # 1. white letters of GHOST: neutral and bright, a coverage field (never a hard mask)
+    f = np.clip((11 - chroma) / 5.0, 0, 1) * np.clip((mn - 165) / 25.0, 0, 1); f = ndi.median_filter(f, size=3); f = ndi.gaussian_filter(f, 0.6)
+    reg = box(10, 15, 900, 205); shapes = ST.letter_shapes(f, reg, minpx=8)
+    info = [(int(m.sum()), int(np.nonzero(m.any(0))[0].min()), int(np.nonzero(m.any(0))[0].max()), int(np.nonzero(m.any(1))[0].min()), int(np.nonzero(m.any(1))[0].max())) for m in shapes]
+    print("ghost shapes", len(shapes)); [print("  ", i) for i in info]
+    ringbox = (362, 0, 552, 195); big = [m for m, i in zip(shapes, info) if i[0] >= 600]
+    slot = lambda m: np.nonzero(m.any(0))[0].min()  # noqa: E731
+    ringparts = [m for m, i in zip(shapes, info) if ringbox[0] - 10 <= (i[1] + i[2]) / 2 <= ringbox[2] + 10 and i[0] >= 6]
+    others = [m for m, i in zip(shapes, info) if not (ringbox[0] - 10 <= (i[1] + i[2]) / 2 <= ringbox[2] + 10) and i[0] >= 1500]
+    others = sorted(others, key=slot); print("others", len(others), "ringparts", len(ringparts))
+    ring = np.zeros_like(others[0]); [ring.__ior__(m) for m in ringparts]
+    order = [("G", others[0]), ("H", others[1]), ("O", ring), ("S", others[2]), ("T", others[3])]
+    white_px = A[np.zeros_like(ring)]
+    allm = np.zeros_like(ring); [allm.__ior__(m) for _, m in order]
+    lum = A.mean(2); white = np.median(A[allm & (lum > np.percentile(lum[allm], 55))], axis=0)
+    ghost = []
+    for c, m in order:
+        d, b = trace(clean(m), soft=np.where(m, np.maximum(f, 0.7), 0.0)); ghost.append({"c": c, "d": d, "b": b, "p": points(m, 40 if c != "O" else 60, rng)})
+    # 2. the gold ginkgo leaf (one shape, with the slash gap and the sparks): coverage of gold against the grey of the ring interior
+    gold = A[(A[..., 0] > 200) & (A[..., 2] < 110) & (A[..., 1] > 150)]; goldc = np.median(gold, axis=0)
+    gm = ((A[..., 0] - A[..., 2]) > 70) & box(380, 40, 540, 190); gf = np.where(gm, np.clip(TS.cov_color(img, tuple(int(v) for v in goldc), (135, 140, 138)), 0, 1), 0.0); gf = ndi.gaussian_filter(gf, 0.5)
+    leafm = clean((gf > 0.5) & box(380, 40, 540, 190), minblob=5, minhole=8)
+    ld, lb = trace(leafm, soft=np.where(leafm, np.maximum(gf, 0.7), 0.0)); leaf = {"d": ld, "b": lb, "p": points(leafm, 30, rng)}
+    print("leaf", lb, "area", int(leafm.sum()), "gold", TS.hexc(goldc))
+    # 3. OF YOTEI: brightness field (the line is greenish-white on a dark mist)
+    L = A.mean(2); bgl = ndi.gaussian_filter(ndi.minimum_filter(L, 15), 4); sf = np.clip((L - bgl - 35) / 70.0, 0, 1)
+    sreg = box(300, 225, 620, 280); sshapes = ST.letter_shapes(np.where(sreg, sf, 0.0), sreg, minpx=14)
+    print("sub shapes", len(sshapes), [int(m.sum()) for m in sshapes])
+    chars = ["O", "F", "Y", "Ō", "T", "E", "I"]; sub = []
+    sshapes = sorted(sorted(sshapes, key=lambda m: -int(m.sum()))[:len(chars)], key=slot) if len(sshapes) >= len(chars) else ST.split_to(sshapes, len(chars))
+    for ch, m in zip(chars, sshapes):
+        d, b = trace(m, soft=np.where(m, np.maximum(sf, 0.7), 0.0)); sub.append({"c": ch, "d": d, "b": b, "p": points(m, 8, rng)})
+    # the TM mark: tiny, traced the same way (neutral and bright)
+    tmm = clean((f > 0.5) & box(838, 142, 872, 166), minblob=3, minhole=4)
+    if tmm.any():
+        td, tb = trace(tmm, soft=np.where(tmm, np.maximum(f, 0.7), 0.0)); tm = {"d": td, "b": tb}
+    else: tm = None
+    subc = np.median(A[box(300, 225, 620, 280) & (sf > 0.8)], axis=0)
+    bgmask = ~(allm | leafm | (sf > 0.2)); bg = np.median(A[bgmask & box(0, 20, 920, 290)], axis=0)
+    out = {"w": W, "h": H, "white": TS.hexc(white), "gold": TS.hexc(goldc), "subColor": TS.hexc(subc), "bg": TS.hexc(bg), "ghost": ghost, "leaf": leaf, "tm": tm, "sub": sub}
+    p = ROOT / "motion" / "runtime" / "zs-templates-ytitle-1.js"
+    p.write_text("// 18 October 2026: Ghost of Yotei title (Scripts/YoteiTitleTrace.py): isolated letters of GHOST and OF YOTEI, gold ginkgo leaf, sample points for the petals. FR : titre isole, lettres, feuille et points de petales.\nwindow.ZSYTitle = %s;\n" % json.dumps(out, separators=(",", ":")))
+    print("white", out["white"], "sub", out["subColor"], "bg", out["bg"], p.stat().st_size // 1024, "KiB")
+    for g in ghost + sub: print(g["c"], g["b"], len(g["p"]))
+
+if __name__ == "__main__":
+    main()
