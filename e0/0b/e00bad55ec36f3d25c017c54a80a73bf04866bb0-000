@@ -19,9 +19,11 @@
   function T(parent, o) {
     const css = Object.assign({ fontFamily: h.font(o.font || "InterVariable"), fontWeight: o.weight || 700, fontSize: o.size + "px", color: o.color || "#fff", whiteSpace: "pre", lineHeight: o.lh || 1.05,
       letterSpacing: o.ls || "0", textAlign: o.align || "left", left: o.x + "px", top: o.y + "px", fontStyle: o.italic ? "italic" : "normal", textTransform: o.upper ? "uppercase" : "none" }, o.css || {});
-    if (o.align === "center") { css.transform = "translateX(-50%)"; css.left = o.x + "px"; }
-    if (o.sx) { css.transform = (css.transform ? css.transform + " " : "") + `scaleX(${o.sx})`; css.transformOrigin = o.align === "center" ? "50% 0" : "0 0"; }
+    // no CSS transform for the centring or the stretch: GSAP owns the whole transform (xPercent, scaleX) from the start, so the end of a tween leaves EXACTLY the same matrix (a CSS translateX(-50%) parsed by GSAP left a -0.008 px residual: the lettering shifted by a pixel at the end of its appearance)
+    if (o.align === "center") css.left = o.x + "px";
     const n = abs(parent, css, "");
+    if (window.gsap) { const set = {}; if (o.align === "center") set.xPercent = -50; if (o.sx) set.scaleX = o.sx; if (Object.keys(set).length) window.gsap.set(n, Object.assign({ x: 0, force3D: true, transformOrigin: o.align === "center" ? "50% 0" : "0 0" }, set)); }
+    else { if (o.align === "center") css.transform = "translateX(-50%)"; if (o.sx) css.transform = (css.transform ? css.transform + " " : "") + `scaleX(${o.sx})`; n.style.transform = css.transform || ""; }
     const text = String(o.text).replace(/\\n/g, "\n");
     if (o.split !== false) { n.innerHTML = ""; [...text].forEach((c, ci) => { const s = document.createElement("span"); s.className = "ch"; s.dataset.i = String(ci); s.textContent = c; s.style.display = "inline-block"; if (c === "\n") { s.style.display = "inline"; } if (c === " ") s.style.whiteSpace = "pre"; n.appendChild(s); }); } else n.textContent = text;
     return n;
@@ -241,6 +243,8 @@
   // ---- the appearances (seek-safe tweens only). Every effect reads its numbers from `o`: distance, blur, scale, rotation, per-letter stagger, direction, ease, glitch amplitude.
   const WIPE = { left: "inset(0 100% 0 0)", right: "inset(0 0 0 100%)", up: "inset(100% 0 0 0)", down: "inset(0 0 100% 0)", center: "inset(0 50% 0 50%)" };
   // the brush easing: hesitation (the first `hes` of the time, about 3 % of the distance), then cubic-bezier(0.16, 1, 0.3, 1) for the rest: 75 % of the distance in about a quarter of the time, then a long soft braking
+  // every tween keeps force3D: with the default ("auto") GSAP drops the 3D transform when a tween ends, the browser then re-rasterises the text on another path (grey vs sub-pixel antialiasing, a half-pixel shift) and the lettering "pops" at the end of its appearance
+  const fto = (tl, tgt, a, b, pos) => tl.fromTo(tgt, Object.assign({ force3D: true }, a), Object.assign({ force3D: true }, b), pos);
   function brushEase(hes) {
     const bez = (x1, y1, x2, y2) => (x) => { let lo = 0, hi = 1, s = x; for (let i = 0; i < 28; i++) { s = (lo + hi) / 2; const X = 3 * (1 - s) * (1 - s) * s * x1 + 3 * (1 - s) * s * s * x2 + s * s * s; if (X < x) lo = s; else hi = s; } return 3 * (1 - s) * (1 - s) * s * y1 + 3 * (1 - s) * s * s * y2 + s * s * s; };
     const cb = bez(0.16, 1, 0.3, 1), hd = 0.03;
@@ -264,33 +268,33 @@
     items.forEach((it, i) => {
       const t = t0 + o.delay + i * o.stagger, n = it.n, chars = [...n.querySelectorAll(".ch")], shape = !!it.shape, d = o.dur, E = (def) => (o.ease && o.ease !== "auto" ? o.ease : def);
       const perChar = chars.length && !shape, targets = perChar ? chars : [n];
-      const each = (from, to, ease, mult) => { if (perChar) chars.forEach((c) => tl.fromTo(c, from, Object.assign({ ease }, to), t + Number(c.dataset.i || 0) * o.charStagger * (mult || 1))); else tl.fromTo(n, from, Object.assign({ ease }, to), t); };
-      if (it.fadeOnly) { tl.fromTo(n, { opacity: 0, scale: 1.06, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, duration: d * 1.8, ease: "power2.out" }, t); return; }
+      const each = (from, to, ease, mult) => { if (perChar) chars.forEach((c) => fto(tl, c, from, Object.assign({ ease }, to), t + Number(c.dataset.i || 0) * o.charStagger * (mult || 1))); else fto(tl, n, from, Object.assign({ ease }, to), t); };
+      if (it.fadeOnly) { fto(tl, n, { opacity: 0, scale: 1.06, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, duration: d * 1.8, ease: "power2.out" }, t); return; }
       if (kind === "brush" && n._brush && n._brush.length) {
         // one brush, letter by letter: a stroke is one explosive movement (micro-hesitation as the brush lands, 75 % of the distance in a flash, soft braking while the wrist lifts the tip: BRUSH_EASE);
         // the brush is lifted only to go to the next stroke, a letter is finished before the next starts; a long text is written faster so the whole writing fits the scene (k)
         const plan = brushPlan(n, o), ez = brushEase(o.brushHesitate === undefined ? 0.1 : o.brushHesitate), base = t0 + o.delay + cum;
-        plan.steps.forEach((s) => tl.fromTo(s.m, { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: s.dur * o.brushK, ease: ez }, base + s.off * o.brushK));
+        plan.steps.forEach((s) => fto(tl, s.m, { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: s.dur * o.brushK, ease: ez }, base + s.off * o.brushK));
         cum += (plan.len + 0.18) * o.brushK; return;
       }
       if (kind === "wipe" || (shape && kind !== "ink")) {
-        tl.fromTo(n, { clipPath: WIPE[o.direction] || WIPE.left }, { clipPath: "inset(0 0% 0 0%)", duration: d, ease: E("power3.inOut") }, t);
+        fto(tl, n, { clipPath: WIPE[o.direction] || WIPE.left }, { clipPath: "inset(0 0% 0 0%)", duration: d, ease: E("power3.inOut") }, t);
       } else if (kind === "letters") {
         each({ opacity: 0, y: o.distance, rotation: o.rotate, filter: `blur(${o.blur}px)` }, { opacity: 1, y: 0, rotation: 0, filter: "blur(0px)", duration: d * 0.7 }, E("power3.out"));
       } else if (kind === "rise") {
-        tl.fromTo(n, { opacity: 0, y: o.distance * 2, scaleY: 1.12, rotation: o.rotate, filter: `blur(${o.blur / 2}px)`, transformOrigin: "50% 100%" }, { opacity: 1, y: 0, scaleY: 1, rotation: 0, filter: "blur(0px)", duration: d, ease: E("power4.out") }, t);
+        fto(tl, n, { opacity: 0, y: o.distance * 2, scaleY: 1.12, rotation: o.rotate, filter: `blur(${o.blur / 2}px)`, transformOrigin: "50% 100%" }, { opacity: 1, y: 0, scaleY: 1, rotation: 0, filter: "blur(0px)", duration: d, ease: E("power4.out") }, t);
       } else if (kind === "ink") {
-        tl.fromTo(n, { opacity: 0, scale: shape ? Math.min(o.scaleFrom, 0.5) : Math.max(o.scaleFrom, 1.1), filter: `blur(${o.blur * 1.6}px)`, rotation: o.rotate / 2, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, filter: "blur(0px)", rotation: 0, duration: d * 1.1, ease: E(shape ? "back.out(1.6)" : "power3.out") }, t);
+        fto(tl, n, { opacity: 0, scale: shape ? Math.min(o.scaleFrom, 0.5) : Math.max(o.scaleFrom, 1.1), filter: `blur(${o.blur * 1.6}px)`, rotation: o.rotate / 2, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, filter: "blur(0px)", rotation: 0, duration: d * 1.1, ease: E(shape ? "back.out(1.6)" : "power3.out") }, t);
       } else if (kind === "drop") {
         each({ opacity: 0, y: -o.distance * 3.5, rotation: o.rotate }, { opacity: 1, y: 0, rotation: 0, duration: d * 0.8 }, E("bounce.out"), 1.4);
       } else if (kind === "pop") {
         each({ opacity: 0, scale: Math.min(o.scaleFrom, 0.9), rotation: o.rotate }, { opacity: 1, scale: 1, rotation: 0, duration: d * 0.6 }, E("back.out(2.4)"));
       } else if (kind === "typewriter") {
-        if (perChar) { chars.forEach((c) => { tl.set(c, { opacity: 0 }, t0); tl.set(c, { opacity: 1 }, t + Number(c.dataset.i || 0) * o.charStagger * 1.3); }); } else tl.fromTo(n, { opacity: 0 }, { opacity: 1, duration: 0.25 }, t);
+        if (perChar) { chars.forEach((c) => { tl.set(c, { opacity: 0 }, t0); tl.set(c, { opacity: 1 }, t + Number(c.dataset.i || 0) * o.charStagger * 1.3); }); } else fto(tl, n, { opacity: 0 }, { opacity: 1, duration: 0.25 }, t);
       } else if (kind === "zoom") {
-        tl.fromTo(n, { opacity: 0, scale: Math.max(o.scaleFrom, 1.2), rotation: o.rotate, filter: `blur(${o.blur / 2}px)`, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, rotation: 0, filter: "blur(0px)", duration: d, ease: E("power3.out") }, t);
+        fto(tl, n, { opacity: 0, scale: Math.max(o.scaleFrom, 1.2), rotation: o.rotate, filter: `blur(${o.blur / 2}px)`, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, rotation: 0, filter: "blur(0px)", duration: d, ease: E("power3.out") }, t);
       } else if (kind === "glitch") {
-        targets.forEach((c, j) => { const dx = (((j * 37) % 11) - 5) * o.glitch, dy = (((j * 53) % 7) - 3) * o.glitch * 0.55; tl.fromTo(c, { opacity: 0, x: dx, y: dy, skewX: dx > 0 ? 18 : -18 }, { opacity: 1, x: 0, y: 0, skewX: 0, duration: d * 0.5, ease: E("steps(4)") }, t + (perChar ? Number(c.dataset.i || j) * 0.02 : 0)); });
+        targets.forEach((c, j) => { const dx = (((j * 37) % 11) - 5) * o.glitch, dy = (((j * 53) % 7) - 3) * o.glitch * 0.55; fto(tl, c, { opacity: 0, x: dx, y: dy, skewX: dx > 0 ? 18 : -18 }, { opacity: 1, x: 0, y: 0, skewX: 0, duration: d * 0.5, ease: E("steps(4)") }, t + (perChar ? Number(c.dataset.i || j) * 0.02 : 0)); });
       }
       void targets;
     });
@@ -329,7 +333,7 @@
       const plane = abs(st, { left: ox + "px", top: oy + "px", width: sz[0] + "px", height: sz[1] + "px", transformOrigin: "0 0", transform: `scale(${k})`, overflow: tall && sz[0] / sz[1] > 1.25 ? "visible" : "hidden" });
       const items = (L[p.layout] || L.ichiban)(plane, params);
       // a slow camera pull-back while the title is written, settled at scale 1 (the reference framing) for the hold
-      if (params.camera) { const push = tws.push !== undefined ? tws.push : (p.push === undefined || p.push === "" ? 0.05 : Number(p.push)); if (push > 0) tl.fromTo(params.camera, { scale: 1 + push, transformOrigin: "800px 320px" }, { scale: 1, duration: (ctx.dur || 4.2) * 0.7, ease: "power1.out" }, t0); }
+      if (params.camera) { const push = tws.push !== undefined ? tws.push : (p.push === undefined || p.push === "" ? 0.05 : Number(p.push)); if (push > 0) fto(tl, params.camera, { scale: 1 + push, transformOrigin: "800px 320px" }, { scale: 1, duration: (ctx.dur || 4.2) * 0.7, ease: "power1.out" }, t0); }
       appear(tl, items, p.appearance, t0, { stagger: p.stagger, dur: p.dur, delay: p.delay, charStagger: p.charStagger, distance: p.distance, blur: p.blur, scaleFrom: p.scaleFrom, rotate: p.rotate, ease: p.ease, direction: p.direction, glitch: p.glitch, brushSpeed: tws.brushSpeed !== undefined ? tws.brushSpeed : p.brushSpeed, brushHesitate: p.brushHesitate, sceneDur: ctx.dur });
     },
   });
