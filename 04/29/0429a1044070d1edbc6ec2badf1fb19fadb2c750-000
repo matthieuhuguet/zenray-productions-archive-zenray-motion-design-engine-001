@@ -1,0 +1,56 @@
+"""Red Dead Redemption II logo as a custom font + a plate (18 October 2026), method isoler puis recreer: the red is picked (median of clean red pixels), the black plate is traced as a silhouette (its worn edge is the style),
+the white letters are isolated one by one (coverage of white on black, sub-pixel contour, distress holes kept), the red II is isolated apart. Native coordinates (the 2000 x 871 still).
+Output: motion/runtime/zs-templates-rdr-1.js, window.ZSRdr = {w, h, red, ii, plate: {d}, lines: [{name, letters: [{c, d, b}]}]}. Run with /Users/zenray/.venvs/zenray-motion/bin/python -I."""
+import json, sys
+from pathlib import Path
+import numpy as np
+from PIL import Image
+from scipy import ndimage as ndi
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "Scripts")); sys.path.insert(0, str(ROOT / "motion"))
+import ZhongKuiTrace as ZT  # noqa: E402
+import StickerTrace as ST  # noqa: E402
+import TraceStill as TS  # noqa: E402
+
+STILL = Path("~/.claude/tmp/tmp-zenray-motion-design-refcache/_stills/native-rdr2.png").expanduser()
+SC = 8
+
+def trace(mask, soft=None):
+    return ST.trace_shape(mask, SC, soft=soft)
+
+def main():
+    img = np.asarray(Image.open(STILL).convert("RGB")); A = img.astype(int); H, W = A.shape[:2]; yy, xx = np.mgrid[0:H, 0:W]
+    box = lambda x0, y0, x1, y1: (xx >= x0) & (xx < x1) & (yy >= y0) & (yy < y1)  # noqa: E731
+    # 1. colour picker: the clean red of the background (left of the logo, top band), median of the red pixels
+    bgreg = box(300, 10, 1000, 90); red_px = A[bgreg & (A[..., 0] > 150) & (A[..., 1] < 70)]; red = np.median(red_px, axis=0)
+    # 2. the plate: dark pixels near the logo, holes filled (letters, the red II), largest component
+    dark = (A.max(2) < 70) & box(40, 100, 900, 460)
+    plate = ndi.binary_fill_holes(ndi.binary_closing(dark, iterations=4)); lab, n = ndi.label(plate); plate = lab == (1 + int(np.argmax(ndi.sum(plate, lab, range(1, n + 1)))))
+    pd_, pb = trace(plate, soft=ndi.gaussian_filter(plate.astype(float), 0.8))
+    # 3. white letters
+    white = np.clip((A.min(2) - 110) / 120.0, 0, 1)
+    def line(name, text, region, expect, minpx=40):
+        f = np.where(region, white, 0.0); shapes = ST.letter_shapes(f, region, minpx=minpx)
+        if len(shapes) > expect: shapes = sorted(sorted(shapes, key=lambda m: -int(m.sum()))[:expect], key=lambda m: np.nonzero(m.any(0))[0].min())
+        shapes = ST.split_to(shapes, expect); letters = []
+        chars = [c for c in text if c != " "]
+        for ch, m in zip(chars, shapes):
+            d, b = trace(m, soft=np.where(m, np.maximum(f, 0.7), 0.0)); letters.append({"c": ch, "d": d, "b": b})
+        print(name, len(shapes), "shapes /", expect); return {"name": name, "text": text, "letters": letters}
+    lines = [line("l1", "ROCKSTAR GAMES PRESENTS", box(70, 124, 450, 162), 21, 10), line("l2", "RED DEAD", box(70, 164, 700, 316), 7), line("l3", "REDEMPTION", box(70, 318, 705, 432), 10)]
+    # 4. the red II: coverage of red against black
+    redf = np.clip(TS.cov_color(img, tuple(int(v) for v in np.percentile(A[box(720, 180, 860, 400) & (A[..., 0] > 150) & (A[..., 1] < 60)], 50, axis=0)), (8, 8, 8)), 0, 1) * box(700, 150, 890, 440)
+    ii_shapes = ST.letter_shapes(redf * plate, box(700, 150, 890, 440) & plate, minpx=200); ii_shapes = sorted(sorted(ii_shapes, key=lambda m: -int(m.sum()))[:2], key=lambda m: np.nonzero(m.any(0))[0].min())  # the two biggest red shapes inside the plate
+    ii_color = np.median(A[box(720, 180, 860, 400) & (A[..., 0] > 150) & (A[..., 1] < 60)], axis=0); iil = []
+    for m in ii_shapes[:2]:
+        d, b = trace(m, soft=np.where(m, np.maximum(redf, 0.7), 0.0)); iil.append({"c": "I", "d": d, "b": b})
+    lines.append({"name": "ii", "text": "II", "letters": iil})
+    out = {"w": W, "h": H, "red": TS.hexc(red), "ii": TS.hexc(ii_color), "plate": {"d": pd_, "b": pb}, "lines": lines}
+    p = ROOT / "motion" / "runtime" / "zs-templates-rdr-1.js"
+    p.write_text("// 18 October 2026: the Red Dead Redemption II logo (Scripts/RddTrace.py): picked red, traced plate, isolated letters. FR : logo RDR2, rouge pipette, plaque et lettres isolees.\nwindow.ZSRdr = %s;\n" % json.dumps(out, separators=(",", ":")))
+    print("red", out["red"], "ii", out["ii"], "plate", pb, p.stat().st_size // 1024, "KiB")
+    for ln in lines: print(ln["name"], [l["c"] + ":" + ",".join(map(str, l["b"])) for l in ln["letters"]][:6])
+
+if __name__ == "__main__":
+    main()

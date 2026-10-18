@@ -1,0 +1,19 @@
+"""Reference vs motion at full size (18 October 2026): renders the project at a time through MaskIoU, fits the reference still the same way, writes <out>/ref.png, mine.png and a stacked ref-over-mine view (compare.png).
+Optional --crop x0,y0,x1,y1 (frame px) writes crop.png: the two crops side by side. The quality check required before a visual is announced redone. Usage: python3 Scripts/SideBySide.py <project> <still-slug> [--at 3.9] [--out DIR] [--crop ...] [--cfg KEY]"""
+import argparse, subprocess, sys
+from pathlib import Path
+from PIL import Image
+
+ROOT = Path(__file__).resolve().parents[1]
+ap = argparse.ArgumentParser(); ap.add_argument("project"); ap.add_argument("still"); ap.add_argument("--at", default="3.9"); ap.add_argument("--out", default=""); ap.add_argument("--crop", default=""); ap.add_argument("--cfg", default="")
+a = ap.parse_args(); out = Path(a.out or "/tmp/qa_%s" % a.project); out.mkdir(parents=True, exist_ok=True)
+cmd = [sys.executable, str(ROOT / "Scripts" / "MaskIoU.py"), a.project, "--at", a.at, "--out", str(out)] + (["--cfg", a.cfg, "--still", a.still] if a.cfg else [])
+subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT)
+mine = Image.open(out / "ink-motion-frame.png").convert("RGB")
+ref = Image.open(Path("~/.claude/tmp/tmp-zenray-motion-design-refcache/_stills").expanduser() / (a.still + ".png")).convert("RGB")
+W, H = mine.size; k = min(W / ref.width, H / ref.height); r2 = ref.resize((round(ref.width * k), round(ref.height * k)), Image.LANCZOS)
+fit = Image.new("RGB", (W, H), (0, 0, 0)); fit.paste(r2, ((W - r2.width) // 2, (H - r2.height) // 2)); fit.save(out / "ref.png"); mine.save(out / "mine.png")
+st = Image.new("RGB", (W, H * 2 + 8), "#f0f"); st.paste(fit, (0, 0)); st.paste(mine, (0, H + 8)); st.save(out / "compare.png")
+if a.crop:
+    x0, y0, x1, y1 = (int(v) for v in a.crop.split(",")); w = x1 - x0; cr = Image.new("RGB", (w * 2 + 6, y1 - y0), "#f0f"); cr.paste(fit.crop((x0, y0, x1, y1)), (0, 0)); cr.paste(mine.crop((x0, y0, x1, y1)), (w + 6, 0)); cr.save(out / "crop.png")
+print(out)

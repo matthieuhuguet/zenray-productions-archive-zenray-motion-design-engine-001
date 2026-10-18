@@ -1,0 +1,72 @@
+"""Ghost of Yotei banner as procedural parts (18 October 2026), native 2000 x 743 coordinates. Method isoler puis recreer, no character:
+ - COLOURS are picked (medians): the cream paper, the white left glow, the gold band gradient, the leaf golds, the button orange, the text blacks;
+ - the GHOST logo letters (G, H, the ring with its slash, S, T) are isolated by a coverage field of the dark ink on the local background and traced one by one (a custom font);
+ - the LEAVES are not traced: each gold ginkgo leaf is measured (centre, size, rotation of its stem, colour) and redrawn procedurally from a ginkgo outline;
+ - the brush stroke is measured (box, ends, colour stops) and redrawn procedurally; texts are set with real fonts.
+Output: motion/runtime/zs-templates-yotei-1.js, window.ZSYotei = {w, h, colors, letters: [{c, d, b}], leaves: [{x, y, s, a, c, o, e}], stroke: {...}}. Run with /Users/zenray/.venvs/zenray-motion/bin/python -I."""
+import json, sys
+from pathlib import Path
+import numpy as np
+from PIL import Image
+from scipy import ndimage as ndi
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "Scripts")); sys.path.insert(0, str(ROOT / "motion"))
+import StickerTrace as ST  # noqa: E402
+import TraceStill as TS  # noqa: E402
+
+STILL = Path("~/.claude/tmp/tmp-zenray-motion-design-refcache/_stills/native-yotei.png").expanduser()
+
+def med(A, m): return np.median(A[m], axis=0)
+
+def main():
+    A = np.asarray(Image.open(STILL).convert("RGB")).astype(int); H, W = A.shape[:2]; yy, xx = np.mgrid[0:H, 0:W]
+    box = lambda x0, y0, x1, y1: (xx >= x0) & (xx < x1) & (yy >= y0) & (yy < y1)  # noqa: E731
+    lum = A.mean(2)
+    colors = {"paper": TS.hexc(med(A, box(900, 690, 1100, 730))), "glow": TS.hexc(med(A, box(5, 300, 60, 340))), "button": None, "ink": TS.hexc(med(A, box(228, 100, 250, 150) & (lum < 60)))}
+    # gold band gradient at the top right: samples along x at y=35 and along y at x=1900
+    colors["band"] = [[x, TS.hexc(med(A, box(x - 6, 30, x + 6, 40)))] for x in (760, 900, 1050, 1200, 1500, 1800, 1990)]
+    colors["bandV"] = [[y, TS.hexc(med(A, box(1880, y - 2, 1920, y + 2)))] for y in (2, 20, 40, 60, 74, 80, 90)]
+    # button
+    btn = box(228, 508, 452, 562) & (A[..., 0] > 190) & (A[..., 1] < 100) & (A[..., 2] < 60); colors["button"] = TS.hexc(med(A, btn)); ys, xs = np.nonzero(btn)
+    button = [int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())]
+    # logo letters: dark ink vs local background
+    reg = box(215, 60, 725, 175); f = TS.cov_dark(A, None, 25, reg) * reg; f = np.where(lum < 150, f, 0.0)
+    shapes = ST.letter_shapes(f, reg, minpx=60); shapes = [m for m in shapes if m.sum() > 150]
+    # pieces whose x ranges overlap belong to one letter (the ring is cut in two by its slash)
+    ext = lambda m: (np.nonzero(m.any(0))[0].min(), np.nonzero(m.any(0))[0].max())  # noqa: E731
+    merged = []
+    for m in sorted(shapes, key=lambda m: ext(m)[0]):
+        if merged and ext(m)[0] < ext(merged[-1])[1] - 0.3 * (ext(m)[1] - ext(m)[0]): merged[-1] = merged[-1] | m
+        else: merged.append(m)
+    shapes = merged
+    letters = []
+    for ch, m in zip("GHOST", shapes):
+        d, b = ST.trace_shape(m, 8, soft=np.where(m, np.maximum(f, 0.7), 0.0)); letters.append({"c": ch, "d": d, "b": b})
+    print("letters", [(l["c"], l["b"]) for l in letters])
+    # leaves: gold pixels away from the band, the logo emblem leaf kept apart
+    gold = (A[..., 0] - A[..., 2] > 38) & (A[..., 0] > 140) & (yy > 88) & (A[..., 0] - A[..., 1] > 8)
+    gold &= ~box(0, 240, 700, 290)  # the brush stroke
+    gold = ndi.binary_opening(gold, iterations=1); lab, n = ndi.label(ndi.binary_dilation(gold, iterations=1)); leaves = []
+    for i, sl in enumerate(ndi.find_objects(lab), start=1):
+        m = gold & (lab == i); area = int(m.sum())
+        if area < 40: continue
+        ys, xs = np.nonzero(m); cx, cy = float(xs.mean()), float(ys.mean())
+        cov = np.cov(np.vstack([xs - cx, ys - cy])); w, v = np.linalg.eigh(cov); ax = v[:, 1]  # main axis
+        proj = (xs - cx) * ax[0] + (ys - cy) * ax[1]; hi = proj > np.percentile(proj, 80); lo = proj < np.percentile(proj, 20)
+        wid = lambda sel: float(np.std((xs[sel] - cx) * -ax[1] + (ys[sel] - cy) * ax[0]))  # noqa: E731
+        stem = 1 if wid(hi) < wid(lo) else -1  # the thin end is the stem
+        ang = float(np.degrees(np.arctan2(ax[1] * stem, ax[0] * stem)))
+        size = float(np.sqrt(area) * 1.55); col = med(A, m); op = 1.0
+        leaves.append({"x": round(cx, 1), "y": round(cy, 1), "s": round(size, 1), "a": round(ang, 1), "c": TS.hexc(col), "e": 1 if (220 < cx < 720 and 60 < cy < 175) else 0})
+    print("leaves", len(leaves), "emblem", sum(l["e"] for l in leaves))
+    # brush stroke
+    st = box(285, 245, 645, 290); sg = (A[..., 0] - A[..., 2] > 30) & (A[..., 0] < 215) & st; ys, xs = np.nonzero(sg)
+    stroke = {"b": [int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())], "c": TS.hexc(med(A, sg)), "c2": TS.hexc(np.percentile(A[sg], 10, axis=0)), "c3": TS.hexc(np.percentile(A[sg], 90, axis=0))}
+    out = {"w": W, "h": H, "colors": colors, "button": button, "letters": letters, "leaves": leaves, "stroke": stroke}
+    p = ROOT / "motion" / "runtime" / "zs-templates-yotei-1.js"
+    p.write_text("// 18 October 2026: Ghost of Yotei banner parts (Scripts/YoteiTrace.py): picked colours, isolated logo letters, measured leaves and brush stroke. FR : pieces du bandeau.\nwindow.ZSYotei = %s;\n" % json.dumps(out, separators=(",", ":")))
+    print(json.dumps({k: colors[k] for k in ("paper", "glow", "button", "ink")}), button, stroke, p.stat().st_size // 1024, "KiB")
+
+if __name__ == "__main__":
+    main()

@@ -131,6 +131,11 @@
       "id": "bmw-zhong-kui-ppm",
       "group": "Visuels fixes · trois apparitions",
       "reference": "still-zhong-kui"
+    },
+    {
+      "id": "rdr2-ppm",
+      "group": "Visuels fixes · trois apparitions",
+      "reference": "still-rdr2"
     }
   ],
   "formats": [
