@@ -19,6 +19,36 @@ STILL = Path("~/.claude/tmp/tmp-zenray-motion-design-refcache/_stills/native-yot
 
 def med(A, m): return np.median(A[m], axis=0)
 
+# the unit ginkgo leaf, stem at (0, 0), body up (y negative): cubic segments, the same outline as the template (zs-templates-stills-1.js, `ginkgo`)
+GINKGO = [((0, 0), (-0.24, -0.22), (-0.48, -0.44), (-0.72, -0.66)), ((-0.72, -0.66), (-0.8, -0.85), (-0.55, -1.0), (-0.3, -0.99)), ((-0.3, -0.99), (-0.2, -0.98), (-0.08, -0.92), (0, -0.84)),
+          ((0, -0.84), (0.08, -0.92), (0.2, -0.98), (0.3, -0.99)), ((0.3, -0.99), (0.55, -1.0), (0.8, -0.85), (0.72, -0.66)), ((0.72, -0.66), (0.48, -0.44), (0.24, -0.22), (0, 0))]
+
+def unit_polygon(n=14):
+    pts = []
+    for p0, p1, p2, p3 in GINKGO:
+        for k in range(n):
+            t = k / n; u = 1 - t
+            pts.append((u ** 3 * p0[0] + 3 * u * u * t * p1[0] + 3 * u * t * t * p2[0] + t ** 3 * p3[0], u ** 3 * p0[1] + 3 * u * u * t * p1[1] + 3 * u * t * t * p2[1] + t ** 3 * p3[1]))
+    return np.array(pts)
+
+def fit_leaf(mask, cx, cy, area):
+    """Best rotation and size of the unit leaf on a measured leaf: the IoU of the rasterised outline with the mask, around the centroid."""
+    from PIL import ImageDraw
+    U = unit_polygon(); poly_area = 0.5 * abs(np.dot(U[:, 0], np.roll(U[:, 1], -1)) - np.dot(U[:, 1], np.roll(U[:, 0], -1))); cu = U.mean(axis=0)
+    ys, xs = np.nonzero(mask); x0, y0, x1, y1 = xs.min() - 30, ys.min() - 30, xs.max() + 30, ys.max() + 30; m = mask[max(0, y0):y1, max(0, x0):x1]; ox, oy = max(0, x0), max(0, y0)
+    best = (-1, 0, 1)
+    for sc in (0.85, 1.0, 1.15):
+        sz = np.sqrt(area / poly_area) * sc
+        for ang in range(0, 360, 10):
+            r = np.radians(ang); R = np.array([[np.cos(r), -np.sin(r)], [np.sin(r), np.cos(r)]])
+            P = ((U - cu) * sz) @ R.T + np.array([cx - ox, cy - oy])
+            im = Image.new("L", (m.shape[1], m.shape[0]), 0); ImageDraw.Draw(im).polygon([tuple(q) for q in P], fill=1); a = np.asarray(im) > 0
+            iou = (a & m).sum() / max(1, (a | m).sum())
+            if iou > best[0]: best = (iou, ang, sz)
+    iou, ang, sz = best; r = np.radians(ang); R = np.array([[np.cos(r), -np.sin(r)], [np.sin(r), np.cos(r)]])
+    stem = ((np.array([0.0, 0.0]) - cu) * sz) @ R.T + np.array([cx, cy])
+    return float(stem[0]), float(stem[1]), float(ang), float(sz), float(iou)
+
 def main():
     A = np.asarray(Image.open(STILL).convert("RGB")).astype(int); H, W = A.shape[:2]; yy, xx = np.mgrid[0:H, 0:W]
     box = lambda x0, y0, x1, y1: (xx >= x0) & (xx < x1) & (yy >= y0) & (yy < y1)  # noqa: E731
@@ -27,6 +57,10 @@ def main():
     # gold band gradient at the top right: samples along x at y=35 and along y at x=1900
     colors["band"] = [[x, TS.hexc(med(A, box(x - 6, 30, x + 6, 40)))] for x in (760, 900, 1050, 1200, 1500, 1800, 1990)]
     colors["bandV"] = [[y, TS.hexc(med(A, box(1880, y - 2, 1920, y + 2)))] for y in (2, 20, 40, 60, 74, 80, 90)]
+    colors["row"] = [[x, TS.hexc(med(A, box(x - 8, 640, x + 8, 700)))] for x in (10, 150, 300, 450, 600, 750, 900, 1050)] + [[x, TS.hexc(med(A, box(x - 8, 640, x + 8, 700)))] for x in (1650, 1800, 1990)]
+    colors["col"] = [[y, TS.hexc(med(A, box(1010, y - 6, 1060, y + 6)))] for y in (95, 200, 350, 500, 650, 735)]
+    dot = box(1650, 100, 1950, 250) & (lum < 235) & (np.abs(A[..., 0] - A[..., 2]) < 40); colors["dot"] = TS.hexc(np.percentile(A[dot], 30, axis=0)) if dot.any() else "#e4dccb"
+    colors["head"] = TS.hexc(np.percentile(A[box(228, 350, 560, 395)].reshape(-1, 3), 3, axis=0)); colors["body"] = TS.hexc(np.percentile(A[box(228, 425, 830, 475)].reshape(-1, 3), 3, axis=0))
     # button
     btn = box(228, 508, 452, 562) & (A[..., 0] > 190) & (A[..., 1] < 100) & (A[..., 2] < 60); colors["button"] = TS.hexc(med(A, btn)); ys, xs = np.nonzero(btn)
     button = [int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())]
@@ -52,13 +86,8 @@ def main():
         m = gold & (lab == i); area = int(m.sum())
         if area < 40: continue
         ys, xs = np.nonzero(m); cx, cy = float(xs.mean()), float(ys.mean())
-        cov = np.cov(np.vstack([xs - cx, ys - cy])); w, v = np.linalg.eigh(cov); ax = v[:, 1]  # main axis
-        proj = (xs - cx) * ax[0] + (ys - cy) * ax[1]; hi = proj > np.percentile(proj, 80); lo = proj < np.percentile(proj, 20)
-        wid = lambda sel: float(np.std((xs[sel] - cx) * -ax[1] + (ys[sel] - cy) * ax[0]))  # noqa: E731
-        stem = 1 if wid(hi) < wid(lo) else -1  # the thin end is the stem
-        ang = float(np.degrees(np.arctan2(ax[1] * stem, ax[0] * stem)))
-        size = float(np.sqrt(area) * 1.55); col = med(A, m); op = 1.0
-        leaves.append({"x": round(cx, 1), "y": round(cy, 1), "s": round(size, 1), "a": round(ang, 1), "c": TS.hexc(col), "e": 1 if (220 < cx < 720 and 60 < cy < 175) else 0})
+        sx_, sy_, ang, sz, iou = fit_leaf(m, cx, cy, area); col = med(A, m)
+        leaves.append({"x": round(sx_, 1), "y": round(sy_, 1), "s": round(sz, 1), "a": round(ang, 1), "c": TS.hexc(col), "e": 1 if (220 < cx < 720 and 60 < cy < 175) else 0, "q": round(iou, 2)})
     print("leaves", len(leaves), "emblem", sum(l["e"] for l in leaves))
     # brush stroke
     st = box(285, 245, 645, 290); sg = (A[..., 0] - A[..., 2] > 30) & (A[..., 0] < 215) & st; ys, xs = np.nonzero(sg)

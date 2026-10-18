@@ -13,7 +13,7 @@
   const abs = (parent, css, text) => { const e = h.css(h.el("div", "zs-abs", parent), css); if (text !== undefined) { if (/[<&]/.test(String(text))) e.innerHTML = text; else e.textContent = text; } return e; };
   const rnd = (seed) => () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
   const APPEARANCES = ["wipe", "letters", "rise", "ink", "drop", "pop", "typewriter", "zoom", "glitch", "brush"];
-  const LAYOUTS = ["bleach", "ichiban", "paget", "pale-raven", "phase", "yawen", "indy", "zhongkui", "rdr"];
+  const LAYOUTS = ["bleach", "ichiban", "paget", "pale-raven", "phase", "yawen", "indy", "zhongkui", "rdr", "yotei"];
 
   // ---- text pieces; `split` makes one span per character so an appearance can move the letters one by one
   function T(parent, o) {
@@ -158,6 +158,68 @@
       return it;
     },
     // Black Myth: Wukong, Zhong Kui: red brush title over a huge grey ink glyph, a small seal above. The ink glyph is drawn procedurally (rough strokes, no picture).
+    yotei(pl, p) {
+      // Ghost of Yotei banner, 18 October 2026, all procedural: picked colours (window.ZSYotei.colors), the paper and its left glow, the gold band, the dotted pattern, the measured gold ginkgo leaves redrawn from one outline, the isolated logo letters,
+      // the brush stroke drawn from a ragged body and streaks, texts set with real fonts. The reference sits at y OY of a 2000 x 1125 plane so that the 16:9 frame is filled (the paper and the band extend above and below).
+      const tw = p.tw, Y = window.ZSYotei, it = [], OY = 191, C = Y.colors, ink = p.accent || C.ink, gold = p.accent2 || "#aa8f5c", cx0 = 467;
+      const bg = svgEl("svg", { width: 2000, height: 1125, viewBox: "0 0 2000 1125", style: "position:absolute;left:0;top:0;overflow:visible" }, abs(pl, { left: "0", top: "0", width: "2000px", height: "1125px" })), df = svgEl("defs", {}, bg);
+      const lin = (id, x1, y1, x2, y2, stops, units) => { const g = svgEl("linearGradient", { id, x1, y1, x2, y2, gradientUnits: units || "userSpaceOnUse" }, df); stops.forEach((s) => svgEl("stop", Object.assign({ offset: s[0], "stop-color": s[1] }, s[2] !== undefined ? { "stop-opacity": s[2] } : {}), g)); return id; };
+      const uid = "yt" + (traceGradId++);
+      svgEl("rect", { x: 0, y: -50, width: 2000, height: 1225, fill: p.bg || C.paper }, bg);
+      // the white glow of the left and the cream of the paper (row stops measured at y 640 to 700)
+      lin(uid + "r", 0, 0, 1050, 0, C.row.filter((q) => q[0] <= 1050).map((q) => [q[0] / 1050, q[1]]));
+      svgEl("rect", { x: 0, y: -50, width: 1050, height: 1225, fill: `url(#${uid}r)` }, bg);
+      // the gold band: horizontal gradient (transparent paper at the left), vertical shading, a pale lip at the bottom, a soft edge
+      const bandB = OY + tw("bandBottom", 78);
+      lin(uid + "b", 700, 0, 2000, 0, [[0, C.band[0][1], 0], [0.18, C.band[1][1], 0.8], [0.3, C.band[2][1], 1], [0.55, C.band[4][1], 1], [0.85, C.band[5][1], 1], [1, C.band[6][1], 1]]);
+      const sf = svgEl("filter", { id: uid + "f", x: "-5%", y: "-20%", width: "110%", height: "140%" }, df); svgEl("feGaussianBlur", { stdDeviation: tw("bandSoft", 1.2) }, sf);
+      svgEl("rect", { x: 700, y: -50, width: 1300, height: bandB + 50, fill: `url(#${uid}b)`, filter: `url(#${uid}f)` }, bg);
+      svgEl("rect", { x: 760, y: bandB, width: 1240, height: 4, fill: "#fff", opacity: 0.8 }, bg);
+      // the dotted pattern: small rings on a grid, faded at the edges (a mask)
+      const pt = svgEl("pattern", { id: uid + "p", width: tw("dotGrid", 21), height: tw("dotGrid", 21), patternUnits: "userSpaceOnUse" }, df); const dg = tw("dotGrid", 21);
+      svgEl("circle", { cx: dg / 2, cy: dg / 2, r: tw("dotR", 6), fill: "none", stroke: C.dot, "stroke-width": 1.3 }, pt); svgEl("circle", { cx: dg / 2, cy: dg / 2, r: 1.6, fill: C.dot }, pt);
+      const mk = svgEl("mask", { id: uid + "m", maskUnits: "userSpaceOnUse", x: 700, y: OY + 70, width: 1300, height: 700 }, df), mg = lin(uid + "mg", 0, OY + 80, 0, OY + 690, [[0, "#fff", 1], [0.2, "#555", 1], [0.68, "#555", 1], [0.86, "#fff", 1], [1, "#bbb", 1]]);
+      const mx = lin(uid + "mx", 700, 0, 1000, 0, [[0, "#000", 1], [1, "#fff", 1]]); svgEl("rect", { x: 700, y: OY + 70, width: 1300, height: 700, fill: `url(#${mg})` }, mk);
+      const mk2 = svgEl("mask", { id: uid + "m2", maskUnits: "userSpaceOnUse", x: 700, y: OY + 70, width: 1300, height: 700 }, df); svgEl("rect", { x: 700, y: OY + 70, width: 1300, height: 700, fill: `url(#${mx})` }, mk2);
+      const dm = svgEl("g", { mask: `url(#${uid}m)` }, bg), dm2 = svgEl("g", { mask: `url(#${uid}m2)` }, dm); svgEl("rect", { x: 700, y: OY + 82, width: 1300, height: 640, fill: `url(#${uid}p)`, opacity: tw("dotOpacity", 0.6) }, dm2);
+      // the gold ginkgo leaves, each one redrawn from the measured centre, size, stem direction and colour
+      const lh = abs(pl, { left: "0", top: "0", width: "2000px", height: "1125px" }), ls = svgEl("svg", { width: 2000, height: 1125, viewBox: "0 0 2000 1125", style: "position:absolute;left:0;top:0;overflow:visible" }, lh), lc = [];
+      const veins = "M0,-0.04 L-0.52,-0.84 M0,-0.04 L-0.3,-0.93 M0,-0.04 L0,-0.82 M0,-0.04 L0.3,-0.93 M0,-0.04 L0.52,-0.84", stem = "M0,0 L0.04,0.34";
+      const leafPaths = (g, fill) => { svgEl("path", { d: ginkgo, fill }, g); svgEl("path", { d: stem, fill: "none", stroke: fill, "stroke-width": 0.035, "stroke-linecap": "round" }, g); svgEl("path", { d: veins, fill: "none", stroke: "#fff", "stroke-opacity": tw("veinOpacity", 0.3), "stroke-width": 0.014 }, g); };
+      const ginkgo = "M0,0 L-0.72,-0.66 C-0.8,-0.85 -0.55,-1 -0.3,-0.99 C-0.2,-0.98 -0.08,-0.92 0,-0.84 C0.08,-0.92 0.2,-0.98 0.3,-0.99 C0.55,-1 0.8,-0.85 0.72,-0.66 Z";  // fan with a centre notch and a narrow stem
+      const ls0 = tw("leafScale", 1), lop = tw("leafOpacity", 1), lsat = tw("leafOn", 1);
+      Y.leaves.forEach((L, i) => { if (L.e || !lsat) return; const s = L.s * ls0, sx = L.x, sy = OY + L.y;  // x, y is the STEM point, a the rotation of the unit leaf (fitted on the measured leaf by Scripts/YoteiTrace.py)
+        const dw = svgEl("g", {}, ls), og = svgEl("g", { transform: `translate(${sx.toFixed(1)},${sy.toFixed(1)}) rotate(${L.a.toFixed(1)}) scale(${s.toFixed(1)})`, opacity: lop }, dw); leafPaths(og, L.c); lc.push([dw, sx, sy]); });  // the drift wrapper has NO scale: its tween is in plane pixels  // the outer group carries the measured placement, the inner one is the one the drift tweens
+      // the logo: GHOST as the isolated letters (a custom font), the emblem leaf inside the ring; a custom text uses a wide heavy sans
+      const logoGold = Y.leaves.filter((L) => L.e);
+      const glyphs = Y.letters.map((l) => ({ d: l.d, f: ink, b: [l.b[0], l.b[1] + OY, l.b[2], l.b[3] + OY] }));
+      const nlk = (txt) => String(txt).toUpperCase() === "GHOST";
+      if (nlk(p.l0 === undefined ? "GHOST" : p.l0) && p.design !== "custom") {
+        const gh = traceLayer(pl, Y.letters.map((l) => ({ d: l.d, f: ink, b: l.b })), 2000, 743); gh.style.top = OY + "px"; it.push({ n: gh });
+        const eh = abs(pl, { left: "0", top: OY + "px", width: "2000px", height: "743px" }), es = svgEl("svg", { width: 2000, height: 743, viewBox: "0 0 2000 743", style: "position:absolute;left:0;top:0;overflow:visible" }, eh);
+        if (logoGold.length) { const L = logoGold.slice().sort((a, b) => b.s - a.s)[0], sz = tw("emblemSize", 64), sx = tw("emblemX", 462), sy = tw("emblemY", 160); const g = svgEl("g", { transform: `translate(${sx},${sy}) rotate(${tw("emblemRot", L.a)}) scale(${sz})` }, es); leafPaths(g, L.c); }
+        it.push({ n: eh, shape: true });
+      } else { it.push({ n: T(pl, { text: p.l0 || "GHOST", x: cx0, y: OY + tw("y0", 78), size: tw("size0", 110), font: "Sora", weight: 800, color: ink, align: "center", ls: tw("ls0", 0.3) + "em", lh: 1, upper: true }) }); }
+      it.push({ n: T(pl, { text: p.l1, x: cx0, y: OY + tw("y1", 203), size: tw("size1", 22), font: "Fraunces", weight: 500, color: ink, align: "center", ls: tw("ls1", 0.38) + "em", lh: 1, upper: true }) });
+      // the brush stroke: a ragged body with dry streaks at the left end, and its text
+      const S = Y.stroke, sb = S.b, sh = abs(pl, { left: "0", top: "0", width: "2000px", height: "1125px" }), ss = svgEl("svg", { width: 2000, height: 1125, viewBox: "0 0 2000 1125", style: "position:absolute;left:0;top:0;overflow:visible" }, sh), sdf = svgEl("defs", {}, ss);
+      const sid = uid + "s", sg = svgEl("linearGradient", { id: sid, x1: sb[0], y1: 0, x2: sb[2], y2: 0, gradientUnits: "userSpaceOnUse" }, sdf); [[0, S.c3], [0.5, S.c], [1, S.c2]].forEach((q) => svgEl("stop", { offset: q[0], "stop-color": q[1] }, sg));
+      const rf = svgEl("filter", { id: sid + "f", x: "-5%", y: "-40%", width: "110%", height: "180%" }, sdf); svgEl("feTurbulence", { type: "fractalNoise", baseFrequency: "0.04 0.5", numOctaves: 2, seed: (p.seed || 7) % 97, result: "n" }, rf); svgEl("feDisplacementMap", { in: "SourceGraphic", in2: "n", scale: tw("strokeRough", 9) }, rf);
+      const y0 = OY + sb[1], y1 = OY + sb[3], x0 = sb[0], x1 = sb[2], R = rnd(p.seed || 7), body = [[x0 + 60, y0 + 2], [x1 - 8, y0 + 0], [x1, y0 + 4], [x1 - 4, y1 - 3], [x0 + 70, y1]], g2 = svgEl("g", { filter: `url(#${sid}f)` }, ss);
+      svgEl("path", { d: "M" + body.map((q) => q.join(",")).join(" L") + " Z", fill: `url(#${sid})` }, g2);
+      for (let k = 0; k < 9; k++) { const yy = y0 + 2 + (k + 0.5) * (y1 - y0 - 4) / 9, len = 20 + R() * 60; svgEl("rect", { x: x0 + 8 + R() * 30, y: yy, width: 55 + len, height: 1.8 + R() * 2.4, fill: `url(#${sid})`, opacity: 0.55 + R() * 0.35 }, g2); }
+      it.push({ n: sh, shape: true });
+      it.push({ n: T(pl, { text: p.l2, x: (x0 + x1) / 2 + 12, y: OY + tw("y2", 260), size: tw("size2", 14.5), font: "Fraunces", weight: 500, color: "#f6f0e2", align: "center", ls: tw("ls2", 0.36) + "em", lh: 1, upper: true }) });
+      // the headline, the body and the button
+      it.push({ n: T(pl, { text: p.l3, x: tw("tx", 226), y: OY + tw("y3", 344), size: tw("size3", 49), font: "InterVariable", weight: tw("weight3", 300), color: C.head, ls: "-0.005em", lh: 1 }) });
+      it.push({ n: T(pl, { text: p.l4, x: tw("tx", 226), y: OY + tw("y4", 421), size: tw("size4", 18.8), font: "InterVariable", weight: 400, color: C.body, ls: tw("ls4", 0) + "em", lh: tw("lh4", 1.45) }) });
+      const B = Y.button, bt = abs(pl, { left: B[0] + "px", top: OY + B[1] + "px", width: B[2] - B[0] + "px", height: B[3] - B[1] + "px", borderRadius: (B[3] - B[1]) / 2 + "px", background: p.accent3 || C.button, display: "grid", placeItems: "center" });
+      abs(bt, { left: "0", top: "0", width: "100%", height: "100%", display: "grid", placeItems: "center", color: "#fff", fontFamily: h.font("InterVariable"), fontWeight: tw("weight5", 600), fontSize: tw("size5", 19.4) + "px", whiteSpace: "pre" }, p.l5); it.push({ n: bt, shape: true });
+      // the leaves drift slowly (seek-safe tweens registered for build)
+      p.after = (tl, t0, dur, E) => lc.forEach(([g, ox, oy], i) => { const rr = rnd(97 + i * 13), dx = (rr() - 0.5) * tw("drift", 30), dy = (rr() - 0.5) * tw("drift", 30), rot = (rr() - 0.5) * 16; E(tl, g, { x: 0, y: 0, rotation: 0, svgOrigin: ox + " " + oy }, { x: dx, y: dy, rotation: rot, duration: dur, ease: "sine.inOut" }, t0); });
+      it.unshift({ n: lh, shape: true, still: true });
+      return it;
+    },
     rdr(pl, p) {
       // Red Dead Redemption II logo, 18 October 2026. The red of the frame is the picked red (bg). Original design: the traced worn plate and the isolated letters of the custom font (window.ZSRdr); custom design (or another text):
       // a black plate drawn as a stroked rectangle and the lines set in a heavy slab, left aligned like the logo. Every number is a parameter.
@@ -254,11 +316,12 @@
     "pale-raven": { l: { l1: "Pale", l2: "Raven's", l3: "Perch" }, bg: "#0c1011", accent: "#f7ecd3", tile: "#0f5560" },
     phase: { l: { text: "ENEMY PHASE" }, bg: "#9a8878", accent: "#f2555a", tile: "#000", seed: 7 },
     yawen: { l: { l1: "VISUAL·DESIGNER", l2: "MARKETING·GAMES·DIGITAL", l3: "Yawen | Marketing Visual Designer (Games / Digital)", l4: "lyw19837059505@gmail.com" }, bg: "#1c2f38", accent: "#ffffff", tile: "#000" },
+    yotei: { l: { l1: "OF YŌTEI", l2: "COMPLETE EDITION", l3: "Retournez à Ezo", l4: "Découvrez l'expérience définitive de Ghost of Yōtei, enrichie d'un tout\nnouveau mode de jeu et d'une extension de l'histoire.", l5: "Acheter maintenant" }, bg: "#f8f5ee", accent: "#0f100f", tile: "#000" },
     rdr: { l: { l1: "ROCKSTAR GAMES PRESENTS", l2: "RED DEAD", l3: "REDEMPTION", l4: "II" }, bg: "#ca0512", accent: "#ffffff", tile: "#030101" },
     indy: { l: { l1: "INDIANA JONES" }, bg: "#17233a", accent: "#dde1ec", tile: "#000" },
     zhongkui: { l: { l1: "ZHONG", l2: "BLACK MYTH", l3: "KUI" }, bg: "#050405", accent: "#8f3638", tile: "#000", seed: 5 },
   };
-  const SIZE = { indy: [1080, 1080], zhongkui: [1600, 668], rdr: [2000, 871] };
+  const SIZE = { indy: [1080, 1080], zhongkui: [1600, 668], rdr: [2000, 871], yotei: [2000, 1125] };
 
   // ---- the appearances (seek-safe tweens only). Every effect reads its numbers from `o`: distance, blur, scale, rotation, per-letter stagger, direction, ease, glitch amplitude.
   const WIPE = { left: "inset(0 100% 0 0)", right: "inset(0 0 0 100%)", up: "inset(100% 0 0 0)", down: "inset(0 0 100% 0)", center: "inset(0 50% 0 50%)" };
@@ -285,10 +348,11 @@
   function appear(tl, items, kind, t0, o) {
     let cum = 0;
     if (kind === "brush") { const total = items.reduce((s, it) => s + (it.n._brush && it.n._brush.length ? brushPlan(it.n, o).len + 0.18 : 0), 0), budget = Math.max(1, (o.sceneDur || 7.5) - o.delay - 1.2); o.brushK = total > budget ? budget / total : 1; }
+    items = items.filter((it) => !it.still);  // a still item (a background) is never animated
     items.forEach((it, i) => {
       const t = t0 + o.delay + i * o.stagger, n = it.n, chars = [...n.querySelectorAll(".ch")], shape = !!it.shape, d = o.dur, E = (def) => (o.ease && o.ease !== "auto" ? o.ease : def);
-      const perChar = chars.length && !shape, targets = perChar ? chars : [n];
-      const each = (from, to, ease, mult) => { if (perChar) chars.forEach((c) => fto(tl, c, from, Object.assign({ ease }, to), t + Number(c.dataset.i || 0) * o.charStagger * (mult || 1))); else fto(tl, n, from, Object.assign({ ease }, to), t); };
+      const perChar = chars.length && !shape, targets = perChar ? chars : [n], csg = Math.min(o.charStagger, 0.9 / Math.max(1, chars.length));  // a long text is written within about 0.9 s
+      const each = (from, to, ease, mult) => { if (perChar) chars.forEach((c) => fto(tl, c, from, Object.assign({ ease }, to), t + Number(c.dataset.i || 0) * csg * (mult || 1))); else fto(tl, n, from, Object.assign({ ease }, to), t); };
       if (it.fadeOnly) { fto(tl, n, { opacity: 0, scale: 1.06, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, duration: d * 1.8, ease: "power2.out" }, t); return; }
       if (kind === "brush" && n._brush && n._brush.length) {
         // one brush, letter by letter: a stroke is one explosive movement (micro-hesitation as the brush lands, 75 % of the distance in a flash, soft braking while the wrist lifts the tip: BRUSH_EASE);
@@ -310,7 +374,7 @@
       } else if (kind === "pop") {
         each({ opacity: 0, scale: Math.min(o.scaleFrom, 0.9), rotation: o.rotate }, { opacity: 1, scale: 1, rotation: 0, duration: d * 0.6 }, E("back.out(2.4)"));
       } else if (kind === "typewriter") {
-        if (perChar) { chars.forEach((c) => { tl.set(c, { opacity: 0 }, t0); tl.set(c, { opacity: 1 }, t + Number(c.dataset.i || 0) * o.charStagger * 1.3); }); } else fto(tl, n, { opacity: 0 }, { opacity: 1, duration: 0.25 }, t);
+        if (perChar) { chars.forEach((c) => { tl.set(c, { opacity: 0 }, t0); tl.set(c, { opacity: 1 }, t + Number(c.dataset.i || 0) * csg * 1.3); }); } else fto(tl, n, { opacity: 0 }, { opacity: 1, duration: 0.25 }, t);
       } else if (kind === "zoom") {
         fto(tl, n, { opacity: 0, scale: Math.max(o.scaleFrom, 1.2), rotation: o.rotate, filter: `blur(${o.blur / 2}px)`, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, rotation: 0, filter: "blur(0px)", duration: d, ease: E("power3.out") }, t);
       } else if (kind === "glitch") {
@@ -320,7 +384,7 @@
     });
   }
 
-  const BOXES = { bleach: [880, 90, 1920, 1080], ichiban: [30, 20, 960, 480], paget: [90, 190, 700, 1050], "pale-raven": [90, 250, 900, 1010], phase: [90, 300, 1830, 840], yawen: [110, 340, 1800, 1030], indy: [40, 780, 1040, 990], zhongkui: [330, 90, 1230, 580], rdr: [30, 95, 905, 465] };
+  const BOXES = { bleach: [880, 90, 1920, 1080], ichiban: [30, 20, 960, 480], paget: [90, 190, 700, 1050], "pale-raven": [90, 250, 900, 1010], phase: [90, 300, 1830, 840], yawen: [110, 340, 1800, 1030], indy: [40, 780, 1040, 990], zhongkui: [330, 90, 1230, 580], rdr: [30, 95, 905, 465], yotei: [200, 190 + 60, 880, 190 + 590] };
   const TALLBOXES = { zhongkui: [470, 100, 1130, 490], phase: [380, 330, 1540, 700] };
   const EASES = ["auto", "power3.out", "power4.out", "expo.out", "back.out(1.7)", "back.out(3)", "elastic.out(1,0.4)", "bounce.out", "sine.inOut", "power2.inOut", "steps(6)"];
   const parseTweaks = (lines) => { const m = {}; (lines || []).forEach((l) => { const q = String(l).trim().split(/\s+/); if (q.length >= 2 && !isNaN(Number(q[q.length - 1]))) m[q.slice(0, -1).join(" ")] = Number(q[q.length - 1]); }); return m; };
@@ -355,6 +419,7 @@
       // a slow camera pull-back while the title is written, settled at scale 1 (the reference framing) for the hold
       if (params.camera) { const push = tws.push !== undefined ? tws.push : (p.push === undefined || p.push === "" ? 0.05 : Number(p.push)); if (push > 0) fto(tl, params.camera, { scale: 1 + push, transformOrigin: "800px 320px" }, { scale: 1, duration: (ctx.dur || 4.2) * 0.7, ease: "power1.out" }, t0); }
       appear(tl, items, p.appearance, t0, { stagger: p.stagger, dur: p.dur, delay: p.delay, charStagger: p.charStagger, distance: p.distance, blur: p.blur, scaleFrom: p.scaleFrom, rotate: p.rotate, ease: p.ease, direction: p.direction, glitch: p.glitch, brushSpeed: tws.brushSpeed !== undefined ? tws.brushSpeed : p.brushSpeed, brushHesitate: p.brushHesitate, sceneDur: ctx.dur });
+      if (params.after) params.after(tl, t0, ctx.dur || 7, fto);
     },
   });
   ZS.stills = { LAYOUTS, APPEARANCES, DEFAULTS };
