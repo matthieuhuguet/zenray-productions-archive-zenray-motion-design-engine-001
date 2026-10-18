@@ -1,0 +1,63 @@
+"""Fire Emblem phase banners as a PROCEDURAL banner (18 October 2026): isolate, then recreate.
+ 1. the INK is not traced: its silhouette is measured as a profile (top and bottom edge every 40 px, smoothed) and redrawn procedurally (displaced, softened, smoke and splatter drawn from a seed);
+ 2. the LETTERING is isolated letter by letter (coverage of its own colour on the dark ink, sub-pixel contour) and written as a small font: one entry per letter, with its position in the original phrase;
+ 3. the colours (ink, glow, text, smoke) are measured and become parameters.
+Output: motion/runtime/zs-templates-phase-<key>-1.js, window.ZSPhase.<key> = {w, h, profile: [[x, top, bottom]], ink, glow, text, smoke, letters: [{c, d, b}]}.
+Run with /Users/zenray/.venvs/zenray-motion/bin/python -I. Usage: PhaseTrace.py player|enemy|next"""
+import argparse, json, sys
+from pathlib import Path
+import numpy as np
+from scipy import ndimage as ndi
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "Scripts")); sys.path.insert(0, str(ROOT / "motion"))
+import TraceStill as TS  # noqa: E402
+import StickerTrace as ST  # noqa: E402
+
+CFG = {  # still slug, text colour, dark predicate, lettering region, phrase
+    "player": dict(still="still-fe-player-phase", text=(62, 198, 250), region=(400, 440, 1540, 620), phrase="PLAYER PHASE", dark=lambda A: A.max(2) < 85, glow=(40, 120, 255)),
+    "enemy": dict(still="still-fe-enemy-phase", text=(245, 95, 100), region=(400, 440, 1540, 620), phrase="ENEMY PHASE", dark=lambda A: A.max(2) < 85, glow=(235, 40, 50)),
+    "next": dict(still="still-fe-next-round", text=(255, 248, 170), region=(420, 190, 1500, 345), phrase="NEXT ROUND", dark=lambda A: (A.max(2) < 70) & (A[..., 1] >= A[..., 0] - 4), glow=(215, 195, 60)),
+}
+
+def main():
+    ap = argparse.ArgumentParser(); ap.add_argument("key"); a = ap.parse_args(); c = CFG[a.key]
+    img, W, H = TS.fitted_reference("fe-phases-ppm", c["still"]); A = img.astype(int); yy, xx = np.mgrid[0:H, 0:W]
+    band = (yy > 150) & (yy < (560 if a.key == "next" else 760)) & (xx > 130) & (xx < 1800)
+    ink = c["dark"](A) & band; ink = ndi.binary_opening(ndi.binary_closing(ink, iterations=5), iterations=2)
+    lab, n = ndi.label(ink); sizes = ndi.sum(ink, lab, range(1, n + 1)); ink = np.isin(lab, [i + 1 for i, v in enumerate(sizes) if v > 3000]); ink = ndi.binary_fill_holes(ndi.binary_closing(ink, iterations=10))
+    prof = []; xs = list(range(140, 1800, 40))
+    for x in xs:
+        col = np.nonzero(ink[:, max(0, x - 20):x + 20].any(1))[0]
+        prof.append([x, int(np.percentile(col, 2)) if len(col) else None, int(np.percentile(col, 98)) if len(col) else None])
+    prof = [p for p in prof if p[1] is not None]
+    tops = ndi.gaussian_filter1d(np.array([p[1] for p in prof], float), 1.2); bots = ndi.gaussian_filter1d(np.array([p[2] for p in prof], float), 1.2)
+    profile = [[p[0], int(round(t)), int(round(b))] for p, t, b in zip(prof, tops, bots)]
+    if a.key in ("player", "enemy"):  # the dark crates at the left edge pollute the measure: the banner tip is drawn from its measured body (x >= 420) with a tapered end
+        body = [q for q in profile if q[0] >= 420]; t0, b0 = body[0][1], body[0][2]; profile = [[170, int(t0 + 30), int(b0 - 70)], [260, int(t0 + 10), int(b0 - 45)], [340, int(t0 - 5), int(b0 - 20)]] + body
+    if a.key == "next": profile = [[q[0], max(q[1], 196), min(q[2], 440)] for q in profile]
+    inkcol = np.median(A[ink & (A.max(2) < 40)], axis=0) if (ink & (A.max(2) < 40)).any() else (10, 12, 16)
+    x0, y0, x1, y1 = c["region"]; reg = np.zeros((H, W), bool); reg[y0:y1, x0:x1] = True
+    cov = np.clip(TS.cov_color(img, c["text"], inkcol) * 1.15 - 0.05, 0, 1) * reg  # the lettering colour against the ink colour (a continuous coverage)
+    lab_l, n_l = ndi.label((cov > 0.5) & reg); objs = ndi.find_objects(lab_l); areas = ndi.sum(cov > 0.5, lab_l, range(1, n_l + 1)); hmax = max(sl[0].stop - sl[0].start for sl in objs)
+    big = [i + 1 for i, (sl, ar) in enumerate(zip(objs, areas)) if ar > 500 and (sl[0].stop - sl[0].start) > 0.35 * hmax]
+    shapes = []
+    for i in big:
+        m = lab_l == i; sl = objs[i - 1]
+        for j, (s2, ar2) in enumerate(zip(objs, areas), start=1):  # a small piece (a serif, a stroke end) touching the bounding box of a letter belongs to it
+            if j != i and j not in big and ar2 > 25 and s2[1].start >= sl[1].start - 4 and s2[1].stop <= sl[1].stop + 4 and s2[0].start >= sl[0].start - 6 and s2[0].stop <= sl[0].stop + 6: m = m | (lab_l == j)
+        shapes.append(m)
+    nexp = len([ch for ch in c["phrase"] if ch != " "])
+    if len(shapes) > nexp: shapes = sorted(sorted(shapes, key=lambda m: -int(m.sum()))[:nexp], key=lambda m: np.nonzero(m.any(0))[0].min())
+    shapes = ST.split_to(shapes, len([ch for ch in c["phrase"] if ch != " "])) if shapes else shapes; letters = []
+    chars = [ch for ch in c["phrase"] if ch != " "]
+    if len(shapes) != len(chars): print("warning: %d shapes for %d letters" % (len(shapes), len(chars)))
+    for ch, m in zip(chars, shapes):
+        d, b = ST.trace_shape(m, 8, soft=np.where(m, np.maximum(cov, 0.6), 0.0)); letters.append({"c": ch, "d": d, "b": b})
+    out = {"w": W, "h": H, "profile": profile, "ink": TS.hexc(inkcol), "glow": TS.hexc(c["glow"]), "text": TS.hexc(c["text"]), "smoke": "#5a5f68" if a.key != "next" else "#3e3c22", "letters": letters}
+    p = ROOT / "motion" / "runtime" / ("zs-templates-phase-%s-1.js" % a.key)
+    p.write_text("// 18 October 2026: procedural banner data of the %s phase (Scripts/PhaseTrace.py). FR : donnees du bandeau procedural.\n(window.ZSPhase = window.ZSPhase || {}).%s = %s;\n" % (a.key, a.key, json.dumps(out, separators=(",", ":"))))
+    print(a.key, len(profile), "profile points,", len(letters), "letters,", p.stat().st_size // 1024, "KiB")
+
+if __name__ == "__main__":
+    main()

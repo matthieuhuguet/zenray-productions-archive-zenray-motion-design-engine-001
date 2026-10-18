@@ -30,7 +30,7 @@ STILLS = {
     "bmw-zhong-kui": ("Black Myth: Wukong, Zhong Kui", "still-zhong-kui", "zhongkui", "16x9", ["brush", "ink", "zoom"], {}),
     "paget-indiana-jones": ("David Paget, Indiana Jones", "still-paget-indiana-jones", "indy", "1x1", ["letters", "zoom", "typewriter"], {}),
 }
-PHASES = [("Player Phase", "still-fe-player-phase", "PLAYER PHASE", "#3fb8ff", 5), ("Enemy Phase", "still-fe-enemy-phase", "ENEMY PHASE", "#f2555a", 7), ("Next Round", "still-fe-next-round", "NEXT ROUND", "#f4e27a", 3)]
+PHASES = [("Player Phase", "still-fe-player-phase", "PLAYER PHASE", "#3ec6fa", 5), ("Enemy Phase", "still-fe-enemy-phase", "ENEMY PHASE", "#f55f64", 7), ("Next Round", "still-fe-next-round", "NEXT ROUND", "#fff8aa", 3)]
 PHASE_BG = ["#c9d3d6", "#d8c4c2", "#4a4026"]  # the flat tile of each phase: the light pavement behind the banner, the dark cave of the last one
 
 
