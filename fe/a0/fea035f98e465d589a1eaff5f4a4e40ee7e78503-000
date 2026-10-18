@@ -31,6 +31,10 @@ CFG = {
     "paget-indiana-jones-ppm": [("white title", (0.04, 0.8, 0.96, 0.96), ("light", 150))],
     "fe-pale-ravens-perch-ppm": [("cream title", (0.03, 0.1, 0.4, 0.9), ("rgb", (247, 236, 211), 55))],
     "fe-phases-ppm": [("cyan word", (0.15, 0.38, 0.8, 0.65), ("cyan",))],
+    # the three phase banners of Fire Emblem Fortune's Weave (one reference still each; use --cfg and --still): the dark ink smear and the coloured lettering with its splatter
+    "fe-phase-player": [("ink", (0.105, 0.31, 0.95, 0.68), ("dark", 70)), ("blue lettering", (0.105, 0.15, 0.95, 0.7), ("chan", [0, 130, 110, 255, 200, 255]))],
+    "fe-phase-enemy": [("ink", (0.105, 0.31, 0.95, 0.68), ("dark", 70)), ("red lettering", (0.105, 0.15, 0.95, 0.7), ("chan", [200, 255, 0, 120, 0, 130]))],
+    "fe-phase-next": [("ink smear", (0.05, 0.1, 0.95, 0.5), ("greenblack", 55)), ("yellow paint", (0.05, 0.1, 0.95, 0.47), ("chan", [140, 255, 120, 255, 0, 95])), ("pale lettering", (0.05, 0.1, 0.95, 0.47), ("chan", [190, 255, 180, 255, 0, 200]))],
     "bmw-zhong-kui-ppm": [("red title", (0.29, 0.33, 0.71, 0.74), ("red", 45, 110)), ("subtitle", (0.3, 0.515, 0.7, 0.56), ("red", 18, 55)), ("calligraphy", (0.18, 0.12, 0.78, 0.9), ("grey", 20, 90))],
 }
 REF_STILL = {"ichiban-japan-ppm": "still-ichiban-japan", "paget-character-concept-ppm": "still-paget-character-concept", "bleach-tybw-ppm": "still-bleach-tybw", "yawen-visual-designer-ppm": "still-yawen-visual-designer",
@@ -54,6 +58,10 @@ def mask(img: np.ndarray, region, pred) -> np.ndarray:
         m[y0:y1, x0:x1] = ((r[:, :, 0] - np.maximum(r[:, :, 1], r[:, :, 2])) > pred[1]) & (r[:, :, 0] > pred[2])
     elif pred[0] == "grey":  # ("grey", min luminance, max luminance): neutral grey ink, not red
         lum = r.mean(2); m[y0:y1, x0:x1] = (r.max(2) - r.min(2) < 24) & (lum > pred[1]) & (lum < pred[2])
+    elif pred[0] == "greenblack":  # dark with green >= red: the ink smear of the last banner (the cave rock is brown)
+        m[y0:y1, x0:x1] = (r.max(2) < pred[1]) & (r[:, :, 1] >= r[:, :, 0])
+    elif pred[0] == "chan":  # ("chan", [rmin, rmax, gmin, gmax, bmin, bmax]): a box in RGB
+        lo = np.array(pred[1][0::2]); hi = np.array(pred[1][1::2]); m[y0:y1, x0:x1] = ((r >= lo) & (r <= hi)).all(2)
     elif pred[0] == "cyan":
         m[y0:y1, x0:x1] = (r[:, :, 0] < 150) & (r[:, :, 1] > 170) & (r[:, :, 2] > 225)
     return m
@@ -138,11 +146,13 @@ def main() -> None:
     ap.add_argument("project")
     ap.add_argument("--at", type=float, default=4.0)
     ap.add_argument("--out", default="")
+    ap.add_argument("--cfg", default="", help="mask configuration key (default: the project id), for a project that follows several reference stills")
+    ap.add_argument("--still", default="", help="reference still slug (default: the one of the project)")
     a = ap.parse_args()
-    cfg = CFG.get(a.project)
+    cfg = CFG.get(a.cfg or a.project)
     if not cfg:
-        raise SystemExit(f"no mask configuration for {a.project}")
-    slug = REF_STILL[a.project]
+        raise SystemExit(f"no mask configuration for {a.cfg or a.project}")
+    slug = a.still or REF_STILL[a.project]
     still = Path("~/.claude/tmp/tmp-zenray-motion-design-refcache/_stills").expanduser() / f"{slug}.png"
     ref = Image.open(still).convert("RGB")
     p = server.read_project(a.project)

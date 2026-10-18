@@ -9,6 +9,7 @@ import ppm
 from ppm import T
 
 SCENE = 4.2
+SCENE_BY_LAYOUT = {"zhongkui": 7.5}  # the brush writes the whole title: its scenes are longer
 
 
 def template_defaults() -> dict:
@@ -30,12 +31,14 @@ STILLS = {
     "paget-indiana-jones": ("David Paget, Indiana Jones", "still-paget-indiana-jones", "indy", "1x1", ["letters", "zoom", "typewriter"], {}),
 }
 PHASES = [("Player Phase", "still-fe-player-phase", "PLAYER PHASE", "#3fb8ff", 5), ("Enemy Phase", "still-fe-enemy-phase", "ENEMY PHASE", "#f2555a", 7), ("Next Round", "still-fe-next-round", "NEXT ROUND", "#f4e27a", 3)]
+PHASE_BG = ["#c9d3d6", "#d8c4c2", "#4a4026"]  # the flat tile of each phase: the light pavement behind the banner, the dark cave of the last one
 
 
 def controls(n: int, apps: "list | None" = None, layout: str = "") -> list:
     ids = [f"b{i + 1:02d}" for i in range(n)]
     allt = lambda k: [T(i, k) for i in ids]  # noqa: E731
     c = [
+        {"id": "design", "label": "Mode : original ou design personnalisé", "type": "select", "group": "Phrases", "options": ["original", "custom"], "targets": allt("design")},
         {"id": "lines", "label": "Textes du visuel (un par ligne)", "type": "lines", "group": "Phrases", "targets": allt("lines")},
         {"id": "accent", "label": "Couleur du texte principal", "type": "color", "group": "Couleurs", "targets": allt("accent")},
         {"id": "bg", "label": "Fond de la tuile", "type": "color", "group": "Couleurs", "targets": allt("bg")},
@@ -52,7 +55,7 @@ def controls(n: int, apps: "list | None" = None, layout: str = "") -> list:
         num = lambda k, lab, mn, mx, st: {"id": k, "label": lab, "type": "number", "group": "Pinceau", "min": mn, "max": mx, "step": st, "targets": allt(k)}  # noqa: E731
         c += [{"id": "accent2", "label": "Couleur du sous-titre", "type": "color", "group": "Couleurs", "targets": allt("accent2")},
               {"id": "deco", "label": "Couleur de la calligraphie", "type": "color", "group": "Couleurs", "targets": allt("deco")},
-              num("brushSpeed", "Vitesse du pinceau (px/s)", 100, 6000, 50), num("brushSoft", "Douceur du bord du pinceau (px)", 0, 8, 0.1), num("push", "Recul de caméra pendant l'écriture", 0, 0.3, 0.005),
+              num("brushSpeed", "Vitesse du pinceau (px/s)", 100, 6000, 50), num("brushHesitate", "Micro-hésitation au contact (part du trait)", 0, 0.4, 0.01), num("brushSoft", "Douceur du bord du pinceau (px)", 0, 8, 0.1), num("push", "Recul de caméra pendant l'écriture", 0, 0.3, 0.005),
               num("brushWidth", "Épaisseur du trait", 4, 24, 0.1), num("brushTaper", "Effilage de la fin du trait", 0, 1, 0.01), num("brushFlare", "Attaque du pinceau", 0, 0.5, 0.01),
               num("brushRough", "Rugosité du bord", 0, 8, 0.1), num("brushWobble", "Tremblement du trait", 0, 4, 0.1), num("brushSlant", "Inclinaison des lettres (°)", -20, 20, 0.5)]
     for i, a in enumerate(apps or []):
@@ -62,11 +65,12 @@ def controls(n: int, apps: "list | None" = None, layout: str = "") -> list:
 
 def build_one(pid: str, title: str, slug: str, layout: str, fmt: str, apps: list, extra: dict) -> dict:
     D = template_defaults()[layout]
-    base = {"layout": layout, "lines": list(D["l"].values()), "accent": D["accent"], "bg": D["bg"], "tile": D["tile"]}
+    base = {"layout": layout, "design": "original", "lines": list(D["l"].values()), "accent": D["accent"], "bg": D["bg"], "tile": D["tile"]}
     if layout == "zhongkui":
         base.update({"accent2": D["accent"], "deco": "#292325"})
-    beats = [(i * SCENE, "sv-visual", dict(dict(base, appearance=a), **extra)) for i, a in enumerate(apps)]
-    return ppm.build(title + ", trois apparitions", slug, beats, SCENE * len(apps), controls(len(apps), apps, layout), fmt=fmt, bg="#101010", ink="#ffffff", accent="#ff9d1f",
+    SC = SCENE_BY_LAYOUT.get(layout, SCENE)
+    beats = [(i * SC, "sv-visual", dict(dict(base, appearance=a), **extra)) for i, a in enumerate(apps)]
+    return ppm.build(title + ", trois apparitions", slug, beats, SC * len(apps), controls(len(apps), apps, layout), fmt=fmt, bg="#101010", ink="#ffffff", accent="#ff9d1f",
                      doc=f"16 October 2026: {title}. Three appearances of the same visual ({', '.join(apps)}); foreground only.")
 
 
@@ -75,7 +79,7 @@ def phases_project() -> dict:
     beats = []
     for pi, (name, slug, text, col, seed) in enumerate(PHASES):
         for ai, a in enumerate(apps):
-            beats.append(((pi * 3 + ai) * 3.2, "sv-visual", {"layout": "phase", "appearance": a, "lines": [text], "accent": col, "seed": seed, "bg": "#8f7e6e", "dur": 0.8, "stagger": 0.1, "tweaks": ["wordX 977", "wordY 454.5", "ls 0"]}))
+            beats.append(((pi * 3 + ai) * 3.2, "sv-visual", {"layout": "phase", "design": "original", "appearance": a, "lines": [text], "accent": col, "seed": seed, "bg": PHASE_BG[pi], "dur": 0.8, "stagger": 0.1, "tweaks": ["wordX 977", "wordY 454.5", "ls 0", "variant %d" % (pi + 1)]}))
     p = ppm.build("Fire Emblem Fortune's Weave, bandeaux de phase, trois couleurs et trois apparitions", "still-fe-player-phase", beats, 3.2 * 9, controls(9, ['ink', 'letters', 'zoom'] * 3), fmt="16x9", bg="#101010", ink="#ffffff", accent="#3fb8ff",
                   doc="16 October 2026: the ink banner of the Player Phase, Enemy Phase and Next Round (same effect, the colour changes); three appearances each; foreground only.")
     for i, (pi, ai) in enumerate((pi, ai) for pi in range(3) for ai in range(3)):

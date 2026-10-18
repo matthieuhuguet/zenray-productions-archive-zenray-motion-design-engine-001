@@ -1,0 +1,101 @@
+"""Trace the foreground ink of a still visual into vector glyphs (18 October 2026): the "original" design of a visual.
+It evaluates the SAME masks the score uses (MaskIoU.CFG), cuts each mask into glyphs (connected pieces after a small dilation, so the strokes of one character stay together), traces each glyph with potrace at 4x
+and writes motion/runtime/zs-templates-trace-<layout>-1.js: window.ZSTrace.<layout> = {w, h, layers: [{name, glyphs: [{d (relative path), f (fill), b (bbox)}]}]}, glyphs in reading order.
+Paths are in frame pixels of the project format (the reference is fitted to it exactly as MaskIoU does). Run with /Users/zenray/.venvs/zenray-motion/bin/python -I.
+Usage: TraceStill.py <project-id> <layout> [--dilate 1] [--scale 4] [--min 4] [--blur 0.45] [--opt 0.5]"""
+import argparse, json, re, sys
+from pathlib import Path
+import numpy as np
+from PIL import Image
+from scipy import ndimage as ndi
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "Scripts")); sys.path.insert(0, str(ROOT / "motion"))
+import MaskIoU  # noqa: E402
+import ZhongKuiTrace as ZT  # noqa: E402
+import server  # noqa: E402
+
+def rel(path):
+    toks = re.findall(r"[MLCZ]|-?\d+(?:\.\d+)?", path); out, i, cx, cy, sx, sy = [], 0, 0.0, 0.0, 0.0, 0.0
+    f = lambda v: ("0" if ("%.1f" % v) in ("-0.0", "0.0") else ("%.1f" % v).rstrip("0").rstrip("."))  # noqa: E731
+    while i < len(toks):
+        c = toks[i]; i += 1
+        if c == "Z": out.append("z"); cx, cy = sx, sy; continue
+        n = 6 if c == "C" else 2; v = [float(x) for x in toks[i:i + n]]; i += n
+        if c in ("M", "L"):
+            dx, dy = round(round(v[0], 1) - round(cx, 1), 1), round(round(v[1], 1) - round(cy, 1), 1); out.append(c.lower() + f(dx) + " " + f(dy)); cx, cy = round(cx, 1) + dx, round(cy, 1) + dy
+            if c == "M": sx, sy = cx, cy
+        else:
+            px, py = round(cx, 1), round(cy, 1); vals = [round(round(v[j], 1) - (px if j % 2 == 0 else py), 1) for j in range(6)]
+            out.append("c" + " ".join(f(x) for x in vals)); cx, cy = px + vals[4], py + vals[5]
+    return "".join(out)
+
+def fitted_reference(project, still=""):
+    p = server.read_project(project); W, H = server.FORMATS[p["format"]]
+    ref = Image.open(Path("~/.claude/tmp/tmp-zenray-motion-design-refcache/_stills").expanduser() / ("%s.png" % (still or MaskIoU.REF_STILL[project]))).convert("RGB")
+    k = min(W / ref.width, H / ref.height); out = Image.new("RGB", (W, H), (0, 0, 0)); r2 = ref.resize((round(ref.width * k), round(ref.height * k)), Image.LANCZOS)
+    out.paste(r2, ((W - r2.width) // 2, (H - r2.height) // 2)); return np.asarray(out), W, H
+
+def near(m, px):
+    return ndi.binary_dilation(m, structure=np.ones((3, 3)), iterations=px)
+
+def ichiban_layers(img):
+    """Ichiban Japan: a sticker made of a white border, a black outline (first line), a white fill and a pink fill; the clouds of the photo stay below 250, the sticker is clean white."""
+    a = img.astype(int); H, W = a.shape[:2]; yy, xx = np.mgrid[0:H, 0:W]
+    white = a.min(2) >= 250; dark = a.max(2) < 45; pink = np.abs(a - np.array([255, 123, 123])).sum(2) < 70
+    r1 = (xx < 960) & (yy < 226); r2 = (xx < 800) & (yy >= 226) & (yy < 470); hair = (xx > 700) & (yy > 395)
+    dark1 = dark & r1 & (xx >= 14); dark2 = dark & r2 & ~hair & (xx >= 14); pink2 = pink & r2
+    soft = a.min(2) >= 243; enclosed = ndi.binary_fill_holes(dark1 | ndi.binary_closing(dark1, iterations=2))
+    fill1 = ndi.binary_closing(soft & r1 & enclosed & ~dark1, iterations=3) & ~dark1
+    bsoft = a.min(2) >= 248
+    border1 = ndi.binary_closing(bsoft & r1 & ~fill1 & ~dark1 & near(dark1 | fill1, 22), iterations=2); border2 = ndi.binary_closing(bsoft & r2 & ~hair & ~pink2 & ~dark2 & near(pink2 | dark2, 22), iterations=2)
+    return [("white border", border1 | border2), ("black outline", dark1 | dark2), ("white fill", fill1), ("pink word", pink2)]
+
+def paget_layers(img):
+    """David Paget, Character Concept Art 01: white and orange words, the orange button with its dark label, the small handle line and its icons (grey), all on the dark slanted panel."""
+    a = img.astype(int); H, W = a.shape[:2]; yy, xx = np.mgrid[0:H, 0:W]
+    box = lambda x0, y0, x1, y1: (xx >= x0) & (xx < x1) & (yy >= y0) & (yy < y1)  # noqa: E731
+    orange = np.abs(a - np.array([255, 157, 31])).sum(2) < 70; white = a.min(2) >= 225; dark = a.max(2) < 70
+    words = box(100, 200, 700, 880); button = box(118, 884, 486, 988); small = box(110, 996, 530, 1044)
+    return [("orange words", orange & (words | button)), ("white words", white & words & ~button), ("button label", dark & button & ndi.binary_fill_holes(orange & button)),
+            ("handle and icons", (a.min(2) >= 150) & small)]
+
+def pale_layers(img):
+    """Fire Emblem Fortune's Weave, Pale Raven's Perch: the teal panel with its ragged right edge (gradient), the faint compass rosettes drawn on it, and the cream italic title."""
+    a = img.astype(int); H, W = a.shape[:2]; yy, xx = np.mgrid[0:H, 0:W]; lum = a.mean(2)
+    loose = (a[..., 1] > a[..., 0] + 10) & (a[..., 2] > a[..., 1] - 30) & (a[..., 0] < 70) & (a[..., 1] < 140) & (a[..., 1] >= 25) & (xx < 930) & (xx >= 42) & (yy < 968)
+    cream = np.abs(a - np.array([247, 236, 211])).sum(2) < 55; cream[:, int(0.4 * W):] = False; cream[:int(0.1 * H)] = False; cream[int(0.9 * H):] = False
+    # the panel runs from the left edge to a ragged right edge: per row, the rightmost teal pixel (smoothed along y) is the edge
+    edge = np.array([np.nonzero(loose[y])[0].max() if loose[y].any() else 0 for y in range(H)], float); edge = ndi.median_filter(edge, size=21)
+    panel = (xx >= 42) & (xx <= edge[:, None]) & (yy < 968); panel = ndi.binary_opening(panel, iterations=1)
+    hp = lum - ndi.gaussian_filter(lum, 6); lines = (hp > 4.5) & ndi.binary_erosion(panel, iterations=4) & ~near(cream, 5) & (lum < 140)
+    stops = []
+    for fx in (0.05, 0.3, 0.55, 0.8, 0.97):
+        xs = np.nonzero(panel.any(0))[0]; x = int(xs.min() + fx * (xs.max() - xs.min())); col = a[:, x - 6:x + 6][panel[:, x - 6:x + 6]].mean(axis=0); stops.append([fx, "#%02x%02x%02x" % tuple(int(v) for v in col)])
+    return [("panel", panel, {"grad": stops}), ("title", cream, {})]
+
+BUILDERS = {"fe-pale-ravens-perch-ppm": pale_layers, "ichiban-japan-ppm": ichiban_layers, "paget-character-concept-ppm": paget_layers}
+
+def main():
+    ap = argparse.ArgumentParser(); ap.add_argument("project"); ap.add_argument("layout"); ap.add_argument("--dilate", type=int, default=1); ap.add_argument("--scale", type=int, default=4); ap.add_argument("--min", type=int, default=4); ap.add_argument("--blur", type=float, default=0.45); ap.add_argument("--cfg", default=""); ap.add_argument("--thr", type=float, default=0.5); ap.add_argument("--still", default=""); ap.add_argument("--opt", type=float, default=0.5)
+    a = ap.parse_args(); img, W, H = fitted_reference(a.project, a.still); layers = []; key = a.cfg or a.project
+    specs = BUILDERS[key](img) if key in BUILDERS else [(nm, MaskIoU.mask(img, rg, pr)) for nm, rg, pr in MaskIoU.CFG[key]]
+    for spec in specs:
+        name, m = spec[0], spec[1]; opts = spec[2] if len(spec) > 2 else {}
+        lab, n = ndi.label(ndi.binary_dilation(m, iterations=a.dilate), structure=np.ones((3, 3))); glyphs = []
+        for i, sl in enumerate(ndi.find_objects(lab), start=1):
+            g = m & (lab == i)
+            if g.sum() < a.min: continue
+            y0, y1, x0, x1 = sl[0].start - 2, sl[0].stop + 2, sl[1].start - 2, sl[1].stop + 2; y0, x0 = max(0, y0), max(0, x0); y1, x1 = min(H, y1), min(W, x1)
+            c = ndi.zoom(g[y0:y1, x0:x1].astype(float), a.scale, order=1); c = ndi.gaussian_filter(c, a.scale * a.blur) > a.thr
+            if not c.any(): continue
+            d, tf = ZT.trace(c, a.scale, turd=a.scale * 2, opt=a.opt); col = img[g].mean(axis=0)
+            glyphs.append({"d": rel(ZT.path_to_px(d, tf, a.scale, x0, y0)), "f": "#%02x%02x%02x" % tuple(int(round(v)) for v in col), "b": [int(x0), int(y0), int(x1), int(y1)]})
+        hs = [b["b"][3] - b["b"][1] for b in glyphs] or [1]; band = max(6, float(np.median(hs)) * 0.6)  # reading order: lines, then left to right
+        glyphs.sort(key=lambda b: (round(((b["b"][1] + b["b"][3]) / 2) / band), b["b"][0]))
+        layers.append(dict({"name": name, "glyphs": glyphs}, **opts)); print(name, len(glyphs), "glyphs", sum(len(b["d"]) for b in glyphs) // 1024, "KiB")
+    js = "// 18 October 2026: traced foreground ink of the %s visual (Scripts/TraceStill.py), frame %d x %d. FR : decalque vectoriel du premier plan.\n(window.ZSTrace = window.ZSTrace || {}).%s = %s;\n" % (a.layout, W, H, a.layout, json.dumps({"w": W, "h": H, "layers": layers}, separators=(",", ":"), ensure_ascii=False))
+    out = ROOT / "motion" / "runtime" / ("zs-templates-trace-%s-1.js" % a.layout); out.write_text(js); print(out, len(js) // 1024, "KiB")
+
+if __name__ == "__main__":
+    main()

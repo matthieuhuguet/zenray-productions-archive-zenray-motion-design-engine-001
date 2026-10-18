@@ -47,13 +47,25 @@
     return sv;
   }
 
+  // ---- the "original" design of a visual: the traced foreground (Scripts/TraceStill.py), one `.ch` box per glyph, used while the texts are the original ones and the mode is not "custom"
+  const tracedFor = (p, key) => { const Tr = window.ZSTrace && window.ZSTrace[key]; if (!Tr || p.design === "custom") return null; const D = DEFAULTS[p.layout]; return Object.keys(D.l).every((k) => String(p[k]) === String(D.l[k])) ? Tr : null; };
+  let traceGradId = 0;
+  const traceLayer = (parent, glyphs, w0, h0, grad) => {
+    const holder = abs(parent, { left: "0", top: "0", width: (w0 || 1920) + "px", height: (h0 || 1080) + "px" });  // full plane size: a wipe (clip-path) on an empty box would hide everything
+    let fillOf = null;
+    if (grad && glyphs.length) { const gid = "tg" + (traceGradId++), xs0 = Math.min.apply(null, glyphs.map((g) => g.b[0])), xs1 = Math.max.apply(null, glyphs.map((g) => g.b[2])); const gs = svgEl("svg", { width: 0, height: 0, style: "position:absolute" }, holder), lg = svgEl("linearGradient", { id: gid, gradientUnits: "userSpaceOnUse", x1: xs0, y1: 0, x2: xs1, y2: 0 }, svgEl("defs", {}, gs)); grad.forEach((s) => svgEl("stop", { offset: s[0], "stop-color": s[1] }, lg)); fillOf = "url(#" + gid + ")"; }
+    glyphs.forEach((g, i) => { const [x0, y0, x1, y1] = g.b, w = x1 - x0, hh = y1 - y0, c = abs(holder, { left: x0 + "px", top: y0 + "px", width: w + "px", height: hh + "px", overflow: "visible" }); c.className += " ch"; c.dataset.i = String(i);
+      const v = svgEl("svg", { width: w, height: hh, viewBox: `${x0} ${y0} ${w} ${hh}`, style: "position:absolute;left:0;top:0;overflow:visible" }, c); svgEl("path", { d: g.d, fill: fillOf || g.f, "fill-rule": "evenodd" }, v); });
+    return holder;
+  };
   // ---- the layouts: each fills `plane` (1920 x 1080, or 1080 x 1080 for the square one) and returns its foreground items in reading order
   const L = {
     bleach(pl, p) {
       const tw = p.tw;
       abs(pl, { left: "0", top: "0", width: "1920px", height: "1080px", background: p.accent });
       abs(pl, { left: "48px", top: "0", width: "828px", height: "1080px", background: p.tile });
-      const it = [];
+      const it = [], TR = tracedFor(p, "bleach");
+      if (TR) { TR.layers.forEach((ly) => it.push({ n: traceLayer(pl, ly.glyphs, TR.w, TR.h) })); return it; }
       const chip = abs(pl, { left: tw("chipX", 1264) + "px", top: tw("chipY", 107) + "px", width: "55px", height: "34px", background: "#0b0b0b" }); abs(chip, { left: "0", top: "8px", width: "55px", textAlign: "center", fontFamily: h.font("Syne"), fontWeight: 800, fontSize: "13px", color: "#fff" }, p.code); it.push({ n: chip, shape: true });
       it.push({ n: T(pl, { text: p.kicker, x: tw("chipX", 1264) + 70, y: tw("chipY", 107) + 1, size: 11, font: "Fraunces", weight: 600, color: "#111", ls: "0.08em", upper: true }) });
       it.push({ n: T(pl, { text: p.subtitle, x: tw("chipX", 1264) + 70, y: tw("chipY", 107) + 17, size: 17, font: "Fraunces", weight: 600, color: "#111", ls: "0.06em", upper: true }) });
@@ -63,7 +75,8 @@
       return it;
     },
     ichiban(pl, p) {
-      const it = [], tw = p.tw;
+      const it = [], tw = p.tw, TR = tracedFor(p, "ichiban");
+      if (TR) { TR.layers.forEach((ly) => it.push({ n: traceLayer(pl, ly.glyphs, TR.w, TR.h) })); return it; }
       it.push({ n: sticker(pl, { text: p.line1, x: tw("x1", 46), y: tw("y1", 52), size: tw("size1", 168), font: p.font || "Sora", weight: tw("weight", 800), color: "#ffffff", ls: tw("ls1", -0.03) + "em", border: tw("border1", 48), outline: tw("outline1", 28), fillStroke: tw("fill1", 8), sx: tw("sx1", 0.70), lh: 1 }) });
       it.push({ n: sticker(pl, { text: p.line2, x: tw("x2", 52), y: tw("y2", 226), size: tw("size2", 250), font: p.font || "Sora", weight: tw("weight", 800), color: p.accent, ls: tw("ls2", -0.03) + "em", border: tw("border2", 36), outline: tw("outline2", 0), fillStroke: tw("fill2", 8), sx: tw("sx2", 0.68), lh: 1 }) });
       return it;
@@ -71,6 +84,7 @@
     paget(pl, p) {
       const it = [], tw = p.tw, K = tw("scale", 1);
       const bar = svgEl("svg", { width: 1920, height: 1080, viewBox: "0 0 1920 1080", style: "position:absolute;left:0;top:0" }, pl); svgEl("polygon", { points: `0,0 ${tw("panelTop", 840)},0 ${tw("panelBottom", 540)},1080 0,1080`, fill: p.tile }, bar); it.push({ n: bar.parentNode === pl ? bar : bar, shape: true, svg: true });
+      { const TR = tracedFor(p, "paget"); if (TR) { TR.layers.forEach((ly) => it.push({ n: traceLayer(pl, ly.glyphs, TR.w, TR.h) })); return it; } }
       const O = p.accent, W = "#f6f6f6", LD = { 1: [225, 71], 2: [292, 71], 3: [368, 43], 4: [452, 32], 5: [577, 32], 6: [696, 32], 7: [730, 75], 8: [800, 75] };
       // line i: y_i, s_i (size), sx_i (horizontal stretch), x_i, ls_i (letter spacing, em) are tweakable one by one
       const mk = (i, text, color, extra) => it.push({ n: T(pl, Object.assign({ text, x: tw("x" + i, 120), y: tw("y" + i, LD[i][0]), size: tw("s" + i, LD[i][1]) * K, font: p.font || "Sora", weight: tw("weight", 800), color, sx: tw("sx" + i, 1), ls: tw("ls" + i, 0) + "em" }, extra || {})) });
@@ -83,25 +97,31 @@
     "pale-raven"(pl, p) {
       const tw = p.tw;
       abs(pl, { left: "0", top: "0", width: "1920px", height: "1080px", background: "#0c1011" });
-      const it = [], sv = svgEl("svg", { width: 1920, height: 1080, viewBox: "0 0 1920 1080", style: "position:absolute;left:0;top:0" }, pl), df = svgEl("defs", {}, sv);
+      const TR = tracedFor(p, "pale");  // original design: the traced teal panel (gradient) and cream title, the faint rosettes stay procedural
+      const it = TR ? [{ n: traceLayer(pl, TR.layers[0].glyphs, TR.w, TR.h, TR.layers[0].grad) }] : [], sv = svgEl("svg", { width: 1920, height: 1080, viewBox: "0 0 1920 1080", style: "position:absolute;left:0;top:0" }, pl), df = svgEl("defs", {}, sv);
       const gr = svgEl("linearGradient", { id: "pr-g", x1: "0", y1: "0", x2: "1", y2: "1" }, df); svgEl("stop", { offset: "0", "stop-color": "#0f5560" }, gr); svgEl("stop", { offset: "1", "stop-color": "#0a3a42" }, gr);
       const fl = svgEl("filter", { id: "pr-r", x: "-5%", y: "-5%", width: "110%", height: "110%" }, df); svgEl("feTurbulence", { type: "fractalNoise", baseFrequency: "0.02 0.05", numOctaves: 3, seed: 11 }, fl); svgEl("feDisplacementMap", { in: "SourceGraphic", scale: tw("edgeRough", 46), xChannelSelector: "R", yChannelSelector: "G" }, fl);
       const g = svgEl("g", {}, sv);
-      svgEl("path", { d: (() => { const e = tw("panelWidth", 830) - 830; return `M0,0 L${820 + e},0 C${860 + e},160 ${780 + e},260 ${830 + e},420 C${870 + e},560 ${790 + e},700 ${850 + e},860 C${880 + e},960 ${830 + e},1020 ${860 + e},1080 L0,1080 Z`; })(), fill: "url(#pr-g)", filter: "url(#pr-r)" }, g);
+      if (!TR) svgEl("path", { d: (() => { const e = tw("panelWidth", 830) - 830; return `M0,0 L${820 + e},0 C${860 + e},160 ${780 + e},260 ${830 + e},420 C${870 + e},560 ${790 + e},700 ${850 + e},860 C${880 + e},960 ${830 + e},1020 ${860 + e},1080 L0,1080 Z`; })(), fill: "url(#pr-g)", filter: "url(#pr-r)" }, g);
       const rose = (cx, cy, r) => { svgEl("circle", { cx, cy, r, fill: "none", stroke: "#8fc7c8", "stroke-opacity": 0.16, "stroke-width": 2 }, g); svgEl("circle", { cx, cy, r: r * 0.66, fill: "none", stroke: "#8fc7c8", "stroke-opacity": 0.14, "stroke-width": 1.5 }, g); svgEl("path", { d: `M${cx},${cy - r} L${cx + r * 0.1},${cy - r * 0.1} L${cx + r},${cy} L${cx + r * 0.1},${cy + r * 0.1} L${cx},${cy + r} L${cx - r * 0.1},${cy + r * 0.1} L${cx - r},${cy} L${cx - r * 0.1},${cy - r * 0.1} Z`, fill: "#8fc7c8", "fill-opacity": 0.12 }, g); };
       rose(330, 210, 230); rose(520, 520, 200); rose(700, 960, 220);
       it.push({ n: sv, shape: true, svg: true });
-      [p.l1, p.l2, p.l3].forEach((t, i) => { const k = i + 1; it.push({ n: T(pl, { text: t, x: tw("x" + k, 112), y: tw("y" + k, tw("top", 240) + i * tw("pitch", 181)), size: tw("s" + k, tw("size", 190)), font: "PlayfairDisplay", weight: 700, italic: true, color: "#f7ecd3", ls: tw("ls" + k, -0.02) + "em", lh: 1, sx: tw("sx" + k, 1) }) }); });
+      if (TR) it.push({ n: traceLayer(pl, TR.layers[1].glyphs, TR.w, TR.h) }); else [p.l1, p.l2, p.l3].forEach((t, i) => { const k = i + 1; it.push({ n: T(pl, { text: t, x: tw("x" + k, 112), y: tw("y" + k, tw("top", 240) + i * tw("pitch", 181)), size: tw("s" + k, tw("size", 190)), font: "PlayfairDisplay", weight: 700, italic: true, color: "#f7ecd3", ls: tw("ls" + k, -0.02) + "em", lh: 1, sx: tw("sx" + k, 1) }) }); });
       return it;
     },
     phase(pl, p) {
       const it = [], tw = p.tw;
+      { // original design: the traced banner of the reference still of this colour (variant 1 player, 2 enemy, 3 next round), while the text is the original one
+        const vk = Math.round(tw("variant", 0)), key = { 1: "phase_player", 2: "phase_enemy", 3: "phase_next" }[vk], exp = { 1: "PLAYER PHASE", 2: "ENEMY PHASE", 3: "NEXT ROUND" }[vk], TR = key && p.design !== "custom" && window.ZSTrace && window.ZSTrace[key];
+        if (TR && String(p.text).toUpperCase() === exp) { TR.layers.forEach((ly) => it.push({ n: traceLayer(pl, ly.glyphs, TR.w, TR.h) })); return it; }
+      }
       const band = abs(pl, { left: "0", top: "0", width: "1920px", height: "1080px" }); inkBand(band, { x: tw("bandX", 190), y: tw("bandY", 290), w: tw("bandW", 1560), h: tw("bandH", 540), seed: p.seed, rough: tw("rough", 60), color: p.accent, dots: tw("dots", 520), smoke: tw("smoke", 16) }); it.push({ n: band, shape: true, svgBand: true });
       const word = T(pl, { text: p.text, x: tw("wordX", 960), y: tw("wordY", 462), size: tw("size", 134), font: "PlayfairDisplay", weight: 700, italic: true, color: p.accent, align: "center", ls: tw("ls", 0.01) + "em", lh: 1, upper: true, sx: tw("sx", 1), css: { textShadow: `0 0 ${tw("glow", 18)}px ${p.accent}, 0 0 ${tw("glow", 18) * 2.2}px ${p.accent}88` } }); it.push({ n: word });
       return it;
     },
     yawen(pl, p) {
-      const it = [], tw = p.tw, F = tw("footSize", 20);
+      const it = [], tw = p.tw, F = tw("footSize", 20), TR = tracedFor(p, "yawen");
+      if (TR) { TR.layers.forEach((ly) => it.push({ n: traceLayer(pl, ly.glyphs, TR.w, TR.h) })); return it; }
       // the title: two words and a four-point star between them (the reference ornament), every position a parameter
       const [w1, w2] = String(p.l1).split("·"), tf = { size: tw("size1", 128), font: p.font || "VogunMedium", weight: 500, color: "#f4f6f8", ls: tw("ls1", 0.02) + "em", lh: 1, sx: tw("sx1", 1), css: { webkitTextStroke: tw("stroke1", 0) + "px #f4f6f8" } };
       it.push({ n: T(pl, Object.assign({ text: w1, x: tw("ax", 375), y: tw("y1", 372) }, tf)) });
@@ -153,9 +173,11 @@
       };
       let zkId = 0;
       const fontLine = (text, o) => {
-        const holder = abs(pl, { left: "0", top: "0", width: "0", height: "0" });
+        const holder = abs(pl, { left: "0", top: "0", width: "1600px", height: "668px" });
         const r = F.layout(text, { width: o.width, taper: o.taper, flare: o.flare, cap: o.cap, tracking: o.tracking, kern: o.kern, positions: o.positions, wobble: o.wobble, slant: o.slant, seed: o.seed, style: o.style });
-        const first = r.polygons.filter((q) => q.i === 0), x0 = o.positions ? 0 : o.x - Math.min.apply(null, first.flatMap((q) => q.poly.map((c) => c[0])));
+        const allx = r.polygons.flatMap((q) => q.poly.map((c) => c[0])), first = r.polygons.filter((q) => q.i === 0);
+        // measured positions (the original) pin every letter; otherwise the line is CENTRED on cx (a custom text keeps its alignment whatever its length)
+        const x0 = o.positions ? 0 : (o.cx !== undefined ? o.cx - (Math.min.apply(null, allx) + Math.max.apply(null, allx)) / 2 : o.x - Math.min.apply(null, first.flatMap((q) => q.poly.map((c) => c[0]))));
         const byI = {}; r.polygons.forEach((q) => { (byI[q.i] = byI[q.i] || []).push(q); });
         Object.keys(byI).forEach((i) => { const gs = byI[i], xs = gs.flatMap((q) => q.poly.map((c) => c[0] + x0)), ys = gs.flatMap((q) => q.poly.map((c) => c[1] + o.top));
           if (!xs.length) return; const lb = letterBox(holder, Number(i), Math.min.apply(null, xs), Math.min.apply(null, ys), Math.max.apply(null, xs), Math.max.apply(null, ys), (g, box) => gs.forEach((q) => {
@@ -168,18 +190,19 @@
         holder.dataset.cap = String(o.cap); return holder;
       };
       const traceLine = (text) => {
-        const holder = abs(pl, { left: "0", top: "0", width: "0", height: "0" });
+        const holder = abs(pl, { left: "0", top: "0", width: "1600px", height: "668px" });
         [...text].forEach((ch, i) => { const t = Z.letters[ch]; if (!t) return; const bb = t.bbox; letterBox(holder, i, bb[0], bb[1], bb[2], bb[3], (g) => svgEl("path", { d: t.d }, g), ""); });
         return holder;
       };
       const bp = p.brush || {}, num = (v, d) => (v === undefined || v === null || v === "" || isNaN(Number(v)) ? d : Number(v));
       const base = { cap: tw("cap", 103), width: tw("width", num(bp.width, 12.3)), taper: tw("taper", num(bp.taper, 0.55)), flare: tw("flare", num(bp.flare, 0.12)), rough: tw("rough", num(bp.rough, 1.4)), wobble: tw("wobble", num(bp.wobble, 0)), slant: tw("slant", num(bp.slant, 0)), seed: p.seed };
       const dec = tw("decalque", 0) === 1 && Z, same = (t, d) => String(t).toUpperCase() === d;
-      const line = (text, dflt, x, top, track, positions) => dec ? traceLine(String(text).toUpperCase()) : fontLine(text, Object.assign({}, base, { x, top, tracking: track, kern: { UI: tw("kernUI", 38) }, positions: same(text, dflt) && tw("measured", 1) === 1 ? positions : undefined }));
+      const pin = p.design !== "custom" && tw("measured", 1) === 1, cx = tw("cx", 797);
+      const line = (text, dflt, x, top, track, positions) => dec ? traceLine(String(text).toUpperCase()) : fontLine(text, Object.assign({}, base, { x, top, cx, tracking: track, kern: { UI: tw("kernUI", 38) }, positions: same(text, dflt) && pin ? positions : undefined }));
       it.push({ n: line(p.l1, "ZHONG", tw("x1", 476), tw("top1", 236), tw("track1", 24), [476, 608, 742, 894, 1019]) });
       it.push({ n: line(p.l3, "KUI", tw("x2", 614), tw("top2", 374), tw("track2", 24), [614, 752, 924]) });
       // the subtitle: the same font at a small size, wide-spaced; positions measured on the reference for BLACK MYTH
-      const sub = fontLine(p.l2, Object.assign({}, base, { cap: tw("subCap", 18), width: tw("subWidth", 12), taper: tw("subTaper", 0.55), flare: tw("subFlare", 0.12), style: "fine", rough: 0, wobble: 0, slant: 0, x: tw("subX", 505), top: tw("subTop", 349), tracking: tw("subTrack", 211), kern: {}, positions: same(p.l2, "BLACK MYTH") && tw("measured", 1) === 1 ? [505, 558, 610, 665, 719, undefined, 859, 929, 997, 1062] : undefined }));
+      const sub = fontLine(p.l2, Object.assign({}, base, { cap: tw("subCap", 18), width: tw("subWidth", 12), taper: tw("subTaper", 0.55), flare: tw("subFlare", 0.12), style: "fine", rough: 0, wobble: 0, slant: 0, x: tw("subX", 505), cx, top: tw("subTop", 349), tracking: tw("subTrack", 211), kern: {}, positions: same(p.l2, "BLACK MYTH") && pin ? [505, 558, 610, 665, 719, undefined, 859, 929, 997, 1062] : undefined }));
       sub.style.opacity = tw("subOpacity", 1); if (p.accent2) sub.querySelectorAll("g").forEach((g) => g.setAttribute("fill", p.accent2)); it.push({ n: sub });
       return it;
     },
@@ -198,26 +221,38 @@
 
   // ---- the appearances (seek-safe tweens only). Every effect reads its numbers from `o`: distance, blur, scale, rotation, per-letter stagger, direction, ease, glitch amplitude.
   const WIPE = { left: "inset(0 100% 0 0)", right: "inset(0 0 0 100%)", up: "inset(100% 0 0 0)", down: "inset(0 0 100% 0)", center: "inset(0 50% 0 50%)" };
+  // the brush easing: hesitation (the first `hes` of the time, about 3 % of the distance), then cubic-bezier(0.16, 1, 0.3, 1) for the rest: 75 % of the distance in about a quarter of the time, then a long soft braking
+  function brushEase(hes) {
+    const bez = (x1, y1, x2, y2) => (x) => { let lo = 0, hi = 1, s = x; for (let i = 0; i < 28; i++) { s = (lo + hi) / 2; const X = 3 * (1 - s) * (1 - s) * s * x1 + 3 * (1 - s) * s * s * x2 + s * s * s; if (X < x) lo = s; else hi = s; } return 3 * (1 - s) * (1 - s) * s * y1 + 3 * (1 - s) * s * s * y2 + s * s * s; };
+    const cb = bez(0.16, 1, 0.3, 1), hd = 0.03;
+    return (p) => (p <= 0 ? 0 : p >= 1 ? 1 : p < hes ? hd * (p / hes) * (p / hes) : hd + (1 - hd) * cb((p - hes) / (1 - hes)));
+  }
+  // the schedule of one written line (offsets and durations at the base speed); lines are written one after the other
+  function brushPlan(n, o) {
+    const cs = Math.pow(Math.max(0.15, Number(n.dataset.cap || 103) / 103), 1.1), sp = (o.brushSpeed || 1000), lift = sp * 3;
+    const ms = n._brush.slice().sort((a, b) => Number(a.dataset.letter) - Number(b.dataset.letter) || Number(a.dataset.stroke) - Number(b.dataset.stroke));
+    let tc = 0, prev = null; const steps = [];
+    ms.forEach((m) => {
+      const L = Number(m.dataset.len), sx = Number(m.dataset.sx), sy = Number(m.dataset.sy);
+      if (prev) tc += Math.hypot(sx - prev.ex, sy - prev.ey) * cs / lift + (prev.letter !== m.dataset.letter ? 0.05 * cs : 0.02 * cs);
+      const dur = Math.max(0.04, (0.06 + L / sp) * cs); steps.push({ m, off: tc, dur }); tc += dur; prev = { ex: Number(m.dataset.ex), ey: Number(m.dataset.ey), letter: m.dataset.letter };
+    });
+    return { steps, len: tc };
+  }
   function appear(tl, items, kind, t0, o) {
-    let cum = 0;  // brush appearance: lines are written one after the other
+    let cum = 0;
+    if (kind === "brush") { const total = items.reduce((s, it) => s + (it.n._brush && it.n._brush.length ? brushPlan(it.n, o).len + 0.18 : 0), 0), budget = Math.max(1, (o.sceneDur || 7.5) - o.delay - 1.2); o.brushK = total > budget ? budget / total : 1; }
     items.forEach((it, i) => {
       const t = t0 + o.delay + i * o.stagger, n = it.n, chars = [...n.querySelectorAll(".ch")], shape = !!it.shape, d = o.dur, E = (def) => (o.ease && o.ease !== "auto" ? o.ease : def);
       const perChar = chars.length && !shape, targets = perChar ? chars : [n];
       const each = (from, to, ease, mult) => { if (perChar) chars.forEach((c) => tl.fromTo(c, from, Object.assign({ ease }, to), t + Number(c.dataset.i || 0) * o.charStagger * (mult || 1))); else tl.fromTo(n, from, Object.assign({ ease }, to), t); };
       if (it.fadeOnly) { tl.fromTo(n, { opacity: 0, scale: 1.06, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, duration: d * 1.8, ease: "power2.out" }, t); return; }
       if (kind === "brush" && n._brush && n._brush.length) {
-        // one continuous brush: strokes follow each other at a constant speed (px/s along the centre line), the lifted brush travels faster to the next stroke, no easing between strokes,
-        // so the writing flows instead of stepping; the leading edge of the reveal is softened (zk-soft)
-        const sp = (o.brushSpeed || 1300) * Math.max(1, 103 / Number(n.dataset.cap || 103)), lift = sp * 2.6, ms = n._brush.slice().sort((a, b) => Number(a.dataset.letter) - Number(b.dataset.letter) || Number(a.dataset.stroke) - Number(b.dataset.stroke));
-        let tc = t0 + o.delay + cum, prev = null;
-        ms.forEach((m) => {
-          const L = Number(m.dataset.len), sx = Number(m.dataset.sx), sy = Number(m.dataset.sy);
-          if (prev) tc += Math.hypot(sx - prev.ex, sy - prev.ey) / lift + (prev.letter !== m.dataset.letter ? o.charStagger * 0.35 : 0.01);
-          const dur = Math.max(0.03, L / sp);
-          tl.fromTo(m, { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: dur, ease: "none" }, tc);
-          tc += dur; prev = { ex: Number(m.dataset.ex), ey: Number(m.dataset.ey), letter: m.dataset.letter };
-        });
-        cum = tc - (t0 + o.delay) + 0.14; return;
+        // one brush, letter by letter: a stroke is one explosive movement (micro-hesitation as the brush lands, 75 % of the distance in a flash, soft braking while the wrist lifts the tip: BRUSH_EASE);
+        // the brush is lifted only to go to the next stroke, a letter is finished before the next starts; a long text is written faster so the whole writing fits the scene (k)
+        const plan = brushPlan(n, o), ez = brushEase(o.brushHesitate === undefined ? 0.1 : o.brushHesitate), base = t0 + o.delay + cum;
+        plan.steps.forEach((s) => tl.fromTo(s.m, { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: s.dur * o.brushK, ease: ez }, base + s.off * o.brushK));
+        cum += (plan.len + 0.18) * o.brushK; return;
       }
       if (kind === "wipe" || (shape && kind !== "ink")) {
         tl.fromTo(n, { clipPath: WIPE[o.direction] || WIPE.left }, { clipPath: "inset(0 0% 0 0%)", duration: d, ease: E("power3.inOut") }, t);
@@ -243,20 +278,20 @@
   }
 
   const BOXES = { bleach: [880, 90, 1920, 1080], ichiban: [30, 20, 960, 480], paget: [90, 190, 700, 1050], "pale-raven": [90, 250, 900, 1010], phase: [90, 300, 1830, 840], yawen: [110, 340, 1800, 1030], indy: [40, 780, 1040, 990], zhongkui: [330, 90, 1230, 580] };
-  const TALLBOXES = { zhongkui: [470, 100, 1130, 490] };
+  const TALLBOXES = { zhongkui: [470, 100, 1130, 490], phase: [380, 330, 1540, 700] };
   const EASES = ["auto", "power3.out", "power4.out", "expo.out", "back.out(1.7)", "back.out(3)", "elastic.out(1,0.4)", "bounce.out", "sine.inOut", "power2.inOut", "steps(6)"];
   const parseTweaks = (lines) => { const m = {}; (lines || []).forEach((l) => { const q = String(l).trim().split(/\s+/); if (q.length >= 2 && !isNaN(Number(q[q.length - 1]))) m[q.slice(0, -1).join(" ")] = Number(q[q.length - 1]); }); return m; };
 
   ZS.register({
     id: "sv-visual", label: "Visuel fixe : une mise en page, trois apparitions", group: "Visuels fixes", duration: 4,
     params: [
-      SEL("layout", "Visuel", "ichiban", LAYOUTS, 1), SEL("appearance", "Apparition", "letters", APPEARANCES, 1), P("lines", "Textes (un par ligne, dans l'ordre du visuel)", "lines", [], 1), P("accent", "Couleur d'accent", "color", "", 1), P("font", "Police des titres (vide = celle du visuel ; les polices système ne sont que locales)", "text", "", 2),
-      P("bg", "Fond de la tuile", "color", "", 2), P("tile", "Couleur du panneau", "color", "", 2), P("accent2", "Couleur du sous-titre", "color", "", 2), P("deco", "Couleur du décor (calligraphie)", "color", "", 2),
+      SEL("layout", "Visuel", "ichiban", LAYOUTS, 1), SEL("design", "Mode : original (fidèle à la référence) ou design personnalisé (texte recomposé et aligné)", "original", ["original", "custom"], 2), SEL("appearance", "Apparition", "letters", APPEARANCES, 1), P("lines", "Textes (un par ligne, dans l'ordre du visuel)", "lines", [], 1), P("accent", "Couleur d'accent", "color", "", 1), P("font", "Police des titres (vide = celle du visuel ; les polices système ne sont que locales)", "text", "", 2),
+      P("bg", "Fond de la tuile", "color", "", 2), P("tile", "Couleur du panneau", "color", "", 3), P("accent2", "Couleur du sous-titre", "color", "", 2), P("deco", "Couleur du décor (calligraphie)", "color", "", 2),
       N("stagger", "Décalage entre éléments (s)", 0.18, 0, 1.5, 0.01, 2, "s"), N("dur", "Durée d'une apparition (s)", 0.7, 0.1, 3, 0.05, 2, "s"), N("delay", "Attente avant la première (s)", 0.15, 0, 3, 0.05, 2, "s"),
       N("charStagger", "Décalage entre lettres (s)", 0.035, 0, 0.3, 0.005, 3, "s"), N("distance", "Distance du mouvement (px)", 46, 0, 400, 1, 3, "px"), N("blur", "Flou au départ (px)", 9, 0, 60, 1, 3, "px"),
       N("scaleFrom", "Échelle au départ", 0.4, 0.1, 3, 0.05, 3), N("rotate", "Rotation au départ (°)", 0, -90, 90, 1, 3, "°"), SEL("ease", "Courbe", "auto", EASES, 3), SEL("direction", "Sens du balayage", "left", ["left", "right", "up", "down", "center"], 3),
       N("glitch", "Amplitude du glitch (px)", 14, 0, 80, 1, 3, "px"), N("seed", "Graine de l'encre", 7, 1, 999, 1, 3),
-      N("brushSpeed", "Vitesse du pinceau (px/s)", 1300, 100, 6000, 50, 3, "px/s"), N("brushSoft", "Douceur du bord du pinceau (px)", 2.2, 0, 8, 0.1, 3, "px"), N("push", "Recul de caméra pendant l'écriture", 0.05, 0, 0.3, 0.005, 3),
+      N("brushSpeed", "Vitesse du pinceau (px/s)", 1000, 100, 6000, 50, 3, "px/s"), N("brushHesitate", "Micro-hésitation au contact (part du trait)", 0.1, 0, 0.4, 0.01, 3), N("brushSoft", "Douceur du bord du pinceau (px)", 2.2, 0, 8, 0.1, 3, "px"), N("push", "Recul de caméra pendant l'écriture", 0.05, 0, 0.3, 0.005, 3),
       P("tweaks", "Réglages du visuel (nom valeur) : ichiban size1 size2 sx1 sx2 border outline fill ; bleach titleSize bodySize bigSize bigScaleX ; paget scale panelTop panelBottom ; pale-raven size top pitch panelWidth edgeRough ; phase size bandX bandY bandW bandH rough dots smoke glow ; yawen size1 size2 ls2 ; indy size y ls", "lines", [], 3),
       P("tallBox", "Cadrage en format haut (x0 y0 x1 y1, vide = défaut du visuel)", "text", "", 3), N("film0", "Début dans le film (s)", 0, 0, 60, 0.01, 4, "s"),
       N("brushWidth", "Épaisseur du trait (pinceau)", 12.3, 4, 24, 0.1, 4), N("brushTaper", "Effilage de la fin du trait", 0.55, 0, 1, 0.01, 4), N("brushFlare", "Attaque du pinceau", 0.12, 0, 0.5, 0.01, 4), N("brushRough", "Rugosité du bord", 1.4, 0, 8, 0.1, 4), N("brushWobble", "Tremblement du trait", 0, 0, 4, 0.1, 4), N("brushSlant", "Inclinaison des lettres (°)", 0, -20, 20, 0.5, 4),
@@ -264,7 +299,7 @@
     build(ctx) {
       const { el, p, tl, t0 } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
       const D = DEFAULTS[p.layout] || DEFAULTS.ichiban, sz = SIZE[p.layout] || [1920, 1080], tws = parseTweaks(p.tweaks);
-      const keys = Object.keys(D.l), params = { font: p.font, accent: p.accent || D.accent, accent2: p.accent2, deco: p.deco, tile: p.tile || D.tile, seed: p.seed || D.seed || 7, brush: { width: p.brushWidth, taper: p.brushTaper, flare: p.brushFlare, rough: p.brushRough, wobble: p.brushWobble, slant: p.brushSlant }, brushSoft: p.brushSoft, tw: (k, def) => (tws[k] !== undefined ? tws[k] : def) };
+      const keys = Object.keys(D.l), params = { layout: p.layout, design: p.design || "original", font: p.font, accent: p.accent || D.accent, accent2: p.accent2, deco: p.deco, tile: p.tile || D.tile, seed: p.seed || D.seed || 7, brush: { width: p.brushWidth, taper: p.brushTaper, flare: p.brushFlare, rough: p.brushRough, wobble: p.brushWobble, slant: p.brushSlant }, brushSoft: p.brushSoft, tw: (k, def) => (tws[k] !== undefined ? tws[k] : def) };
       keys.forEach((k, i) => { params[k] = p.lines && p.lines[i] !== undefined && p.lines[i] !== "" ? p.lines[i] : D.l[k]; });
       h.css(el, { background: p.bg || D.bg });
       let k, ox, oy;
@@ -276,7 +311,7 @@
       const items = (L[p.layout] || L.ichiban)(plane, params);
       // a slow camera pull-back while the title is written, settled at scale 1 (the reference framing) for the hold
       if (params.camera) { const push = tws.push !== undefined ? tws.push : (p.push === undefined || p.push === "" ? 0.05 : Number(p.push)); if (push > 0) tl.fromTo(params.camera, { scale: 1 + push, transformOrigin: "800px 320px" }, { scale: 1, duration: (ctx.dur || 4.2) * 0.7, ease: "power1.out" }, t0); }
-      appear(tl, items, p.appearance, t0, { stagger: p.stagger, dur: p.dur, delay: p.delay, charStagger: p.charStagger, distance: p.distance, blur: p.blur, scaleFrom: p.scaleFrom, rotate: p.rotate, ease: p.ease, direction: p.direction, glitch: p.glitch, brushSpeed: tws.brushSpeed !== undefined ? tws.brushSpeed : p.brushSpeed });
+      appear(tl, items, p.appearance, t0, { stagger: p.stagger, dur: p.dur, delay: p.delay, charStagger: p.charStagger, distance: p.distance, blur: p.blur, scaleFrom: p.scaleFrom, rotate: p.rotate, ease: p.ease, direction: p.direction, glitch: p.glitch, brushSpeed: tws.brushSpeed !== undefined ? tws.brushSpeed : p.brushSpeed, brushHesitate: p.brushHesitate, sceneDur: ctx.dur });
     },
   });
   ZS.stills = { LAYOUTS, APPEARANCES, DEFAULTS };

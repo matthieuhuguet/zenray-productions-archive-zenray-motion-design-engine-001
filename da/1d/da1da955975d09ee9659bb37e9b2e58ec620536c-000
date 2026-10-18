@@ -103,4 +103,5 @@ def main():
     json.dump(subj, open(os.path.join(a.out, "subtitle.json"), "w"), indent=1); print({k: (round(v["x0"], 1), round(v["y0"], 1), round(v["x1"], 1), round(v["y1"], 1)) for k, v in subj.items()})
     json.dump(res, open(os.path.join(a.out, "traced.json"), "w"), indent=1)
     print({k: (round(v["bbox"][0]), round(v["bbox"][1]), round(v["bbox"][2]), round(v["bbox"][3]), v["ink"]) for k, v in res.items() if "bbox" in v})
-main()
+if __name__ == "__main__":
+    main()
