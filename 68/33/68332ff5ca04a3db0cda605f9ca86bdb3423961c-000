@@ -66,8 +66,11 @@ def line_data(k, text, face, ci, glyphs, align="center", fb=None, fixed=False, u
         gap = gs[i]["b"][0] - gs[i - 1]["b"][2]; (spaces if (i - 1) in sp_after else gaps).append(gap)
     x0 = min(g["b"][0] for g in gs); x1 = max(g["b"][2] for g in gs); capH = float(np.median([g["b"][3] - g["b"][1] for g in gs])); top = float(np.median([g["b"][1] for g in gs]))
     for g in gs: g["sc"] = capH; g["sb"] = top + capH  # the cap height and the baseline of the line a glyph comes from: a glyph taken by another line of the same face is rescaled to that line
-    return {"k": k, "text": text, "face": face, "ci": ci, "align": align, "x0": x0, "x1": x1, "cx": (x0 + x1) / 2, "top": top, "capH": capH, "gap": float(np.median(gaps)) if gaps else 0.0,
-            "space": float(np.median(spaces)) if spaces else capH * 0.35, "glyphs": gs, "fb": fb or {}, "fixed": fixed, "upper": upper, "maxw": maxw or (x1 - x0) * 1.25, "group": group, "gb": gb, "gmax": gmax}
+    gapm = float(np.median(gaps)) if gaps else 0.0; cap = capH - 8.0  # the boxes of the glyphs carry 4 px of margin on every side: the cap height of the INK is the box height minus 8
+    space = float(np.median(spaces)) if spaces else capH * 0.35 + 2 * max(gapm + 8.0, 0.0) - 8.0  # no word space in the original: 0.35 cap plus two letter gaps (a spaced-out line needs a wide space)
+    return {"k": k, "text": text, "face": face, "ci": ci, "align": align, "cap": cap, "x0": x0, "x1": x1, "cx": (x0 + x1) / 2, "top": top, "capH": capH, "gap": gapm, "space": space, "glyphs": gs, "fb": fb or {}, "fixed": fixed, "upper": upper,
+            "maxw": maxw or (x1 - x0 - 8),  # the ink width of the original line: an edited text keeps the footprint of the composition (the slider MaxW widens it)
+            "group": group, "gb": gb, "gmax": gmax}
 
 NAMES = {  # the human name of every line of a card, shown in the editor (19 October 2026)
     "lol": {"l1": "Titre SOMBRES COMPLOTS", "l2": "Label CINÉMATIQUE", "logo": "Logo L25 · S1"},
@@ -76,9 +79,9 @@ NAMES = {  # the human name of every line of a card, shown in the editor (19 Oct
     "inox3": {"l1": "CUBA", "l2": "Altitude", "l3": "Ville", "tri": "Triangle"},
     "nolan": {"l1": "TOKYO"},
 }
-def emit(key, W, H, colors, lines, note=""):
+def emit(key, W, H, colors, lines, note="", alpha=None):
     for ln in lines: ln["name"] = NAMES.get(key, {}).get(ln["k"], ln["k"])
-    out = {"w": W, "h": H, "colors": colors, "lines": lines}
+    out = {"w": W, "h": H, "colors": colors, "lines": lines, "alpha": alpha or {}}
     p = ROOT / "motion" / "runtime" / ("zs-templates-card-%s-1.js" % key)
     p.write_text("// 18 October 2026: title card %s (Scripts/CardTrace.py): isolated lettering as a custom font. %s FR : carte titre, lettrage isole en police personnalisee.\n(window.ZSCards = window.ZSCards || {}).%s = %s;\n" % (key, note, key, json.dumps(out, separators=(",", ":"))))
     print(p, p.stat().st_size // 1024, "KiB")

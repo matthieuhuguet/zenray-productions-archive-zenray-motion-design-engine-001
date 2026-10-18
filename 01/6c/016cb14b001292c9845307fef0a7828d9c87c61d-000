@@ -20,4 +20,4 @@ t_mois = C.textline(mn >= 215, box(1180, 505, 1236, 528), "l4", "MOIS", "left", 
 fb = {"w": 0.33, "sw": 0.13, "c": 0.0}
 lines = [C.line_data("l1", "J+89", "num", 0, main, "right", fb, maxw=700), t_sem, C.line_data("l3", "12", "num", 0, n12, "left", {"w": 0.33, "sw": 0.14, "c": 0.0}), t_mois, C.line_data("l5", "2", "num", 0, n2, "left", {"w": 0.33, "sw": 0.14, "c": 0.0})]
 for ln in lines: ln["aux"] = ln["k"] != "l1"
-C.emit("inox2", W, H, {"main": white, "second": white}, lines, note="J+89, SEMAINE 12, MOIS 2.")
+C.emit("inox2", W, H, {"main": white, "second": white}, lines, note="J+89, SEMAINE 12, MOIS 2.", alpha={"num": "inox2-num"})

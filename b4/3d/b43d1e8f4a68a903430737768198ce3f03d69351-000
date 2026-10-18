@@ -46,7 +46,7 @@ gm = ((R > 130) & (R - G > 60) & (R - B > 55)) & box(1125, 760, 1190, 797); gm =
 rf = C.refine(gm, Y, band=1, sig=4.0, mincontrast=30.0); gd, gb = C.trace(rf > 0.5, soft=rf, sigma=0.5); globe = [{"c": "o", "d": gd, "b": gb}]
 fixed = lambda k, text, glyphs: {"k": k, "text": text, "face": k, "ci": 0, "align": "left", "x0": min(g["b"][0] for g in glyphs), "x1": max(g["b"][2] for g in glyphs), "cx": 0, "top": 0, "capH": 1, "gap": 0, "space": 0, "glyphs": glyphs, "fb": {}, "fixed": True, "upper": False, "maxw": 9999}
 fbb = {"w": 0.5, "sw": 0.2, "c": 0.0}
-lines = [C.line_data("l1", "KITAE", "big", 0, kitae, "center", fbb, maxw=620), C.line_data("l2", "L'AME", "big", 0, lame, "left", fbb, maxw=520, group="row2", gb=0.0, gmax=1260), C.line_data("l3", "DU", "big", 0, du, "center", fbb, maxw=200, group="row2", gb=24.0), C.line_data("l4", "KATANA", "big", 0, katana, "right", fbb, maxw=760, group="row2", gb=25.0),
+lines = [C.line_data("l1", "KITAE", "big", 0, kitae, "center", fbb), C.line_data("l2", "L'AME", "big", 0, lame, "left", fbb, group="row2", gb=0.0, gmax=1260), C.line_data("l3", "DU", "big", 0, du, "center", fbb, group="row2", gb=24.0), C.line_data("l4", "KATANA", "big", 0, katana, "right", fbb, group="row2", gb=25.0),
          t_date, t_time, t_am, t_temp, t_coord, fixed("kanji", "鍛え", kanji), fixed("globe", "o", globe)]
 for ln in lines: ln["aux"] = ln["k"] in ("l5", "l6", "l7", "l8", "l9", "kanji", "globe")
-C.emit("inox1", W, H, {"main": red, "second": red}, lines, note="KITAE, L'AME DU KATANA, small lines, kanji, globe.")
+C.emit("inox1", W, H, {"main": red, "second": red}, lines, note="KITAE, L'AME DU KATANA, small lines, kanji, globe.", alpha={"big": "inox1-big"})

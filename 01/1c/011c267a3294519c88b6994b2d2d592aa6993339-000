@@ -20,6 +20,6 @@ t_ville = C.textline(smask, box(880, 700, 1120, 735), "l3", "VIÑALES", "center"
 tm = ndi.binary_closing(smask & box(850, 396, 912, 432), iterations=1); rf = C.refine(tm, ndi.gaussian_filter(A.mean(2), 0.5), band=2, sig=4.0, mincontrast=40.0); td, tb = C.trace(rf > 0.5, soft=rf, sigma=0.5)
 tri = [{"c": "^", "d": td, "b": tb}]
 fixed = {"k": "tri", "text": "^", "face": "tri", "ci": 0, "align": "left", "x0": tb[0], "x1": tb[2], "cx": 0, "top": 0, "capH": 1, "gap": 0, "space": 0, "glyphs": tri, "fb": {}, "fixed": True, "upper": False, "maxw": 9999}
-lines = [C.line_data("l1", "CUBA", "wide", 0, cuba, "center", {"w": 0.95, "sw": 0.22, "c": 0.0}, maxw=720), t_alt, t_ville, fixed]
+lines = [C.line_data("l1", "CUBA", "wide", 0, cuba, "center", {"w": 0.95, "sw": 0.22, "c": 0.0}), t_alt, t_ville, fixed]
 for ln in lines: ln["aux"] = ln["k"] != "l1"
-C.emit("inox3", W, H, {"main": white, "second": white}, lines, note="CUBA, 135M, VINALES, triangle.")
+C.emit("inox3", W, H, {"main": white, "second": white}, lines, note="CUBA, 135M, VINALES, triangle.", alpha={"wide": "inox3-wide"})

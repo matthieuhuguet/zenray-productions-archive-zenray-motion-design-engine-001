@@ -2,7 +2,7 @@
 A traced lettering only has the letters of its image (KITAE L'AME DU KATANA gives K I T A E L M D U N): an edited text needs the others. A real typeface close to the traced one (Scripts/FontMatch.py ranks them) is turned into outlines, normalised to a cap height of 1000 units
 (y = 0 at the cap line, y = 1000 on the baseline), and FITTED to the traced letters: a horizontal stretch `sx` and a weight offset `dil` (the outline is grown or shrunk by dil units) found by maximising the overlap with the traced letters, and a roughness `rough` that
 reproduces the distress of their edges. The template draws a letter the traced font does not have from this alphabet, with the same cap height, stretch, weight and distress, so an edited text reads as ONE typeface.
-Usage: AlphaBuild.py <id> <font file> <index> <weight|-> <card> <face>   e.g. AlphaBuild.py inox1-big /System/Library/Fonts/Supplemental/Impact.ttf 0 - inox1 big
+Usage: AlphaBuild.py <id> <font file> <index> <weight|-> <card> <face> [rough]   (rough = the distress of the added letters as a fraction of the cap height, measured by default, 0.02 for a hand-cut face; e.g. AlphaBuild.py inox1-big /System/Library/Fonts/Supplemental/Impact.ttf 0 - inox1 big
 Writes motion/runtime/zs-templates-alpha-<id>-1.js (window.ZSAlpha[<id>]). Run with /Users/zenray/.venvs/zenray-motion/bin/python -I. FR : alphabet complet issu d'une vraie police, cale sur les lettres tracees."""
 import json, math, sys
 from pathlib import Path
@@ -40,46 +40,52 @@ def outlines(f):
     return out, capH, upem
 
 def fit(font_pil, traced):
-    """Search (sx, dil) maximising the mean overlap between the traced letters and the stretched, thickened font letters (both normalised to a cap height of 200 px, ink boxes centred on each other)."""
-    T = []
+    """Search (sx, dil) maximising the mean overlap between the traced letters and the stretched, thickened font letters. Both are normalised to a cap height of 200 px by the CAP HEIGHT (the median height of the traced letters, the height of the letter H for the font), never by the box of each letter (an accent
+    or a tail would change the scale), the bottoms are aligned on the baseline and the ink boxes centred on each other."""
+    hs = []
     for g in traced:
-        subs = FM.parse_path(g["d"]); ys = [p[1] for s_ in subs for p in s_]; t, _ = FM.raster(subs, 200.0 / max(1.0, max(ys) - min(ys))); t = FM.crop(t); f = FM.font_mask(font_pil, g["c"])
+        subs = FM.parse_path(g["d"]); ys = [p[1] for s_ in subs for p in s_]; hs.append(max(ys) - min(ys))
+    medH = float(np.median(hs)); hH = FM.font_mask(font_pil, "H").shape[0]; T = []
+    for g in traced:
+        capg = (g["sc"] - 8.0) if g.get("sc") else medH  # the cap height of the line the letter comes from (a face can have letters of several sizes: J+89 and 12)
+        subs = FM.parse_path(g["d"]); t, _ = FM.raster(subs, 200.0 / capg); t = FM.crop(t); f = FM.font_mask(font_pil, g["c"])
         if f is None: continue
+        f = np.asarray(Image.fromarray(f.astype(np.uint8) * 255).resize((max(2, int(round(f.shape[1] * 200.0 / hH))), max(2, int(round(f.shape[0] * 200.0 / hH)))), Image.BILINEAR)) > 127
         T.append((t, f))
     best = (-1, 1.0, 0.0)
     for sx in np.arange(0.5, 1.6, 0.02):
-        for dil in range(-6, 11, 1):
+        for dil in range(-8, 13, 1):
             ious = []
             for t, f in T:
-                h = t.shape[0]; fw = max(2, int(round(f.shape[1] * (h / f.shape[0]) * sx))); fi = np.asarray(Image.fromarray(f.astype(np.uint8) * 255).resize((fw, h), Image.BILINEAR)) > 127
+                fw = max(2, int(round(f.shape[1] * sx))); fi = np.asarray(Image.fromarray(f.astype(np.uint8) * 255).resize((fw, f.shape[0]), Image.BILINEAR)) > 127
                 if dil > 0: fi = ndi.binary_dilation(fi, iterations=dil)
                 elif dil < 0: fi = ndi.binary_erosion(fi, iterations=-dil)
-                H = max(h, fi.shape[0]) + 4; W = max(t.shape[1], fi.shape[1]) + 4; A = np.zeros((H, W), bool); B = np.zeros((H, W), bool)
-                oy = (H - t.shape[0]) // 2; ox = (W - t.shape[1]) // 2; A[oy:oy + t.shape[0], ox:ox + t.shape[1]] = t
-                oy = (H - fi.shape[0]) // 2; ox = (W - fi.shape[1]) // 2; B[oy:oy + fi.shape[0], ox:ox + fi.shape[1]] = fi
-                ious.append((A & B).sum() / max(1, (A | B).sum()))
+                H = max(t.shape[0], fi.shape[0]) + 4; W = max(t.shape[1], fi.shape[1]) + 4; A = np.zeros((H, W), bool); B = np.zeros((H, W), bool)
+                oy = H - 2 - t.shape[0]; ox = (W - t.shape[1]) // 2; A[oy:oy + t.shape[0], ox:ox + t.shape[1]] = t
+                oy = H - 2 - fi.shape[0]; ox = (W - fi.shape[1]) // 2; B[oy:oy + fi.shape[0], ox:ox + fi.shape[1]] = fi
+                ious.append((A & B).sum() / max(1, (A | B).sum()) - 0.6 * abs(math.log(max(1, B.sum()) / max(1, A.sum()))))  # the overlap, minus a penalty on the difference of ink area (the weight of the strokes)
             m = float(np.mean(ious))
             if m > best[0]: best = (m, float(sx), float(dil))
     return best  # (mean IoU, sx, dil in px at cap 200)
 
 def roughness(traced):
-    """RMS deviation of the traced edges from their own smoothing (px at cap 200): the distress to reproduce on the added letters."""
+    """Mean distance (px at a cap height of 200) between the edge of a traced letter and the edge of its own smoothing: the distress of the edge. A fractal-noise displacement of scale S moves an edge by about 0.11 * S on average, so S = rough / 0.11."""
     devs = []
     for g in traced:
         subs = FM.parse_path(g["d"]); ys = [p[1] for s_ in subs for p in s_]; t, _ = FM.raster(subs, 200.0 / max(1.0, max(ys) - min(ys)))
-        sm = ndi.gaussian_filter(t.astype(float), 3.0) > 0.5; edge = ndi.binary_dilation(t, iterations=2) ^ ndi.binary_erosion(t, iterations=2); devs.append(float((t ^ sm)[edge].mean()))
+        t = np.pad(t, 8); sm = ndi.gaussian_filter(t.astype(float), 3.5) > 0.5; sd = ndi.distance_transform_edt(sm) - ndi.distance_transform_edt(~sm); edge = t & ~ndi.binary_erosion(t); devs.append(float(np.abs(sd[edge]).mean()))
     return float(np.mean(devs))
 
 def main():
-    id_, path, index, weight, card, face = sys.argv[1:7]; index = int(index); weight = None if weight == "-" else float(weight)
+    id_, path, index, weight, card, face = sys.argv[1:7]; index = int(index); weight = None if weight == "-" else float(weight); rough_override = float(sys.argv[7]) if len(sys.argv) > 7 else None
     traced = json.load(open(TRACED))[card][face]; f = load_font(path, index, weight); out, capH, upem = outlines(f)
     pil = ImageFont.truetype(path, 300, index=index)
     if weight is not None: pil.set_variation_by_axes([weight] + [a["default"] for a in pil.get_variation_axes()][1:])
     iou, sx, dil = fit(pil, traced); rg = roughness(traced)
-    data = {"id": id_, "cap": 1000, "sx": round(sx, 3), "dil": round(dil / 200.0 * 1000, 1), "rough": round(rg, 4), "iou": round(iou, 3), "font": "%s idx %d wght %s" % (Path(path).name, index, weight), "glyphs": out}
+    data = {"id": id_, "cap": 1000, "sx": round(sx, 3), "dil": round(dil / 200.0 * 1000, 1), "rough": rough_override if rough_override is not None else round(rg / 0.11 / 200.0, 4), "iou": round(iou, 3), "font": "%s idx %d wght %s" % (Path(path).name, index, weight), "glyphs": out}
     p = ROOT / "motion" / "runtime" / ("zs-templates-alpha-%s-1.js" % id_)
     p.write_text("// 19 October 2026: the alphabet of the face %s (Scripts/AlphaBuild.py): outlines of a real typeface fitted to the traced letters, cap height 1000, y = 0 at the cap line. FR : alphabet cale sur les lettres tracees.\n(window.ZSAlpha = window.ZSAlpha || {})[%s] = %s;\n" % (id_, json.dumps(id_), json.dumps(data, separators=(",", ":"), ensure_ascii=False)))
-    print(id_, "iou %.3f sx %.2f dil %.1f units rough %.4f" % (iou, sx, data["dil"], rg), "glyphs", len(out), p.stat().st_size // 1024, "KiB")
+    print(id_, "iou %.3f sx %.2f dil %.1f units rough %.4f (edge deviation %.2f px at cap 200)" % (iou, sx, data["dil"], data["rough"], rg), "glyphs", len(out), p.stat().st_size // 1024, "KiB")
 
 if __name__ == "__main__":
     main()

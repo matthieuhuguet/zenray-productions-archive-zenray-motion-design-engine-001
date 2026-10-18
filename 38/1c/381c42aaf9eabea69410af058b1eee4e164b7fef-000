@@ -38,7 +38,7 @@
   function markD(mark, W, cap, sw) {  // the accent only, above the cap line (y < 0)
     let d = "";
     {
-      const ah = Math.max(sw * 0.9, cap * 0.1), y = -ah * 1.6, x = W / 2, f = (n) => n.toFixed(2);
+      const ah = Math.max(sw * 0.9, cap * 0.1), y = -ah * 1.25, x = W / 2, f = (n) => n.toFixed(2);
       d += mark === "acute" ? ` M${f(x - W * 0.12)},${f(y + ah)} L${f(x + W * 0.16)},${f(y)}` : mark === "grave" ? ` M${f(x + W * 0.12)},${f(y + ah)} L${f(x - W * 0.16)},${f(y)}` : mark === "hat" ? ` M${f(x - W * 0.2)},${f(y + ah)} L${f(x)},${f(y)} L${f(x + W * 0.2)},${f(y + ah)}` :
         mark === "dots" ? ` M${f(x - W * 0.27)},${f(y)} L${f(x - W * 0.27)},${f(y + sw * 0.8)} M${f(x + W * 0.27)},${f(y)} L${f(x + W * 0.27)},${f(y + sw * 0.8)}` : mark === "bar" ? ` M${f(x - W * 0.22)},${f(y + ah / 2)} L${f(x + W * 0.22)},${f(y + ah / 2)}` : ` M${f(x - W * 0.2)},${f(y + ah)} L${f(x - W * 0.07)},${f(y)} L${f(x + W * 0.07)},${f(y + ah)} L${f(x + W * 0.2)},${f(y)}`;
     }
