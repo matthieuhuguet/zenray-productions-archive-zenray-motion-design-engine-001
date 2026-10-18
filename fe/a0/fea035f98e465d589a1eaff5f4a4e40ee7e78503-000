@@ -42,10 +42,11 @@ CFG = {
     "inoxtag-collection-01-ppm": [("big red", (0.2, 0.31, 0.81, 0.7), ("chan", [180, 255, 0, 110, 0, 110])), ("date and time", (0.4, 0.26, 0.64, 0.31), ("chan", [160, 255, 0, 120, 0, 120])), ("coordinates", (0.56, 0.69, 0.82, 0.75), ("chan", [160, 255, 0, 120, 0, 120])), ("kanji", (0.2, 0.69, 0.28, 0.77), ("chan", [180, 255, 0, 110, 0, 110]))],
     "inoxtag-collection-02-ppm": [("numerals", (0.38, 0.38, 0.585, 0.7), ("light", 235)), ("small", (0.52, 0.35, 0.66, 0.5), ("light", 190))],
     "inoxtag-collection-03-ppm": [("CUBA", (0.34, 0.43, 0.66, 0.62), ("light", 225)), ("captions", (0.43, 0.37, 0.57, 0.43), ("light", 200))],
+    "christopher-nolan-collection-01-ppm": [("TOKYO", (0.26, 0.42, 0.72, 0.56), ("chan", [185, 225, 178, 215, 160, 200]))],
     "bmw-zhong-kui-ppm": [("red title", (0.29, 0.33, 0.71, 0.74), ("red", 45, 110)), ("subtitle", (0.3, 0.515, 0.7, 0.56), ("red", 18, 55)), ("calligraphy", (0.18, 0.12, 0.78, 0.9), ("grey", 20, 90))],
 }
 REF_STILL = {"ichiban-japan-ppm": "still-ichiban-japan", "paget-character-concept-ppm": "still-paget-character-concept", "bleach-tybw-ppm": "still-bleach-tybw", "yawen-visual-designer-ppm": "still-yawen-visual-designer",
-             "paget-indiana-jones-ppm": "still-paget-indiana-jones", "fe-pale-ravens-perch-ppm": "still-fe-pale-ravens-perch", "fe-phases-ppm": "still-fe-player-phase", "bmw-zhong-kui-ppm": "still-zhong-kui", "rdr2-ppm": "still-rdr2", "ghost-of-yotei-ppm": "still-yotei", "ghost-of-yotei-title-apparition-01-ppm": "still-ytitle", "league-of-legends-cinematic-01-ppm": "still-lol", "inoxtag-collection-01-ppm": "still-inox1", "inoxtag-collection-02-ppm": "still-inox2", "inoxtag-collection-03-ppm": "still-inox3"}
+             "paget-indiana-jones-ppm": "still-paget-indiana-jones", "fe-pale-ravens-perch-ppm": "still-fe-pale-ravens-perch", "fe-phases-ppm": "still-fe-player-phase", "bmw-zhong-kui-ppm": "still-zhong-kui", "rdr2-ppm": "still-rdr2", "ghost-of-yotei-ppm": "still-yotei", "ghost-of-yotei-title-apparition-01-ppm": "still-ytitle", "league-of-legends-cinematic-01-ppm": "still-lol", "inoxtag-collection-01-ppm": "still-inox1", "inoxtag-collection-02-ppm": "still-inox2", "inoxtag-collection-03-ppm": "still-inox3", "christopher-nolan-collection-01-ppm": "still-nolan"}
 
 
 def mask(img: np.ndarray, region, pred) -> np.ndarray:

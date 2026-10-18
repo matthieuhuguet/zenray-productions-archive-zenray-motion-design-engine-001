@@ -15,7 +15,7 @@ white = C.color_of(A, ndi.binary_erosion(mask & box(700, 470, 1300, 650), iterat
 cuba = C.glyphs_of(mask, MN, box(700, 470, 1300, 650), list("CUBA"), mincontrast=40.0, minpx=400, band=3, sigma=0.8, plain=(150, 230), opening=1, closing=2)
 smask = mn >= 200
 t_alt = C.textline(smask, box(940, 392, 1100, 432), "l2", "135M", "left", "Manrope", 700, capfix=-2)
-t_ville = C.textline(smask, box(880, 700, 1120, 735), "l3", "VIÑALES", "left", "Manrope", 700, capfix=-1)
+t_ville = C.textline(smask, box(880, 700, 1120, 735), "l3", "VIÑALES", "center", "Manrope", 700, capfix=-1)
 # the triangle: a fixed shape
 tm = ndi.binary_closing(smask & box(850, 396, 912, 432), iterations=1); rf = C.refine(tm, ndi.gaussian_filter(A.mean(2), 0.5), band=2, sig=4.0, mincontrast=40.0); td, tb = C.trace(rf > 0.5, soft=rf, sigma=0.5)
 tri = [{"c": "^", "d": td, "b": tb}]

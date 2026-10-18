@@ -13,7 +13,7 @@
   const abs = (parent, css, text) => { const e = h.css(h.el("div", "zs-abs", parent), css); if (text !== undefined) { if (/[<&]/.test(String(text))) e.innerHTML = text; else e.textContent = text; } return e; };
   const rnd = (seed) => () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
   const APPEARANCES = ["wipe", "letters", "rise", "ink", "drop", "pop", "typewriter", "zoom", "glitch", "brush", "petals-sweep", "petals-gather", "petals-bloom", "mask-up", "slam", "mask-down", "dissolve", "track"];
-  const LAYOUTS = ["bleach", "ichiban", "paget", "pale-raven", "phase", "yawen", "indy", "zhongkui", "rdr", "yotei", "ytitle", "lol", "inox1", "inox2", "inox3"];
+  const LAYOUTS = ["bleach", "ichiban", "paget", "pale-raven", "phase", "yawen", "indy", "zhongkui", "rdr", "yotei", "ytitle", "lol", "inox1", "inox2", "inox3", "nolan"];
 
   // ---- text pieces; `split` makes one span per character so an appearance can move the letters one by one
   function T(parent, o) {
@@ -391,6 +391,7 @@
     inox1: { l: { l1: "KITAE", l2: "L'AME", l3: "DU", l4: "KATANA", l5: "24 OCTOBRE 2024", l6: "10:00", l7: "AM", l8: "20°C", l9: "35.44773685, 139.64250768" }, bg: "#0a0a0a", accent: "#ea332c", accent2: "#ea332c", tile: "#000" },
     inox2: { l: {"l1": "J+89", "l2": "SEMAINE", "l3": "12", "l4": "MOIS", "l5": "2"}, bg: "#0a0c0e", accent: "#ffffff", accent2: "#ffffff", tile: "#000" },
     inox3: { l: {"l1": "CUBA", "l2": "135M", "l3": "VIÑALES"}, bg: "#090b0c", accent: "#ffffff", accent2: "#ffffff", tile: "#000" },
+    nolan: { l: {"l1": "TOKYO"}, bg: "#0b0a09", accent: "#c9c2b4", accent2: "#c9c2b4", tile: "#000" },
     lol: { l: { l1: "SOMBRES COMPLOTS", l2: "CINÉMATIQUE" }, bg: "#0b0a0b", accent: "#fffffb", accent2: "#fdfcf7", tile: "#000" },
     ytitle: { l: { l0: "GHOST", l1: "OF YŌTEI" }, bg: "#6b7875", accent: "#dcdddd", accent2: "#e1b63f", tile: "#000" },
     yotei: { l: { l0: "GHOST", l1: "OF YŌTEI", l2: "COMPLETE EDITION", l3: "Retournez à Ezo", l4: "Découvrez l'expérience définitive de Ghost of Yōtei, enrichie d'un tout\nnouveau mode de jeu et d'une extension de l'histoire.", l5: "Acheter maintenant" }, bg: "#f8f5ee", accent: "#0f100f", tile: "#000" },
@@ -398,11 +399,11 @@
     indy: { l: { l1: "INDIANA JONES" }, bg: "#17233a", accent: "#dde1ec", tile: "#000" },
     zhongkui: { l: { l1: "ZHONG", l2: "BLACK MYTH", l3: "KUI" }, bg: "#050405", accent: "#8f3638", tile: "#000", seed: 5 },
   };
-  const SIZE = { indy: [1080, 1080], zhongkui: [1600, 668], rdr: [2000, 871], yotei: [2000, 1125], ytitle: [920, 290], lol: [2000, 1096], inox1: [2000, 1096], inox2: [2000, 1115], inox3: [2000, 1044] };
+  const SIZE = { indy: [1080, 1080], zhongkui: [1600, 668], rdr: [2000, 871], yotei: [2000, 1125], ytitle: [920, 290], lol: [2000, 1096], inox1: [2000, 1096], inox2: [2000, 1115], inox3: [2000, 1044], nolan: [2000, 1250] };
 
   // ---- title cards (18 October 2026): lettering isolated as a custom font (window.ZSCards.<key>, Scripts/CardTrace.py). One generic layout for every card: each line is a holder of glyph boxes (`.ch`); a line whose text is the original one keeps its
   // traced places, an edited line (or the custom mode) is recomposed on its own alignment (left, centre or right as the card does), scaled down to fit, with the measured gaps; a character the font does not have is set in a real face of the card.
-  const CARD_KEYS = ["lol", "inox1", "inox2", "inox3"];
+  const CARD_KEYS = ["lol", "inox1", "inox2", "inox3", "nolan"];
   function glyphBoxes(parent, list, defCol) {  // list of [glyph, x, y, scale, colour]; a glyph with `fb` is a text fallback
     list.forEach(([g, x, y, k, col, acc], i) => {
       if (g.fb) {  // a letter the font does not have: drawn by the procedural block font with the strokes of the card
@@ -567,7 +568,7 @@
     });
   }
 
-  const BOXES = { bleach: [880, 90, 1920, 1080], ichiban: [30, 20, 960, 480], paget: [90, 190, 700, 1050], "pale-raven": [90, 250, 900, 1010], phase: [90, 300, 1830, 840], yawen: [110, 340, 1800, 1030], indy: [40, 780, 1040, 990], zhongkui: [330, 90, 1230, 580], rdr: [30, 95, 905, 465], yotei: [200, 190 + 60, 880, 190 + 590], ytitle: [20, 10, 900, 282], lol: [90, 40, 1910, 1060], inox1: [380, 280, 1640, 830], inox2: [740, 380, 1330, 760], inox3: [700, 380, 1300, 740] };
+  const BOXES = { bleach: [880, 90, 1920, 1080], ichiban: [30, 20, 960, 480], paget: [90, 190, 700, 1050], "pale-raven": [90, 250, 900, 1010], phase: [90, 300, 1830, 840], yawen: [110, 340, 1800, 1030], indy: [40, 780, 1040, 990], zhongkui: [330, 90, 1230, 580], rdr: [30, 95, 905, 465], yotei: [200, 190 + 60, 880, 190 + 590], ytitle: [20, 10, 900, 282], lol: [90, 40, 1910, 1060], inox1: [380, 280, 1640, 830], inox2: [740, 380, 1330, 760], inox3: [700, 380, 1300, 740], nolan: [470, 500, 1530, 720] };
   const TALLBOXES = { zhongkui: [470, 100, 1130, 490], phase: [380, 330, 1540, 700] };
   const EASES = ["auto", "power3.out", "power4.out", "expo.out", "back.out(1.7)", "back.out(3)", "elastic.out(1,0.4)", "bounce.out", "sine.inOut", "power2.inOut", "steps(6)"];
   const parseTweaks = (lines) => { const m = {}; (lines || []).forEach((l) => { const q = String(l).trim().split(/\s+/); if (q.length >= 2 && !isNaN(Number(q[q.length - 1]))) m[q.slice(0, -1).join(" ")] = Number(q[q.length - 1]); }); return m; };
