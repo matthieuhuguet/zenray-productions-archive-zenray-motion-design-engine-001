@@ -80,7 +80,7 @@ def main():
     print("letters", [(l["c"], l["b"]) for l in letters])
     # leaves: gold pixels away from the band, the logo emblem leaf kept apart
     gold = (A[..., 0] - A[..., 2] > 38) & (A[..., 0] > 140) & (yy > 88) & (A[..., 0] - A[..., 1] > 8)
-    gold &= ~box(0, 240, 700, 290)  # the brush stroke
+    gold &= ~box(0, 240, 700, 290) & ~box(222, 505, 456, 565)  # the brush stroke, the orange button
     gold = ndi.binary_opening(gold, iterations=1); lab, n = ndi.label(ndi.binary_dilation(gold, iterations=1)); leaves = []
     for i, sl in enumerate(ndi.find_objects(lab), start=1):
         m = gold & (lab == i); area = int(m.sum())

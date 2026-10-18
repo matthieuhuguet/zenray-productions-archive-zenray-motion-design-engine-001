@@ -139,12 +139,18 @@
       const it = [], tw = p.tw, F = tw("footSize", 20), TR = tracedFor(p, "yawen");
       if (TR) { TR.layers.forEach((ly) => it.push({ n: traceLayer(pl, ly.glyphs, TR.w, TR.h) })); return it; }
       // the title: two words and a four-point star between them (the reference ornament), every position a parameter
-      const [w1, w2] = String(p.l1).split("·"), tf = { size: tw("size1", 128), font: p.font || "VogunMedium", weight: 500, color: "#f4f6f8", ls: tw("ls1", 0.02) + "em", lh: 1, sx: tw("sx1", 1), css: { webkitTextStroke: tw("stroke1", 0) + "px #f4f6f8" } };
-      it.push({ n: T(pl, Object.assign({ text: w1, x: tw("ax", 375), y: tw("y1", 372) }, tf)) });
-      const os = tw("os", 1), orn = svgEl("svg", { width: 80, height: 120, viewBox: "-40 -40 80 120", style: `position:absolute;left:${tw("ox", 851) - 40}px;top:${tw("oy", 421) - 40}px;overflow:visible;transform:scale(${os});transform-origin:40px 40px` }, pl);
-      svgEl("path", { d: "M0,-11 Q1,-2 11,0 Q2,3 0,31 Q-2,3 -11,0 Q-1,-2 0,-11 Z", fill: "#f4f6f8" }, orn);
-      it.push({ n: orn, shape: true });
-      it.push({ n: T(pl, Object.assign({ text: w2, x: tw("bx", 893), y: tw("y1", 372) }, tf)) });
+      // the title: one or two words (separated by ·) and a four-point star between two words. The measured positions apply to the original text; any other text is centred and squeezed to the room (0.6 em per letter estimate)
+      const words = String(p.l1).split("·").map((w) => w.trim()).filter(Boolean), orig = String(p.l1) === String(DEFAULTS.yawen.l.l1), size1 = tw("size1", 128), cw = size1 * 0.6 * tw("sx1", 1), gapS = 78;
+      const tf = { size: size1, font: p.font || "VogunMedium", weight: 500, color: "#f4f6f8", ls: tw("ls1", 0.02) + "em", lh: 1, sx: tw("sx1", orig ? 0.86 : 1), css: { webkitTextStroke: tw("stroke1", 0) + "px #f4f6f8" } };
+      let ax = tw("ax", 372), bx = tw("bx", 884), ox = tw("ox", 851);
+      if (!orig) { const wA = words[0].length * cw, wB = words[1] ? words[1].length * cw : 0, tot = wA + (words[1] ? gapS + wB : 0), k = Math.min(1, 1500 / Math.max(1, tot)); if (k < 1) tf.sx *= k; const s0 = 960 - tot * k / 2; ax = s0; ox = s0 + wA * k + gapS * k / 2; bx = s0 + (wA + gapS) * k; }
+      it.push({ n: T(pl, Object.assign({ text: words[0] || "", x: ax, y: tw("y1", 359) }, tf)) });
+      if (words[1]) {
+        const os = tw("os", 1), orn = svgEl("svg", { width: 80, height: 120, viewBox: "-40 -40 80 120", style: `position:absolute;left:${ox - 40}px;top:${tw("oy", 421) - 40}px;overflow:visible;transform:scale(${os});transform-origin:40px 40px` }, pl);
+        svgEl("path", { d: "M0,-11 Q1,-2 11,0 Q2,3 0,31 Q-2,3 -11,0 Q-1,-2 0,-11 Z", fill: "#f4f6f8" }, orn);
+        it.push({ n: orn, shape: true });
+        it.push({ n: T(pl, Object.assign({ text: words[1], x: bx, y: tw("y1", 359) }, tf)) });
+      }
       it.push({ n: T(pl, { text: p.l2, x: tw("x2", 960), y: tw("y2", 529), size: tw("size2", 44), font: p.font2 || "VogunRegular", weight: 400, color: "#eef2f6", align: "center", ls: tw("ls2", 0.17) + "em", lh: 1 }) });
       // the footer: a round icon (person, then briefcase) and its line; both drawn
       [[p.l3, 972], [p.l4, 1005]].forEach(([t, y], i) => {
@@ -194,24 +200,24 @@
       const logoGold = Y.leaves.filter((L) => L.e);
       const glyphs = Y.letters.map((l) => ({ d: l.d, f: ink, b: [l.b[0], l.b[1] + OY, l.b[2], l.b[3] + OY] }));
       const nlk = (txt) => String(txt).toUpperCase() === "GHOST";
-      if (nlk(p.l0 === undefined ? "GHOST" : p.l0) && p.design !== "custom") {
+      if (nlk(p.l0 === undefined ? "GHOST" : p.l0) && p.design !== "custom" && Y.letters.length === 5) {
         const gh = traceLayer(pl, Y.letters.map((l) => ({ d: l.d, f: ink, b: l.b })), 2000, 743); gh.style.top = OY + "px"; it.push({ n: gh });
         const eh = abs(pl, { left: "0", top: OY + "px", width: "2000px", height: "743px" }), es = svgEl("svg", { width: 2000, height: 743, viewBox: "0 0 2000 743", style: "position:absolute;left:0;top:0;overflow:visible" }, eh);
-        if (logoGold.length) { const L = logoGold.slice().sort((a, b) => b.s - a.s)[0], sz = tw("emblemSize", 64), sx = tw("emblemX", 462), sy = tw("emblemY", 160); const g = svgEl("g", { transform: `translate(${sx},${sy}) rotate(${tw("emblemRot", L.a)}) scale(${sz})` }, es); leafPaths(g, L.c); }
+        if (logoGold.length) { const L = logoGold.slice().sort((a, b) => b.s - a.s)[0], sz = tw("emblemSize", 40), sx = tw("emblemX", 464), sy = tw("emblemY", 152); const g = svgEl("g", { transform: `translate(${sx},${sy}) rotate(${tw("emblemRot", -8)}) scale(${sz})` }, es); leafPaths(g, L.c); }
         it.push({ n: eh, shape: true });
-      } else { it.push({ n: T(pl, { text: p.l0 || "GHOST", x: cx0, y: OY + tw("y0", 78), size: tw("size0", 110), font: "Sora", weight: 800, color: ink, align: "center", ls: tw("ls0", 0.3) + "em", lh: 1, upper: true }) }); }
-      it.push({ n: T(pl, { text: p.l1, x: cx0, y: OY + tw("y1", 203), size: tw("size1", 22), font: "Fraunces", weight: 500, color: ink, align: "center", ls: tw("ls1", 0.38) + "em", lh: 1, upper: true }) });
+      } else { it.push({ n: T(pl, { text: p.l0 || "GHOST", x: cx0, y: OY + tw("y0", 78), size: tw("size0", 110), font: "Sora", weight: 800, color: ink, align: "center", ls: tw("ls0", 0.3) + "em", lh: 1, upper: true, sx: tw("sx0", Math.min(1, 490 / (Math.max(1, String(p.l0 || "GHOST").length) * tw("size0", 110) * (0.8 + tw("ls0", 0.3))))) }) }); }
+      it.push({ n: T(pl, { text: p.l1, x: cx0, y: OY + tw("y1", 208), size: tw("size1", 22), font: "Fraunces", weight: 500, color: ink, align: "center", ls: tw("ls1", 0.38) + "em", lh: 1, upper: true }) });
       // the brush stroke: a ragged body with dry streaks at the left end, and its text
       const S = Y.stroke, sb = S.b, sh = abs(pl, { left: "0", top: "0", width: "2000px", height: "1125px" }), ss = svgEl("svg", { width: 2000, height: 1125, viewBox: "0 0 2000 1125", style: "position:absolute;left:0;top:0;overflow:visible" }, sh), sdf = svgEl("defs", {}, ss);
       const sid = uid + "s", sg = svgEl("linearGradient", { id: sid, x1: sb[0], y1: 0, x2: sb[2], y2: 0, gradientUnits: "userSpaceOnUse" }, sdf); [[0, S.c3], [0.5, S.c], [1, S.c2]].forEach((q) => svgEl("stop", { offset: q[0], "stop-color": q[1] }, sg));
       const rf = svgEl("filter", { id: sid + "f", x: "-5%", y: "-40%", width: "110%", height: "180%" }, sdf); svgEl("feTurbulence", { type: "fractalNoise", baseFrequency: "0.04 0.5", numOctaves: 2, seed: (p.seed || 7) % 97, result: "n" }, rf); svgEl("feDisplacementMap", { in: "SourceGraphic", in2: "n", scale: tw("strokeRough", 9) }, rf);
-      const y0 = OY + sb[1], y1 = OY + sb[3], x0 = sb[0], x1 = sb[2], R = rnd(p.seed || 7), body = [[x0 + 60, y0 + 2], [x1 - 8, y0 + 0], [x1, y0 + 4], [x1 - 4, y1 - 3], [x0 + 70, y1]], g2 = svgEl("g", { filter: `url(#${sid}f)` }, ss);
+      const y0 = OY + sb[1], y1 = OY + sb[3], x0 = sb[0] - tw("strokeExtend", 16), x1 = sb[2], R = rnd(p.seed || 7), body = [[x0 + 60, y0 + 2], [x1 - 8, y0 + 0], [x1, y0 + 4], [x1 - 4, y1 - 3], [x0 + 70, y1]], g2 = svgEl("g", { filter: `url(#${sid}f)` }, ss);
       svgEl("path", { d: "M" + body.map((q) => q.join(",")).join(" L") + " Z", fill: `url(#${sid})` }, g2);
       for (let k = 0; k < 9; k++) { const yy = y0 + 2 + (k + 0.5) * (y1 - y0 - 4) / 9, len = 20 + R() * 60; svgEl("rect", { x: x0 + 8 + R() * 30, y: yy, width: 55 + len, height: 1.8 + R() * 2.4, fill: `url(#${sid})`, opacity: 0.55 + R() * 0.35 }, g2); }
       it.push({ n: sh, shape: true });
-      it.push({ n: T(pl, { text: p.l2, x: (x0 + x1) / 2 + 12, y: OY + tw("y2", 260), size: tw("size2", 14.5), font: "Fraunces", weight: 500, color: "#f6f0e2", align: "center", ls: tw("ls2", 0.36) + "em", lh: 1, upper: true }) });
+      it.push({ n: T(pl, { text: p.l2, x: cx0, y: OY + tw("y2", 260), size: tw("size2", 14.5), font: "Fraunces", weight: 500, color: "#f6f0e2", align: "center", ls: tw("ls2", 0.36) + "em", lh: 1, upper: true }) });
       // the headline, the body and the button
-      it.push({ n: T(pl, { text: p.l3, x: tw("tx", 226), y: OY + tw("y3", 344), size: tw("size3", 49), font: "InterVariable", weight: tw("weight3", 300), color: C.head, ls: "-0.005em", lh: 1 }) });
+      it.push({ n: T(pl, { text: p.l3, x: tw("tx", 226), y: OY + tw("y3", 348), size: tw("size3", 49), font: "InterVariable", weight: tw("weight3", 260), color: C.head, ls: "-0.005em", lh: 1 }) });
       it.push({ n: T(pl, { text: p.l4, x: tw("tx", 226), y: OY + tw("y4", 421), size: tw("size4", 18.8), font: "InterVariable", weight: 400, color: C.body, ls: tw("ls4", 0) + "em", lh: tw("lh4", 1.45) }) });
       const B = Y.button, bt = abs(pl, { left: B[0] + "px", top: OY + B[1] + "px", width: B[2] - B[0] + "px", height: B[3] - B[1] + "px", borderRadius: (B[3] - B[1]) / 2 + "px", background: p.accent3 || C.button, display: "grid", placeItems: "center" });
       abs(bt, { left: "0", top: "0", width: "100%", height: "100%", display: "grid", placeItems: "center", color: "#fff", fontFamily: h.font("InterVariable"), fontWeight: tw("weight5", 600), fontSize: tw("size5", 19.4) + "px", whiteSpace: "pre" }, p.l5); it.push({ n: bt, shape: true });
@@ -230,14 +236,35 @@
         TR.lines.forEach((ln) => { const col = ln.name === "ii" ? (p.accent2 || TR.ii) : (p.accent || white); it.push({ n: traceLayer(pl, ln.letters.map((l) => ({ d: l.d, f: col, b: l.b })), TR.w, TR.h) }); });
         return it;
       }
-      const x = tw("x", 77), pw = tw("plateW", 838), ph = tw("plateH", 336), tile = abs(pl, { left: "0", top: "0", width: "2000px", height: "871px" }), sv = svgEl("svg", { width: 2000, height: 871, viewBox: "0 0 2000 871", style: "position:absolute;left:0;top:0" }, tile);
-      svgEl("rect", { x: 56, y: 118, width: pw, height: ph, rx: tw("plateR", 8), fill: p.tile, stroke: p.tile, "stroke-width": tw("plateStroke", 12), "stroke-linejoin": "round" }, sv); it.push({ n: tile, shape: true });
-      it.push({ n: T(pl, { text: p.l1, x, y: tw("y1", 120), size: tw("size1", 34), font: "Fraunces", weight: 700, color: p.accent || white, ls: "0.01em", lh: 1, upper: true, sx: tw("sx1", 0.82) }) });
-      // a long line is squeezed to the room left of the II (about 625 px): width estimate 0.52 em per letter, unless the stretch is given by a tweak
-      const fit = (txt, size) => Math.min(0.95, 625 / Math.max(1, String(txt).length * 0.52 * size));
-      it.push({ n: T(pl, { text: p.l2, x, y: tw("y2", 132), size: tw("size2", 190), font: "Impact", weight: 400, color: p.accent || white, ls: tw("ls2", 0.01) + "em", lh: 1, upper: true, sx: tw("sx2", fit(p.l2, tw("size2", 190))) }) });
-      it.push({ n: T(pl, { text: p.l3, x, y: tw("y3", 291), size: tw("size3", 144), font: "Impact", weight: 400, color: p.accent || white, ls: tw("ls3", 0.01) + "em", lh: 1, upper: true, sx: tw("sx3", fit(p.l3, tw("size3", 144))) }) });
-      it.push({ n: T(pl, { text: p.l4, x: tw("x4", 715), y: tw("y4", 112), size: tw("size4", 330), font: "Impact", weight: 400, color: p.accent2 || "#ed0000", ls: tw("ls4", 0.02) + "em", lh: 1, upper: true }) });
+      // EDITED TEXT (or the custom mode): the design is recomposed from the same parts, so it stays the logo whatever the text. Every letter that exists in the isolated font (R E D A M P T I O N) is used as is, scaled to the line;
+      // a letter that the font does not have is set in a heavy condensed face in the same colour; the black plate with its worn edge is drawn around the text (a tab for the small line, a body for the big ones) and the II follows the longest line.
+      const G = {}; (window.ZSRdr ? window.ZSRdr.lines : []).forEach((ln) => { if (ln.name === "l2" || ln.name === "l3") ln.letters.forEach((l) => { if (!G[l.c]) G[l.c] = l; }); });
+      const I2 = window.ZSRdr ? window.ZSRdr.lines.find((ln) => ln.name === "ii") : null, white2 = p.accent || white, red2 = p.accent2 || (window.ZSRdr ? window.ZSRdr.ii : "#ed0000"), plateCol = p.tile;
+      const hold = abs(pl, { left: "0", top: "0", width: "2000px", height: "871px" }), lay = abs(pl, { left: "0", top: "0", width: "2000px", height: "871px" });
+      const sv0 = svgEl("svg", { width: 2000, height: 871, viewBox: "0 0 2000 871", style: "position:absolute;left:0;top:0;overflow:visible" }, hold), df0 = svgEl("defs", {}, sv0), rid = "rd" + (traceGradId++);
+      const rf = svgEl("filter", { id: rid, filterUnits: "userSpaceOnUse", x: 0, y: 0, width: 2000, height: 871 }, df0); svgEl("feTurbulence", { type: "fractalNoise", baseFrequency: "0.035 0.05", numOctaves: 3, seed: (p.seed || 7) % 97, result: "n" }, rf); svgEl("feDisplacementMap", { in: "SourceGraphic", in2: "n", scale: tw("plateRough", 7) }, rf);
+      let gi = 0; const boxes = [];
+      const place = (ch, x, y, cap, color, sxs) => {  // one letter, left edge at x, cap top at y, cap height cap; returns its advance
+        const g = G[ch];
+        if (g) { const [bx0, by0, bx1, by1] = g.b, w = bx1 - bx0, hh = by1 - by0, k = cap / hh, c = abs(lay, { left: x + "px", top: y + "px", width: w * k + "px", height: cap + "px", overflow: "visible" }); c.className += " ch"; c.dataset.i = String(gi++);
+          const v = svgEl("svg", { width: w * k, height: cap, viewBox: `${bx0} ${by0} ${w} ${hh}`, style: "position:absolute;left:0;top:0;overflow:visible" }, c); svgEl("path", { d: g.d, fill: color, "fill-rule": "evenodd" }, v); return w * k; }
+        const w = cap * 0.6 * (sxs || 1), c = abs(lay, { left: x + "px", top: y + "px", width: w + "px", height: cap + "px", overflow: "visible" }); c.className += " ch"; c.dataset.i = String(gi++);
+        const v = svgEl("svg", { width: w, height: cap, viewBox: `0 0 ${w} ${cap}`, style: "position:absolute;left:0;top:0;overflow:visible" }, c);
+        if (ch !== " ") svgEl("text", { x: w / 2, y: cap * 0.99, "text-anchor": "middle", "font-family": "Impact, 'Arial Narrow', sans-serif", "font-size": cap / 0.78, fill: color, transform: `translate(${w / 2},0) scale(${(0.9 * (sxs || 1)).toFixed(3)},1) translate(${-w / 2},0)` }, v).textContent = ch;
+        return w; };
+      const lineW = (txt, cap, gap) => { let x = 0; [...String(txt).toUpperCase()].forEach((ch) => { x += (ch === " " ? cap * tw("space", 0.32) : (G[ch] ? (G[ch].b[2] - G[ch].b[0]) * cap / (G[ch].b[3] - G[ch].b[1]) : cap * 0.6)) + (ch === " " ? 0 : gap); }); return Math.max(0, x - gap); };
+      const X0 = tw("x", 72), cap2 = tw("cap2", 151), cap3 = tw("cap3", 114), y2 = tw("y2", 161), y3 = tw("y3", 314), gap = tw("gap", -5), l2 = String(p.l2).toUpperCase(), l3 = String(p.l3).toUpperCase();
+      const w2 = lineW(l2, cap2, gap), w3 = lineW(l3, cap3, gap * 0.75), wmax = Math.max(w2, w3), iiX = X0 + wmax + tw("iiGap", 6), iiCap = y3 + cap3 - y2, iiW = (I2 ? (I2.letters[1].b[2] - I2.letters[0].b[0]) * iiCap / (I2.letters[0].b[3] - I2.letters[0].b[1]) : iiCap * 0.62);
+      const l4 = String(p.l4).toUpperCase(), ii4 = l4 === "II" ? iiW : lineW(l4, iiCap, 6), plateR = iiX + ii4 + tw("padR", 16), plateL = X0 - tw("padL", 18), plateB = y3 + cap3 + tw("padB", 20), bodyT = y2 - tw("padT", 16), tabT = tw("tabTop", 113), l1w = lineW(String(p.l1).toUpperCase(), 31, 0) * 0.82 + 20;
+      const pg = svgEl("g", { filter: `url(#${rid})` }, sv0); svgEl("rect", { x: plateL, y: bodyT, width: plateR - plateL, height: plateB - bodyT, fill: plateCol }, pg); svgEl("rect", { x: plateL, y: tabT, width: Math.max(260, l1w + 40), height: bodyT - tabT + 8, fill: plateCol }, pg);
+      it.push({ n: hold, shape: true });
+      it.push({ n: T(pl, { text: p.l1, x: X0 + 2, y: tw("y1", 126), size: tw("size1", 34), font: "Fraunces", weight: 700, color: white2, ls: "0.01em", lh: 1, upper: true, sx: tw("sx1", 0.82) }) });
+      let xx = X0; [...l2].forEach((ch) => { if (ch === " ") { xx += cap2 * tw("space", 0.32); return; } xx += place(ch, xx, y2, cap2, white2) + gap; });
+      xx = X0; [...l3].forEach((ch) => { if (ch === " ") { xx += cap3 * tw("space", 0.32); return; } xx += place(ch, xx, y3, cap3, white2) + gap * 0.75; });
+      if (l4 === "II" && I2) { I2.letters.forEach((l) => { const [bx0, by0, bx1, by1] = l.b, w = bx1 - bx0, hh = by1 - by0, k = iiCap / hh, c = abs(lay, { left: iiX + (bx0 - I2.letters[0].b[0]) * k + "px", top: y2 + "px", width: w * k + "px", height: iiCap + "px", overflow: "visible" }); c.className += " ch"; c.dataset.i = String(gi++);
+        const v = svgEl("svg", { width: w * k, height: iiCap, viewBox: `${bx0} ${by0} ${w} ${hh}`, style: "position:absolute;left:0;top:0;overflow:visible" }, c); svgEl("path", { d: l.d, fill: red2, "fill-rule": "evenodd" }, v); }); }
+      else { xx = iiX; [...l4].forEach((ch) => { xx += place(ch, xx, y2, iiCap, red2) + 4; }); }
+      it.push({ n: lay });
       return it;
     },
     zhongkui(pl, p) {
@@ -316,7 +343,7 @@
     "pale-raven": { l: { l1: "Pale", l2: "Raven's", l3: "Perch" }, bg: "#0c1011", accent: "#f7ecd3", tile: "#0f5560" },
     phase: { l: { text: "ENEMY PHASE" }, bg: "#9a8878", accent: "#f2555a", tile: "#000", seed: 7 },
     yawen: { l: { l1: "VISUAL·DESIGNER", l2: "MARKETING·GAMES·DIGITAL", l3: "Yawen | Marketing Visual Designer (Games / Digital)", l4: "lyw19837059505@gmail.com" }, bg: "#1c2f38", accent: "#ffffff", tile: "#000" },
-    yotei: { l: { l1: "OF YŌTEI", l2: "COMPLETE EDITION", l3: "Retournez à Ezo", l4: "Découvrez l'expérience définitive de Ghost of Yōtei, enrichie d'un tout\nnouveau mode de jeu et d'une extension de l'histoire.", l5: "Acheter maintenant" }, bg: "#f8f5ee", accent: "#0f100f", tile: "#000" },
+    yotei: { l: { l0: "GHOST", l1: "OF YŌTEI", l2: "COMPLETE EDITION", l3: "Retournez à Ezo", l4: "Découvrez l'expérience définitive de Ghost of Yōtei, enrichie d'un tout\nnouveau mode de jeu et d'une extension de l'histoire.", l5: "Acheter maintenant" }, bg: "#f8f5ee", accent: "#0f100f", tile: "#000" },
     rdr: { l: { l1: "ROCKSTAR GAMES PRESENTS", l2: "RED DEAD", l3: "REDEMPTION", l4: "II" }, bg: "#ca0512", accent: "#ffffff", tile: "#030101" },
     indy: { l: { l1: "INDIANA JONES" }, bg: "#17233a", accent: "#dde1ec", tile: "#000" },
     zhongkui: { l: { l1: "ZHONG", l2: "BLACK MYTH", l3: "KUI" }, bg: "#050405", accent: "#8f3638", tile: "#000", seed: 5 },

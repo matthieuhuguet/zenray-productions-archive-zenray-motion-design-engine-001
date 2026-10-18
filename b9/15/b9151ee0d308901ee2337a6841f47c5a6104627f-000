@@ -136,6 +136,11 @@
       "id": "rdr2-ppm",
       "group": "Visuels fixes · trois apparitions",
       "reference": "still-rdr2"
+    },
+    {
+      "id": "ghost-of-yotei-ppm",
+      "group": "Visuels fixes · trois apparitions",
+      "reference": "still-yotei"
     }
   ],
   "formats": [
