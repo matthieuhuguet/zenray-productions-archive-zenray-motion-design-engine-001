@@ -48,7 +48,7 @@ STILLS = {
     "league-of-legends-cinematic-01": ("League of Legends, cinematic 01", "still-lol", "lol", "16x9", ["mask-up"], {"distance": 90, "charStagger": 0.045, "dur": 0.9, "stagger": 0.35}),
     "inoxtag-collection-01": ("Inoxtag, collection 01", "still-inox1", "inox1", "16x9", ["slam"], {"charStagger": 0.05, "stagger": 0.45, "dur": 0.8, "blur": 6}),
     # 19 October 2026: a variation of Inoxtag 01 for the Louisiana Bayou church: same colour, the dissolve of Inoxtag 03, the texts of the project (the date of the day, the names of the components), the unrelated pieces hidden
-    "louisiana-bayou-church-module": ("Louisiana Bayou, church module (variation d'Inoxtag 01)", "still-inox1", "inox1", "16x9", ["dissolve"], {"dur": 0.8,
+    "louisiana-bayou-church-module": ("Louisiana Bayou, church module (variation d'Inoxtag 01)", "still-inox1", "inox1", "16x9", ["dissolve"], {"dur": 0.8, "dissolveOut": 0.9,
         "lines": ["ZENRAY", "LOUISIANA", "BAYOU", "CHURCH", "19 OCTOBRE 2026", "CHURCH MODULE", "V1", "7,6 M", "WOODFACADE · ARMATURE · ROOF · PORCHSTAIRS"], "tweaks": ["kanji_Show 0", "globe_Show 0", "l7_Show 0"]}),
     "inoxtag-collection-02": ("Inoxtag, collection 02", "still-inox2", "inox2", "16x9", ["mask-down"], {"distance": 90, "charStagger": 0.07, "dur": 0.9, "stagger": 0.3}),
     "inoxtag-collection-03": ("Inoxtag, collection 03", "still-inox3", "inox3", "16x9", ["dissolve"], {"dur": 0.8}),
@@ -92,6 +92,7 @@ def controls(n: int, apps: "list | None" = None, layout: str = "") -> list:
               num("petals", "Nombre de pétales", 0, 500, 5), num("petalSize", "Taille des pétales (px)", 2, 30, 0.5), num("windAngle", "Direction du vent (°, 0 = vers la droite)", -180, 180, 1), num("windReach", "Portée du vent (px)", 50, 1500, 10)]
     if layout in ("lol", "inox1", "inox2", "inox3", "nolan"):  # the cards: the second colour as a real control
         c.append({"id": "accent2", "label": "Couleur du texte secondaire", "type": "color", "group": "Couleurs", "targets": allt("accent2")})
+        c.append({"id": "dissolveOut", "label": "Dissolution inversée en fin de scène (s, 0 = aucune)", "type": "number", "group": "Mouvement", "min": 0, "max": 3, "step": 0.05, "targets": allt("dissolveOut")})
     for i, a in enumerate(apps or []):
         c.append({"id": f"appearance{i + 1}", "label": f"Apparition de la scène {i + 1}", "type": "select", "group": "Apparitions", "options": ["wipe", "letters", "rise", "ink", "drop", "pop", "typewriter", "zoom", "glitch", "brush", "petals-sweep", "petals-gather", "petals-bloom", "mask-up", "slam", "mask-down", "dissolve", "track"], "targets": [T(ids[i], "appearance")]})
     if layout in PARAM_LAYOUTS:  # texts as one labelled field each, then every design handle: nothing is left to guess or to type as "name value"
