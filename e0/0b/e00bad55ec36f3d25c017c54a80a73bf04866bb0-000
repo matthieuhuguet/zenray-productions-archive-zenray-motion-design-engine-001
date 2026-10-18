@@ -459,12 +459,13 @@
   // ---- the DESIGN of a lettering as parameters (19 October 2026): every holder of glyphs (a line, a logo, a plate) can be scaled, stretched, slanted, moved, thickened or thinned, rounded, roughened and tracked from sliders, so a traced design is as
   // editable as a procedural one. The tweaks are named `<key>_<Handle>` (l1_Weight, ghost_Scale ...) and stored in the free-text `tweaks` of the scene; the controls panel turns them into labelled sliders (ZS.stills.controls).
   // A handle that is left at its default changes nothing and creates nothing (no wrapper, no filter).
-  const HOLD = [["Scale", "Taille (%)", 100, 20, 300, 1], ["StretchX", "Largeur (%)", 100, 40, 250, 1], ["StretchY", "Hauteur (%)", 100, 40, 250, 1], ["Skew", "Inclinaison (°)", 0, -30, 30, 0.5], ["Dx", "Décalage horizontal (px)", 0, -700, 700, 1],
+  const HOLD = [["Show", "Afficher (1 = oui, 0 = caché)", 1, 0, 1, 1], ["Scale", "Taille (%)", 100, 20, 300, 1], ["StretchX", "Largeur (%)", 100, 40, 250, 1], ["StretchY", "Hauteur (%)", 100, 40, 250, 1], ["Skew", "Inclinaison (°)", 0, -30, 30, 0.5], ["Dx", "Décalage horizontal (px)", 0, -700, 700, 1],
     ["Dy", "Décalage vertical (px)", 0, -500, 500, 1], ["Weight", "Graisse (px, négatif = plus fin)", 0, -14, 28, 0.5], ["Round", "Arrondi des angles (px)", 0, 0, 24, 0.5], ["Rough", "Rugosité du bord (px)", 0, 0, 16, 0.5], ["Track", "Interlettrage (px)", 0, -60, 160, 1]];
   let designId = 0;
   function designize(it, tw, W, H, seed) {
     const K = it.key, n = it.n; if (!K || !n || !n.parentNode) return;
     const v = (nm, d) => tw(K + "_" + nm, d), sc = v("Scale", 100) / 100, sx = v("StretchX", 100) / 100, sy = v("StretchY", 100) / 100, sk = v("Skew", 0), dx = v("Dx", 0), dy = v("Dy", 0), wg = Math.max(-28, Math.min(28, v("Weight", 0))), rd = v("Round", 0), rg = v("Rough", 0), tr = v("Track", 0);
+    if (v("Show", 1) < 0.5) { n.style.display = "none"; return; }  // a holder can be hidden altogether
     if (sc === 1 && sx === 1 && sy === 1 && !sk && !dx && !dy && !wg && !rd && !rg && !tr) return;
     const chs = [...n.querySelectorAll(".ch")].filter((c) => c.style.left && c.style.width).sort((a, b) => Number(a.dataset.i || 0) - Number(b.dataset.i || 0));
     if (tr && chs.length > 1) { const mid = (chs.length - 1) / 2; chs.forEach((c, i) => { c.style.left = parseFloat(c.style.left) + tr * (i - mid) + "px"; }); }  // tracking: the glyph boxes move apart around the middle of the line

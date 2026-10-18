@@ -20,6 +20,8 @@ def template_defaults() -> dict:
     js = Path(__file__).resolve().parents[1] / "runtime" / "zs-templates-stills-1.js"
     code = "global.window={ZS:{h:{},register(){}}};global.document={};require(%r);console.log(JSON.stringify(window.ZS.stills.DEFAULTS))" % str(js)
     return json.loads(subprocess.check_output(["node", "-e", code], text=True))
+USED_BY = {"dur": "toutes les apparitions", "stagger": "toutes sauf l'apparition d'un seul bloc", "charStagger": "lettres, rideau, estampille, écartement", "distance": "lettres, rideau, estampille, écartement (%), chute", "blur": "lettres, estampille, écartement, zoom, encre",
+           "rotate": "lettres, estampille, chute, éclat, zoom, encre", "ease": "la plupart des apparitions"}
 PARAM_LAYOUTS = ("rdr", "yotei", "ytitle", "lol", "inox1", "inox2", "inox3", "nolan")  # the visuals whose whole design is exposed as labelled sliders (19 October 2026)
 
 
@@ -98,6 +100,10 @@ def controls(n: int, apps: "list | None" = None, layout: str = "") -> list:
         extra = []
         for jc in layout_controls(layout):
             jc = dict(jc); tg = jc.pop("targets"); jc["targets"] = [dict({"scene": sid}, **t) for sid in ids for t in tg]; extra.append(jc)
+        if layout in ("inox1", "inox2", "inox3", "nolan"): c = [x for x in c if x["id"] != "accent2"]  # every line of these cards uses the main colour
+        for x in c:  # which appearances use a motion slider: written in its label so that no slider looks broken
+            hint = USED_BY.get(x["id"])
+            if hint and "·" not in x["label"]: x["label"] += " · " + hint
         texts = [x for x in extra if x["type"] == "text"]; rest = [x for x in extra if x["type"] != "text"]
         c = c[:1] + texts + c[1:] + rest
     return c

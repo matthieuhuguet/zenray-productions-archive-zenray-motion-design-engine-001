@@ -1,0 +1,27 @@
+"""The editor controls of the title visuals (19 October 2026): what the template reads is what the editor offers. Checks, for every visual of PARAM_LAYOUTS: unique control ids, a real default on every control inside its range, one labelled text field per text slot with the full list of defaults,
+and, on the generated projects, a `lines` list that is never missing from a scene. Run: python3 tests/test_stills_controls.py"""
+import collections, json, sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parents[1]; sys.path.insert(0, str(ROOT / "motion" / "reproductions")); sys.path.insert(0, str(ROOT / "motion"))
+import stills  # noqa: E402
+import server  # noqa: E402
+
+fails = []
+def check(ok, msg):
+    if not ok: fails.append(msg)
+for layout in stills.PARAM_LAYOUTS:
+    cs = stills.layout_controls(layout); D = stills.template_defaults()[layout]
+    cnt = collections.Counter(c["id"] for c in cs); check(all(v == 1 for v in cnt.values()), f"{layout}: duplicate control ids {[k for k, v in cnt.items() if v > 1]}")
+    texts = [c for c in cs if c["type"] == "text"]; check([c["default"] for c in texts] == list(D["l"].values()), f"{layout}: text defaults differ from the template defaults")
+    check(all(c.get("slots") == list(D["l"].values()) for c in texts), f"{layout}: a text control lacks its slots")
+    for c in cs:
+        if c["type"] == "number": check(c["default"] is not None and c["min"] <= c["default"] <= c["max"], f"{layout}: {c['id']} default {c['default']} outside [{c['min']}, {c['max']}]")
+for pid, (t, slug, layout, fmt, apps, extra) in stills.STILLS.items():
+    if layout not in stills.PARAM_LAYOUTS: continue
+    f = server.project_dir(pid + "-ppm") / "project.json"
+    if not f.is_file(): fails.append(f"{pid}: project missing"); continue
+    p = json.loads(f.read_text(encoding="utf-8"))
+    for sc in p["scenes"]:
+        check(isinstance(sc["params"].get("lines"), (list, str)) and len(sc["params"]["lines"]) > 0, f"{pid}/{sc['id']}: `lines` missing from the scene (the text fields would be empty)")
+    ids = {c["id"] for c in p["controls"]}; check(any(c["type"] == "text" for c in p["controls"]), f"{pid}: no text control")
+print("FAIL" if fails else "OK", len(fails), "failure(s)"); [print(" -", x) for x in fails]; sys.exit(1 if fails else 0)
