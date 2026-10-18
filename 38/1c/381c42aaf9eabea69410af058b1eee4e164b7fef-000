@@ -32,8 +32,9 @@
   function glyph(ch, cap, o) {
     const nf = String(ch).normalize("NFD"), base = nf[0].toUpperCase(), mark = MARKS[nf[1]], sw = (o.sw || 0.14) * cap, c = (o.c || 0) * cap, W = Math.max(sw * 1.2, cap * (o.w || 0.5) * (WIDTH[base] || 1)), a = sw / 2;
     let d = skeleton(base, W, cap, a, c);
+    const xs = [...d.matchAll(/[ML]\s*(-?\d+(?:\.\d+)?),/g)].map((m) => Number(m[1])), ink = xs.length ? [Math.max(0, Math.min.apply(null, xs) - a), Math.min(W, Math.max.apply(null, xs) + a)] : [0, W];  // where the ink really is in the box: a narrow letter (I . : ') is a single stroke in the middle
     if (mark) d += markD(mark, W, cap, sw);
-    return { w: W, d, sw };
+    return { w: W, d, sw, ink };
   }
   function markD(mark, W, cap, sw) {  // the accent only, above the cap line (y < 0)
     let d = "";

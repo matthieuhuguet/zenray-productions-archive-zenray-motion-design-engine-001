@@ -206,7 +206,18 @@
         const eh = abs(pl, { left: "0", top: OY + "px", width: "2000px", height: "743px" }), es = svgEl("svg", { width: 2000, height: 743, viewBox: "0 0 2000 743", style: "position:absolute;left:0;top:0;overflow:visible" }, eh);
         if (logoGold.length) { const L = logoGold.slice().sort((a, b) => b.s - a.s)[0], sz = tw("emblemSize", 40), sx = tw("emblemX", 464), sy = tw("emblemY", 152); const g = svgEl("g", { transform: `translate(${sx},${sy}) rotate(${tw("emblemRot", -8)}) scale(${sz})` }, es); leafPaths(g, L.c); }
         it.push({ n: eh, shape: true, key: "emblem" });
-      } else { it.push({ n: T(pl, { text: p.l0 || "GHOST", x: cx0, y: OY + tw("y0", 78), size: tw("size0", 110), font: "Sora", weight: 800, color: ink, align: "center", ls: tw("ls0", 0.3) + "em", lh: 1, upper: true, sx: tw("sx0", Math.min(1, 490 / (Math.max(1, String(p.l0 || "GHOST").length) * tw("size0", 110) * (0.8 + tw("ls0", 0.3))))) }), key: "logo" }); }
+      } else {  // EDITED TEXT: the same engine as the title. The traced letters (G H O S T) where the text has them, the squared brush face for the others, the emblem leaf inside every O, the whole line condensed then shrunk to fit.
+        const E = ENGINE.yotei[0], GH2 = {}; Y.letters.forEach((l) => { if (!GH2[l.c]) GH2[l.c] = Object.assign({}, l, { sc: E.capH, sb: E.top + E.capH }); });
+        const lh0 = abs(pl, { left: "0", top: "0", width: "2000px", height: "1125px" }), L0 = setLine(lh0, tw, E, String(p.l0 === undefined ? "" : p.l0), GH2, null, { cx: E.cx, top: OY + E.top, maxw: E.maxw, col: ink, W: 2000, H: 1125 });
+        it.push({ n: lh0, key: "logo" });
+        const OG = GH2.O, em = OG && logoGold.length ? L0.list.filter((e) => e[0] === OG) : [];
+        if (em.length) {
+          const eh = abs(pl, { left: "0", top: "0", width: "2000px", height: "1125px", transformOrigin: L0.cx + "px 0px" }); if (L0.fx !== 1) eh.style.transform = `scaleX(${L0.fx})`;
+          const es = svgEl("svg", { width: 2000, height: 1125, viewBox: "0 0 2000 1125", style: "position:absolute;left:0;top:0;overflow:visible" }, eh), L = logoGold.slice().sort((a, b) => b.s - a.s)[0];
+          em.forEach((e) => { const kO = e[3], g = svgEl("g", { transform: `translate(${e[1] + (tw("emblemX", 464) - OG.b[0]) * kO},${e[2] + (tw("emblemY", 152) - OG.b[1]) * kO}) rotate(${tw("emblemRot", -8)}) scale(${tw("emblemSize", 40) * kO})` }, es); leafPaths(g, L.c); });
+          it.push({ n: eh, shape: true, key: "emblem" });
+        }
+      }
       it.push({ n: T(pl, { text: p.l1, x: cx0, y: OY + tw("y1", 208), size: tw("size1", 22), font: "Fraunces", weight: 500, color: ink, align: "center", ls: tw("ls1", 0.38) + "em", lh: 1, upper: true }), key: "l1" });
       // the brush stroke: a ragged body with dry streaks at the left end, and its text
       const S = Y.stroke, sb = S.b, sh = abs(pl, { left: "0", top: "0", width: "2000px", height: "1125px" }), ss = svgEl("svg", { width: 2000, height: 1125, viewBox: "0 0 2000 1125", style: "position:absolute;left:0;top:0;overflow:visible" }, sh), sdf = svgEl("defs", {}, ss);
@@ -289,21 +300,16 @@
         it.push({ n: gl, pts: gp, key: "ghost" }, { n: lf, pts: lp, key: "leaf" }, { n: sl, pts: sp, key: "sub" }, { n: tmx(tw("tmX", 845), tw("tmY", 146), white), key: "tm" });
         return it;
       }
-      const t0s = String(p.l0).toUpperCase(), t1s = String(p.l1).toUpperCase(), cx = tw("cx", 458), top = tw("top", 55), stop = tw("subTop", 233), scx = tw("subCx", 458), maxW = tw("maxW", 840);
-      // a long text is scaled down to fit the plane: the width of a line is proportional to its scale, so one measure at scale 1 gives the fit
-      const len1 = (txt, tab, gp, space, fbw) => { const a = [...txt].map((ch) => (ch === " " ? space : (tab[ch] ? tab[ch].b[2] - tab[ch].b[0] : fbw))); return a.reduce((s, v, i) => s + v + (i ? gp : 0), 0); };
-      const k = Math.min(tw("cap", 109) / 109, maxW / Math.max(1, len1(t0s, GH, tw("gap", 52), tw("space", 70), 100))), gap = tw("gap", 52) * k;
-      const sk = Math.min(tw("subCap", 35) / 35, maxW / Math.max(1, len1(t1s, SU, tw("subGap", 9), tw("subSpace", 25), 26))), sgap = tw("subGap", 9) * sk, sspace = tw("subSpace", 25) * sk;
-      const run = (txt, tab, kk, gp, space, fbw) => { const its = [...txt].map((ch) => ({ ch, g: tab[ch], w: ch === " " ? space : (tab[ch] ? (tab[ch].b[2] - tab[ch].b[0]) * kk : fbw) })); return { its, total: its.reduce((s, q, i) => s + q.w + (i ? gp : 0), 0) }; };
-      const L0 = run(t0s, GH, k, gap, tw("space", 70) * k, 100 * k), L1 = run(t1s, SU, sk, sgap, sspace, 26 * sk);
-      const gList = [], lList = [], sList = []; let x = cx - L0.total / 2, last = null;
-      L0.its.forEach((q) => { if (q.ch !== " ") { gList.push(q.g ? [q.g, x, top + (q.g.b[1] - 55) * k, k, white] : [{ fb: true, ch: q.ch, w: q.w, h: 109 * k, fs: 1.27, by: 0.963, font: "Sora", weight: 700 }, x, top, k, white]);
-        if (q.g && q.ch === "O") lList.push([Z.leaf, x + (Z.leaf.b[0] - q.g.b[0]) * k, top + (Z.leaf.b[1] - 55) * k, k, gold]); last = x + q.w; } x += q.w + gap; });
-      x = scx - L1.total / 2; L1.its.forEach((q) => { if (q.ch !== " ") sList.push(q.g ? [q.g, x, stop + (q.g.b[1] - 233) * sk, sk, subc] : [{ fb: true, ch: q.ch, w: q.w, h: 35 * sk, fs: 1.09, by: 0.886, font: "PlayfairDisplay", weight: 600 }, x, stop, sk, subc]); x += q.w + sgap; });
-      it.push({ n: gl, pts: mk(gl, gList), key: "ghost" });
-      if (lList.length) it.push({ n: lf, pts: mk(lf, lList), key: "leaf" });
-      it.push({ n: sl, pts: mk(sl, sList), key: "sub" });
-      if (last !== null) it.push({ n: tmx(last + 2 * k, top + 94 * k, white), key: "tm" });
+      // EDITED TEXT: the shared engine. GHOST is set with the traced letters it has (G H O S T), the others come from the block font (squared strokes of 18 % of the cap height, like the brush logo); OF YOTEI with the traced letters and the alphabet of the face (Optima Bold fitted).
+      // Every traced letter shares one cap height and one baseline (each keeps its own hand-drawn offset); the leaf follows each O; the TM follows the end of the line. Numbers of the lines: ENGINE.ytitle.
+      const [E0, E1] = ENGINE.ytitle, AL = window.ZSAlpha && window.ZSAlpha["ytitle-sub"];
+      Z.ghost.forEach((g) => { g.sc = E0.capH; g.sb = E0.top + E0.capH; }); Z.sub.forEach((g) => { g.sc = E1.capH; g.sb = E1.top + E1.capH; });
+      const L0 = setLine(gl, tw, E0, String(p.l0), GH, null, { cx: E0.cx, top: E0.top, maxw: E0.maxw, col: white, W: Z.w, H: Z.h }), L1 = setLine(sl, tw, E1, String(p.l1), SU, AL, { cx: E1.cx, top: E1.top, maxw: E1.maxw, col: subc, W: Z.w, H: Z.h });
+      it.push({ n: gl, pts: L0.list.map((e, i) => entryPts(e, i)), key: "ghost" });
+      const OG = GH.O, lList = OG ? L0.list.filter((e) => e[0] === OG).map((e) => [Z.leaf, e[1] + (Z.leaf.b[0] - OG.b[0]) * e[3], e[2] + (Z.leaf.b[1] - OG.b[1]) * e[3], e[3], gold]) : [];
+      if (lList.length) { const lc = abs(lf, { left: "0", top: "0", width: Z.w + "px", height: Z.h + "px", transformOrigin: L0.cx + "px 0px" }); if (L0.fx !== 1) lc.style.transform = `scaleX(${L0.fx})`; it.push({ n: lf, pts: mk(lc, lList), key: "leaf" }); }
+      it.push({ n: sl, pts: L1.list.map((e, i) => entryPts(e, i)), key: "sub" });
+      if (L0.list.length) it.push({ n: tmx(L0.cx + L0.total * L0.fx / 2 + 2 * L0.kk, L0.base - 18 * L0.kk, white), key: "tm" });
       return it;
     },
     zhongkui(pl, p) {
@@ -398,11 +404,26 @@
     lol: { l1: "Titre", l2: "Label en haut à droite" }, inox1: { l1: "KITAE", l2: "L'AME", l3: "DU", l4: "KATANA", l5: "Date", l6: "Heure", l7: "AM / PM", l8: "Température", l9: "Coordonnées" }, inox2: { l1: "Compteur (J+89)", l2: "Légende du haut (SEMAINE)", l3: "Numéro de semaine", l4: "Légende du bas (MOIS)", l5: "Numéro de mois" },
     inox3: { l1: "Nom du pays (CUBA)", l2: "Altitude (135M)", l3: "Ville (VIÑALES)" }, nolan: { l1: "Ville (TOKYO)" } };
   Object.keys(NAMES).forEach((k) => { if (DEFAULTS[k]) DEFAULTS[k].names = NAMES[k]; });
+  // the lines of the lettering layouts that the shared engine sets when a text is edited: THE single source of their numbers (the layout reads them, the sliders of the editor are generated from them).
+  // capH = height of the (padded) boxes of the traced letters, pad = margin of those boxes (4 px by default, as on the cards), gap / space = gaps between the boxes measured on the original, maxw = the widest the line may grow before it condenses, top / cx = where the line sits, fb = the block font of the face (w, sw, c, rough in fractions of the cap height).
+  const ENGINE = {
+    ytitle: [{ k: "l0", name: "Lettres GHOST", capH: 109, gap: 52, space: 140, maxw: 840, top: 55, cx: 458, fb: { w: 1.0, sw: 0.18, c: 0, rough: 0.049 }, upper: true },
+      { k: "l1", name: "Sous-titre (OF YŌTEI)", capH: 35, gap: 9, space: 25, maxw: 560, top: 233, cx: 458, fb: { w: 0.7, sw: 0.15, c: 0, rough: 0.048 }, alpha: "ytitle-sub", upper: true }],
+    yotei: [{ k: "l0", name: "Logo GHOST", capH: 70, gap: 29, space: 70, maxw: 560, top: 97, cx: 467, fb: { w: 1.0, sw: 0.18, c: 0, rough: 0.049 }, upper: true }],
+  };
   const SIZE = { indy: [1080, 1080], zhongkui: [1600, 668], rdr: [2000, 871], yotei: [2000, 1125], ytitle: [920, 290], lol: [2000, 1096], inox1: [2000, 1096], inox2: [2000, 1115], inox3: [2000, 1044], nolan: [2000, 1250] };
 
   // ---- title cards (18 October 2026): lettering isolated as a custom font (window.ZSCards.<key>, Scripts/CardTrace.py). One generic layout for every card: each line is a holder of glyph boxes (`.ch`); a line whose text is the original one keeps its
   // traced places, an edited line (or the custom mode) is recomposed on its own alignment (left, centre or right as the card does), scaled down to fit, with the measured gaps; a character the font does not have is set in a real face of the card.
   const CARD_KEYS = ["lol", "inox1", "inox2", "inox3", "nolan"];
+  // the edge of ONE letter (its own svg): `er` px of erosion (a thinner weight) then a fractal-noise displacement of `rg` px (the distress of the brush or the stamp); `hh` = the height of the letter box
+  function distress(v, hh, er, rg, i) {
+    if (!(er > 0.3 || rg > 0.3)) return;
+    const fid = "ab" + (traceGradId++), f = svgEl("filter", { id: fid, filterUnits: "objectBoundingBox", x: "-25%", y: "-10%", width: "150%", height: "120%", "color-interpolation-filters": "sRGB" }, svgEl("defs", {}, v)); let cur = "SourceGraphic";
+    if (er > 0.3) { svgEl("feMorphology", { operator: "erode", radius: er.toFixed(2), in: cur, result: "abe" }, f); cur = "abe"; }
+    if (rg > 0.3) { svgEl("feTurbulence", { type: "fractalNoise", baseFrequency: `${(18 / hh).toFixed(4)} ${(24 / hh).toFixed(4)}`, numOctaves: 3, seed: (i * 7 + 3) % 97, result: "abn" }, f); svgEl("feDisplacementMap", { in: cur, in2: "abn", scale: rg.toFixed(2), xChannelSelector: "R", yChannelSelector: "G" }, f); }
+    v.style.filter = `url(#${fid})`;
+  }
   function glyphBoxes(parent, list, defCol, i0) {  // list of [glyph, x, y, scale, colour]; a glyph with `fb` is a text fallback
     list.forEach(([g, x, y, k, col, acc], i2) => {
       const i = i2 + (i0 || 0);
@@ -410,19 +431,13 @@
         const A = g.A, ag = g.ag, u = g.u * k, bw = ag.a * A.sx * u, hh = 1000 * u, c = abs(parent, { left: x + "px", top: y + "px", width: bw + "px", height: hh + "px", overflow: "visible" }); c.className += " ch"; c.dataset.i = String(i);
         const v = svgEl("svg", { width: bw, height: hh, viewBox: `0 0 ${ag.a * A.sx} 1000`, style: "position:absolute;left:0;top:0;overflow:visible" }, c), gr = svgEl("g", { transform: `scale(${A.sx} 1)` }, v), cl = col || defCol;
         svgEl("path", { d: ag.d, fill: cl, stroke: g.dilU > 0 ? cl : "none", "stroke-width": g.dilU > 0 ? 2 * g.dilU : 0, "stroke-linejoin": "miter", "stroke-miterlimit": 2.5 }, gr);
-        const er = g.dilU < 0 ? -g.dilU * u : 0, rg = g.rough * hh;  // a thinner weight erodes, the distress displaces the edge by a noise: both are filters of this letter only
-        if (er > 0.3 || rg > 0.3) {
-          const fid = "ab" + (traceGradId++), f = svgEl("filter", { id: fid, filterUnits: "objectBoundingBox", x: "-25%", y: "-10%", width: "150%", height: "120%", "color-interpolation-filters": "sRGB" }, svgEl("defs", {}, v)); let cur = "SourceGraphic";
-          if (er > 0.3) { svgEl("feMorphology", { operator: "erode", radius: er.toFixed(2), in: cur, result: "abe" }, f); cur = "abe"; }
-          if (rg > 0.3) { svgEl("feTurbulence", { type: "fractalNoise", baseFrequency: `${(18 / hh).toFixed(4)} ${(24 / hh).toFixed(4)}`, numOctaves: 3, seed: (i * 7 + 3) % 97, result: "abn" }, f); svgEl("feDisplacementMap", { in: cur, in2: "abn", scale: rg.toFixed(2), xChannelSelector: "R", yChannelSelector: "G" }, f); }
-          v.style.filter = `url(#${fid})`;
-        }
+        distress(v, hh, g.dilU < 0 ? -g.dilU * u : 0, g.rough * hh, i);  // a thinner weight erodes, the distress displaces the edge by a noise: both are filters of this letter only
         if (acc) { const va = svgEl("svg", { width: bw, height: hh, viewBox: `0 0 ${bw} ${hh}`, style: "position:absolute;left:0;top:0;overflow:visible" }, c); svgEl("path", { d: window.ZSBlock.mark(acc.m, bw, hh, acc.o), fill: "none", stroke: cl, "stroke-width": (acc.o.sw || 0.14) * hh * 0.55, "stroke-linejoin": "miter", "stroke-miterlimit": 2.5 }, va); }
         return;
       }
       if (g.fb) {  // a letter the font does not have: drawn by the procedural block font with the strokes of the card
         const bg = window.ZSBlock.glyph(g.ch, g.h, g.o), c = abs(parent, { left: x + "px", top: y + "px", width: bg.w + "px", height: g.h + "px", overflow: "visible" }); c.className += " ch"; c.dataset.i = String(i);
-        const v = svgEl("svg", { width: bg.w, height: g.h, viewBox: `0 0 ${bg.w} ${g.h}`, style: "position:absolute;left:0;top:0;overflow:visible" }, c); svgEl("path", { d: bg.d, fill: "none", stroke: col || defCol, "stroke-width": bg.sw, "stroke-linejoin": "miter", "stroke-miterlimit": 2, "stroke-linecap": "butt" }, v); return; }
+        const v = svgEl("svg", { width: bg.w, height: g.h, viewBox: `0 0 ${bg.w} ${g.h}`, style: "position:absolute;left:0;top:0;overflow:visible" }, c); svgEl("path", { d: bg.d, fill: "none", stroke: col || defCol, "stroke-width": bg.sw, "stroke-linejoin": "miter", "stroke-miterlimit": 2, "stroke-linecap": "butt" }, v); distress(v, g.h, 0, (g.rough || 0) * g.h, i); return; }
       const [bx0, by0, bx1, by1] = g.b, w = (bx1 - bx0) * k, hh = (by1 - by0) * k, c = abs(parent, { left: x + "px", top: y + "px", width: w + "px", height: hh + "px", overflow: "visible" }); c.className += " ch"; c.dataset.i = String(i);
       const v = svgEl("svg", { width: w, height: hh, viewBox: `${bx0} ${by0} ${bx1 - bx0} ${by1 - by0}`, style: "position:absolute;left:0;top:0;overflow:visible" }, c); svgEl("path", { d: g.d, fill: col || defCol, "fill-rule": "evenodd" }, v);
       if (acc) { const va = svgEl("svg", { width: w, height: hh, viewBox: `0 0 ${w} ${hh}`, style: "position:absolute;left:0;top:0;overflow:visible" }, c);  // the accent of a letter taken from the font: drawn above it with the strokes of the card
@@ -433,16 +448,17 @@
   // each one coming from the traced font when it has it, else from the ALPHABET of the face (a real typeface fitted to the traced letters: stretch, weight, distress), else from the block font. `ln` describes the line:
   // { k, capH (padded box height of the traced letters), cap (ink cap height), gap, space (box gaps measured on the original), fb (block font parameters), upper }.
   function shareRow(tw, ln, text, tab, A) {
-    const useT = tw(ln.k + "_UseTraced", 1) >= 0.5, up = ln.upper === false ? text : text.toUpperCase(), cap = ln.cap || ln.capH - 8, u = cap / 1000;
-    const gap = Math.max(tw(ln.k + "Gap", ln.gap) + 8, 0.012 * ln.capH), space = tw(ln.k + "Space", ln.space) + 8, dilU = A ? A.dil + tw(ln.k + "_AddWeight", 0) * 1000 / cap : 0, rough = A ? A.rough * tw(ln.k + "_AddRough", 100) / 100 : 0;
+    const pad = ln.pad === undefined ? 4 : ln.pad, useT = tw(ln.k + "_UseTraced", 1) >= 0.5, up = ln.upper === false ? text : text.toUpperCase(), cap = ln.cap || ln.capH - 2 * pad, u = cap / 1000;  // pad = the margin of the traced boxes (4 px on the cards, 0 when the boxes are tight)
+    const gap = Math.max(tw(ln.k + "Gap", ln.gap) + 2 * pad, 0.012 * ln.capH), space = tw(ln.k + "Space", ln.space) + 2 * pad, dilU = A ? A.dil + tw(ln.k + "_AddWeight", 0) * 1000 / cap : 0, rough = A ? A.rough * tw(ln.k + "_AddRough", 100) / 100 : 0, brough = ((ln.fb && ln.fb.rough) || 0) * tw(ln.k + "_AddRough", 100) / 100;
     const row = [...up].map((ch) => {
       if (ch === " ") return { ch, kind: " " };
       const sp = window.ZSBlock.split(ch), tx = useT ? tab[ch] : null, ax = A && A.glyphs[ch], tb = useT && sp ? tab[sp.base] : null, ab = A && sp && A.glyphs[sp.base];  // traced letter, then the precomposed letter of the alphabet, then a base letter with a drawn accent
       const tg = tx || (ax ? null : tb);
-      if (tg) { const r = ln.capH / (tg.sc || ln.capH), bw = (tg.b[2] - tg.b[0]) * r; return { ch, kind: "t", g: tg, r, acc: tx ? null : sp.mark, boxW: bw, inkOff: 4 * r, inkW: bw - 8 * r }; }
+      if (tg) { const r = ln.capH / (tg.sc || ln.capH), bw = (tg.b[2] - tg.b[0]) * r; return { ch, kind: "t", g: tg, r, acc: tx ? null : sp.mark, boxW: bw, inkOff: pad * r, inkW: bw - 2 * pad * r }; }
       const ag = ax || ab;
       if (ag) { const i0 = (ag.x0 * A.sx - dilU) * u, i1 = (ag.x1 * A.sx + dilU) * u; return { ch, kind: "a", A, ag, u, dilU, rough, acc: ax ? null : (sp && sp.mark), boxW: ag.a * A.sx * u, inkOff: i0, inkW: i1 - i0 }; }
-      const bw = window.ZSBlock.glyph(ch, cap, ln.fb).w; return { ch, kind: "b", boxW: bw, inkOff: 0, inkW: bw };
+      const fbx = ln.fb ? Object.assign({}, ln.fb, { sw: (ln.fb.sw || 0.14) + tw(ln.k + "_AddWeight", 0) / cap }) : ln.fb, bg = window.ZSBlock.glyph(ch, cap, fbx);  // the added weight thickens the strokes of the block font (px at scale 1)
+      return { ch, kind: "b", fb: fbx, boxW: bg.w, inkOff: bg.ink[0], inkW: bg.ink[1] - bg.ink[0], rough: brough };
     });
     let x = 0, first = true, pend = false;
     row.forEach((q) => { if (q.kind === " ") { pend = true; return; } if (!first) x += pend ? space : gap; q.x = x; x += q.inkW; first = false; pend = false; });
@@ -450,14 +466,51 @@
   }
   // the glyph entries of a measured row (for glyphBoxes): x0 = the left of the ink, kk = the scale, base = the padded baseline of the traced boxes (the ink baseline is 4 px above it)
   function rowEntries(row, ln, kk, x0, base, col) {
-    const cap = ln.cap || ln.capH - 8, list = [], inkBase = base - 4 * kk;
+    const pad = ln.pad === undefined ? 4 : ln.pad, cap = ln.cap || ln.capH - 2 * pad, list = [], inkBase = base - pad * kk;
     row.forEach((q) => {
       if (q.kind === " ") return; const bx = x0 + (q.x - q.inkOff) * kk;
       if (q.kind === "t") list.push([q.g, bx, base + (q.g.b[1] - (q.g.sb === undefined ? base : q.g.sb)) * q.r * kk, kk * q.r, col, q.acc ? { m: q.acc, o: ln.fb, cap: cap * kk } : null]);
       else if (q.kind === "a") list.push([{ alpha: true, A: q.A, ag: q.ag, u: q.u, dilU: q.dilU, rough: q.rough }, bx, inkBase - cap * kk, kk, col, q.acc ? { m: q.acc, o: ln.fb } : null]);
-      else list.push([{ fb: true, ch: q.ch, h: cap * kk, o: ln.fb }, bx, inkBase - cap * kk, kk, col]);
+      else list.push([{ fb: true, ch: q.ch, h: cap * kk, o: q.fb || ln.fb, rough: q.rough }, bx, inkBase - cap * kk, kk, col]);
     });
     return list;
+  }
+  // A longer text first CONDENSES (down to MinCondense, 72 % by default: the heavy faces stay readable), then shrinks uniformly: the composition keeps its footprint and the height of its letters as long as it can.
+  const fitOf = (need, minC) => (need >= minC ? { sy: 1, fx: need } : { sy: need / minC, fx: minC });
+  // one edited line set by the shared engine, centred on o.cx (`<k>X` moves it) with its top at o.top (`<k>Y`): measured, condensed then shrunk to fit o.maxw (`<k>MaxW`), placed in a holder of glyph boxes. Returns the entries and the placement.
+  function setLine(parent, tw, ln, text, tab, A, o) {  // o = { cx, top, maxw, col, W, H, i0 }
+    const R = shareRow(tw, ln, text, tab, A), ku = tw(ln.k + "K", 1), need = Math.min(1, tw(ln.k + "MaxW", o.maxw) / Math.max(1, R.tot1 * ku)), ft = fitOf(need, tw(ln.k + "_Condense", 72) / 100), kk = ku * ft.sy, total = R.tot1 * kk, cx = tw(ln.k + "X", o.cx), x0 = cx - total / 2;
+    const cond = abs(parent, { left: "0", top: "0", width: o.W + "px", height: o.H + "px", transformOrigin: `${cx}px 0px` }); if (ft.fx !== 1) cond.style.transform = `scaleX(${ft.fx})`;  // the condensing happens in this inner box
+    const base = tw(ln.k + "Y", o.top) + ln.capH, list = rowEntries(R.row, ln, kk, x0, base, o.col); glyphBoxes(cond, list, o.col, o.i0 || 0);
+    return { list, kk, fx: ft.fx, cx, total, x0, base, cond };
+  }
+  // the points of the wind appearances: a traced letter carries its own; any other letter is sampled along its outline or the skeleton of its drawing, about one point per 290 px2 of its box (the density of the traced letters)
+  function flatPath(d) {
+    const tk = String(d).match(/[MLHVQCZ]|-?\d*\.?\d+/g) || [], P = []; let i = 0, cmd = "", x = 0, y = 0, sx = 0, sy = 0, cur = null; const num = () => Number(tk[i++]);
+    while (i < tk.length) {
+      if (/[MLHVQCZ]/.test(tk[i])) cmd = tk[i++];
+      if (cmd === "Z") { if (cur) cur.push([sx, sy]); x = sx; y = sy; continue; }
+      if (cmd === "M") { x = num(); y = num(); sx = x; sy = y; cur = [[x, y]]; P.push(cur); cmd = "L"; }
+      else if (cmd === "L") { x = num(); y = num(); cur.push([x, y]); }
+      else if (cmd === "H") { x = num(); cur.push([x, y]); }
+      else if (cmd === "V") { y = num(); cur.push([x, y]); }
+      else if (cmd === "Q") { const a = num(), b = num(), ex = num(), ey = num(); for (let m = 1; m <= 6; m++) { const q = m / 6, w0 = (1 - q) * (1 - q), w1 = 2 * (1 - q) * q, w2 = q * q; cur.push([w0 * x + w1 * a + w2 * ex, w0 * y + w1 * b + w2 * ey]); } x = ex; y = ey; }
+      else if (cmd === "C") { const a = num(), b = num(), c2 = num(), d2 = num(), ex = num(), ey = num(); for (let m = 1; m <= 8; m++) { const q = m / 8, w0 = (1 - q) * (1 - q) * (1 - q), w1 = 3 * (1 - q) * (1 - q) * q, w2 = 3 * (1 - q) * q * q, w3 = q * q * q; cur.push([w0 * x + w1 * a + w2 * c2 + w3 * ex, w0 * y + w1 * b + w2 * d2 + w3 * ey]); } x = ex; y = ey; }
+      else break;
+    }
+    return P;
+  }
+  function entryPts(e, i) {
+    const [g, x, y, k] = e;
+    if (g.p && g.b) return g.p.map((q) => [x + (q[0] - g.b[0]) * k, y + (q[1] - g.b[1]) * k]);
+    let polys, mx, my, w, h;
+    if (g.alpha) { polys = flatPath(g.ag.d); mx = g.A.sx * g.u * k; my = g.u * k; w = g.ag.a * mx; h = 1000 * my; }
+    else if (g.fb) { const bg = window.ZSBlock.glyph(g.ch, g.h, g.o); polys = flatPath(bg.d); mx = my = 1; w = bg.w; h = g.h; }
+    else return [];
+    const segs = []; let L = 0; polys.forEach((Q) => { for (let j = 1; j < Q.length; j++) { const l = Math.hypot(Q[j][0] - Q[j - 1][0], Q[j][1] - Q[j - 1][1]); if (l > 0) { segs.push([Q[j - 1], Q[j], l, L]); L += l; } } });
+    const n = Math.max(6, Math.min(80, Math.round(w * h / 290))), R = rnd(7 + i * 31), out = [];
+    for (let m = 0; segs.length && m < n; m++) { const t = (m + 0.15 + 0.7 * R()) / n * L, q = segs.find((sg) => sg[3] + sg[2] >= t) || segs[segs.length - 1], f = Math.max(0, Math.min(1, (t - q[3]) / q[2])); out.push([x + (q[0][0] + (q[1][0] - q[0][0]) * f) * mx, y + (q[0][1] + (q[1][1] - q[0][1]) * f) * my]); }
+    return out;
   }
   function cardLayout(key) {
     return (pl, p) => {
@@ -470,8 +523,6 @@
       // lines of a group (a row of words that follow each other, like L'AME DU KATANA) are composed as ONE flow centred where the original row was, scaled together to fit: a longer word pushes its neighbours instead of covering them
       const groups = {}, flow = {};
       Z.lines.forEach((ln) => { if (ln.group) (groups[ln.group] = groups[ln.group] || []).push(ln); });
-      // A longer text first CONDENSES (down to MinCondense, 72 % by default: the heavy faces stay readable), then shrinks uniformly: the composition keeps its footprint and the height of its letters as long as it can.
-      const fitOf = (need, minC) => (need >= minC ? { sy: 1, fx: need } : { sy: need / minC, fx: minC });
       Object.keys(groups).forEach((gk) => {
         const g = groups[gk]; if (p.design !== "custom" && g.every((ln) => String(p[ln.k]) === ln.text)) return;
         const rows = g.map((ln) => rowOf(ln, String(p[ln.k]))), total1 = rows.reduce((s2, r, i) => s2 + r.tot1 + (i ? g[i].gb + 8 : 0), 0), ku = tw(gk + "K", 1), need = Math.min(1, tw(gk + "MaxW", g[0].gmax || 1e9) / Math.max(1, total1 * ku)), ft = fitOf(need, tw(gk + "_Condense", 72) / 100), k = ku * ft.sy;
@@ -535,9 +586,7 @@
       ["Textes", "y2", "COMPLETE EDITION : position Y", 260, 150, 380, 1], ["Textes", "size2", "COMPLETE EDITION : taille", 14.5, 8, 40, 0.5], ["Textes", "ls2", "COMPLETE EDITION : espacement (em)", 0.36, 0, 1, 0.01],
       ["Textes", "tx", "Titre et paragraphe : position X", 226, 100, 500, 1], ["Textes", "y3", "Titre : position Y", 348, 250, 480, 1], ["Textes", "size3", "Titre : taille", 49, 20, 120, 1], ["Textes", "weight3", "Titre : graisse", 260, 100, 800, 10], ["Textes", "y4", "Paragraphe : position Y", 421, 300, 560, 1], ["Textes", "size4", "Paragraphe : taille", 18.8, 10, 40, 0.2], ["Textes", "ls4", "Paragraphe : espacement (em)", 0, -0.05, 0.3, 0.005], ["Textes", "lh4", "Paragraphe : interligne", 1.45, 1, 2.2, 0.01],
       ["Bouton", "size5", "Texte du bouton : taille", 19.4, 10, 40, 0.2], ["Bouton", "weight5", "Texte du bouton : graisse", 600, 100, 800, 10]],
-    ytitle: [["Texte modifié", "cap", "Hauteur des capitales (px)", 109, 40, 200, 1], ["Texte modifié", "gap", "Espace entre lettres (px)", 52, 0, 140, 1], ["Texte modifié", "top", "Position Y de la ligne GHOST", 55, 0, 160, 1], ["Texte modifié", "cx", "Centre de la ligne GHOST", 458, 200, 700, 1], ["Texte modifié", "maxW", "Largeur maximale (px)", 840, 300, 900, 5],
-      ["Sous-titre", "subCap", "Hauteur des capitales du sous-titre", 35, 12, 70, 0.5], ["Sous-titre", "subTop", "Position Y du sous-titre", 233, 160, 280, 1], ["Sous-titre", "subGap", "Espace entre lettres du sous-titre", 9, 0, 40, 0.5], ["Sous-titre", "subSpace", "Largeur d'un espace du sous-titre", 25, 5, 80, 1], ["Sous-titre", "subCx", "Centre du sous-titre", 458, 200, 700, 1],
-      ["Marque TM", "tmSize", "Taille du TM", 9.5, 5, 24, 0.5], ["Marque TM", "tmX", "Position X du TM", 845, 700, 900, 1], ["Marque TM", "tmY", "Position Y du TM", 146, 100, 200, 1]],
+    ytitle: [["Marque TM", "tmSize", "Taille du TM", 9.5, 5, 24, 0.5], ["Marque TM", "tmX", "Position X du TM (original)", 845, 700, 900, 1], ["Marque TM", "tmY", "Position Y du TM (original)", 146, 100, 200, 1]],
   };
   const HOLDERS = { rdr: [["plate", "Plaque noire"], ["l1", "Ligne du haut"], ["l2", "RED DEAD (ou titre modifié)"], ["l3", "REDEMPTION"], ["ii", "Le II rouge"]], yotei: [["logo", "Logo GHOST"], ["emblem", "Feuille de l'emblème"], ["l1", "OF YŌTEI"], ["stroke", "Trait de pinceau"], ["l2", "COMPLETE EDITION"], ["l3", "Titre"], ["l4", "Paragraphe"], ["btn", "Bouton"]],
     ytitle: [["ghost", "Lettres GHOST"], ["leaf", "Feuille dorée"], ["sub", "OF YŌTEI"], ["tm", "Marque TM"]] };
@@ -551,6 +600,25 @@
       }
       HOLD.forEach((q) => { if (q[0] === "Track" && ln && ln.type === "text") return; out.push({ id: k + "_" + q[0], type: "number", label: q[1], group: "Lettrage · " + label, default: q[2], min: q[3], max: q[4], step: q[5], closed: true, targets: [{ key: "tweaks", tweak: k + "_" + q[0] }] }); });
     });
+    // the sliders of the lines set by the shared engine when a text is edited (size, position, gaps, width, condensing, added letters): generated from the same numbers the layout reads
+    const W0 = (SIZE[layout] || [2000])[0], eng = (name, k, d, alpha, noXY) => {
+      const g = "Ligne modifiée · " + name, add = (suffix, label, def, lo, hi, st) => out.push({ id: k + suffix, type: "number", label, group: g, default: def, min: lo, max: hi, step: st, closed: true, targets: [{ key: "tweaks", tweak: k + suffix }] });
+      if (!noXY) { add("X", "Centre de la ligne (px)", d.cx, 0, W0, 1); add("Y", "Haut de la ligne (px)", d.top, 0, (SIZE[layout] || [0, 1300])[1], 1); }
+      add("K", "Taille de la ligne (échelle)", 1, 0.3, 2.5, 0.01); add("Gap", "Espace entre les lettres (px)", d.gap, -60, 200, 1); add("Space", "Espace entre les mots (px)", d.space, 0, 320, 1); if (d.maxw) add("MaxW", "Largeur maximale avant de condenser (px)", Math.min(d.maxw, W0), 10, W0, 5);  // a line with no limit (9999) shows the width of the plane
+      add("_Condense", "Condensation minimale (%)", 72, 40, 100, 1);
+      if (alpha !== false) { add("_UseTraced", "Lettres décalquées (1) ou alphabet seul (0)", 1, 0, 1, 1); add("_AddWeight", "Graisse des lettres ajoutées (px)", 0, -12, 24, 0.5); add("_AddRough", "Rugosité des lettres ajoutées (%)", 100, 0, 400, 5); }
+    };
+    (ENGINE[layout] || []).forEach((ln) => eng(ln.name, ln.k, ln, true));
+    if (cd) { const gdone = {}; cd.lines.forEach((ln) => { if (ln.type === "text") return;
+      if (ln.group && !gdone[ln.group]) { gdone[ln.group] = 1; const g = cd.lines.filter((q) => q.group === ln.group), d0 = { cx: (Math.min.apply(null, g.map((q) => q.x0)) + Math.max.apply(null, g.map((q) => q.x1))) / 2, top: 0, gap: 0, space: 0, maxw: ln.gmax || 0 };
+        const gg = "Lignes en rangée · " + g.map((q) => q.name || q.k).join(" + "), ad = (suffix, label, def, lo, hi, st) => out.push({ id: ln.group + suffix, type: "number", label, group: gg, default: def, min: lo, max: hi, step: st, closed: true, targets: [{ key: "tweaks", tweak: ln.group + suffix }] });
+        ad("X", "Centre de la rangée (px)", Math.round(d0.cx), 0, W0, 1); ad("K", "Taille de la rangée (échelle)", 1, 0.3, 2.5, 0.01); if (d0.maxw) ad("MaxW", "Largeur maximale avant de condenser (px)", Math.min(d0.maxw, W0), 10, W0, 5); ad("_Condense", "Condensation minimale (%)", 72, 40, 100, 1); }
+      const al = (cd.alpha || {})[ln.face], base = { cx: ln.align === "left" ? ln.x0 + 4 : ln.align === "right" ? ln.x1 - 4 : ln.cx, top: 0, gap: ln.gap, space: ln.space, maxw: ln.maxw };
+      if (ln.group) { const g = "Ligne modifiée · " + (ln.name || ln.k), add = (suffix, label, def, lo, hi, st) => out.push({ id: ln.k + suffix, type: "number", label, group: g, default: def, min: lo, max: hi, step: st, closed: true, targets: [{ key: "tweaks", tweak: ln.k + suffix }] });
+        add("Gap", "Espace entre les lettres (px)", ln.gap, -60, 200, 1); add("Space", "Espace entre les mots (px)", ln.space, 0, 320, 1); if (al) { add("_UseTraced", "Lettres décalquées (1) ou alphabet seul (0)", 1, 0, 1, 1); add("_AddWeight", "Graisse des lettres ajoutées (px)", 0, -12, 24, 0.5); add("_AddRough", "Rugosité des lettres ajoutées (%)", 100, 0, 400, 5); } }
+      else eng(ln.name || ln.k, ln.k, base, !!al, true); }); }
+    if (layout === "rdr") ["l2", "l3", "l4"].forEach((k, i) => { const g = "Ligne modifiée · " + ["Titre, ligne 1", "Titre, ligne 2", "Chiffre"][i], add = (suffix, label, def, lo, hi, st) => out.push({ id: k + suffix, type: "number", label, group: g, default: def, min: lo, max: hi, step: st, closed: true, targets: [{ key: "tweaks", tweak: k + suffix }] });
+      add("Gap", "Espace entre les lettres (px)", [-5, -3.75, 6][i], -60, 200, 1); add("Space", "Espace entre les mots (px)", Math.round(0.32 * [151, 114, 267][i]), 0, 320, 1); add("_UseTraced", "Lettres décalquées (1) ou alphabet seul (0)", 1, 0, 1, 1); add("_AddWeight", "Graisse des lettres ajoutées (px)", 0, -12, 24, 0.5); add("_AddRough", "Rugosité des lettres ajoutées (%)", 100, 0, 400, 5); });
     (LAYOUT_TWEAKS[layout] || []).forEach((q) => out.push({ id: q[1], type: "number", label: q[2], group: "Réglages · " + q[0], default: q[3], min: q[4], max: q[5], step: q[6], closed: true, targets: [{ key: "tweaks", tweak: q[1] }] }));
     return out;
   }
