@@ -25,6 +25,8 @@
     <button id="vdPlayAll" class="ghost" type="button">Tout lire</button>
   </header>
   <main id="vdMain" class="vd-main"></main>
+  <script src="/motion/web/hoverplay-core.js"></script>
+  <script src="/motion/web/hoverplay.js"></script>
   <script src="/motion/web/validate.js"></script>
 </body>
 </html>

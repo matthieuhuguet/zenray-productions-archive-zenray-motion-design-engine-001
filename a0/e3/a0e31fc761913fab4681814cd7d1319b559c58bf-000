@@ -37,3 +37,11 @@ Un modèle est un objet `ZS.register({ id, label, group, duration, params, build
 ## Corpus de références (16 October 2026)
 
 Un corpus de vidéos se calcule en lot par un workflow unique (télécharger, couper au rythme, bible et storyboard, Apple Vision, animation procédurale, style maison, musique) : voir `docs/CORPUS.md`.
+
+## Lecture au survol et clavier (18 October 2026)
+
+Dans l'éditeur Motion, la galerie, Validate, Not Validate et Previous Videos, le curseur posé sur une vidéo la lance (18 October 2026). Avec le curseur toujours dessus : Espace met en pause et relance, ← → avancent d'une image (Maj : d'une seconde), une flèche maintenue fait défiler les images de plus en plus vite après un court délai (18 October 2026). Un repère « image N / total » confirme l'image sous les flèches (18 October 2026).
+
+- Réglages : le bouton « ⏵ Survol » de l'en-tête (lecture au survol, son, délai, vitesse, accélération, durée de l'accélération, vitesse avec Maj), enregistrés dans le navigateur sous la clé `zs-hover` (18 October 2026).
+- Logique sans écran : `motion/web/hoverplay-core.js`, vérifiée dans les deux sens par `node motion/tests/test_hoverplay.mjs`. Branchement à l'écran : `motion/web/hoverplay.js`. Un lecteur se décrit par un adaptateur `{ play, pause, playing, time, duration, seek, fps, stopOnLeave }` (18 October 2026).
+- Dans l'éditeur, la lecture au survol est muette (le réglage « avec le son » la rend sonore) ; une lecture lancée avec le bouton ▶ continue quand le curseur sort, une lecture lancée par le survol s'arrête (18 October 2026).

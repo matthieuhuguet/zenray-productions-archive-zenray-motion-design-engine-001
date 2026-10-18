@@ -1,0 +1,160 @@
+// ZenRay Motion Design, the hover player (18 October 2026): the pointer over a video plays it; with the pointer still there, the space bar pauses and plays, the arrows move by one image
+// (Shift: one second), and an arrow held down scrolls the images fast. It serves every player of the app through an adapter { play, pause, playing, time, duration, seek, fps, stopOnLeave }:
+// the editor preview, the miniatures of the gallery, the cards of Validate, the tiles of mp4 (Previous Videos, reference videos, media).
+// The logic is in hoverplay-core.js (proven by node, motion/tests/test_hoverplay.mjs); this file is the glue: events, the settings panel in the header, the image counter.
+// FR : le lecteur au survol ; le curseur lance la video, espace pause / lit, les fleches avancent d'une image, une fleche maintenue defile vite.
+(function () {
+  "use strict";
+  const Core = window.ZSHoverCore;
+  if (!Core) return;
+  const LSKEY = "zs-hover";
+  const load = () => { try { return JSON.parse(localStorage.getItem(LSKEY) || "{}"); } catch (e) { return {}; } };
+  const save = () => { try { localStorage.setItem(LSKEY, JSON.stringify(P)); } catch (e) { /* private window */ } };
+  const P = Core.clean(load());   // the live settings: every controller reads this very object
+  let active = null, holder = null, raf = 0;   // active: the player under the pointer; holder: the one whose arrow is held (nothing else is kept: a gallery of hundreds of cards leaks nothing)
+  const now = () => performance.now() / 1000;
+  const fmt = (t) => { const m = Math.floor(t / 60), s = t - m * 60; return `${m}:${s.toFixed(2).padStart(5, "0")}`; };
+  const typing = (t) => !!t && (t.isContentEditable || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || (t.tagName === "INPUT" && /^(text|search|number|email|url|password|tel|date|time|datetime-local|month|week|)$/i.test(t.type || "")));
+
+  // ---- the counter that confirms the image under the arrows (image N / total), shown a moment after each key action
+  const style = document.createElement("style");
+  style.textContent = `.zs-hud{position:absolute;right:8px;top:8px;z-index:30;font:11px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;padding:3px 8px;border-radius:6px;background:rgba(0,0,0,.66);color:#fff;pointer-events:none;opacity:0;transition:opacity .15s}
+.zs-hud.on{opacity:1}
+.zs-hv{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;z-index:1;pointer-events:none}
+.hp-btn{white-space:nowrap}
+.hp-pop{position:absolute;right:12px;top:48px;z-index:60;width:330px;padding:12px 14px;border:1px solid var(--line,#ddd);border-radius:12px;background:var(--surface,#fff);color:var(--ink,#222);box-shadow:0 10px 30px rgba(0,0,0,.18);display:grid;gap:9px;font-size:13px}
+.hp-pop[hidden]{display:none}
+.hp-pop h4{margin:0;font-size:13px}
+.hp-pop label{display:grid;grid-template-columns:1fr 78px;gap:8px;align-items:center}
+.hp-pop label.chk{grid-template-columns:18px 1fr}
+.hp-pop input[type=number]{width:78px}
+.hp-pop .hint{font-size:11px;color:var(--ink-2,#777);margin:0}`;
+  document.head.appendChild(style);
+  function hud(rec) {
+    const a = rec.adapter, fps = Number(a.fps && a.fps()) || 30, t = Number(a.time()) || 0, d = Number(a.duration()) || 0;
+    const host = rec.opts.hudHost || rec.el;
+    let h = rec.hud;
+    if (!h || !h.isConnected) { h = rec.hud = document.createElement("div"); h.className = "zs-hud"; host.appendChild(h); }
+    h.textContent = `${a.playing() ? "▶" : "⏸"} ${fmt(t)} · image ${Math.round(t * fps)} / ${Math.round(d * fps)}`;
+    h.classList.add("on"); clearTimeout(rec.hudT); rec.hudT = setTimeout(() => h.classList.remove("on"), 1400);
+  }
+
+  // ---- attach a player to an element: the pointer over it plays it. Returns a function that detaches it.
+  // opts.onEnter / opts.onLeave: extra work around the hover (a tile creates and removes its video here); opts.hudHost: where the counter goes (default: the element).
+  function attach(el, adapter, opts) {
+    const rec = { el, adapter, opts: opts || {}, hud: null, hudT: 0 };
+    rec.ctl = Core.controller(adapter, P, { hud: () => hud(rec) });
+    const enter = (e) => {
+      if (e && e.pointerType === "touch") return;
+      active = rec;
+      if (rec.opts.onEnter) rec.opts.onEnter();
+      rec.ctl.enter();
+    };
+    const leave = () => {
+      rec.ctl.leave();
+      if (rec.opts.onLeave) rec.opts.onLeave();
+      if (active === rec) active = null;
+    };
+    el.addEventListener("pointerenter", enter);
+    el.addEventListener("pointerleave", leave);
+    return () => { el.removeEventListener("pointerenter", enter); el.removeEventListener("pointerleave", leave); if (active === rec) active = null; if (holder === rec) holder = null; };
+  }
+
+  // ---- the keys: captured before the page sees them, but only while a player is under the pointer and nobody is typing
+  // a held arrow is polled by the screen refresh AND by a 30 ms timer: the steps are owed by the clock, so polling twice changes nothing, and a screen that is slow or paused (a heavy page, a hidden window)
+  // does not freeze the scroll
+  let timer = 0;
+  const stopLoop = () => { if (timer) { clearInterval(timer); timer = 0; } };
+  const pollHeld = () => {
+    if (!active || !active.ctl.holding()) { stopLoop(); return false; }
+    active.ctl.poll(now()); return true;
+  };
+  const loop = () => { raf = 0; if (pollHeld()) raf = requestAnimationFrame(loop); };
+  const startLoop = () => { if (!raf) raf = requestAnimationFrame(loop); if (!timer) timer = setInterval(pollHeld, 30); };
+  window.addEventListener("keydown", (e) => {
+    if (!active) return;
+    if (!active.el.isConnected) { active = null; return; }
+    if (e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return;
+    if (active.ctl.keydown({ code: e.code, key: e.key, shift: e.shiftKey, repeat: e.repeat }, now())) {
+      e.preventDefault(); e.stopImmediatePropagation();
+      if (active.ctl.holding()) { holder = active; startLoop(); }
+    }
+  }, true);
+  window.addEventListener("keyup", (e) => { if (holder) holder.ctl.keyup({ code: e.code, key: e.key }); }, true);
+  window.addEventListener("blur", () => { if (holder) holder.ctl.blur(); });
+
+  // ---- a video element as a player (the first image is measured: a mp4 knows its frame rate only by playing)
+  function videoAdapter(getVideo, o) {
+    let measured = 0;
+    const V = () => getVideo();
+    const probe = (v) => {
+      if (measured || !v || !v.requestVideoFrameCallback) return;
+      const ts = [], f = (t, md) => {
+        ts.push(md.mediaTime);
+        if (ts.length < 9) { v.requestVideoFrameCallback(f); return; }
+        const d = []; for (let i = 1; i < ts.length; i++) if (ts[i] > ts[i - 1]) d.push(ts[i] - ts[i - 1]);
+        d.sort((a, b) => a - b); if (d.length) measured = Math.round(100 / d[Math.floor(d.length / 2)]) / 100;
+      };
+      v.requestVideoFrameCallback(f);
+    };
+    return Object.assign({
+      stopOnLeave: true,
+      play() { const v = V(); if (!v) return; if (!(o && o.keepMute)) v.muted = !P.sound; probe(v); const r = v.play(); if (r && r.catch) r.catch(() => {}); },
+      pause() { const v = V(); if (v) v.pause(); },
+      playing() { const v = V(); return !!v && !v.paused && !v.ended; },
+      time() { const v = V(); return v ? v.currentTime : 0; },
+      duration() { const v = V(); return v && isFinite(v.duration) ? v.duration : 0; },
+      seek(t) { const v = V(); if (v) v.currentTime = t; },
+      fps() { return measured || (o && o.fps) || 30; },
+    }, o && o.adapter);
+  }
+  // a tile that shows a poster: the pointer over it puts a muted looping video above the poster, leaving removes it
+  function tile(host, src, o) {
+    let v = null;
+    const ad = videoAdapter(() => { if (!v) { v = document.createElement("video"); v.className = "zs-hv"; v.src = src; v.loop = true; v.muted = !P.sound; v.playsInline = true; v.preload = "auto"; host.appendChild(v); } return v; }, o);
+    return attach(host, ad, { hudHost: host, onLeave() { if (v) { v.pause(); v.remove(); v = null; } } });
+  }
+  // a <video> that is already on the page (its own controls): the pointer over it plays it, and the sound stays what its controls say
+  const element = (v, o) => attach(v, videoAdapter(() => v, Object.assign({ keepMute: true }, o)), { hudHost: v.parentElement || v });   // its own controls decide the sound
+
+  // ---- the settings, in the header of every page: one small button, a panel of five numbers and two switches
+  function panel() {
+    const top = document.querySelector("header.top");
+    if (!top || top.querySelector(".hp-btn")) return;
+    const btn = document.createElement("button"); btn.type = "button"; btn.className = "ghost hp-btn"; btn.textContent = "⏵ Survol";
+    btn.title = "Lecture au survol : le curseur lance la vidéo, espace pause / lecture, flèches image par image";
+    const pop = document.createElement("div"); pop.className = "hp-pop"; pop.hidden = true;
+    const rows = [
+      ["hover", "Lire la vidéo quand le curseur passe dessus", "checkbox"],
+      ["sound", "Avec le son (aperçu de l'éditeur et vidéos)", "checkbox"],
+      ["holdDelay", "Délai avant le défilement d'une flèche maintenue (s)", "number"],
+      ["holdRate", "Vitesse du défilement au départ (images par seconde)", "number"],
+      ["holdAccel", "Accélération : combien de fois plus vite à la fin", "number"],
+      ["holdRamp", "Durée de l'accélération (s)", "number"],
+      ["shiftRate", "Avec Maj : secondes défilées par seconde", "number"],
+    ];
+    const inputs = {};
+    pop.appendChild(Object.assign(document.createElement("h4"), { textContent: "Lecture au survol" }));
+    rows.forEach(([k, label, type]) => {
+      const l = document.createElement("label"); if (type === "checkbox") l.className = "chk";
+      const i = document.createElement("input"); i.type = type; inputs[k] = i;
+      if (type === "number") { const [lo, hi, st] = Core.RANGE[k]; i.min = lo; i.max = hi; i.step = st; }
+      const s = document.createElement("span"); s.textContent = label;
+      if (type === "checkbox") l.append(i, s); else l.append(s, i);
+      i.addEventListener("change", () => { Object.assign(P, Core.clean(Object.assign({}, P, { [k]: type === "checkbox" ? i.checked : i.value }))); sync(); save(); });
+      pop.appendChild(l);
+    });
+    const sync = () => rows.forEach(([k, , type]) => { if (type === "checkbox") inputs[k].checked = !!P[k]; else inputs[k].value = P[k]; });
+    const reset = document.createElement("button"); reset.type = "button"; reset.className = "ghost"; reset.textContent = "Réinitialiser";
+    reset.onclick = () => { Object.assign(P, Core.clean({})); sync(); save(); };
+    const hint = document.createElement("p"); hint.className = "hint";
+    hint.textContent = "Espace : pause / lecture · ← → : une image · Maj + ← → : une seconde · maintenir une flèche : défilement rapide.";
+    pop.append(reset, hint); sync();
+    btn.onclick = (e) => { e.stopPropagation(); pop.hidden = !pop.hidden; };
+    document.addEventListener("click", (e) => { if (!pop.hidden && !pop.contains(e.target) && e.target !== btn) pop.hidden = true; });
+    top.appendChild(btn); document.body.appendChild(pop);
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", panel); else panel();
+
+  window.ZSHover = { attach, tile, element, videoAdapter, settings: () => P, active: () => active };
+})();

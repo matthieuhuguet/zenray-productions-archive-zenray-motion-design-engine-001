@@ -1,0 +1,147 @@
+// 18 October 2026: the logic of the hover player proven without a screen (motion/web/hoverplay-core.js): hover plays, space toggles, an arrow moves one image,
+// a held arrow scrolls fast after a delay (own repeat, speed independent of the refresh rate), the native key repeat is ignored, Shift moves by seconds, the settings are bounded.
+// Run: node motion/tests/test_hoverplay.mjs. FR : la logique du lecteur au survol, verifiee dans les deux sens.
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+const Core = require("../web/hoverplay-core.js");
+
+const fails = [];
+const check = (name, ok, detail) => { console.log((ok ? "ok   " : "FAIL ") + name + (ok ? "" : "  " + (detail || ""))); if (!ok) fails.push(name); };
+const near = (a, b, tol) => Math.abs(a - b) <= tol;
+const fake = (o) => {
+  const a = Object.assign({ t: 0, on: false, rate: 30, dur: 3, stopOnLeave: false, seeks: 0, plays: 0, pauses: 0 }, o || {});
+  return Object.assign(a, {
+    play() { this.on = true; this.plays++; }, pause() { this.on = false; this.pauses++; }, playing() { return this.on; },
+    time() { return this.t; }, duration() { return this.dur; }, seek(t) { this.t = t; this.seeks++; },
+    fps() { return this.rate; },
+  });
+};
+const key = (k) => Object.assign({ code: "", key: "", shift: false, repeat: false }, k);
+const RIGHT = key({ key: "ArrowRight" }), LEFT = key({ key: "ArrowLeft" }), SPACE = key({ code: "Space", key: " " });
+// holds a key from `t0` for `secs` seconds, polling like a screen at 60 Hz (or the given step in seconds)
+const hold = (c, k, secs, dt) => { c.keydown(k, 0); let n = 0; for (let t = dt; t <= secs + 1e-9; t += dt) n += c.poll(t); c.keyup(k); return n; };
+
+// ---- settings
+const P0 = Core.clean({});
+check("the defaults are the documented ones", P0.hover === true && P0.sound === false && P0.holdDelay === 0.25 && P0.holdRate === 30 && P0.holdAccel === 4 && P0.holdRamp === 1.5 && P0.shiftRate === 8, JSON.stringify(P0));
+const Pb = Core.clean({ holdRate: 9999, holdDelay: -5, holdAccel: "abc", holdRamp: "", shiftRate: null, hover: 0 });
+check("a number out of range is bounded, an unreadable one falls back to its default", Pb.holdRate === 240 && Pb.holdDelay === 0 && Pb.holdAccel === 4 && Pb.holdRamp === 1.5 && Pb.shiftRate === 8 && Pb.hover === false, JSON.stringify(Pb));
+
+// ---- one image at a time
+{
+  const a = fake({ dur: 3 }), c = Core.controller(a, Core.clean({}));
+  check("the first press moves one image (1/30 s) and pauses", c.keydown(RIGHT, 0) === true && near(a.t, 1 / 30, 1e-9) && a.on === false, `t=${a.t}`);
+  c.keyup(RIGHT); c.keydown(RIGHT, 1); c.keyup(RIGHT);
+  check("a second press moves a second image, on the frame grid", near(a.t, 2 / 30, 1e-9), `t=${a.t}`);
+  c.keydown(LEFT, 2); c.keyup(LEFT); c.keydown(LEFT, 3); c.keyup(LEFT); c.keydown(LEFT, 4); c.keyup(LEFT);
+  check("the left arrow stops at the first image (0), never below", a.t === 0, `t=${a.t}`);
+  a.t = 2.99; c.keydown(RIGHT, 5); c.keyup(RIGHT); c.keydown(RIGHT, 6); c.keyup(RIGHT);
+  check("the right arrow stops at the end, never above", a.t === 3, `t=${a.t}`);
+  const a2 = fake({ rate: 24, dur: 10 }), c2 = Core.controller(a2, Core.clean({}));
+  c2.keydown(RIGHT, 0); c2.keyup(RIGHT);
+  check("one image follows the frame rate of the player (24 fps)", near(a2.t, 1 / 24, 1e-9), `t=${a2.t}`);
+  const a3 = fake({ dur: 30 }), c3 = Core.controller(a3, Core.clean({}));
+  c3.keydown(key({ key: "ArrowRight", shift: true }), 0); c3.keyup(RIGHT);
+  check("Shift moves one second", near(a3.t, 1, 1e-9), `t=${a3.t}`);
+  const a4 = fake({ dur: 3 }), c4 = Core.controller(a4, Core.clean({}));
+  c4.keydown(key({ key: "." }), 0); c4.keyup(key({ key: "." })); c4.keydown(key({ key: "," }), 1); c4.keyup(key({ key: "," }));
+  check("the comma and the full stop of the editor still step", a4.t === 0 && a4.seeks === 2, `t=${a4.t} seeks=${a4.seeks}`);
+  check("another key is not ours (the page keeps it)", c4.keydown(key({ key: "a" }), 0) === false && c4.keydown(key({ key: "Enter" }), 0) === false);
+}
+
+// ---- space
+{
+  const a = fake(), c = Core.controller(a, Core.clean({}));
+  c.keydown(SPACE, 0);
+  check("space plays a paused player", a.on === true && a.plays === 1);
+  c.keydown(key({ code: "Space", key: " ", repeat: true }), 0.1);
+  check("a held space does not toggle again (the native repeat is ignored)", a.on === true && a.plays === 1 && a.pauses === 0);
+  c.keydown(SPACE, 1);
+  check("space pauses a playing player", a.on === false && a.pauses === 1);
+}
+
+// ---- hover
+{
+  const a = fake({ stopOnLeave: true }), c = Core.controller(a, Core.clean({}));
+  c.enter();
+  check("the pointer entering plays the video", a.on === true);
+  c.keydown(SPACE, 0);
+  c.leave(); c.enter();
+  check("space paused it, leaving and coming back plays it again", a.on === true, `on=${a.on}`);
+  c.leave();
+  check("leaving stops a tile or a card", a.on === false);
+  const off = fake(), co = Core.controller(off, Core.clean({ hover: false }));
+  co.enter();
+  check("with the hover play switched off the pointer plays nothing", off.on === false);
+}
+{
+  // the editor: a playback started by the button goes on when the pointer leaves, a playback started by the hover stops
+  const a = fake({ stopOnLeave: false }), c = Core.controller(a, Core.clean({}));
+  a.on = true; c.enter(); c.leave();
+  check("a playback started with the button is not stopped by leaving", a.on === true && a.pauses === 0);
+  a.on = false; c.enter(); check("entering started a playback", a.on === true); c.leave();
+  check("a playback started by the hover stops when the pointer leaves", a.on === false);
+  c.enter(); c.keydown(SPACE, 0); c.keydown(SPACE, 1); c.leave();
+  check("space makes it the viewer's own playback: leaving does not stop it", a.on === true, `on=${a.on}`);
+}
+
+// ---- a held arrow
+{
+  const P = Core.clean({}), a = fake({ dur: 100 }), c = Core.controller(a, P);
+  c.keydown(RIGHT, 0);
+  const afterPress = a.seeks;
+  for (let t = 0.016; t < 0.24; t += 0.016) c.poll(t);
+  check("nothing scrolls before the delay (0.25 s): one image only", a.seeks === afterPress && near(a.t, 1 / 30, 1e-9), `seeks=${a.seeks} t=${a.t}`);
+  c.keyup(RIGHT);
+  const a1 = fake({ dur: 100 }), c1 = Core.controller(a1, P);
+  hold(c1, RIGHT, 1, 1 / 60);
+  const frames1 = Math.round(a1.t * 30);
+  check("held for 1 s: about 40 images (30 per second rising after the delay)", frames1 >= 37 && frames1 <= 44, `frames=${frames1}`);
+  const a3 = fake({ dur: 100 }), c3 = Core.controller(a3, P);
+  hold(c3, RIGHT, 3, 1 / 60);
+  const frames3 = Math.round(a3.t * 30);
+  check("held for 3 s: about 263 images (it speeds up to 120 per second)", frames3 >= 255 && frames3 <= 272, `frames=${frames3}`);
+  const a5 = fake({ dur: 100 }), c5 = Core.controller(a5, P);
+  hold(c5, RIGHT, 3, 1 / 20);
+  check("the speed does not depend on the refresh rate (20 Hz gives the same)", near(Math.round(a5.t * 30), frames3, 6), `frames=${Math.round(a5.t * 30)} vs ${frames3}`);
+  const a6 = fake({ dur: 100 }), c6 = Core.controller(a6, P);
+  c6.keydown(RIGHT, 0);
+  for (let t = 0.016; t <= 0.5; t += 0.016) c6.poll(t);
+  c6.keyup(RIGHT);
+  const at = a6.t; for (let t = 0.6; t <= 1.5; t += 0.016) c6.poll(t);
+  check("releasing the key stops the scroll", a6.t === at, `t=${a6.t} vs ${at}`);
+  const a7 = fake({ dur: 100 }), c7 = Core.controller(a7, P);
+  c7.keydown(RIGHT, 0); for (let t = 0.016; t <= 0.8; t += 0.016) c7.poll(t); c7.blur();
+  const at7 = a7.t; for (let t = 0.9; t <= 1.5; t += 0.016) c7.poll(t);
+  check("losing the focus stops the scroll too", a7.t === at7);
+  const a8 = fake({ dur: 100 }), c8 = Core.controller(a8, P);
+  c8.keydown(RIGHT, 0);
+  const s0 = a8.seeks; c8.keydown(key({ key: "ArrowRight", repeat: true }), 0.5); c8.keydown(key({ key: "ArrowRight", repeat: true }), 0.55);
+  check("the native key repeat adds no image (ours replaces it)", a8.seeks === s0, `seeks=${a8.seeks} vs ${s0}`);
+  const a9 = fake({ dur: 100 }), c9 = Core.controller(a9, P);
+  hold(c9, LEFT, 1, 1 / 60);
+  check("held left: never below zero", a9.t === 0);
+  a9.t = 50; hold(c9, LEFT, 1, 1 / 60);
+  check("held left goes back about 40 images", near(Math.round((50 - a9.t) * 30), 40, 4), `back=${Math.round((50 - a9.t) * 30)}`);
+  const aA = fake({ dur: 1000 }), cA = Core.controller(aA, P);
+  hold(cA, key({ key: "ArrowRight", shift: true }), 1, 1 / 60);
+  check("Shift held: seconds scroll steadily (8 per second after the delay, plus the first)", near(aA.t, 7, 1.2), `t=${aA.t}`);
+  // the speed settings really drive it
+  const slow = Core.clean({ holdRate: 10, holdAccel: 1 }), aB = fake({ dur: 100 }), cB = Core.controller(aB, slow);
+  hold(cB, RIGHT, 2, 1 / 60);
+  check("a lower rate and no acceleration: about 18 images in 2 s", near(Math.round(aB.t * 30), 18, 3), `frames=${Math.round(aB.t * 30)}`);
+  const noDelay = Core.clean({ holdDelay: 0 }), aC = fake({ dur: 100 }), cC = Core.controller(aC, noDelay);
+  cC.keydown(RIGHT, 0); for (let t = 0.016; t < 0.2; t += 0.016) cC.poll(t);
+  check("without delay the scroll starts at once", Math.round(aC.t * 30) > 3, `frames=${Math.round(aC.t * 30)}`);
+}
+
+// ---- the settings are live: a change applies without rebuilding the controller
+{
+  const P = Core.clean({}), a = fake({ dur: 100 }), c = Core.controller(a, P);
+  P.holdAccel = 1; P.holdRate = 10;
+  hold(c, RIGHT, 2, 1 / 60);
+  check("the controller reads the live settings (rate changed after it was built)", near(Math.round(a.t * 30), 18, 3), `frames=${Math.round(a.t * 30)}`);
+}
+
+console.log(fails.length + " failure(s)");
+process.exit(fails.length ? 1 : 0);

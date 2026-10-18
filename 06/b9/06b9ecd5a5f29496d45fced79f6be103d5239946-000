@@ -25,6 +25,8 @@
   </section>
   <main id="pvDrop" class="pv-drop"><div id="pvGrid" class="pv-grid"></div><p class="pv-hint" id="pvEmpty" hidden>Aucune vidéo. Glisse un mp4 ici ou exporte un motion.</p></main>
   <div id="pvToast" class="pv-toast" hidden></div>
+  <script src="/motion/web/hoverplay-core.js"></script>
+  <script src="/motion/web/hoverplay.js"></script>
   <script src="/motion/web/previous.js"></script>
 </body>
 </html>

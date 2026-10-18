@@ -1,0 +1,83 @@
+// ZenRay Motion Design, the logic of the hover player (18 October 2026), with no screen in it so that it is proven by node (motion/tests/test_hoverplay.mjs):
+// the pointer over a video plays it, the space bar toggles pause and play, the arrows move by one image, and an arrow held down scrolls the images fast (own repeat, tunable, steady).
+// The DOM glue (hoverplay.js) feeds it events; a player is described by an adapter { play, pause, playing, time, duration, seek, fps }.
+// Every number is a parameter (PARAMS, saved by the settings panel). FR : la logique du lecteur au survol, sans ecran, prouvee par node.
+(function (root, factory) {
+  if (typeof module === "object" && module.exports) module.exports = factory(); else root.ZSHoverCore = factory();
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+  // hover: play under the pointer · sound: the editor preview plays with its sound (off: image only) · holdDelay: seconds before a held arrow scrolls · holdRate: images per second when it starts
+  // holdAccel: how many times faster it ends (reached after holdRamp seconds) · shiftRate: seconds of film per second with Shift held
+  const DEFAULTS = { hover: true, sound: false, holdDelay: 0.25, holdRate: 30, holdAccel: 4, holdRamp: 1.5, shiftRate: 8 };
+  // range and step of every number, read by the settings panel and by clean()
+  const RANGE = { holdDelay: [0, 2, 0.05], holdRate: [2, 240, 1], holdAccel: [1, 16, 0.5], holdRamp: [0.1, 6, 0.1], shiftRate: [1, 60, 1] };
+  const clean = (o) => {
+    const r = Object.assign({}, DEFAULTS), src = o || {};
+    r.hover = src.hover === undefined ? DEFAULTS.hover : !!src.hover; r.sound = src.sound === undefined ? DEFAULTS.sound : !!src.sound;
+    Object.keys(RANGE).forEach((k) => { const v = Number(src[k]); r[k] = isFinite(v) && src[k] !== "" && src[k] !== null && src[k] !== undefined ? Math.max(RANGE[k][0], Math.min(RANGE[k][1], v)) : DEFAULTS[k]; });
+    return r;
+  };
+
+  // The repeat of a held arrow: nothing before `holdDelay`, then `holdRate` images per second growing to `holdRate * holdAccel` over `holdRamp` seconds (with Shift: `shiftRate` seconds per second, steady).
+  // poll(now) returns the whole steps owed since the last call (the fraction is kept), so the speed does not depend on how often the screen refreshes.
+  function repeater(P) {
+    let t0 = null, last = 0, acc = 0, shift = false;
+    return {
+      down(now, isShift) { t0 = now; last = now; acc = 0; shift = !!isShift; },
+      up() { t0 = null; acc = 0; },
+      active() { return t0 !== null; },
+      poll(now) {
+        if (t0 === null) return 0;
+        const held = now - t0;
+        if (held < P.holdDelay) { last = now; return 0; }
+        const from = Math.max(last, t0 + P.holdDelay), ramp = Math.min(1, (held - P.holdDelay) / Math.max(0.001, P.holdRamp));
+        const rate = shift ? P.shiftRate : P.holdRate * (1 + (P.holdAccel - 1) * ramp);
+        acc += rate * Math.max(0, now - from); last = now;
+        const n = Math.floor(acc); acc -= n; return n;
+      },
+    };
+  }
+
+  const KEYS = (k) => (k.code === "Space" || k.key === " " ? "space" : k.key === "ArrowLeft" || k.key === "," ? "left" : k.key === "ArrowRight" || k.key === "." ? "right" : null);
+
+  // One controller per player. `P` is the live settings object (a change applies at once). adapter.stopOnLeave: true = the playback always stops when the pointer leaves (tiles, cards);
+  // false/undefined = only a playback that the hover itself started stops (the editor: a playback started with the button or the space bar goes on). hooks.hud(): called after a key action.
+  function controller(adapter, P, hooks) {
+    const rep = repeater(P), H = hooks || {};
+    let started = false, held = null;
+    const fps = () => Math.max(1, Number(adapter.fps && adapter.fps()) || 30);
+    const snap = (t) => Math.round(t * fps()) / fps();
+    const clampT = (t) => Math.max(0, Math.min(Number(adapter.duration()) || 0, t));
+    const hud = () => H.hud && H.hud();
+    const stepBy = (dir, shift, n) => { adapter.pause(); adapter.seek(clampT(snap(adapter.time() + dir * n * (shift ? 1 : 1 / fps())))); hud(); };
+    return {
+      enter() { if (P.hover && !adapter.playing()) { adapter.play(); started = true; } },
+      leave() {
+        rep.up(); held = null;
+        if (adapter.playing() && (adapter.stopOnLeave || started)) adapter.pause();
+        started = false;
+      },
+      // true when the key was ours (the glue then stops it from reaching the page)
+      keydown(k, now) {
+        const code = KEYS(k);
+        if (!code) return false;
+        if (code === "space") {
+          if (k.repeat) return true;
+          if (adapter.playing()) adapter.pause(); else adapter.play();
+          started = false; hud(); return true;
+        }
+        if (k.repeat) return true;   // the native repeat of the system is replaced by ours: steady, fast, tunable
+        const dir = code === "left" ? -1 : 1;
+        held = { dir, shift: !!k.shift, key: code }; started = false;
+        stepBy(dir, k.shift, 1); rep.down(now, k.shift);
+        return true;
+      },
+      keyup(k) { if (held && KEYS(k) === held.key) { held = null; rep.up(); } return !!KEYS(k); },
+      blur() { held = null; rep.up(); },
+      // called every screen refresh while an arrow is held
+      poll(now) { if (!held) return 0; const n = rep.poll(now); if (n) stepBy(held.dir, held.shift, n); return n; },
+      holding() { return !!held; },
+    };
+  }
+  return { DEFAULTS, RANGE, clean, repeater, controller, KEYS };
+});

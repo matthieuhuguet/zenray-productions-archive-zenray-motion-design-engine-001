@@ -23,7 +23,14 @@
       <div class="pv-body"><div class="pv-title"><b>${esc(it.title)}</b><span class="pv-chip ${it.kind}">${KIND[it.kind]}</span></div>
       <div class="pv-meta"><span>${fmtDate(it.created)}</span>${it.duration ? `<span>${fmtDur(it.duration)}</span>` : ""}${it.width ? `<span>${it.width}×${it.height}</span>` : ""}<span>${fmtSize(it.bytes)}</span>${it.stamp ? `<span>${esc(it.stamp)}</span>` : ""}</div>
       <div class="pv-actions">${edit}${mont}<a href="${esc(it.video)}" download>Télécharger</a></div>${link}</div>`;
-    $(".pv-play", t).onclick = () => { const m = $(".pv-media", t); m.innerHTML = `<video src="${esc(it.video)}" controls autoplay playsinline></video>`; };
+    // 18 October 2026: the hover player (hoverplay.js): the pointer over the poster plays the video; a click on ▶ replaces it by a video with its own controls, which the pointer plays too
+    const media = $(".pv-media", t);
+    const detach = window.ZSHover ? window.ZSHover.tile(media, it.video) : null;
+    $(".pv-play", t).onclick = () => {
+      if (detach) detach();
+      media.innerHTML = `<video src="${esc(it.video)}" controls autoplay playsinline></video>`;
+      if (window.ZSHover) window.ZSHover.element($("video", media));
+    };
     const ed = $("[data-edit]", t); if (ed) ed.onclick = () => { LS("zs-project", ed.dataset.edit); LS("zs-mode", "edit"); };
     t.querySelectorAll(".pv-link [data-k]").forEach((f) => { f.onchange = async () => { try { await api("POST", `/api/motion/previous/${it.key}`, { [f.dataset.k]: f.value || null }); toast("Lien enregistré"); await load(); } catch (e) { toast("Échec : " + e.message); } }; });
     return t;

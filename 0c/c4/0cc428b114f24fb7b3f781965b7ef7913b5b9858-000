@@ -55,7 +55,7 @@
         <button id="hideRefBtn" class="ghost" type="button" title="Remplace les plans de la vidéo d'origine par un fond neutre : on ne voit que le motion reproduit">Masquer la référence</button>
         <button id="compareBtn" class="ghost" type="button" title="Affiche la vidéo d'origine à côté, synchronisée">Comparer</button>
         <span class="grow"></span>
-        <span class="hint keys" title="Espace : lecture · glisser dans la piste : parcourir · ← → : une image · Maj + ← → : une seconde · Cmd + molette : zoom · Début / Fin">Raccourcis ⓘ</span>
+        <span class="hint keys" title="Curseur sur l'image : la vidéo se lit · Espace : pause / lecture · glisser dans la piste : parcourir · ← → : une image (maintenir : défilement rapide) · Maj + ← → : une seconde · Cmd + molette : zoom · Début / Fin · réglages : bouton Survol">Raccourcis ⓘ</span>
       </div>
       <div class="timeline">
         <div class="labels"><span>Temps</span><span>Scènes</span><span>Sous-scènes</span><span>Musique</span><span>Effets</span></div>
@@ -94,6 +94,8 @@
   </main>
   <dialog id="dlg"></dialog>
   <div id="toast" class="toast"></div>
+  <script src="/motion/web/hoverplay-core.js"></script>
+  <script src="/motion/web/hoverplay.js"></script>
   <script src="/motion/web/app.js"></script>
   <script src="/motion/web/music-player.js"></script>
   <script src="/motion/web/gallery.js"></script>

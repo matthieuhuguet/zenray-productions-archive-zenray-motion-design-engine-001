@@ -132,12 +132,20 @@
     Object.assign(S.audio.buffers, await ZS.audio.decode(S.audio.ctx, { [f]: `/motion/files/${S.project.id}/${encodeURIComponent(f)}` }));
     return S.audio.buffers;
   }
-  async function play() {
-    if (!S.audio.ctx) S.audio.ctx = new AudioContext();
-    await S.audio.ctx.resume();
-    if (S.time >= S.built.duration - 0.05) S.time = 0;
-    await audioBuffers();
-    startAudio();
+  // play({ silent: true }) plays the image only, on the clock of the page (18 October 2026: the hover player; no sound, no wait for the audio context, and no audio to restart at a seek)
+  async function play(opt) {
+    const silent = !!(opt && opt.silent);
+    if (silent) {
+      if (S.time >= S.built.duration - 0.05) S.time = 0;
+      S.silent = { t0: performance.now(), base: S.time };
+    } else {
+      S.silent = null;
+      if (!S.audio.ctx) S.audio.ctx = new AudioContext();
+      await S.audio.ctx.resume();
+      if (S.time >= S.built.duration - 0.05) S.time = 0;
+      await audioBuffers();
+      startAudio();
+    }
     S.playing = true; ZS.videoTolerance = 0.3;
     S.built.videos.forEach((v) => v.node.play().catch(() => {}));
     $("#playBtn").textContent = "❚❚";
@@ -148,12 +156,12 @@
     S.audio.handle = ZS.audio.schedule(S.audio.ctx, S.project, S.built.cues, S.time, S.built.duration, S.audio.buffers);
   }
   function restartAudioSoon() {
-    if (!S.playing) return;
+    if (!S.playing || S.silent) return;
     clearTimeout(S.audioTimer);
     S.audioTimer = setTimeout(async () => { if (!S.playing) return; S.time = S.audio.ctx.currentTime - S.audio.handle.T0; await audioBuffers(); startAudio(); }, 250);
   }
   function pause() {
-    S.playing = false; ZS.videoTolerance = 0.08;
+    S.playing = false; S.silent = null; ZS.videoTolerance = 0.08;
     if (S.compare) $("#refVideo").pause();
     if (S.audio.handle) { S.audio.handle.stop(); S.audio.handle = null; }
     if (S.built) S.built.videos.forEach((v) => v.node.pause());
@@ -161,7 +169,7 @@
   }
   function tick() {
     if (!S.playing) return;
-    const t = S.audio.ctx.currentTime - S.audio.handle.T0;
+    const t = S.silent ? S.silent.base + (performance.now() - S.silent.t0) / 1000 : S.audio.ctx.currentTime - S.audio.handle.T0;
     if (t >= S.built.duration) { S.time = S.built.duration; S.built.tl.seek(S.time, false); pause(); updateTime(); return; }
     S.time = Math.max(0, t);
     S.built.tl.seek(S.time, false);
@@ -172,7 +180,7 @@
     S.time = Math.max(0, Math.min(S.built.duration, t));
     S.built.tl.seek(S.time, false);
     updateTime();
-    if (S.playing) startAudio();
+    if (S.playing) { if (S.silent) S.silent = { t0: performance.now(), base: S.time }; else startAudio(); }
   }
   // ---- the timeline in pixels: pps = pixels per second (null = the whole film fits the visible width)
   const fmtT = (t) => { const m = Math.floor(t / 60), s2 = t - m * 60; return `${m}:${s2.toFixed(2).padStart(5, "0")}`; };
@@ -767,6 +775,18 @@
   window.ZS_STUDIO = S;
   // what the gallery (gallery.js) uses: the state and the editor's own actions, never a second copy of them
   window.ZS_APP = { S, api, change, toast, esc, openProject, loadList, renderPanel, renderTrack, renderScenes, setTab, seek, play, pause, loadBank, rebuild, upload };
+  // 18 October 2026: the hover player on the preview (hoverplay.js). The pointer over the picture plays it without sound (the setting « avec le son » changes that); space pauses and plays,
+  // the arrows move by one image, a held arrow scrolls fast. A playback started with the ▶ button goes on when the pointer leaves; one started by the hover stops.
+  if (window.ZSHover) window.ZSHover.attach($("#stageWrap"), {
+    stopOnLeave: false,
+    play: () => { if (S.built) play({ silent: !window.ZSHover.settings().sound }); },
+    pause: () => { if (S.built) pause(); },
+    playing: () => !!S.built && S.playing,
+    time: () => S.time,
+    duration: () => (S.built ? S.built.duration : 0),
+    seek: (t) => { if (S.built) seek(t); },
+    fps,
+  });
   try { if (localStorage.getItem("zs-mode") === "gallery") setTimeout(() => window.ZS_MODE && window.ZS_MODE("gallery"), 0); } catch (e) { /* private window */ }
 })();
 

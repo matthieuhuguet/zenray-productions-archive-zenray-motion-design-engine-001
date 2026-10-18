@@ -104,6 +104,20 @@
     c.rebuild = () => { const was = c.playing; c.pause(); if (c.built) { try { c.built.tl.kill(); } catch (e) { /* gone */ } inner.innerHTML = ""; c.built = null; } if (c.project) { c.build(); if (was) c.play(); } };
     q("play").onclick = () => (c.playing ? c.pause() : c.play());
     q("seek").oninput = () => { if (!c.built) c.build(); setTime(Number(q("seek").value) / 1000 * c.built.duration); };
+    // 18 October 2026: the hover player (hoverplay.js). The pointer over the frame plays the motion from its beginning; space pauses and plays; the arrows move by one image (Shift: one second);
+    // a held arrow scrolls fast; leaving parks the motion on its resting frame again. A playback started with the ▶ button is stopped by leaving too, like on a tile.
+    const restTime = () => (c.built ? Math.min(c.built.duration * 0.5, Math.max(0, c.built.duration - 0.3)) : 0);
+    let fresh = false;
+    if (window.ZSHover) window.ZSHover.attach(mot, {
+      stopOnLeave: true,
+      play: () => { if (!c.built) c.build(); if (!c.built) return; if (fresh) { fresh = false; setTime(0); } c.play(); },
+      pause: () => c.pause(),
+      playing: () => !!c.playing,
+      time: () => (c.built ? c.built.tl.time() : 0),
+      duration: () => (c.built ? c.built.duration : 0),
+      seek: (t) => { if (!c.built) c.build(); if (c.built) setTime(Math.max(0, Math.min(c.built.duration, t))); },
+      fps: () => Number((c.project || {}).fps) || 30,
+    }, { onEnter() { fresh = true; }, onLeave() { if (c.built) setTime(restTime()); } });
     q("edit").onclick = () => { LS("zs-project", it.id); LS("zs-mode", "edit"); location.href = "/motion/"; };
     // ---- the verdict
     const paintVerdict = (v) => {

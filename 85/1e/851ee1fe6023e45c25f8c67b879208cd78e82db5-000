@@ -60,6 +60,7 @@
       const c = el("div", "card"), pic = el("div", "pic");
       pic.style.backgroundImage = `url(/motion/gallery/ref/${encodeURIComponent(x.slug)}.jpg)`;
       pic.appendChild(el("span", "badge", `${x.duration} s · ${x.shots} plans`));
+      if (window.ZSHover) window.ZSHover.tile(pic, `/motion/bank/ref/${encodeURIComponent(x.slug)}`);   // 18 October 2026: the pointer over the poster plays the video
       const b = el("div", "body");
       b.appendChild(el("div", "title", A().esc(x.slug)));
       b.appendChild(el("div", "meta", `${x.musics.length} musique(s) reproduite(s)`));
@@ -91,6 +92,7 @@
       const c = el("div", "card"), pic = el("div", "pic");
       if (a.kind === "video") pic.style.backgroundImage = `url(/motion/gallery/file/${S.project.id}/${encodeURIComponent(a.name)}.jpg)`;
       if (a.kind === "image") pic.style.backgroundImage = `url(${a.url})`;
+      if (a.kind === "video" && window.ZSHover) window.ZSHover.tile(pic, a.url);   // 18 October 2026: the pointer over the poster plays the video
       pic.appendChild(el("span", "badge", a.kind));
       const b = el("div", "body"); b.appendChild(el("div", "title", A().esc(a.name)));
       b.appendChild(el("div", "meta", `${(a.bytes / 1e6).toFixed(1)} Mo`));
@@ -242,8 +244,25 @@
     };
     observer.observe(pic);
     const card = pic.closest(".card") || pic;
-    card.addEventListener("mouseenter", () => { pic.zsBuild(); if (built) { built.tl.eventCallback("onComplete", () => built && built.tl.restart()); built.tl.restart(); } });
-    card.addEventListener("mouseleave", () => { if (built) { built.tl.pause(); built.tl.seek(REST(built), false); } });
+    // 18 October 2026: the hover player (hoverplay.js). The pointer plays the animation in a loop from its beginning; space pauses and plays (it goes on from where it stopped), the arrows move by one image,
+    // a held arrow scrolls fast; leaving stops it on the resting frame. A seek by key suppresses the events, so the loop never restarts under the arrows.
+    let fresh = false;
+    const adapter = {
+      stopOnLeave: true,
+      play() { pic.zsBuild(); if (!built) return; built.tl.eventCallback("onComplete", () => built && built.tl.restart()); if (fresh) { fresh = false; built.tl.restart(); } else built.tl.play(); },
+      pause() { if (built) built.tl.pause(); },
+      playing() { return !!built && !built.tl.paused(); },
+      time() { return built ? built.tl.time() : 0; },
+      duration() { return built ? built.duration : 0; },
+      seek(t) { if (built) built.tl.seek(t, true); },
+      fps() { return Number(project.fps) || 30; },
+    };
+    const rest = () => { if (built) { built.tl.pause(); built.tl.seek(REST(built), false); } };
+    if (window.ZSHover) window.ZSHover.attach(card, adapter, { hudHost: pic, onEnter() { fresh = true; pic.zsBuild(); }, onLeave: rest });
+    else {
+      card.addEventListener("mouseenter", () => { pic.zsBuild(); if (built) { built.tl.eventCallback("onComplete", () => built && built.tl.restart()); built.tl.restart(); } });
+      card.addEventListener("mouseleave", rest);
+    }
   }
   const one = (project, scene) => ({ ...project, scenes: [{ ...JSON.parse(JSON.stringify(scene)), id: "g" }], __assetBase: `/motion/files/${project.id}/` });
 
