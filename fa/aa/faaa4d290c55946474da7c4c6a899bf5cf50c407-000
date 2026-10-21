@@ -1,0 +1,57 @@
+// 21 October 2026: frame-time bench of every motion of the Validate list (or the ids given), in the managed chrome-headless-shell (software rendering: a pessimistic stand-in for a low CPU).
+// Run: node Scripts/PerfBench.mjs [--format 16x9] [--seconds 6] [--out PATH.json] [id ...]   FR : banc de fluidite de tous les motions.
+import { spawnSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+const TOOLING = join(dirname(dirname(fileURLToPath(import.meta.url))), "tooling");
+const require = createRequire(join(TOOLING, "package.json"));
+const puppeteer = require("puppeteer-core");
+const env = { ...process.env, HYPERFRAMES_NO_TELEMETRY: "1", DO_NOT_TRACK: "1", HYPERFRAMES_NO_UPDATE_CHECK: "1" };
+const browserPath = spawnSync(join(TOOLING, "node_modules", ".bin", "hyperframes"), ["browser", "path"], { env, encoding: "utf8" }).stdout.trim();
+const args = process.argv.slice(2); let format = "16x9", seconds = 6, out = "", ids = [], shots = 0, trace = false;
+for (let i = 0; i < args.length; i++) { if (args[i] === "--format") format = args[++i]; else if (args[i] === "--seconds") seconds = Number(args[++i]); else if (args[i] === "--out") out = args[++i]; else if (args[i] === "--shots") shots = Number(args[++i]); else if (args[i] === "--trace") trace = true; else ids.push(args[i]); }
+const BASE = process.env.ZS_BASE || "http://127.0.0.1:3104";
+if (!ids.length) ids = (await (await fetch(`${BASE}/api/motion/validate`)).json()).items.filter((i) => i.exists).map((i) => i.id);
+const browser = await puppeteer.launch({ executablePath: browserPath, headless: true, args: ["--no-first-run", "--disable-extensions", "--autoplay-policy=no-user-gesture-required"] });
+const rows = [];
+try {
+  for (const id of ids) {
+    const tab = await browser.newPage(); await tab.setViewport({ width: 1000, height: 600 });
+    try {
+      await tab.goto(`${BASE}/motion/web/bench.html`, { waitUntil: "load", timeout: 60000 });
+      if (shots) {  // full-render bench: N frames spread over the first `seconds`, each seeked then captured (style + layout + paint + raster + composite)
+        const info = await tab.evaluate((a, b) => window.benchBuild(a, b), id, format), ms = [], span = Math.min(info.duration, seconds);
+        await tab.screenshot({ type: "jpeg", quality: 30 });   // warm-up
+        for (let k = 0; k < shots; k++) { await tab.evaluate((t) => window.benchSeek(t), span * (k + 0.5) / shots); const a = performance.now(); await tab.screenshot({ type: "jpeg", quality: 30 }); ms.push(performance.now() - a); }
+        ms.sort((x, y) => x - y); const r = { id, format, nodes: info.nodes, shots, p50: +ms[Math.floor(shots / 2)].toFixed(1), p95: +ms[Math.floor(shots * 0.95)].toFixed(1), max: +ms[shots - 1].toFixed(1) };
+        rows.push(r); console.log(`${id.padEnd(48)} nodes ${String(r.nodes).padStart(5)} render p50 ${r.p50}ms p95 ${r.p95}ms max ${r.max}ms`); await tab.close(); continue;
+      }
+      if (trace) {  // thread time per 60 Hz frame from a Chrome trace over three 2 s windows of the motion (the worst one counts): main thread (script, style, layout, paint), raster workers, compositor, and the software draw of the viz thread
+        const info = await tab.evaluate((a, b) => window.benchBuild(a, b), id, format); const win = [];
+        for (const frac of [0.1, 0.45, 0.8]) {
+          const start = Math.max(0, Math.min(info.duration - 2, info.duration * frac));
+          await tab.tracing.start({ categories: ["devtools.timeline", "cc", "gpu", "viz", "disabled-by-default-devtools.timeline"] });
+          const run = await tab.evaluate((t0) => new Promise((res) => { const b = window.__built, st = performance.now(); let n = 0; const tick = (now) => { n++; const t = (now - st) / 1000; b.tl.seek(t0 + Math.min(t, 2), false); if (t >= 2) res({ frames: n }); else requestAnimationFrame(tick); }; requestAnimationFrame(tick); }), start);
+          const ev = JSON.parse(Buffer.from(await tab.tracing.stop()).toString()).traceEvents, names = {}, sum = { main: 0, raster: 0, comp: 0, draw: 0 }, draws = [], mainTasks = [];
+          ev.forEach((e) => { if (e.ph === "M" && e.name === "thread_name") names[e.pid + ":" + e.tid] = e.args.name; });
+          ev.forEach((e) => { if (e.ph !== "X" || !e.dur) return; const th = names[e.pid + ":" + e.tid] || "";
+            if (th === "CrRendererMain" && e.name === "RunTask") { sum.main += e.dur; mainTasks.push(e.dur / 1000); }
+            else if (th === "ThreadPoolForegroundWorker" && e.name === "RasterTask") sum.raster += e.dur;
+            else if (th === "Compositor" && e.name === "RunTask") sum.comp += e.dur;
+            else if (th === "VizCompositorThread" && e.name === "DisplayScheduler::DrawAndSwap") { sum.draw += e.dur; draws.push(e.dur / 1000); } });
+          const f = Math.max(1, run.frames); draws.sort((x, y) => x - y); mainTasks.sort((x, y) => x - y);
+          win.push({ at: +start.toFixed(1), main: sum.main / 1000 / f, raster: sum.raster / 1000 / f, comp: sum.comp / 1000 / f, draw: sum.draw / 1000 / f, drawMax: draws[draws.length - 1] || 0, taskMax: mainTasks[mainTasks.length - 1] || 0 });
+        }
+        const tot = (w) => w.main + w.raster + w.comp + w.draw, worst = win.reduce((m, w) => (tot(w) > tot(m) ? w : m), win[0]);
+        const r = { id, format, nodes: info.nodes, msPerFrame: +tot(worst).toFixed(2), main: +worst.main.toFixed(2), raster: +worst.raster.toFixed(2), comp: +worst.comp.toFixed(2), draw: +worst.draw.toFixed(2), drawMax: +worst.drawMax.toFixed(1), taskMax: +worst.taskMax.toFixed(1), at: worst.at };
+        rows.push(r); console.log(`${id.slice(0, 44).padEnd(44)} n${String(r.nodes).padStart(5)} TOTAL ${String(r.msPerFrame).padStart(6)} ms/frame | main ${String(r.main).padStart(5)} raster ${String(r.raster).padStart(5)} comp ${String(r.comp).padStart(5)} draw ${String(r.draw).padStart(5)} drawMax ${r.drawMax} taskMax ${r.taskMax} @${r.at}s`); await tab.close(); continue;
+      }
+      const r = await tab.evaluate((a, b, c) => window.runBench(a, b, c), id, format, seconds); rows.push(r);
+      console.log(`${id.padEnd(48)} build ${String(r.buildMs).padStart(5)}ms nodes ${String(r.nodes).padStart(5)} p50 ${r.p50} p95 ${r.p95} max ${r.max} drop ${r.dropped}/${r.frames} js ${r.jsMean}/${r.jsMax} heavy ${JSON.stringify(r.heavy)}`);
+    } catch (e) { rows.push({ id, error: String(e.message || e) }); console.log(id, "ERROR", e.message); }
+    await tab.close();
+  }
+} finally { await browser.close(); }
+if (out) writeFileSync(out, JSON.stringify(rows, null, 1));
