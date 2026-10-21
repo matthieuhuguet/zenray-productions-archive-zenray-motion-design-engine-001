@@ -7,7 +7,7 @@
 .vd-card.redo { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .vd-stages { display: grid; gap: 1px; background: var(--line); }
 .vd-stages.two { grid-template-columns: 1fr 1fr; }
-.vd-stage { position: relative; background: #0f0f0e; overflow: hidden; width: 100%; }
+.vd-stage { position: relative; background: #0f0f0e; overflow: hidden; width: 100%; contain: layout paint style; }  /* the frame is isolated: its animation never re-lays out the page */
 .vd-stage .inner { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 .vd-stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
 .vd-stage .tag { position: absolute; left: 8px; top: 8px; background: rgba(0,0,0,0.55); color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 6px; z-index: 3; }

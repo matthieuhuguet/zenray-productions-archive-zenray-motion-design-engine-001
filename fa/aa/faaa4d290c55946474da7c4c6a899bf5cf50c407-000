@@ -10,8 +10,8 @@ const require = createRequire(join(TOOLING, "package.json"));
 const puppeteer = require("puppeteer-core");
 const env = { ...process.env, HYPERFRAMES_NO_TELEMETRY: "1", DO_NOT_TRACK: "1", HYPERFRAMES_NO_UPDATE_CHECK: "1" };
 const browserPath = spawnSync(join(TOOLING, "node_modules", ".bin", "hyperframes"), ["browser", "path"], { env, encoding: "utf8" }).stdout.trim();
-const args = process.argv.slice(2); let format = "16x9", seconds = 6, out = "", ids = [], shots = 0, trace = false;
-for (let i = 0; i < args.length; i++) { if (args[i] === "--format") format = args[++i]; else if (args[i] === "--seconds") seconds = Number(args[++i]); else if (args[i] === "--out") out = args[++i]; else if (args[i] === "--shots") shots = Number(args[++i]); else if (args[i] === "--trace") trace = true; else ids.push(args[i]); }
+const args = process.argv.slice(2); let format = "16x9", seconds = 6, out = "", ids = [], shots = 0, trace = false, css = "";
+for (let i = 0; i < args.length; i++) { if (args[i] === "--format") format = args[++i]; else if (args[i] === "--seconds") seconds = Number(args[++i]); else if (args[i] === "--out") out = args[++i]; else if (args[i] === "--shots") shots = Number(args[++i]); else if (args[i] === "--trace") trace = true; else if (args[i] === "--css") css = args[++i]; else ids.push(args[i]); }
 const BASE = process.env.ZS_BASE || "http://127.0.0.1:3104";
 if (!ids.length) ids = (await (await fetch(`${BASE}/api/motion/validate`)).json()).items.filter((i) => i.exists).map((i) => i.id);
 const browser = await puppeteer.launch({ executablePath: browserPath, headless: true, args: ["--no-first-run", "--disable-extensions", "--autoplay-policy=no-user-gesture-required"] });
@@ -29,6 +29,7 @@ try {
         rows.push(r); console.log(`${id.padEnd(48)} nodes ${String(r.nodes).padStart(5)} render p50 ${r.p50}ms p95 ${r.p95}ms max ${r.max}ms`); await tab.close(); continue;
       }
       if (trace) {  // thread time per 60 Hz frame from a Chrome trace over three 2 s windows of the motion (the worst one counts): main thread (script, style, layout, paint), raster workers, compositor, and the software draw of the viz thread
+        if (css) await tab.addStyleTag({ content: css });   // experiment: which kind of effect costs the frame (e.g. "*{filter:none!important}")
         const info = await tab.evaluate((a, b) => window.benchBuild(a, b), id, format); const win = [];
         for (const frac of [0.1, 0.45, 0.8]) {
           const start = Math.max(0, Math.min(info.duration - 2, info.duration * frac));

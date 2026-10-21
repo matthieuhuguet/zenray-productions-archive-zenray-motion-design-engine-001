@@ -1,0 +1,38 @@
+// 21 October 2026: bench of the Validate page itself (not of one motion): load, then scroll through the whole list; the main thread is traced and the long tasks (> 16 ms, a lost frame) counted.
+// Run: node Scripts/PerfValidate.mjs [--format 16x9] [--page /motion/validate]   FR : banc de la page Validate (chargement puis defilement complet).
+import { spawnSync } from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+const TOOLING = join(dirname(dirname(fileURLToPath(import.meta.url))), "tooling");
+const require = createRequire(join(TOOLING, "package.json"));
+const puppeteer = require("puppeteer-core");
+const env = { ...process.env, HYPERFRAMES_NO_TELEMETRY: "1", DO_NOT_TRACK: "1", HYPERFRAMES_NO_UPDATE_CHECK: "1" };
+const browserPath = spawnSync(join(TOOLING, "node_modules", ".bin", "hyperframes"), ["browser", "path"], { env, encoding: "utf8" }).stdout.trim();
+const args = process.argv.slice(2); let format = "16x9", page = "/motion/validate";
+for (let i = 0; i < args.length; i++) { if (args[i] === "--format") format = args[++i]; else if (args[i] === "--page") page = args[++i]; }
+const BASE = process.env.ZS_BASE || "http://127.0.0.1:3104";
+const browser = await puppeteer.launch({ executablePath: browserPath, headless: true, args: ["--no-first-run", "--disable-extensions"] });
+try {
+  const tab = await browser.newPage(); await tab.setViewport({ width: 1440, height: 900 });
+  await tab.evaluateOnNewDocument((f) => { try { localStorage.setItem("vd-format", f); } catch (e) { /* none */ } }, format);
+  await tab.tracing.start({ categories: ["devtools.timeline", "cc", "viz", "disabled-by-default-devtools.timeline"] });
+  const t0 = Date.now(); await tab.goto(BASE + page, { waitUntil: "load", timeout: 120000 }); await new Promise((r) => setTimeout(r, 2500)); const loadMs = Date.now() - t0;
+  // the scrolling element is whichever one is really taller than its box (the window, or an inner container)
+  const H = await tab.evaluate(() => { const c = [document.scrollingElement, ...document.querySelectorAll("*")].filter((e) => e && e.scrollHeight > e.clientHeight + 50 && /auto|scroll/.test(getComputedStyle(e).overflowY) || e === document.scrollingElement).sort((a, b) => b.scrollHeight - a.scrollHeight)[0]; window.__sc = c; return c.scrollHeight; });
+  for (let y = 0; y < H; y += 450) { await tab.evaluate((yy) => window.__sc.scrollTo(0, yy), y); await new Promise((r) => setTimeout(r, 120)); }
+  await new Promise((r) => setTimeout(r, 800));
+  const ev = JSON.parse(Buffer.from(await tab.tracing.stop()).toString()).traceEvents, names = {};
+  ev.forEach((e) => { if (e.ph === "M" && e.name === "thread_name") names[e.pid + ":" + e.tid] = e.args.name; });
+  const tasks = []; let main = 0, raster = 0, draw = 0;
+  ev.forEach((e) => { if (e.ph !== "X" || !e.dur) return; const th = names[e.pid + ":" + e.tid] || ""; if (th === "CrRendererMain" && e.name === "RunTask") { tasks.push(e.dur / 1000); main += e.dur / 1000; } else if (th === "ThreadPoolForegroundWorker" && e.name === "RasterTask") raster += e.dur / 1000; else if (th === "VizCompositorThread" && e.name === "DisplayScheduler::DrawAndSwap") draw += e.dur / 1000; });
+  // what is inside the longest tasks: the biggest nested events by name (FunctionCall carries the script url)
+  const mainEv = ev.filter((e) => e.ph === "X" && e.dur && names[e.pid + ":" + e.tid] === "CrRendererMain"), longT = mainEv.filter((e) => e.name === "RunTask" && e.dur > 50000).sort((a, b) => b.dur - a.dur).slice(0, 3);
+  const inside = longT.map((t) => { const agg = {}; mainEv.forEach((e) => { if (e !== t && e.ts >= t.ts && e.ts + e.dur <= t.ts + t.dur && e.name !== "RunTask") { const k = e.name + (e.args && e.args.data && (e.args.data.functionName || e.args.data.url) ? " " + (e.args.data.functionName || "") + " " + String(e.args.data.url || "").split("/").pop() + ":" + (e.args.data.lineNumber || "") : ""); agg[k] = (agg[k] || 0) + e.dur / 1000; } }); return { ms: Math.round(t.dur / 1000), top: Object.entries(agg).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => `${Math.round(v)}ms ${k}`) }; });
+  if (process.env.ZS_DEEP) { console.log(JSON.stringify(inside, null, 1)); const t00 = Math.min.apply(null, mainEv.map((e) => e.ts)); mainEv.filter((e) => e.name === "Layout" && e.dur > 8000).forEach((e) => console.log("Layout", Math.round(e.dur / 1000) + "ms at +" + Math.round((e.ts - t00) / 1000) + "ms", JSON.stringify(e.args && e.args.beginData || {}).slice(0, 160), JSON.stringify(e.args && e.args.endData || {}).slice(0, 200))); }
+  tasks.sort((a, b) => b - a);
+  const builds = await tab.evaluate(() => [...window.ZS_VALIDATE.cards.values()].filter((c) => c.buildMs !== undefined).map((c) => c.it.id.slice(0, 30) + " " + c.buildMs + "ms"));
+  if (process.env.ZS_DEEP) console.log(builds.join("\n"));
+  const st = await tab.evaluate(() => ({ cards: document.querySelectorAll(".vd-card").length, built: [...(window.ZS_VALIDATE ? window.ZS_VALIDATE.cards.values() : [])].filter((c) => c.built).length, nodes: document.querySelectorAll("*").length }));
+  console.log(JSON.stringify({ page, format, loadMs, scrollHeight: H, ...st, mainTotalMs: Math.round(main), rasterMs: Math.round(raster), drawMs: Math.round(draw), longTasks16: tasks.filter((t) => t > 16).length, longTasks50: tasks.filter((t) => t > 50).length, top5: tasks.slice(0, 5).map((t) => +t.toFixed(0)) }));
+} finally { await browser.close(); }

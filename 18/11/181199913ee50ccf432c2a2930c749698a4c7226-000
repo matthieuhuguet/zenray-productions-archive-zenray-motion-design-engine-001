@@ -17,10 +17,23 @@
   const state = { items: [], cards: new Map(), format: LS("vd-format") || "16x9", ref: LS("vd-ref") === "1" };
   const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
+  // 21 October 2026 (performance): the builds of the cards are queued and run ONE per screen refresh, the visible cards first; a card that left the screen before its turn is skipped.
+  // Before, every card that entered the margin built at once in the same task (two tasks of 114 and 132 ms in the bench of the page): the scroll froze at each build.
+  const queue = []; let pumping = false;
+  const pump = () => {
+    if (pumping) return; pumping = true;
+    const step = () => {
+      let c = null; while (queue.length && !c) { const n = queue.shift(); if (n.wanted && !n.built) c = n; }
+      if (!c) { pumping = false; return; }
+      c.show().finally(() => requestAnimationFrame(step));
+    };
+    requestAnimationFrame(step);
+  };
+  const enqueue = (c, front) => { c.wanted = true; if (!queue.includes(c)) { if (front) queue.unshift(c); else queue.push(c); } pump(); };
   const observer = "IntersectionObserver" in window ? new IntersectionObserver((es) => es.forEach((e) => {
     const c = state.cards.get(e.target.dataset.id); if (!c) return;
-    if (e.isIntersecting) c.show(); else c.hide();
-  }), { rootMargin: "300px" }) : null;
+    if (e.isIntersecting) enqueue(c, e.intersectionRatio > 0); else { c.wanted = false; c.hide(); }
+  }), { rootMargin: "200px", threshold: [0, 0.01] }) : null;
 
   function card(it, host) {
     const c = { it, built: null, project: null, playing: false };
@@ -72,7 +85,9 @@
     };
     const setTime = (t) => {
       if (!c.built) return;
-      c.built.tl.seek(t, false); q("seek").value = String(Math.round(t / c.built.duration * 1000)); q("time").textContent = `${fmt(t)} / ${fmt(c.built.duration)}`;
+      c.built.tl.seek(t, false);
+      // 21 October 2026 (performance): the slider and the clock are written at 10 Hz while playing (a write per frame re-laid out the card body 60 times a second); a seek by hand or by the arrows writes at once
+      const now = performance.now(); if (!c.playing || now - (c.uiAt || 0) > 100) { c.uiAt = now; q("seek").value = String(Math.round(t / c.built.duration * 1000)); q("time").textContent = `${fmt(t)} / ${fmt(c.built.duration)}`; }
       refSync(t, c.playing);
     };
     const tick = () => { if (!c.playing || !c.built) return; const t = c.built.tl.time(); setTime(t); if (t >= c.built.duration - 0.02) { c.pause(); } else requestAnimationFrame(tick); };
@@ -88,7 +103,8 @@
       if (!c.project) return;
       const p = JSON.parse(JSON.stringify(c.project)); p.format = state.format;
       const keep = window.__timelines && window.__timelines.main;
-      try { c.built = ZS.build(p, inner, { preview: true, assetBase: `/motion/files/${it.id}/`, hideRefs: true }); }
+      const tb = performance.now();
+      try { c.built = ZS.build(p, inner, { preview: true, assetBase: `/motion/files/${it.id}/`, hideRefs: true }); c.buildMs = Math.round(performance.now() - tb); }
       catch (e) { inner.textContent = e.message; return; }
       if (window.__timelines) window.__timelines.main = keep;
       document.fonts && document.fonts.ready.then(() => { if (c.built) ZS.refit(c.built); });

@@ -1,0 +1,33 @@
+// 21 October 2026: playing one card of the Validate page for real (the page around it, the other cards, the hover player), traced for 2.5 s: frames produced per second and thread time per frame.
+// Run: node Scripts/PerfValidatePlay.mjs [--format 16x9] id [id ...]   FR : lecture d'une carte dans la vraie page Validate, images par seconde et temps par image.
+import { spawnSync } from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+const TOOLING = join(dirname(dirname(fileURLToPath(import.meta.url))), "tooling");
+const require = createRequire(join(TOOLING, "package.json"));
+const puppeteer = require("puppeteer-core");
+const env = { ...process.env, HYPERFRAMES_NO_TELEMETRY: "1", DO_NOT_TRACK: "1", HYPERFRAMES_NO_UPDATE_CHECK: "1" };
+const browserPath = spawnSync(join(TOOLING, "node_modules", ".bin", "hyperframes"), ["browser", "path"], { env, encoding: "utf8" }).stdout.trim();
+const args = process.argv.slice(2); let format = "16x9"; const ids = [];
+for (let i = 0; i < args.length; i++) { if (args[i] === "--format") format = args[++i]; else ids.push(args[i]); }
+const BASE = process.env.ZS_BASE || "http://127.0.0.1:3104";
+const browser = await puppeteer.launch({ executablePath: browserPath, headless: true, args: ["--no-first-run", "--disable-extensions"] });
+try {
+  for (const id of ids) {
+    const tab = await browser.newPage(); await tab.setViewport({ width: 1440, height: 900, deviceScaleFactor: Number(process.env.ZS_DPR || 1) });
+    await tab.evaluateOnNewDocument((f) => { try { localStorage.setItem("vd-format", f); } catch (e) { /* none */ } }, format);
+    await tab.goto(BASE + "/motion/validate", { waitUntil: "load", timeout: 120000 }); await new Promise((r) => setTimeout(r, 1500));
+    if (process.env.ZS_CSS) await tab.addStyleTag({ content: process.env.ZS_CSS });   // experiment: what costs the frame
+    await tab.evaluate((i) => { const c = window.ZS_VALIDATE.cards.get(i); c.root.scrollIntoView({ block: "center" }); }, id); await new Promise((r) => setTimeout(r, 1200));
+    await tab.tracing.start({ categories: ["devtools.timeline", "cc", "viz", "disabled-by-default-devtools.timeline"] });
+    const run = await tab.evaluate((i) => new Promise((res) => { const c = window.ZS_VALIDATE.cards.get(i); if (!c.built) c.build(); c.built.tl.seek(0, false); c.play(); let n = 0; const st = performance.now(), tick = (now) => { n++; if (now - st >= 2500) { c.pause(); res({ frames: n, ms: now - st }); } else requestAnimationFrame(tick); }; requestAnimationFrame(tick); }), id);
+    const ev = JSON.parse(Buffer.from(await tab.tracing.stop()).toString()).traceEvents, names = {}, sum = { main: 0, raster: 0, comp: 0, draw: 0 };
+    ev.forEach((e) => { if (e.ph === "M" && e.name === "thread_name") names[e.pid + ":" + e.tid] = e.args.name; });
+    ev.forEach((e) => { if (e.ph !== "X" || !e.dur) return; const th = names[e.pid + ":" + e.tid] || ""; if (th === "CrRendererMain" && e.name === "RunTask") sum.main += e.dur; else if (th === "ThreadPoolForegroundWorker" && e.name === "RasterTask") sum.raster += e.dur; else if (th === "Compositor" && e.name === "RunTask") sum.comp += e.dur; else if (th === "VizCompositorThread" && e.name === "DisplayScheduler::DrawAndSwap") sum.draw += e.dur; });
+    if (process.env.ZS_DEEP) { const rs = ev.filter((e) => e.ph === "X" && e.name === "RasterTask" && e.dur).map((e) => e.dur / 1000).sort((a, b) => b - a); const ds = ev.filter((e) => e.ph === "X" && e.name === "ImageDecodeTask" && e.dur).map((e) => e.dur / 1000).sort((a, b) => b - a); console.log("  raster tasks", rs.length, "top", rs.slice(0, 8).map((x) => x.toFixed(1)).join(" "), "| image decodes", ds.length, "top", ds.slice(0, 5).map((x) => x.toFixed(1)).join(" ")); }
+    const f = run.frames, m = (v) => +(v / 1000 / f).toFixed(2), tot = m(sum.main + sum.raster + sum.comp + sum.draw);
+    console.log(`${id.slice(0, 44).padEnd(44)} fps ${(f / run.ms * 1000).toFixed(1).padStart(5)} | TOTAL ${String(tot).padStart(6)} ms/frame | main ${m(sum.main)} raster ${m(sum.raster)} comp ${m(sum.comp)} draw ${m(sum.draw)}`);
+    await tab.close();
+  }
+} finally { await browser.close(); }
