@@ -10,8 +10,8 @@ const require = createRequire(join(TOOLING, "package.json"));
 const puppeteer = require("puppeteer-core");
 const env = { ...process.env, HYPERFRAMES_NO_TELEMETRY: "1", DO_NOT_TRACK: "1", HYPERFRAMES_NO_UPDATE_CHECK: "1" };
 const browserPath = spawnSync(join(TOOLING, "node_modules", ".bin", "hyperframes"), ["browser", "path"], { env, encoding: "utf8" }).stdout.trim();
-const args = process.argv.slice(2); let format = "16x9", seconds = 6, out = "", ids = [], shots = 0, trace = false, css = "";
-for (let i = 0; i < args.length; i++) { if (args[i] === "--format") format = args[++i]; else if (args[i] === "--seconds") seconds = Number(args[++i]); else if (args[i] === "--out") out = args[++i]; else if (args[i] === "--shots") shots = Number(args[++i]); else if (args[i] === "--trace") trace = true; else if (args[i] === "--css") css = args[++i]; else ids.push(args[i]); }
+const args = process.argv.slice(2); let format = "16x9", seconds = 6, out = "", ids = [], shots = 0, trace = false, css = "", budget = 0, known = [];
+for (let i = 0; i < args.length; i++) { if (args[i] === "--format") format = args[++i]; else if (args[i] === "--seconds") seconds = Number(args[++i]); else if (args[i] === "--out") out = args[++i]; else if (args[i] === "--shots") shots = Number(args[++i]); else if (args[i] === "--trace") trace = true; else if (args[i] === "--css") css = args[++i]; else if (args[i] === "--budget") budget = Number(args[++i]); else if (args[i] === "--known") known = args[++i].split(","); else ids.push(args[i]); }
 const BASE = process.env.ZS_BASE || "http://127.0.0.1:3104";
 if (!ids.length) ids = (await (await fetch(`${BASE}/api/motion/validate`)).json()).items.filter((i) => i.exists).map((i) => i.id);
 const browser = await puppeteer.launch({ executablePath: browserPath, headless: true, args: ["--no-first-run", "--disable-extensions", "--autoplay-policy=no-user-gesture-required"] });
@@ -56,3 +56,5 @@ try {
   }
 } finally { await browser.close(); }
 if (out) writeFileSync(out, JSON.stringify(rows, null, 1));
+// 21 October 2026: a budget turns the bench into a check (exit code 1): every motion must stay under `budget` ms per frame, except the ones named in --known (heavy and declared, not hidden)
+if (budget) { const over = rows.filter((r) => r.msPerFrame > budget && !known.some((k) => r.id.startsWith(k))); console.log(over.length ? `OVER BUDGET (${budget} ms): ${over.map((r) => r.id + " " + r.msPerFrame).join(", ")}` : `ALL UNDER ${budget} ms`); if (over.length) process.exitCode = 1; }

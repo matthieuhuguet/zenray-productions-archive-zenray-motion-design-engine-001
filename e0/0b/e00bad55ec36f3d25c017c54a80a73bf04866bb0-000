@@ -754,13 +754,16 @@
       } else if (kind === "dissolve") {  // a noise threshold, played as a few pre-baked masks (no filter is computed while it plays): the letters appear grain by grain, and with dissolveOut they leave the same way at the end of the scene
         // 19 October 2026 (performance): the SVG turbulence filter was recomputed at every frame; now K masks of seamless noise are baked once (canvas) and the holder steps from one to the next (a CSS mask, an attribute change per step)
         dissolveSprites(); const K = DZ_STEPS, dIn = d * 2.2, dOut = Number(o.dissolveOut) || 0, step = (k) => String(Math.max(0, Math.min(K, k)));
-        n.setAttribute("data-dz", "-1"); n.classList.add("zs-dz");
-        tl.set(n, { attr: { "data-dz": "0" } }, t);
-        for (let s2 = 1; s2 <= K; s2++) tl.set(n, { attr: { "data-dz": step(s2) } }, t + dIn * (s2 / K));   // K means fully shown: no mask
+        // the mask sits on a WRAPPER of the line, the line itself is promoted to a layer of its own: a step then repaints only the mask, never the letters (their distress filters are rasterised once)
+        // the wrapper is only as big as the ink of the line (a mask over the whole plane per line cost 5 ms of draw per frame)
+        const rg = inkRegion(n), wr = document.createElement("div"); wr.style.cssText = `position:absolute;left:${rg.x}px;top:${rg.y}px;width:${rg.w}px;height:${rg.h}px;pointer-events:none`; n.parentNode.insertBefore(wr, n); wr.appendChild(n); n.style.left = n.offsetLeft - rg.x + "px"; n.style.top = n.offsetTop - rg.y + "px"; n.style.willChange = "transform";
+        wr.setAttribute("data-dz", "-1"); wr.classList.add("zs-dz");
+        tl.set(wr, { attr: { "data-dz": "0" } }, t);
+        for (let s2 = 1; s2 <= K; s2++) tl.set(wr, { attr: { "data-dz": step(s2) } }, t + dIn * (s2 / K));   // K means fully shown: no mask
         if (dOut > 0) {
           const tOut = t0 + (o.sceneDur || 5) - dOut - 0.35 - (items.filter((x) => !x.aux && !x.still).length - 1 - i) * o.stagger;   // the last line leaves last
-          for (let s2 = K - 1; s2 >= 0; s2--) tl.set(n, { attr: { "data-dz": step(s2) } }, tOut + dOut * ((K - s2) / K));
-          tl.set(n, { attr: { "data-dz": "-1" } }, tOut + dOut + 0.001);
+          for (let s2 = K - 1; s2 >= 0; s2--) tl.set(wr, { attr: { "data-dz": step(s2) } }, tOut + dOut * ((K - s2) / K));
+          tl.set(wr, { attr: { "data-dz": "-1" } }, tOut + dOut + 0.001);
         }
       } else if (kind === "slam") {  // a heavy stamp: each glyph drops from a larger scale with a slight tilt and lands at once
         each({ opacity: 0, scale: 1.35, y: -o.distance * 0.7, rotation: o.rotate || 4, filter: `blur(${o.blur}px)`, transformOrigin: "50% 60%" }, { opacity: 1, scale: 1, y: 0, rotation: 0, filter: "blur(0px)", duration: d * 0.55 }, E("expo.out"));
@@ -779,6 +782,13 @@
     });
   }
 
+  // the box of the ink of a holder in the coordinates of its parent (its glyph boxes, or its own box), with a margin for the motion around it
+  function inkRegion(n) {
+    const ox = n.offsetLeft, oy = n.offsetTop; let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; const chs = [...n.querySelectorAll(".ch")].filter((c) => c.style.left && c.style.width);
+    chs.forEach((c) => { const l = parseFloat(c.style.left), t = parseFloat(c.style.top), w = parseFloat(c.style.width), hh = parseFloat(c.style.height); x0 = Math.min(x0, l); y0 = Math.min(y0, t); x1 = Math.max(x1, l + w); y1 = Math.max(y1, t + hh); });
+    if (!chs.length) { x0 = 0; y0 = 0; x1 = n.offsetWidth; y1 = n.offsetHeight; }
+    const pad = 80; return { x: Math.floor(ox + x0 - pad), y: Math.floor(oy + y0 - pad), w: Math.ceil(x1 - x0 + 2 * pad), h: Math.ceil(y1 - y0 + 2 * pad) };
+  }
   // The dissolve masks: DZ_STEPS+1 seamless noise images (a canvas, baked once per page), each showing a larger part of the ink; written as CSS rules on [data-dz="k"] so a step is one attribute change
   const DZ_STEPS = 14, DZ_SIZE = 320;
   function dissolveSprites() {

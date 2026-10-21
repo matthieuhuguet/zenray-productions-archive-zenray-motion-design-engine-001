@@ -1,0 +1,36 @@
+# Performance of the motions (21 October 2026)
+
+Goal set by Matthieu on 21 October 2026: every motion plays at 60 Hz, even on a weak CPU, and the Validate page never freezes. FR : chaque motion tient 60 Hz, meme sur un CPU faible.
+
+## The three benches (Scripts/)
+
+| Command | What it measures |
+|---|---|
+| `node Scripts/PerfBench.mjs --trace [--budget 8 --known bmw-zhong-kui,cinematic-shot] [--out f.json] [id ...]` | every motion of the Validate list, three windows of 2 s each; ms per frame of the main thread, raster, compositor, software draw; exit code 1 over budget |
+| `node Scripts/PerfValidate.mjs` | the Validate page: load, full scroll, long tasks (> 16 ms) |
+| `node Scripts/PerfValidatePlay.mjs id ...` | one card played inside the real page: frames per second and thread time (`ZS_DPR=2` for a retina screen) |
+
+`--css '<rule>'` (or `ZS_CSS`) injects a rule to find what costs: `*{filter:none!important}`, `.zs-dz{will-change:transform}`...
+The bench runs in the managed chrome-headless-shell with SOFTWARE rendering: it is a pessimistic stand-in for a low CPU, not a GPU measure.
+
+## Result, software proxy, ms per frame (target: under 8 in total)
+
+| Motion | Before | After |
+|---|---|---|
+| Zhong Kui | 87.9 | 16.1 |
+| Louisiana church module | 5.8 | 1.9 |
+| Ghost of Yotei | 7.6 | 4.9 |
+| Claudia | 6.3 | 4.6 |
+| Agentplay | 5.9 | 5.1 |
+| Inoxtag collection 03 | 1.3 | 0.9 |
+| Sum of the 35 motions | 181 | 96 |
+
+Still above 8, declared: Zhong Kui (16, a whole 1600 x 668 plane moves every frame while the brush writes: the software draw floor) and cinematic-shot (13, two full 3D planes with SVG blurs).
+In the real page each card plays at 60 frames per second (retina included), except cinematic-shot (49).
+
+## Causes found, and the rule each one gives
+
+1. SVG filter or mask region in `userSpaceOnUse` is computed over its whole area every frame: bound it to the box of what it treats (Zhong Kui: 4000 x 4000 blur and 6000 x 6000 mask per stroke).
+2. A CSS mask on a line repaints its letters at each step: mask a WRAPPER the size of the ink, promote the line to its own layer (`will-change: transform`).
+3. `blur(0px)` left after a tween keeps one render surface per letter: remove the filter when the tween ends.
+4. Validate: builds are queued, one per screen refresh, visible first; the slider and the clock are written at 10 Hz while playing.
