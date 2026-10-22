@@ -19,7 +19,7 @@ SEQUENCES = {
     "macbook-pro-s02-edge-light": ("Le rayon sur le bord de l'écran", 4.8, 0.6, "ap-title", dict(TEXT, items=[], beamGlow=240)),
     "macbook-pro-s03-size-labels": ("14 et 16 pouces", 6.65, 1.8, "ap-title", dict(TEXT, dIn=0.3, glowMix=0.5, glowA=1.5, glow2=30)),
     "macbook-pro-s04-now-with": ("Now with", 8.4, 1.65, "ap-title", dict(TEXT)),
-    "macbook-pro-s05-chips": ("La famille de puces M5", 10.1, 2.65, "ap-title", dict(TEXT, obj="puces", objX=960, objY=538, objSize=400, objZoom=0.045, objGlow=0, objFlash=["0 | 1.4 | 0.4", "1 | 1.58 | 0.4", "2 | 1.7 | 0.4"], glow1=0, glow2=0)),
+    "macbook-pro-s05-chips": ("La famille de puces M5", 10.1, 2.65, "ap-title", dict(TEXT, obj="puces", objX=960, objY=538, objSize=400, objZoom=0.045, objGlow=0, objFlash=["0 | 1.3 | 0.5", "1 | 1.48 | 0.5", "2 | 1.62 | 0.5"], glow1=0, glow2=0)),
     "macbook-pro-s06-fast-runs": ("Fast runs in the family", 12.7, 1.55, "ap-title", dict(TEXT)),
     "macbook-pro-s07-pro-at-ai": ("A pro at AI", 16.5, 1.4, "ap-title", dict(TEXT)),
     "macbook-pro-s08-apple-intelligence": ("Apple Intelligence", 22.6, 1.5, "ap-title", dict(TEXT, glowMix=0.0, glowGain=2, glowA=1.0, glow1=9, glow2=36)),
