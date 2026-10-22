@@ -1,0 +1,41 @@
+"""Opacity and colour track of a drawn object of the Apple film (22 October 2026): per frame, the brightest pixels of a region give its colour (mean of the top fifth) and its opacity (their brightness
+over the brightest frame of the window). Writes the `objKeys` lines of the sequence into motion/reproductions/data/apple_macbook_pro.json.
+FR : piste d'opacite et de couleur d'un objet dessine. Usage: python3 Scripts/AppleObj.py <sequence id> --region x0,y0,x1,y1 --from 0 --to 1 [--step 0.1] [--thr 40]"""
+import argparse
+import json
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "motion" / "reproductions")); sys.path.insert(0, str(REPO / "motion"))
+import apple_macbook_pro as A  # noqa: E402
+import banks  # noqa: E402
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(); ap.add_argument("sid"); ap.add_argument("--region", required=True); ap.add_argument("--from", dest="t0", type=float, required=True); ap.add_argument("--to", dest="t1", type=float, required=True)
+    ap.add_argument("--step", type=float, default=0.1); ap.add_argument("--thr", type=float, default=40)
+    a = ap.parse_args(); title, start, length, tpl, params = A.SEQUENCES[a.sid]; ref = banks.reference_video(A.SLUG); tmp = Path(tempfile.mkdtemp(prefix="appleobj-"))
+    x0, y0, x1, y1 = [int(v) for v in a.region.split(",")]; rows, t = [], a.t0
+    while t <= a.t1 + 1e-6:
+        f = tmp / "f.png"; subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{start + t:.3f}", "-i", str(ref), "-frames:v", "1", str(f)], check=True)
+        im = np.asarray(Image.open(f).convert("RGB")).astype(float)[y0:y1, x0:x1]; lum = im.mean(2); m = lum > a.thr
+        if m.sum() < 20: rows.append((t, 0.0, None))
+        else:
+            px = im[m]; k = max(1, len(px) // 5); top = px[np.argsort(-px.mean(1))[:k]]; rows.append((t, float(top.mean()), top.mean(0)))
+        t += a.step
+    peak = max(r[1] for r in rows) or 1.0; last = [200, 230, 230]; lines = []
+    for t, v, c in rows:
+        if c is not None: last = c
+        lines.append(f"{t:.2f} | {v / peak:.2f} | #%02x%02x%02x" % tuple(int(x) for x in last))
+    data = json.loads(A.DATA.read_text(encoding="utf-8")) if A.DATA.is_file() else {}
+    data.setdefault(a.sid, {"params": {}})["params"]["objKeys"] = lines; A.DATA.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8"); print(len(lines), "object keys", lines[:2], "...", lines[-2:])
+
+
+if __name__ == "__main__":
+    main()
