@@ -40,10 +40,10 @@ def main() -> None:
             t += a.step
         if not frames:
             print("nothing visible for item", i); continue
-        lit = [fr for fr in frames if fr[4] >= 245] or frames   # the hold box: the median box of the frames where the title is fully lit
+        lit = [fr for fr in frames if fr[4] >= 245 and fr[0] >= it.get("holdFrom", 0)] or [fr for fr in frames if fr[0] >= it.get("holdFrom", 0)] or frames   # the hold box: the median box of the frames where the title is fully lit
         hb = [int(np.median([fr[3][k] for fr in lit])) for k in range(4)]; first, last = frames[0][0], frames[-1][0]
         wbox = hb[2] - hb[0]; w100, dy = text_metrics(it.get("sizeText", it["text"]), a.weight, a.ls); size = it.get("size") or round(wbox / w100 * 100, 1)
-        cx = round((hb[0] + hb[2]) / 2); cy = round((hb[1] + hb[3]) / 2 - dy * size)   # the ink centre is not the centre of the line box when the text has descenders or no capitals
+        cx = round((hb[0] + hb[2]) / 2); cy = round((hb[1] + hb[3]) / 2 - dy * size + it.get("dy", 0))   # the ink centre is not the centre of the line box when the text has descenders or no capitals
         SOFT = a.soft; q = lambda x: 1 - (1 - min(1, max(0, x))) ** 2; qp = lambda x: 1 - (1 - min(1, max(0, x))) ** 1.5   # noqa: E731
         # entering edge: the visible right edge of the frames still being revealed, fitted by a start and a duration (visible edge = mask edge + 0.45 of the soft width)
         rise = [(t, (box[2] - hb[0])) for t, im, m, box, pk in frames if box[2] - hb[0] < 0.96 * wbox]
@@ -65,8 +65,15 @@ def main() -> None:
                     if err < bestx[0]: bestx = (err, float(d), float(lead))
             d_out, lead_out = bestx[1], bestx[2]
         if it.get("track"):   # a title that moves with the machine: its centre at every measured frame
-            pos.extend(f"{i} | {t - start_t:.2f} | {round((box[0] + box[2]) / 2)} | {round((box[1] + box[3]) / 2 - dy * size)}" for t, im, m, box, pk in frames)
+            # the centre comes from the LEFT edge (the reveal and the erase eat the box from the left or the right, the left edge is stable while the title is being revealed);
+            # once the box shrinks from the left (the erase) the last full-width position is kept
+            tfull = max(t for t, im, m, box, pk in frames if box[2] - box[0] >= 0.95 * wbox) if any(box[2] - box[0] >= 0.95 * wbox for t, im, m, box, pk in frames) else last
+            xl = None
+            for t, im, m, box, pk in frames:
+                if t <= tfull or xl is None: xl = box[0]
+                pos.append(f"{i} | {t - start_t:.2f} | {round(xl + w100 * size / 200)} | {round((box[1] + box[3]) / 2 - dy * size)}")
             cx, cy = [int(v) for v in pos[-len(frames)].split("|")[2:4]]
+        start_t = it.get("start", start_t)
         d_in, d_out, lead_out = it.get("dIn", d_in), it.get("dOut", d_out), it.get("outLead", lead_out)   # an item that cannot be fitted (a tiny label) is given its values by hand
         items.append(f"{it['text']} | {cx} | {cy} | {size} | {start_t:.2f} | {end_t:.2f} | {d_in:.2f} | {d_out:.2f} | {lead_out:.2f} | {it.get('glowScale', 1)}")
         for t, im, m, box, pk in frames:   # pass 2: the colour of each third of the FINAL box (a third not yet revealed takes its neighbour's colour)
@@ -94,7 +101,7 @@ def main() -> None:
                 gkeys.append(f"{i} | {t - start_t:.2f} | " + " | ".join(c2 or "#000000" for c2 in gc))
         print(f"item {i} {it['text']!r}: visible {first:.2f}..{last:.2f}, hold box {hb}, size {size}, centre {cx},{cy}, dIn {d_in:.2f}, dOut {d_out:.2f} lead {lead_out:.2f}")
     data = json.loads(A.DATA.read_text(encoding="utf-8")) if A.DATA.is_file() else {}
-    data[a.sid] = {"params": {"items": items, "keys": keys, "gkeys": gkeys, "pos": pos, "weight": a.weight, "ls": a.ls}}
+    data.setdefault(a.sid, {"params": {}})["params"].update({"items": items, "keys": keys, "gkeys": gkeys, "pos": pos, "weight": a.weight, "ls": a.ls})
     A.DATA.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8"); print("written", A.DATA)
 
 

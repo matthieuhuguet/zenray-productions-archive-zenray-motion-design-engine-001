@@ -1,0 +1,44 @@
+"""Measure the light beam of a sequence of the Apple film (22 October 2026): per frame, the white core pixels (every channel above 200) give a line (principal axis), its x at the top and at the bottom of the frame,
+its width and its brightness. Writes the `beam` lines of the sequence into motion/reproductions/data/apple_macbook_pro.json.
+FR : mesure le rayon de lumiere d'une sequence. Usage: python3 Scripts/AppleBeam.py <sequence id> --from 0 --to 2 [--step 0.1] [--region x0,y0,x1,y1]"""
+import argparse
+import json
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "motion" / "reproductions")); sys.path.insert(0, str(REPO / "motion"))
+import apple_macbook_pro as A  # noqa: E402
+import banks  # noqa: E402
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(); ap.add_argument("sid"); ap.add_argument("--from", dest="t0", type=float, required=True); ap.add_argument("--to", dest="t1", type=float, required=True)
+    ap.add_argument("--step", type=float, default=0.1); ap.add_argument("--region", default="0,0,1920,1080"); ap.add_argument("--min", type=int, default=200); ap.add_argument("--exclude", default="")
+    a = ap.parse_args(); title, start, length, tpl, params = A.SEQUENCES[a.sid]; ref = banks.reference_video(A.SLUG); tmp = Path(tempfile.mkdtemp(prefix="applebeam-"))
+    x0, y0, x1, y1 = [int(v) for v in a.region.split(",")]; lines = []; t = a.t0
+    while t <= a.t1 + 1e-6:
+        f = tmp / "f.png"; subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{start + t:.3f}", "-i", str(ref), "-frames:v", "1", str(f)], check=True)
+        im = np.asarray(Image.open(f).convert("RGB")).astype(int)[y0:y1, x0:x1]; m = im.min(2) > a.min
+        if a.exclude:
+            ex0, ey0, ex1, ey1 = [int(v) for v in a.exclude.split(",")]; m[max(0, ey0 - y0):max(0, ey1 - y0), max(0, ex0 - x0):max(0, ex1 - x0)] = False   # the text is white too: keep it out of the fit
+        ys, xs = np.where(m)
+        if len(xs) > 400:
+            xs = xs + x0; ys = ys + y0; mx, my = xs.mean(), ys.mean(); cov = np.cov(np.vstack([xs - mx, ys - my])); w_, v_ = np.linalg.eigh(cov); vx, vy = v_[:, 1]
+            if abs(vy) > 1e-6:
+                if vy < 0: vx, vy = -vx, -vy
+                xt = mx + (0 - my) * vx / vy; xb = mx + (1080 - my) * vx / vy; proj = (xs - mx) * vx + (ys - my) * vy; ln = proj.max() - proj.min(); wd = len(xs) / max(1, ln)
+                lines.append(f"{t:.2f} | {xt:.0f} | {xb:.0f} | {wd:.1f} | 1 | {max(0, ys.min() - 4)} | {min(1080, ys.max() + 4)}")   # ... and the vertical extent of the lit part
+        t += a.step
+    data = json.loads(A.DATA.read_text(encoding="utf-8")) if A.DATA.is_file() else {}
+    data.setdefault(a.sid, {"params": {}})["params"]["beam"] = lines; A.DATA.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
+    print(len(lines), "beam keys;", lines[:3], "...", lines[-2:])
+
+
+if __name__ == "__main__":
+    main()

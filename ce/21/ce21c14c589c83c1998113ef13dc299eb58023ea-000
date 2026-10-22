@@ -33,6 +33,7 @@
     id: "ap-title", label: "Apple : titres lumineux", group: "Apple", duration: 3,
     params: [
       P("items", "Titres : texte | centre x | centre y | taille | début | fin | apparition (plan 1920 x 1080)", "lines", ["MacBook Pro | 960 | 540 | 131 | 0.1 | 2.2"], 1),
+      P("beam", "Rayon de lumière : temps | x en haut | x en bas | largeur | opacité | début y | fin y (plan 1920 x 1080 ; les deux derniers facultatifs)", "lines", [], 3), N("beamGlow", "Portée de la lueur du rayon (px)", 200, 0, 900, 5, 3, "px"), P("beamTint", "Couleur de la lueur du rayon", "color", "#16c7d0", 3),
       P("pos", "Déplacement d'un titre : titre | temps | centre x | centre y", "lines", [], 3), P("counts", "Compteur : titre | de | à | pas | début | durée (le texte contient {n})", "lines", [], 3),
       P("gkeys", "Couleurs du halo mesurées (même forme ; vide : le halo prend la couleur du texte)", "lines", [], 2),
       P("keys", "Couleurs mesurées : titre | temps | couleurs de la gauche vers la droite", "lines", ["0 | 0 | #61a7c5 | #5295b4 | #3e7693", "0 | 1.1 | #cae5e5 | #b0dedf | #88c7d6", "0 | 2.0 | #3b7492 | #407d9d | #4b8cac"], 1),
@@ -41,6 +42,10 @@
       P("glowTint", "Teinte du halo", "color", "#3fc2ff", 3), N("glowMix", "Part de teinte dans le halo", 0.55, 0, 1, 0.01, 3), N("glow1", "Halo proche (px)", 9, 0, 60, 0.5, 3, "px"), N("glow2", "Halo large (px)", 34, 0, 160, 1, 3, "px"), N("glowA", "Force du halo", 0.7, 0, 2, 0.01, 3), N("glowGain", "Épaisseur du halo mesuré (copies empilées)", 1, 1, 6, 1, 3),
       N("fadeOut", "Fondu de sortie (s)", 0, 0, 2, 0.05, 3, "s"), P("bg", "Fond", "color", "#000000", 3), P("font", "Police", "text", "InterVariable", 3),
       N("tallZoom", "Agrandissement en format haut", 1.6, 0.5, 4, 0.05, 3), N("film0", "Début dans le film (s)", 0, 0, 60, 0.01, 4, "s"),
+      SEL("obj", "Objet dessiné", "aucun", ["aucun", "puces", "batterie", "objectif", "diode", "empreinte", "logo"], 4), N("objX", "Objet : centre x", 960, 0, 1920, 1, 4, "px"), N("objY", "Objet : centre y", 540, 0, 1080, 1, 4, "px"),
+      N("objSize", "Objet : taille (px)", 300, 20, 1600, 1, 4, "px"), N("objZoom", "Objet : avance lente (part)", 0, -0.3, 0.5, 0.005, 4), N("objGlow", "Objet : halo (px)", 40, 0, 200, 1, 4, "px"),
+      P("objKeys", "Objet : temps | opacité | couleur", "lines", ["0 | 0 | #9fe3e6", "0.3 | 1 | #bff0ee", "1.5 | 1 | #bff0ee"], 4), P("objFlash", "Puces : lumière blanche : puce | temps | durée", "lines", [], 4),
+      P("chips", "Puces : nom | sous-nom | couleur du bas | couleur du haut", "lines", ["M5 | | #19d9b8 | #3a9fd8", "M5 | PRO | #2a7cf0 | #3e55ff", "M5 | MAX | #a97bff | #6d35f0"], 4),
     ],
     build(ctx) {
       const { el, p, tl, t0 } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
@@ -60,8 +65,80 @@
         if (it.text.indexOf("{n}") >= 0) { const n0 = counts[i].length ? counts[i][0][0] : 0; [main, ...g1s, ...g2s].forEach((e) => { e.textContent = label(n0); }); }
         live.push({ it, rev, main, g1, g2, g1s, g2s, ks: keys[i], gk: gkeys[i], pos: poss[i], cnt: counts[i][0], label, shown: null });
       });
+      // the light beam (an edge of light: a white core band, a wide teal glow on its left and a short one on its right), keyed over time; the line is given by its x at the top and at the bottom of the frame
+      const bk = (p.beam || []).map((l) => String(l).split("|").map((x) => Number(x.trim()))).filter((q) => q.length >= 5 && q.every((v) => !isNaN(v))).sort((a, b) => a[0] - b[0]);
+      let bel = null;
+      if (bk.length) {
+        const L = p.beamGlow, tint = hex(p.beamTint), stops = [[0, 1.0], [0.014, 0.82], [0.029, 0.62], [0.043, 0.5], [0.086, 0.33], [0.157, 0.22], [0.229, 0.17], [0.324, 0.13], [0.524, 0.07], [0.76, 0.03], [1, 0]];   // glow measured on the reference: fraction of the glow length, share of the teal at the core edge
+        const left = stops.slice().reverse().map(([d, a]) => `rgba(${tint[0]},${tint[1]},${tint[2]},${(a * 0.45).toFixed(3)}) ${((1 - d) * L).toFixed(1)}px`).join(", ");
+        bel = abs(plane, { left: "0", top: "0", width: L + 60 + "px", height: "2600px", opacity: 0, transformOrigin: "0 0" });
+        bel.className += " ap-beam"; bel.dataset.L = String(L);
+        bel.style.background = `linear-gradient(90deg, ${left}, #ffffff ${L}px, #ffffff ${L + 0}px, rgba(${tint[0]},${tint[1]},${tint[2]},0.35) ${L + 12}px, rgba(0,0,0,0) ${L + 34}px)`;
+        bel._edge = abs(bel, { left: L + 15 + "px", top: "0", width: "2px", height: "100%", background: `rgba(${tint[0]},${tint[1]},${tint[2]},0.7)` });
+        bel._core = abs(bel, { left: L + "px", top: "0", width: "24px", height: "100%", background: "#fff", boxShadow: "0 0 6px 1px rgba(255,255,255,0.9)" });
+        if (window.gsap) window.gsap.set(bel, { force3D: true });
+      }
+      // ---- the drawn objects (what the film shows that is a shape and not a title): the chips, the battery, the lens, the diode, the fingerprint, the mark
+      const APPLE = "M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701";
+      const NSV = "http://www.w3.org/2000/svg", sv = (tag, at, par) => { const e = document.createElementNS(NSV, tag); Object.keys(at || {}).forEach((k) => e.setAttribute(k, at[k])); if (par) par.appendChild(e); return e; };
+      const okeys = (p.objKeys || []).map((l) => String(l).split("|").map((x) => x.trim())).filter((q) => q.length >= 3).map((q) => ({ t: Number(q[0]), a: Number(q[1]), c: hex(q[2]) })).sort((a, b) => a.t - b.t);
+      const oAt = (t) => { if (!okeys.length) return { a: 1, c: [200, 230, 230] }; if (t <= okeys[0].t) return okeys[0]; if (t >= okeys[okeys.length - 1].t) return okeys[okeys.length - 1]; let i = 0; while (i < okeys.length - 2 && okeys[i + 1].t < t) i++; const A = okeys[i], B = okeys[i + 1], f = (t - A.t) / Math.max(1e-6, B.t - A.t); return { a: A.a + (B.a - A.a) * f, c: mix(A.c, B.c, f) }; };
+      let obj = null;
+      if (p.obj !== "aucun") {
+        const S = p.objSize, box = abs(plane, { left: p.objX + "px", top: p.objY + "px", width: "0px", height: "0px", opacity: 0 }), g = { box, parts: [] };
+        const mk = (w, hh) => { const e = document.createElementNS(NSV, "svg"); e.setAttribute("width", w); e.setAttribute("height", hh); e.setAttribute("viewBox", `0 0 ${w} ${hh}`); e.style.cssText = `position:absolute;left:${-w / 2}px;top:${-hh / 2}px;overflow:visible`; box.appendChild(e); return e; };
+        const col = (c) => css(c);
+        if (p.obj === "logo") { const e = mk(S, S); const gp = sv("g", { transform: `translate(${S * 0.1},${S * 0.04}) scale(${S * 0.8 / 24})` }, e); const a = sv("path", { d: APPLE, fill: "#fff" }, gp); g.parts.push((c) => a.setAttribute("fill", col(c))); }
+        if (p.obj === "battery") {
+          const W = S, Hh = S * 0.5, e = mk(W * 1.12, Hh), dg = sv("defs", {}, e), gr = sv("linearGradient", { id: "apb" + Math.round(S), x1: "0", y1: "1", x2: "1", y2: "0" }, dg), c0 = sv("stop", { offset: "0", "stop-color": "#fff" }, gr), c1 = sv("stop", { offset: "1", "stop-color": "#fff" }, gr);
+          const w2 = W * 1.12, x0 = (w2 - W * 1.0) / 2 - W * 0.04, ot = Hh * 0.13;
+          sv("rect", { x: x0, y: 0, width: W * 0.92, height: Hh, rx: Hh * 0.27, fill: `url(#apb${Math.round(S)})` }, e); sv("rect", { x: x0 + ot, y: ot, width: W * 0.92 - 2 * ot, height: Hh - 2 * ot, rx: Hh * 0.17, fill: "#0b2a30" }, e);
+          const inner = sv("rect", { x: x0 + ot * 1.35, y: ot * 1.35, width: W * 0.92 - 2.7 * ot, height: Hh - 2.7 * ot, rx: Hh * 0.13, fill: `url(#apb${Math.round(S)})` }, e); sv("path", { d: `M${x0 + W * 0.95},${Hh * 0.33} a${Hh * 0.16},${Hh * 0.16} 0 0 1 0,${Hh * 0.34} z`, fill: `url(#apb${Math.round(S)})` }, e); void inner;
+          g.parts.push((c) => { c0.setAttribute("stop-color", col(mix(c, [255, 255, 255], 0.55))); c1.setAttribute("stop-color", col(c)); });
+        }
+        if (p.obj === "lens") { const e = mk(S, S), dg = sv("defs", {}, e), rg = sv("radialGradient", { id: "apl" + Math.round(S) }, dg), r0 = sv("stop", { offset: "0.2", "stop-color": "#fff", "stop-opacity": "0.9" }, rg), r1 = sv("stop", { offset: "1", "stop-color": "#fff", "stop-opacity": "0.05" }, rg);
+          const o = sv("circle", { cx: S / 2, cy: S / 2, r: S * 0.45, fill: "none", "stroke-width": S * 0.012, stroke: "#fff", opacity: 0.35 }, e), d = sv("circle", { cx: S / 2, cy: S / 2, r: S * 0.44, fill: `url(#apl${Math.round(S)})`, opacity: 0.18 }, e), i1 = sv("circle", { cx: S / 2, cy: S / 2, r: S * 0.16, fill: "#06161c", stroke: "#fff", "stroke-width": S * 0.012 }, e), i2 = sv("circle", { cx: S / 2, cy: S / 2 + S * 0.01, r: S * 0.09, fill: "#0b4f66", opacity: 0.9 }, e), hl = sv("ellipse", { cx: S / 2 + S * 0.03, cy: S / 2 - S * 0.12, rx: S * 0.06, ry: S * 0.018, fill: "#fff", opacity: 0.8 }, e);
+          g.parts.push((c) => { r0.setAttribute("stop-color", col(c)); o.setAttribute("stroke", col(c)); i1.setAttribute("stroke", col(c)); i2.setAttribute("fill", col(mix(c, [0, 30, 50], 0.55))); hl.setAttribute("fill", col(mix(c, [255, 255, 255], 0.6))); void r1; void d; }); }
+        if (p.obj === "diode") { const e = mk(S, S), dg = sv("defs", {}, e), rg = sv("radialGradient", { id: "apd" + Math.round(S) }, dg), r0 = sv("stop", { offset: "0", "stop-color": "#7dff6a" }, rg), r1 = sv("stop", { offset: "1", "stop-color": "#7dff6a", "stop-opacity": "0" }, rg);
+          sv("circle", { cx: S / 2, cy: S / 2, r: S * 0.5, fill: `url(#apd${Math.round(S)})`, opacity: 0.55 }, e); const d = sv("circle", { cx: S / 2, cy: S / 2, r: S * 0.055, fill: "#31f020" }, e); g.parts.push((c) => { d.setAttribute("fill", col(c)); r0.setAttribute("stop-color", col(c)); void r1; }); }
+        if (p.obj === "empreinte") { const e = mk(S, S), grp = sv("g", { fill: "none", "stroke-width": S * 0.035, "stroke-linecap": "round" }, e), arcs = [];
+          [0.1, 0.17, 0.24, 0.31, 0.38].forEach((r, i) => { const a = sv("path", { d: `M${S / 2 - S * r},${S / 2 + S * (0.08 + i * 0.01)} a${S * r},${S * r * 1.05} 0 0 1 ${S * r * 2},0`, stroke: "#fff", opacity: 0.9 }, grp); arcs.push(a); });
+          g.parts.push((c) => arcs.forEach((a) => a.setAttribute("stroke", col(c)))); }
+        if (p.obj === "puces") {
+          const CH = (p.chips || []).map((l) => String(l).split("|").map((x) => x.trim())).filter((q) => q.length >= 4), T = S, gap = T * 0.22; g.tiles = [];
+          CH.forEach((q, i) => {
+            const cx = (i - (CH.length - 1) / 2) * (T + gap), tile = abs(box, { left: cx - T / 2 + "px", top: -T / 2 + "px", width: T + "px", height: T + "px", boxSizing: "border-box", border: `${Math.max(1, T * 0.005)}px solid rgba(210,232,236,0.6)`, background: "#050608", overflow: "hidden" });
+            const lo = abs(tile, { left: 0, top: 0, width: "100%", height: "100%", background: `radial-gradient(ellipse 85% 85% at 0% 100%, ${q[2]} 0%, rgba(0,0,0,0) 62%)` }), hi = abs(tile, { left: 0, top: 0, width: "100%", height: "100%", background: `radial-gradient(ellipse 70% 70% at 100% 0%, ${q[3]} 0%, rgba(0,0,0,0) 60%)`, opacity: 0.85 }), fl = abs(tile, { left: 0, top: 0, width: "100%", height: "100%", background: "linear-gradient(135deg, #fff, #d8f3ff)", opacity: 0 });
+            const lab = abs(tile, { left: 0, top: q[1] ? T * 0.28 + "px" : T * 0.36 + "px", width: "100%", textAlign: "center", color: "#c8dde3", fontFamily: h.font(p.font), fontWeight: "700", fontSize: T * 0.19 + "px", lineHeight: "1", whiteSpace: "nowrap" });
+            lab.innerHTML = `<svg width="${T * 0.17}" height="${T * 0.17}" viewBox="0 0 24 24" style="vertical-align:-3%;margin-right:${T * 0.015}px"><path d="${APPLE}" fill="#c8dde3"/></svg>${q[0]}`;
+            if (q[1]) abs(tile, { left: 0, top: T * 0.54 + "px", width: "100%", textAlign: "center", color: "#c8dde3", fontFamily: h.font(p.font), fontWeight: "600", fontSize: T * 0.095 + "px", lineHeight: "1", letterSpacing: "0.02em" }, q[1]);
+            g.tiles.push({ tile, fl });
+          });
+        }
+        obj = g;
+      }
+      const flashes = (p.objFlash || []).map((l) => String(l).split("|").map((x) => Number(x.trim()))).filter((q) => q.length >= 3 && q.every((v) => !isNaN(v)));
       const pr = { t: 0 };
       const update = (t) => {
+        if (obj) {
+          const o = oAt(t); obj.box.style.opacity = String(clamp(o.a, 0, 1)); obj.parts.forEach((fn) => fn(o.c));
+          if (window.gsap) window.gsap.set(obj.box, { scale: 1 + p.objZoom * clamp(t / Math.max(0.01, ctx.dur), 0, 1), xPercent: 0, force3D: true });
+          if (p.objGlow > 0 && p.obj !== "puces") obj.box.style.filter = `drop-shadow(0 0 ${p.objGlow * 0.35}px ${css(o.c)}) drop-shadow(0 0 ${p.objGlow}px ${css(o.c)})`;
+          if (obj.tiles) obj.tiles.forEach((tt, i) => { let fa = 0; flashes.forEach((q) => { if (q[0] === i) { const f = (t - q[1]) / Math.max(0.01, q[2]); if (f > 0 && f < 1) fa = Math.max(fa, Math.sin(Math.PI * f)); } }); tt.fl.style.opacity = String(fa * 0.9); });
+        }
+        if (bel) {
+          if (t < bk[0][0] || t > bk[bk.length - 1][0]) bel.style.opacity = "0";
+          else {
+            const q = lerpRows(bk.map((r) => r), t), xt = q[1], xb = q[2], wd = Math.max(1, q[3]), a = q[4], th = Math.atan2(xb - xt, 1080), L = Number(bel.dataset.L), xc = (xt + xb) / 2;
+            bel._core.style.width = wd + "px"; bel._core.style.left = L - wd / 2 + "px"; bel._edge.style.left = L + wd / 2 + 3 + "px";
+            // local point (L, 1300) of the element (the middle of its core) lands on the middle of the line; the element is turned by -theta so that its local y runs along the line
+            if (window.gsap) window.gsap.set(bel, { x: xc - (L * Math.cos(th) + 1300 * Math.sin(th)), y: 540 + L * Math.sin(th) - 1300 * Math.cos(th), rotation: -th * 180 / Math.PI, force3D: true });
+            bel.style.opacity = String(clamp(a, 0, 1));
+            // the lit part of the line (a segment that grows): clip the element between the two heights, measured along the line
+            const ys = q.length > 6 ? q[5] : 0, ye = q.length > 6 ? q[6] : 1080, ct = Math.cos(th), top = Math.max(0, 1300 + (ys - 540) / ct), bot = Math.max(0, 2600 - (1300 + (ye - 540) / ct));
+            bel.style.clipPath = `inset(${top}px 0px ${bot}px 0px)`;
+          }
+        }
         live.forEach((L) => {
           const { it, rev, main, g1, g2, g1s, g2s, ks, gk } = L;
           const lt = t - it.t0, life = Math.min(it.t1, ctx.dur + 5) - it.t0;
