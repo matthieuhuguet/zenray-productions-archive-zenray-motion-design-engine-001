@@ -118,9 +118,20 @@
         }
         obj = g;
       }
+      // a tall frame (9:16, 1:1, 4:5): the content is scaled to fit the width of the frame (tallZoom is only an upper bound) and centred on its own middle; re-run once the fonts are loaded
+      let fitDone = false;
+      const fitPlane = () => {
+        if (!tall) return;
+        let x0 = 1e9, x1 = -1e9; live.forEach((L) => { const W = L.rev.offsetWidth - 2 * pad; if (W > 0) { x0 = Math.min(x0, L.it.cx - W / 2); x1 = Math.max(x1, L.it.cx + W / 2); } });
+        if (obj) { const n = (p.chips || []).length || 3, ow = p.obj === "puces" ? n * p.objSize + (n - 1) * p.objSize * 0.22 : p.objSize * 1.1; x0 = Math.min(x0, p.objX - ow / 2); x1 = Math.max(x1, p.objX + ow / 2); }
+        if (!(x1 > x0)) return; const k2 = Math.min(p.tallZoom * w / 1920, 0.9 * w / (x1 - x0));
+        h.css(plane, { left: w / 2 - ((x0 + x1) / 2) * k2 + "px", top: sh / 2 - 540 * k2 + "px", transform: `scale(${k2})` }); fitDone = document.fonts ? document.fonts.status === "loaded" : true;
+      };
+      fitPlane();
       const flashes = (p.objFlash || []).map((l) => String(l).split("|").map((x) => Number(x.trim()))).filter((q) => q.length >= 3 && q.every((v) => !isNaN(v)));
       const pr = { t: 0 };
       const update = (t) => {
+        if (tall && !fitDone) fitPlane();
         if (obj) {
           const o = oAt(t); obj.box.style.opacity = String(clamp(o.a, 0, 1)); obj.parts.forEach((fn) => fn(o.c));
           if (window.gsap) window.gsap.set(obj.box, { scale: 1 + p.objZoom * clamp(t / Math.max(0.01, ctx.dur), 0, 1), xPercent: 0, force3D: true });
