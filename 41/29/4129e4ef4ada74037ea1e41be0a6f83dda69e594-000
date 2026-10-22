@@ -126,6 +126,21 @@
     "0 | 1.23 | #fefefe | #fefefe | #fefefe | #fefefe | #fefefe",
     "0 | 1.33 | #fefefe | #fefefe | #fefefe | #ffffff | #fefefe"
    ],
+   "gkeys": [
+    "0 | 0.13 | #858585 | #858585 | #858585 | #858585 | #858585",
+    "0 | 0.23 | #878787 | #878787 | #878787 | #878787 | #878787",
+    "0 | 0.33 | #000ca2 | #000055 | #000055 | #000055 | #000055",
+    "0 | 0.43 | #021eba | #1102ae | #1102ae | #1102ae | #1102ae",
+    "0 | 0.53 | #0433be | #4207be | #6c0084 | #6c0084 | #6c0084",
+    "0 | 0.63 | #0844c3 | #4f18c6 | #880083 | #7e003e | #7e003e",
+    "0 | 0.73 | #0c4ec3 | #5325c2 | #990488 | #ad0544 | #870101",
+    "0 | 0.83 | #0f56c4 | #552fc0 | #a00b8c | #cb0c40 | #c61601",
+    "0 | 0.93 | #1459c6 | #5834c0 | #a21090 | #d8133c | #e52602",
+    "0 | 1.03 | #165bc7 | #5937c0 | #a21490 | #db173d | #e52b02",
+    "0 | 1.13 | #175dc6 | #5a39c0 | #a21790 | #da193d | #e52c02",
+    "0 | 1.23 | #175dc6 | #5a39c0 | #a21790 | #da193d | #e52c03",
+    "0 | 1.33 | #175ec7 | #5b39c0 | #a31892 | #db1a3d | #e52d03"
+   ],
    "weight": 500,
    "ls": -0.012
   }
@@ -152,6 +167,23 @@
     "0 | 1.35 | #5f6776 | #e0d4e3 | #fefdfe | #fefefe | #fefefe | #fefefe",
     "0 | 1.45 | #a496a4 | #a496a4 | #a496a4 | #faf7f6 | #fefefe | #fefefe"
    ],
+   "gkeys": [
+    "0 | 0.05 | #014a97 | #3c2993 | #3c2993 | #3c2993 | #3c2993 | #3c2993",
+    "0 | 0.15 | #035dbb | #292ca3 | #510d73 | #510d73 | #510d73 | #510d73",
+    "0 | 0.25 | #0460c1 | #3d34c0 | #6811a0 | #822a64 | #822a64 | #822a64",
+    "0 | 0.35 | #0460c3 | #4236c7 | #701ab1 | #850b62 | #9d2d3f | #9d2d3f",
+    "0 | 0.45 | #0460c3 | #4137c5 | #721db3 | #ab1571 | #ab1330 | #942f0f",
+    "0 | 0.55 | #0361c2 | #3d3ac4 | #721eb2 | #b51874 | #d41921 | #d03300",
+    "0 | 0.65 | #0361c2 | #3e3cc5 | #7120b2 | #b61874 | #db1b1e | #e33b02",
+    "0 | 0.75 | #0461c2 | #3e3dc3 | #7021b2 | #b61874 | #dc1c20 | #e53c01",
+    "0 | 0.85 | #0363c1 | #3f3fc3 | #6f22b2 | #b61874 | #dc1c1e | #e43b01",
+    "0 | 0.95 | #0363c1 | #3d42c2 | #6e24b1 | #b61874 | #db1c1d | #e43c01",
+    "0 | 1.05 | #0363c1 | #3c44c1 | #6e25b1 | #b71874 | #da1c1d | #e33c01",
+    "0 | 1.15 | #0464c1 | #4043c0 | #7025af | #b61874 | #dc1d1a | #e13e01",
+    "0 | 1.25 | #0a5bad | #5140c3 | #781c9f | #b71872 | #e02016 | #dc4401",
+    "0 | 1.35 | #62718f | #5935b2 | #891895 | #bd1965 | #e5260a | #d04a01",
+    "0 | 1.45 | #7d3063 | #7d3063 | #7d3063 | #c2192b | #e53602 | #c25001"
+   ],
    "weight": 500,
    "ls": -0.012
   }
@@ -159,7 +191,8 @@
  "macbook-pro-s10-all-day-battery": {
   "params": {
    "items": [
-    "All-day battery life | 958 | 536 | 131.2 | 0.02 | 1.35 | 0.34 | 1.34 | 0.32"
+    "All-day battery life | 958 | 536 | 131.2 | 0.02 | 1.35 | 0.34 | 1.34 | 0.32 | 1",
+    "Battery life varies by use and configuration. | 960 | 1016 | 24.4 | 0.00 | 1.40 | 0.40 | 0.00 | 0.00 | 0"
    ],
    "keys": [
     "0 | 0.13 | #86acaa | #6b9ea5 | #6b9ea5",
@@ -173,8 +206,23 @@
     "0 | 0.93 | #e7f7f6 | #ebf8f8 | #c1edec",
     "0 | 1.03 | #d0f2f0 | #eef9f9 | #d9f3f3",
     "0 | 1.13 | #9fdee2 | #d0f1f0 | #f1fbf9",
-    "0 | 1.23 | #ccdfde | #82a5a4 | #82a5a4"
+    "0 | 1.23 | #ccdfde | #82a5a4 | #82a5a4",
+    "1 | 0.10 | #f7f7f7 | #f9f9f9",
+    "1 | 0.20 | #f7f7f7 | #f9f9f9",
+    "1 | 0.30 | #f7f7f7 | #fafafa",
+    "1 | 0.40 | #f7f7f7 | #fafafa",
+    "1 | 0.50 | #f6f6f6 | #f9f9f9",
+    "1 | 0.60 | #f6f6f6 | #f9f9f9",
+    "1 | 0.70 | #f6f6f6 | #f9f9f9",
+    "1 | 0.80 | #f6f6f6 | #f9f9f9",
+    "1 | 0.90 | #f6f6f6 | #f9f9f9",
+    "1 | 1.00 | #f4f4f4 | #f7f7f7",
+    "1 | 1.10 | #f4f4f4 | #f7f7f7",
+    "1 | 1.20 | #f4f4f4 | #f7f7f7",
+    "1 | 1.30 | #f4f4f4 | #f7f7f7"
    ],
+   "gkeys": [],
+   "pos": [],
    "weight": 500,
    "ls": -0.012
   }
@@ -182,18 +230,26 @@
  "macbook-pro-s12-up-to-24-hours": {
   "params": {
    "items": [
-    "Up to 24 hours | 961 | 537 | 100.6 | 0.50 | 1.30 | 1.16 | 0.00 | 0.00"
+    "Up to {n} hours | 960 | 538 | 100.7 | 0.00 | 1.40 | 0.24 | 0.00 | 0.00 | 1"
    ],
    "keys": [
-    "0 | -0.00 | #ccf1ef | #edf9f9 | #e9f8f7",
-    "0 | 0.10 | #b6e9e8 | #dbf4f3 | #effafa",
-    "0 | 0.20 | #9edce1 | #caeeed | #eaf7f7",
-    "0 | 0.30 | #85cbdb | #bae8e7 | #d8f3f1",
-    "0 | 0.40 | #74bdd5 | #ade2e3 | #cdf0ed",
-    "0 | 0.50 | #69b5d1 | #a2dee0 | #c6edec",
-    "0 | 0.60 | #64b0cf | #9ddade | #c2ecea",
-    "0 | 0.70 | #62aecd | #9ddbdf | #c3ecea"
+    "0 | 0.00 | #4b9cc3 | #4b9cc3 | #4b9cc3",
+    "0 | 0.10 | #7ac6dd | #4e9ec4 | #3c7191",
+    "0 | 0.20 | #b5e8e9 | #7cc6db | #54a5c9",
+    "0 | 0.30 | #d9f4f3 | #b5e9e9 | #85cddd",
+    "0 | 0.40 | #edfafa | #d4f3f3 | #b4e8e9",
+    "0 | 0.50 | #dff6f5 | #edf9fa | #d0f1f1",
+    "0 | 0.60 | #c4eeec | #eaf8f7 | #edf9f9",
+    "0 | 0.70 | #afe5e6 | #d4f2f0 | #eff9f9",
+    "0 | 0.80 | #92d5df | #c5eceb | #e3f6f5",
+    "0 | 0.90 | #7fc6d9 | #b6e6e5 | #d3f2f0",
+    "0 | 1.00 | #6fb9d4 | #a9e1e2 | #caeeed",
+    "0 | 1.10 | #67b2d0 | #9fdce0 | #c4edeb",
+    "0 | 1.20 | #65b0ce | #9ddbdf | #c3ecea",
+    "0 | 1.30 | #3f7a97 | #3f7a97 | #fdfeff"
    ],
+   "gkeys": [],
+   "pos": [],
    "weight": 500,
    "ls": -0.012
   }
@@ -201,26 +257,30 @@
  "macbook-pro-s14-extreme-brightness": {
   "params": {
    "items": [
-    "Extreme brightness and high contrast | 944 | 538 | 99.2 | 0.00 | 1.80 | 1.30 | 1.14 | 0.24"
+    "Extreme brightness | 573 | 537 | 98.2 | 0.00 | 0.45 | 0.32 | 0.00 | 0.00 | 1",
+    "Extreme brightness and high contrast | 954 | 537 | 100.6 | 0.10 | 1.75 | 1.16 | 0.00 | 0.00 | 1"
    ],
    "keys": [
-    "0 | 0.20 | #c4c4c4 | #bebebe | #4d7278 | #4d7278 | #4d7278 | #4d7278",
-    "0 | 0.30 | #f1f1f1 | #eaeaea | #71a7b0 | #3e7591 | #3e7591 | #3e7591",
-    "0 | 0.40 | #fefefe | #fafbfb | #9ed6d9 | #5b9fbe | #5b9fbe | #5b9fbe",
-    "0 | 0.50 | #fefefe | #fafcfc | #bbe9e9 | #74bed6 | #74bed6 | #74bed6",
-    "0 | 0.60 | #fefefe | #fafdfd | #cef1f1 | #89ccda | #89ccda | #89ccda",
-    "0 | 0.70 | #fefefe | #fbfefe | #e4f8f9 | #b2e1e4 | #838383 | #626262",
-    "0 | 0.80 | #fefefe | #fcfefe | #f2fcfc | #deedee | #c1c1c1 | #9a9a9a",
-    "0 | 0.90 | #fefefe | #fafdfd | #f8fdfd | #fbfdfd | #f1f1f1 | #d5d5d5",
-    "0 | 1.00 | #fefefe | #f9fdfc | #f9fefd | #fefefe | #fefefe | #fafafa",
-    "0 | 1.10 | #fefefe | #f9fdfc | #fafefe | #fefefe | #fefefe | #fefefe",
-    "0 | 1.20 | #fefefe | #fbfefe | #fdfefe | #fefefe | #fefefe | #ffffff",
-    "0 | 1.30 | #fefefe | #fdfefe | #fefefe | #fefefe | #fefefe | #fefefe",
-    "0 | 1.40 | #fefefe | #fefefe | #feffff | #fefefe | #fefefe | #fefefe",
-    "0 | 1.50 | #fefefe | #fefefe | #fefefe | #fefefe | #fefefe | #fefefe",
-    "0 | 1.60 | #fefefe | #fefefe | #ffffff | #fefefe | #fefefe | #fefefe",
-    "0 | 1.70 | #f9d7a3 | #f9d7a3 | #f5dcb9 | #f7ca8d | #f7ca8d | #f7ca8d"
+    "0 | 0.05 | #6d6d6d | #6d6d6d | #6d6d6d | #6d6d6d",
+    "0 | 0.15 | #b3b3b3 | #b2b2b2 | #b2b2b2 | #b2b2b2",
+    "0 | 0.25 | #e5e5e5 | #e3e4e4 | #78a3a5 | #4b7b92",
+    "0 | 0.35 | #fefefe | #fdfdfd | #aad7d6 | #6cb0c5",
+    "1 | 0.35 | #fefefe | #fafcfb | #b0e6e8 | #6eb5d3 | #6eb5d3 | #6eb5d3",
+    "1 | 0.45 | #fefefe | #fafcfc | #c4efee | #7ec8dd | #7ec8dd | #7ec8dd",
+    "1 | 0.55 | #fefefe | #fafdfd | #d9f5f5 | #a1d2d8 | #6c6c6c | #6c6c6c",
+    "1 | 0.65 | #fefefe | #fbfefe | #eefbfb | #cce9e9 | #b0b0b0 | #828282",
+    "1 | 0.75 | #fefefe | #fafdfd | #f7fdfd | #f7f9fa | #e3e3e3 | #c3c3c3",
+    "1 | 0.85 | #fefefe | #f9fdfc | #f9fefd | #fefefe | #fcfcfc | #f0f0f0",
+    "1 | 0.95 | #fefefe | #f9fcfc | #f9fdfd | #fefefe | #fefefe | #fefefe",
+    "1 | 1.05 | #fefefe | #fbfdfd | #fdfefe | #fefefe | #fefefe | #ffffff",
+    "1 | 1.15 | #fefefe | #fcfefe | #fefefe | #fefefe | #fefefe | #fefefe",
+    "1 | 1.25 | #fefefe | #fefefe | #fefefe | #fefefe | #fefefe | #fefefe",
+    "1 | 1.35 | #fefefe | #fefefe | #fefefe | #fefefe | #fefefe | #fefefe",
+    "1 | 1.45 | #fefefe | #ffffff | #ffffff | #fefefe | #fefefe | #fefefe",
+    "1 | 1.55 | #fefefe | #fefeff | #ffffff | #fefefe | #fefefe | #fefefe"
    ],
+   "gkeys": [],
+   "pos": [],
    "weight": 500,
    "ls": -0.012
   }
@@ -259,19 +319,52 @@
  "macbook-pro-s17-connectivity": {
   "params": {
    "items": [
-    "Connectivity and security | 960 | 537 | 129.6 | 0.50 | 1.60 | 1.60 | 0.56 | 0.34"
+    "Connectivity | 600 | 537 | 129.4 | 0.00 | 1.35 | 0.15 | 0.00 | 0.00 | 1",
+    "and security | 1305 | 527 | 129.6 | 0.02 | 1.60 | 0.54 | 0.00 | 0.00 | 1"
    ],
    "keys": [
-    "0 | -0.00 | #e6f7f6 | #b5e9e9 | #6fbdd9",
-    "0 | 0.10 | #edf8f9 | #c1edec | #7fcbde",
-    "0 | 0.20 | #eef9f9 | #d1f2f1 | #9edee5",
-    "0 | 0.30 | #e8f6f6 | #e8f7f6 | #b8e9ea",
-    "0 | 0.40 | #cdf0ed | #ebf7f7 | #cfefef",
-    "0 | 0.50 | #bae9e9 | #e9f6f6 | #eaf6f6",
-    "0 | 0.60 | #9fdbe1 | #d2f0ee | #eaf5f6",
-    "0 | 0.70 | #6cb1c5 | #aad6d4 | #cbdddd",
-    "0 | 0.80 | #42748c | #6e9a98 | #85a2a0",
-    "0 | 1.00 | #5e5e60 | #5e5e60 | #878689"
+    "0 | 0.05 | #4d9fc5 | #3985af | #3985af",
+    "0 | 0.15 | #9cdbe1 | #77c3db | #56a8cc",
+    "0 | 0.25 | #bcebeb | #a2e1e7 | #7ac7de",
+    "0 | 0.35 | #d1f2f1 | #bbeced | #9fdfe5",
+    "0 | 0.45 | #e6f7f7 | #ccf1f1 | #b3e9ea",
+    "0 | 0.55 | #effafa | #dbf5f4 | #c1efee",
+    "0 | 0.65 | #f0f9fa | #edf9f9 | #cff2f1",
+    "0 | 0.75 | #daf4f2 | #eef9f9 | #e7f7f7",
+    "0 | 0.85 | #c3eceb | #dbf4f2 | #edf8f8",
+    "0 | 0.95 | #a8e2e4 | #c5eeed | #d7f2f1",
+    "0 | 1.05 | #87cddd | #b0e5e8 | #c5eceb",
+    "0 | 1.15 | #60abc8 | #84c8d3 | #a6dbda",
+    "0 | 1.25 | #397696 | #518ca2 | #6aa0a7",
+    "1 | 0.28 | #5db0d4 | #479bc3 | #327ca1",
+    "1 | 0.38 | #79c5de | #5eaed3 | #4391b7",
+    "1 | 0.48 | #93d8e2 | #73c0db | #509ec4",
+    "1 | 0.58 | #aae5e7 | #85d0e0 | #5ba9c9",
+    "1 | 0.68 | #beecec | #a4e2e8 | #76bfd3",
+    "1 | 0.78 | #d1f1f0 | #bceced | #97d6db",
+    "1 | 0.88 | #eaf6f6 | #d2f1f2 | #b1e1e1",
+    "1 | 0.98 | #eaf6f6 | #ebf6f7 | #cae7e6",
+    "1 | 1.08 | #d7f1f0 | #eaf6f6 | #e5f0f1",
+    "1 | 1.18 | #aed8d6 | #c3dfdd | #ceddde",
+    "1 | 1.28 | #729c9a | #83a3a1 | #87a19f",
+    "1 | 1.38 | #3e5153 | #425453 | #465250",
+    "1 | 1.48 | #58585a | #818083 | #818083"
+   ],
+   "gkeys": [],
+   "pos": [
+    "1 | 0.28 | 1305 | 527",
+    "1 | 0.38 | 1370 | 537",
+    "1 | 0.48 | 1366 | 537",
+    "1 | 0.58 | 1336 | 537",
+    "1 | 0.68 | 1333 | 537",
+    "1 | 0.78 | 1333 | 536",
+    "1 | 0.88 | 1331 | 536",
+    "1 | 0.98 | 1333 | 536",
+    "1 | 1.08 | 1333 | 536",
+    "1 | 1.18 | 1330 | 536",
+    "1 | 1.28 | 1319 | 536",
+    "1 | 1.38 | 1274 | 536",
+    "1 | 1.48 | 1164 | 589"
    ],
    "weight": 500,
    "ls": -0.012
@@ -299,6 +392,52 @@
     "0 | 1.31 | #82b4bc | #bbeae5 | #cff4ee",
     "0 | 1.41 | #a1d6d7 | #a1d6d7 | #c2ede9"
    ],
+   "weight": 500,
+   "ls": -0.012
+  }
+ },
+ "macbook-pro-s18-port-labels": {
+  "params": {
+   "items": [
+    "Thunderbolt | 1074 | 274 | 54.6 | 0.00 | 1.30 | 0.40 | 0.00 | 0.00 | 0",
+    "SD | 700 | 791 | 53.2 | 0.08 | 1.30 | 0.31 | 0.00 | 0.00 | 0",
+    "HDMI | 1119 | 790 | 52.7 | 0.15 | 1.30 | 0.40 | 0.00 | 0.00 | 0"
+   ],
+   "keys": [
+    "0 | 0.10 | #767676 | #757575",
+    "0 | 0.20 | #a9a9a9 | #ababab",
+    "0 | 0.30 | #e4e4e4 | #e3e3e3",
+    "0 | 0.40 | #ffffff | #ffffff",
+    "0 | 0.50 | #ffffff | #ffffff",
+    "0 | 0.60 | #ffffff | #ffffff",
+    "0 | 0.70 | #ffffff | #ffffff",
+    "0 | 0.80 | #ffffff | #ffffff",
+    "0 | 0.90 | #ffffff | #ffffff",
+    "0 | 1.00 | #ffffff | #ffffff",
+    "0 | 1.10 | #ffffff | #ffffff",
+    "0 | 1.20 | #ffffff | #ffffff",
+    "1 | 0.12 | #6a6a6a | #6b6b6b",
+    "1 | 0.22 | #a8a8a8 | #a6a6a6",
+    "1 | 0.32 | #e6e6e6 | #e3e3e3",
+    "1 | 0.42 | #fefefe | #fdfdfd",
+    "1 | 0.52 | #ffffff | #ffffff",
+    "1 | 0.62 | #ffffff | #ffffff",
+    "1 | 0.72 | #ffffff | #ffffff",
+    "1 | 0.82 | #ffffff | #ffffff",
+    "1 | 0.92 | #ffffff | #ffffff",
+    "1 | 1.02 | #ffffff | #ffffff",
+    "1 | 1.12 | #ffffff | #ffffff",
+    "2 | 0.35 | #8a8a8a | #858585",
+    "2 | 0.45 | #c6c6c6 | #c0c0c0",
+    "2 | 0.55 | #f7f7f7 | #f3f3f3",
+    "2 | 0.65 | #ffffff | #ffffff",
+    "2 | 0.75 | #ffffff | #ffffff",
+    "2 | 0.85 | #ffffff | #ffffff",
+    "2 | 0.95 | #ffffff | #ffffff",
+    "2 | 1.05 | #ffffff | #ffffff"
+   ],
+   "gkeys": [],
+   "pos": [],
    "weight": 500,
    "ls": -0.012
   }

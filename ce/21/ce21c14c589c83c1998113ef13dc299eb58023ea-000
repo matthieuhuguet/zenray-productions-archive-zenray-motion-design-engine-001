@@ -15,9 +15,12 @@
   const css = (c) => `rgb(${Math.round(c[0])},${Math.round(c[1])},${Math.round(c[2])})`;
   const outQuad = (x) => 1 - Math.pow(1 - clamp(x, 0, 1), 2), outPow = (x, k) => 1 - Math.pow(1 - clamp(x, 0, 1), k);   // measured: the entering edge follows a quadratic ease out, the leaving edge a power 1.5 ease out
   // "text | cx | cy | size | start | end" lines; keys "item | time | left | middle | right" lines (time counted from the start of the item)
-  // "text | cx | cy | size | start | end | dIn | dOut | outLead" lines (everything after the size is optional; a blank dIn, dOut or outLead takes the value of the whole scene); keys "item | time | c1 | c2 | ... | cN" lines (N colours spread evenly from the left of the title to its right; time counted from the start of the item)
-  const parseItems = (lines) => (lines || []).map((l) => { const f = String(l).split("|").map((s) => s.trim()); return { text: f[0] || "", cx: Number(f[1]) || 960, cy: Number(f[2]) || 540, size: Number(f[3]) || 120, t0: Number(f[4]) || 0, t1: f[5] === undefined || f[5] === "" ? 1e9 : Number(f[5]), dIn: f[6] === undefined || f[6] === "" ? null : Number(f[6]), dOut: f[7] === undefined || f[7] === "" ? null : Number(f[7]), outLead: f[8] === undefined || f[8] === "" ? null : Number(f[8]) }; });
+  // "text | cx | cy | size | start | end | dIn | dOut | outLead | glow" lines (everything after the size is optional; a blank dIn, dOut or outLead takes the value of the whole scene); keys "item | time | c1 | c2 | ... | cN" lines (N colours spread evenly from the left of the title to its right; time counted from the start of the item)
+  const parseItems = (lines) => (lines || []).map((l) => { const f = String(l).split("|").map((s) => s.trim()); return { text: f[0] || "", cx: Number(f[1]) || 960, cy: Number(f[2]) || 540, size: Number(f[3]) || 120, t0: Number(f[4]) || 0, t1: f[5] === undefined || f[5] === "" ? 1e9 : Number(f[5]), dIn: f[6] === undefined || f[6] === "" ? null : Number(f[6]), dOut: f[7] === undefined || f[7] === "" ? null : Number(f[7]), outLead: f[8] === undefined || f[8] === "" ? null : Number(f[8]), glow: f[9] === undefined || f[9] === "" ? 1 : Number(f[9]) }; });
   const parseKeys = (lines, n) => { const per = Array.from({ length: n }, () => []); (lines || []).forEach((l) => { const f = String(l).split("|").map((s) => s.trim()); const i = Number(f[0]); if (per[i] && f.length >= 4) per[i].push({ t: Number(f[1]), c: f.slice(2).map(hex) }); }); per.forEach((k) => k.sort((a, b) => a.t - b.t)); return per; };
+  // "item | time | cx | cy" (a title that moves) and "item | from | to | step | start | duration" (a number that counts: the title text holds {n})
+  const parseRows = (lines, n, width) => { const per = Array.from({ length: n }, () => []); (lines || []).forEach((l) => { const f = String(l).split("|").map((x) => x.trim()); const i = Number(f[0]); if (per[i] && f.length >= width) per[i].push(f.slice(1).map(Number)); }); per.forEach((k) => k.sort((a, b) => a[0] - b[0])); return per; };
+  const lerpRows = (rows, t) => { if (t <= rows[0][0]) return rows[0]; if (t >= rows[rows.length - 1][0]) return rows[rows.length - 1]; let i = 0; while (i < rows.length - 2 && rows[i + 1][0] < t) i++; const a = rows[i], b = rows[i + 1], f = (t - a[0]) / Math.max(1e-6, b[0] - a[0]); return a.map((v, k) => v + (b[k] - v) * f); };
   const sampleKeys = (ks, t) => {
     if (!ks.length) return [[200, 230, 230], [200, 230, 230]];
     if (t <= ks[0].t) return ks[0].c; if (t >= ks[ks.length - 1].t) return ks[ks.length - 1].c;
@@ -30,10 +33,12 @@
     id: "ap-title", label: "Apple : titres lumineux", group: "Apple", duration: 3,
     params: [
       P("items", "Titres : texte | centre x | centre y | taille | début | fin | apparition (plan 1920 x 1080)", "lines", ["MacBook Pro | 960 | 540 | 131 | 0.1 | 2.2"], 1),
+      P("pos", "Déplacement d'un titre : titre | temps | centre x | centre y", "lines", [], 3), P("counts", "Compteur : titre | de | à | pas | début | durée (le texte contient {n})", "lines", [], 3),
+      P("gkeys", "Couleurs du halo mesurées (même forme ; vide : le halo prend la couleur du texte)", "lines", [], 2),
       P("keys", "Couleurs mesurées : titre | temps | couleurs de la gauche vers la droite", "lines", ["0 | 0 | #61a7c5 | #5295b4 | #3e7693", "0 | 1.1 | #cae5e5 | #b0dedf | #88c7d6", "0 | 2.0 | #3b7492 | #407d9d | #4b8cac"], 1),
       N("dIn", "Durée de l'apparition (s)", 0.75, 0.05, 1.5, 0.01, 1, "s"), N("dOut", "Durée de l'effacement de gauche à droite (s)", 0.9, 0, 3, 0.01, 1, "s"), N("outLead", "L'effacement commence avant la fin de (s)", 0.65, 0, 3, 0.01, 2, "s"), N("push", "Avance lente (part de la taille)", 0, 0, 0.15, 0.001, 2),
       N("weight", "Graisse", 500, 300, 800, 10, 2), N("ls", "Interlettrage (em)", -0.012, -0.1, 0.2, 0.002, 2), N("soft", "Bord doux de l'apparition (px)", 300, 0, 800, 5, 2, "px"),
-      P("glowTint", "Teinte du halo", "color", "#3fc2ff", 3), N("glowMix", "Part de teinte dans le halo", 0.55, 0, 1, 0.01, 3), N("glow1", "Halo proche (px)", 9, 0, 60, 0.5, 3, "px"), N("glow2", "Halo large (px)", 34, 0, 160, 1, 3, "px"), N("glowA", "Force du halo", 0.7, 0, 2, 0.01, 3),
+      P("glowTint", "Teinte du halo", "color", "#3fc2ff", 3), N("glowMix", "Part de teinte dans le halo", 0.55, 0, 1, 0.01, 3), N("glow1", "Halo proche (px)", 9, 0, 60, 0.5, 3, "px"), N("glow2", "Halo large (px)", 34, 0, 160, 1, 3, "px"), N("glowA", "Force du halo", 0.7, 0, 2, 0.01, 3), N("glowGain", "Épaisseur du halo mesuré (copies empilées)", 1, 1, 6, 1, 3),
       N("fadeOut", "Fondu de sortie (s)", 0, 0, 2, 0.05, 3, "s"), P("bg", "Fond", "color", "#000000", 3), P("font", "Police", "text", "InterVariable", 3),
       N("tallZoom", "Agrandissement en format haut", 1.6, 0.5, 4, 0.05, 3), N("film0", "Début dans le film (s)", 0, 0, 60, 0.01, 4, "s"),
     ],
@@ -41,26 +46,33 @@
       const { el, p, tl, t0 } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
       h.css(el, { background: p.bg });
       const kk = (w / 1920) * (tall ? p.tallZoom : 1), plane = abs(st, { left: w / 2 - 960 * kk + "px", top: sh / 2 - 540 * kk + "px", width: "1920px", height: "1080px", transformOrigin: "0 0", transform: `scale(${kk})` });
-      const items = parseItems(p.items), keys = parseKeys(p.keys, items.length), pad = Math.ceil(p.glow2 * 3.2), live = [];
+      const items = parseItems(p.items), keys = parseKeys(p.keys, items.length), gkeys = parseKeys(p.gkeys, items.length), poss = parseRows(p.pos, items.length, 4), counts = parseRows(p.counts, items.length, 6), pad = Math.ceil(p.glow2 * 3.2), live = [];
       items.forEach((it, i) => {
         const rev = abs(plane, { left: it.cx + "px", top: it.cy + "px", padding: pad + "px", whiteSpace: "nowrap", opacity: 0 });
         const font = { fontFamily: h.font(p.font), fontWeight: String(p.weight), fontSize: it.size + "px", letterSpacing: p.ls + "em", lineHeight: "1.2", whiteSpace: "nowrap" };
-        const layer = (blur, extra) => { const e = abs(rev, Object.assign({ position: "absolute", left: pad + "px", top: pad + "px", color: "transparent", webkitTextFillColor: "transparent", webkitBackgroundClip: "text", backgroundClip: "text" }, font, extra), it.text); if (blur) e.style.filter = `blur(${blur}px)`; return e; };
-        const g2 = p.glow2 > 0 ? layer(p.glow2) : null, g1 = p.glow1 > 0 ? layer(p.glow1) : null;
+        const measuredGlow = (gkeys[i] || []).length > 0, layer = (blur, extra) => { const e = abs(rev, Object.assign({ position: "absolute", left: pad + "px", top: pad + "px", color: "transparent", webkitTextFillColor: "transparent", webkitBackgroundClip: "text", backgroundClip: "text" }, font, extra), it.text); if (blur) e.style.filter = `blur(${blur}px)`; return e; };
+        // a measured (coloured) halo gets its intensity from stacked copies of the blurred title, never from a brightness filter (it would clip the channels and turn the hue)
+        const copies = measuredGlow ? Math.max(1, Math.round(p.glowGain)) : 1;
+        const g2s = p.glow2 > 0 ? Array.from({ length: copies }, () => layer(p.glow2)) : [], g1s = p.glow1 > 0 ? Array.from({ length: copies }, () => layer(p.glow1)) : [], g2 = g2s[0] || null, g1 = g1s[0] || null;
         const main = h.css(h.el("div", "", rev), Object.assign({ position: "relative", color: "transparent", webkitTextFillColor: "transparent", webkitBackgroundClip: "text", backgroundClip: "text" }, font)); main.textContent = it.text;
         if (window.gsap) window.gsap.set(rev, { xPercent: -50, yPercent: -50, force3D: true, transformOrigin: "50% 50%" });
-        live.push({ it, rev, main, g1, g2, ks: keys[i] });
+        const label = (v) => (it.text.indexOf("{n}") >= 0 ? it.text.replace("{n}", String(v)) : it.text);
+        if (it.text.indexOf("{n}") >= 0) { const n0 = counts[i].length ? counts[i][0][0] : 0; [main, ...g1s, ...g2s].forEach((e) => { e.textContent = label(n0); }); }
+        live.push({ it, rev, main, g1, g2, g1s, g2s, ks: keys[i], gk: gkeys[i], pos: poss[i], cnt: counts[i][0], label, shown: null });
       });
       const pr = { t: 0 };
       const update = (t) => {
-        live.forEach(({ it, rev, main, g1, g2, ks }) => {
+        live.forEach((L) => {
+          const { it, rev, main, g1, g2, g1s, g2s, ks, gk } = L;
           const lt = t - it.t0, life = Math.min(it.t1, ctx.dur + 5) - it.t0;
           if (lt < 0 || lt > life + p.fadeOut) { rev.style.opacity = "0"; return; }
+          if (L.pos.length) { const q = lerpRows(L.pos, lt); rev.style.left = q[1] + "px"; rev.style.top = q[2] + "px"; }
+          if (L.cnt) { const [from, to, step, c0, cd] = L.cnt, f = clamp((lt - c0) / Math.max(0.01, cd), 0, 1), n = Math.round(from + Math.floor(f * (to - from) / step + 1e-6) * step * Math.sign(to - from || 1)); if (n !== L.shown) { L.shown = n; [main, ...g1s, ...g2s].forEach((e) => { e.textContent = L.label(n); }); } }
           // the mask: the entering edge crosses the title from the left, the leaving edge follows it from the left (the title is erased left to right) just before the end
           const W = rev.offsetWidth || 1, e = -p.soft + (W + p.soft) * outQuad(lt / (it.dIn || p.dIn)), dO = it.dOut === null ? p.dOut : it.dOut, oL = it.outLead === null ? p.outLead : it.outLead, er = dO > 0 ? -p.soft + (W + p.soft) * outPow((lt - (life - oL)) / dO, 1.5) : -2 * p.soft;
           const m = `linear-gradient(90deg, transparent ${er}px, #000 ${er + p.soft}px, #000 ${e}px, transparent ${e + p.soft}px)`; rev.style.webkitMaskImage = m; rev.style.maskImage = m;
-          const c = sampleKeys(ks, lt), tint = hex(p.glowTint), grad = gradOf(c, null), gg = gradOf(c, tint, p.glowMix), lum = c.reduce((s2, k) => s2 + k[0] + k[1] + k[2], 0) / (3 * c.length * 255);
-          main.style.backgroundImage = grad; if (g1) { g1.style.backgroundImage = gg; g1.style.opacity = String(clamp(p.glowA * (0.5 + 0.5 * lum), 0, 1)); } if (g2) { g2.style.backgroundImage = gg; g2.style.opacity = String(clamp(p.glowA * (0.4 + 0.6 * lum), 0, 1)); }
+          const c = sampleKeys(ks, lt), tint = hex(p.glowTint), grad = gradOf(c, null), measured = gk && gk.length, gc = measured ? sampleKeys(gk, lt) : c, gg = measured ? gradOf(gc, null) : gradOf(c, tint, p.glowMix), lum = measured ? 1 : c.reduce((s2, k) => s2 + k[0] + k[1] + k[2], 0) / (3 * c.length * 255);
+          main.style.backgroundImage = grad; g1s.forEach((g) => { g.style.backgroundImage = gg; g.style.opacity = String(clamp(it.glow * p.glowA * (0.5 + 0.5 * lum), 0, 1)); }); g2s.forEach((g) => { g.style.backgroundImage = gg; g.style.opacity = String(clamp(it.glow * p.glowA * (0.4 + 0.6 * lum), 0, 1)); });
           rev.style.opacity = lt > life ? String(1 - (lt - life) / p.fadeOut) : "1";
           if (window.gsap) window.gsap.set(rev, { scale: 1 + p.push * clamp(lt / Math.max(0.01, life), 0, 1), force3D: true });
         });
