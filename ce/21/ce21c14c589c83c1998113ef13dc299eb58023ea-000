@@ -93,14 +93,15 @@
           const W = S, Hh = S * 0.5, e = mk(W * 1.12, Hh), dg = sv("defs", {}, e), gr = sv("linearGradient", { id: "apb" + Math.round(S), x1: "0", y1: "1", x2: "1", y2: "0" }, dg), c0 = sv("stop", { offset: "0", "stop-color": "#fff" }, gr), c1 = sv("stop", { offset: "1", "stop-color": "#fff" }, gr);
           const w2 = W * 1.12, x0 = (w2 - W * 1.0) / 2 - W * 0.04, ot = Hh * 0.13;
           sv("rect", { x: x0, y: 0, width: W * 0.92, height: Hh, rx: Hh * 0.27, fill: `url(#apb${Math.round(S)})` }, e); sv("rect", { x: x0 + ot, y: ot, width: W * 0.92 - 2 * ot, height: Hh - 2 * ot, rx: Hh * 0.17, fill: "#0b2a30" }, e);
-          const inner = sv("rect", { x: x0 + ot * 1.35, y: ot * 1.35, width: W * 0.92 - 2.7 * ot, height: Hh - 2.7 * ot, rx: Hh * 0.13, fill: `url(#apb${Math.round(S)})` }, e); sv("path", { d: `M${x0 + W * 0.95},${Hh * 0.33} a${Hh * 0.16},${Hh * 0.16} 0 0 1 0,${Hh * 0.34} z`, fill: `url(#apb${Math.round(S)})` }, e); void inner;
+          const inner = sv("rect", { x: x0 + ot * 1.35, y: ot * 1.35, width: W * 0.92 - 2.7 * ot, height: Hh - 2.7 * ot, rx: Hh * 0.13, fill: `url(#apb${Math.round(S)})` }, e), fullW = W * 0.92 - 2.7 * ot;
+          g.fill = (t) => inner.setAttribute("width", fullW * clamp(0.6 + (t - 0.1) * 1.4, 0.6, 1));   // the charge fills from about 60 % to full in the first third of a second sv("path", { d: `M${x0 + W * 0.95},${Hh * 0.33} a${Hh * 0.16},${Hh * 0.16} 0 0 1 0,${Hh * 0.34} z`, fill: `url(#apb${Math.round(S)})` }, e); void inner;
           g.parts.push((c) => { c0.setAttribute("stop-color", col(mix(c, [255, 255, 255], 0.55))); c1.setAttribute("stop-color", col(c)); });
         }
         if (p.obj === "objectif") { const e = mk(S, S), dg = sv("defs", {}, e), rg = sv("radialGradient", { id: "apl" + Math.round(S) }, dg), r0 = sv("stop", { offset: "0.2", "stop-color": "#fff", "stop-opacity": "0.9" }, rg), r1 = sv("stop", { offset: "1", "stop-color": "#fff", "stop-opacity": "0.05" }, rg);
           const o = sv("circle", { cx: S / 2, cy: S / 2, r: S * 0.45, fill: "none", "stroke-width": S * 0.012, stroke: "#fff", opacity: 0.35 }, e), d = sv("circle", { cx: S / 2, cy: S / 2, r: S * 0.44, fill: `url(#apl${Math.round(S)})`, opacity: 0.18 }, e), i1 = sv("circle", { cx: S / 2, cy: S / 2, r: S * 0.16, fill: "#06161c", stroke: "#fff", "stroke-width": S * 0.012 }, e), i2 = sv("circle", { cx: S / 2, cy: S / 2 + S * 0.01, r: S * 0.09, fill: "#0b4f66", opacity: 0.9 }, e), hl = sv("ellipse", { cx: S / 2 + S * 0.03, cy: S / 2 - S * 0.12, rx: S * 0.06, ry: S * 0.018, fill: "#fff", opacity: 0.8 }, e);
           g.parts.push((c) => { r0.setAttribute("stop-color", col(c)); o.setAttribute("stroke", col(c)); i1.setAttribute("stroke", col(c)); i2.setAttribute("fill", col(mix(c, [0, 30, 50], 0.55))); hl.setAttribute("fill", col(mix(c, [255, 255, 255], 0.6))); void r1; void d; }); }
         if (p.obj === "diode") { const e = mk(S, S), dg = sv("defs", {}, e), rg = sv("radialGradient", { id: "apd" + Math.round(S) }, dg), r0 = sv("stop", { offset: "0", "stop-color": "#7dff6a" }, rg), r1 = sv("stop", { offset: "1", "stop-color": "#7dff6a", "stop-opacity": "0" }, rg);
-          sv("circle", { cx: S / 2, cy: S / 2, r: S * 0.5, fill: `url(#apd${Math.round(S)})`, opacity: 0.55 }, e); const d = sv("circle", { cx: S / 2, cy: S / 2, r: S * 0.055, fill: "#31f020" }, e); g.parts.push((c) => { d.setAttribute("fill", col(c)); r0.setAttribute("stop-color", col(c)); void r1; }); }
+          sv("circle", { cx: S / 2, cy: S / 2, r: S * 0.5, fill: `url(#apd${Math.round(S)})`, opacity: 0.22 }, e); const d = sv("circle", { cx: S / 2, cy: S / 2, r: S * 0.055, fill: "#31f020" }, e); g.parts.push((c) => { d.setAttribute("fill", col(c)); r0.setAttribute("stop-color", col(c)); void r1; }); }
         if (p.obj === "empreinte") { const e = mk(S, S), grp = sv("g", { fill: "none", "stroke-width": S * 0.035, "stroke-linecap": "round" }, e), arcs = [];
           [0.1, 0.17, 0.24, 0.31, 0.38].forEach((r, i) => { const a = sv("path", { d: `M${S / 2 - S * r},${S / 2 + S * (0.08 + i * 0.01)} a${S * r},${S * r * 1.05} 0 0 1 ${S * r * 2},0`, stroke: "#fff", opacity: 0.9 }, grp); arcs.push(a); });
           g.parts.push((c) => arcs.forEach((a) => a.setAttribute("stroke", col(c)))); }
@@ -123,6 +124,7 @@
         if (obj) {
           const o = oAt(t); obj.box.style.opacity = String(clamp(o.a, 0, 1)); obj.parts.forEach((fn) => fn(o.c));
           if (window.gsap) window.gsap.set(obj.box, { scale: 1 + p.objZoom * clamp(t / Math.max(0.01, ctx.dur), 0, 1), xPercent: 0, force3D: true });
+          if (obj.fill) obj.fill(t);
           if (p.objGlow > 0 && p.obj !== "puces") obj.box.style.filter = `drop-shadow(0 0 ${p.objGlow * 0.35}px ${css(o.c)}) drop-shadow(0 0 ${p.objGlow}px ${css(o.c)})`;
           if (obj.tiles) obj.tiles.forEach((tt, i) => { let fa = 0; flashes.forEach((q) => { if (q[0] === i) { const f = (t - q[1]) / Math.max(0.01, q[2]); if (f > 0 && f < 1) fa = Math.max(fa, Math.sin(Math.PI * f)); } }); tt.fl.style.opacity = String(Math.pow(fa, 0.6) * 0.95); });
         }

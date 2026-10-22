@@ -176,6 +176,116 @@
       "id": "louisiana-bayou-church-module-ppm",
       "group": "Variations · Louisiana Bayou",
       "reference": "still-inox1"
+    },
+    {
+      "id": "macbook-pro-s01-title-ppm",
+      "group": "Apple · MacBook Pro",
+      "reference": "macbook-pro-apple-ad"
+    },
+    {
+      "id": "macbook-pro-s02-edge-light-ppm",
+      "group": "Apple · MacBook Pro",
+      "reference": "macbook-pro-apple-ad"
+    },
+    {
+      "id": "macbook-pro-s03-size-labels-ppm",
+      "group": "Apple · MacBook Pro",
+      "reference": "macbook-pro-apple-ad"
+    },
+    {
+      "id": "macbook-pro-s04-now-with-ppm",
+      "group": "Apple · MacBook Pro",
+      "reference": "macbook-pro-apple-ad"
+    },
+    {
+      "id": "macbook-pro-s05-chips-ppm",
+      "group": "Apple · MacBook Pro",
+      "reference": "macbook-pro-apple-ad"
+    },
+    {
+      "id": "macbook-pro-s06-fast-runs-ppm",
+      "group": "Apple · MacBook Pro",
+      "reference": "macbook-pro-apple-ad"
+    },
+    {
+      "id": "macbook-pro-s07-pro-at-ai-ppm",
+      "group": "Apple · MacBook Pro",
+      "reference": "macbook-pro-apple-ad"
+    },
+    {
+      "id": "macbook-pro-s08-apple-intelligence-ppm",
+      "group": "Apple · MacBook Pro",
+      "reference": "macbook-pro-apple-ad"
+    },
+    {
+      "id": "macbook-pro-s09-personal-private-powerful-ppm",
+      "group": "Apple · MacBook Pro",
+      "reference": "macbook-pro-apple-ad"
+    },
+    {
+      "id": "macbook-pro-s10-all-day-battery-ppm",
+      "group": "Apple · MacBook Pro",
+      "reference": "macbook-pro-apple-ad"
+    },
+    {
+      "id": "macbook-pro-s11-battery-ppm",
+      "group": "Apple · MacBook Pro",
+      "reference": "macbook-pro-apple-ad"
+    },
+    {
+      "id": "macbook-pro-s12-up-to-24-hours-ppm",
+      "group": "Apple · MacBook Pro",
+      "reference": "macbook-pro-apple-ad"
+    },
+    {
+      "id": "macbook-pro-s13-liquid-retina-ppm",
+      "group": "Apple · MacBook Pro",
+      "reference": "macbook-pro-apple-ad"
+    },
+    {
+      "id": "macbook-pro-s14-extreme-brightness-ppm",
+      "group": "Apple · MacBook Pro",
+      "reference": "macbook-pro-apple-ad"
+    },
+    {
+      "id": "macbook-pro-s15-center-stage-ppm",
+      "group": "Apple · MacBook Pro",
+      "reference": "macbook-pro-apple-ad"
+    },
+    {
+      "id": "macbook-pro-s16-lens-ppm",
+      "group": "Apple · MacBook Pro",
+      "reference": "macbook-pro-apple-ad"
+    },
+    {
+      "id": "macbook-pro-s17-connectivity-ppm",
+      "group": "Apple · MacBook Pro",
+      "reference": "macbook-pro-apple-ad"
+    },
+    {
+      "id": "macbook-pro-s18-port-labels-ppm",
+      "group": "Apple · MacBook Pro",
+      "reference": "macbook-pro-apple-ad"
+    },
+    {
+      "id": "macbook-pro-s19-diode-ppm",
+      "group": "Apple · MacBook Pro",
+      "reference": "macbook-pro-apple-ad"
+    },
+    {
+      "id": "macbook-pro-s20-fingerprint-ppm",
+      "group": "Apple · MacBook Pro",
+      "reference": "macbook-pro-apple-ad"
+    },
+    {
+      "id": "macbook-pro-s21-closing-title-ppm",
+      "group": "Apple · MacBook Pro",
+      "reference": "macbook-pro-apple-ad"
+    },
+    {
+      "id": "macbook-pro-s22-apple-logo-ppm",
+      "group": "Apple · MacBook Pro",
+      "reference": "macbook-pro-apple-ad"
     }
   ],
   "formats": [

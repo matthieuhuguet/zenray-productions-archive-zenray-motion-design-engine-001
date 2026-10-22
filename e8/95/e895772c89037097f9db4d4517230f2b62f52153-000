@@ -145,7 +145,8 @@ def validate_set() -> dict:
 
 STILL_PROJECTS = {"still-bleach-tybw": ["bleach-tybw-ppm"], "still-ichiban-japan": ["ichiban-japan-ppm"], "still-paget-character-concept": ["paget-character-concept-ppm"], "still-fe-pale-ravens-perch": ["fe-pale-ravens-perch-ppm"],
                   "still-fe-player-phase": ["fe-phases-ppm"], "still-fe-enemy-phase": ["fe-phases-ppm"], "still-fe-next-round": ["fe-phases-ppm"], "still-yawen-visual-designer": ["yawen-visual-designer-ppm"],
-                  "still-paget-indiana-jones": ["paget-indiana-jones-ppm"], "still-zhong-kui": ["bmw-zhong-kui-ppm"]}
+                  "still-paget-indiana-jones": ["paget-indiana-jones-ppm"], "still-zhong-kui": ["bmw-zhong-kui-ppm"],
+                  "macbook-pro-apple-ad": ["macbook-pro-s01-title-ppm", "macbook-pro-s02-edge-light-ppm", "macbook-pro-s03-size-labels-ppm", "macbook-pro-s04-now-with-ppm", "macbook-pro-s05-chips-ppm", "macbook-pro-s06-fast-runs-ppm", "macbook-pro-s07-pro-at-ai-ppm", "macbook-pro-s08-apple-intelligence-ppm", "macbook-pro-s09-personal-private-powerful-ppm", "macbook-pro-s10-all-day-battery-ppm", "macbook-pro-s11-battery-ppm", "macbook-pro-s12-up-to-24-hours-ppm", "macbook-pro-s13-liquid-retina-ppm", "macbook-pro-s14-extreme-brightness-ppm", "macbook-pro-s15-center-stage-ppm", "macbook-pro-s16-lens-ppm", "macbook-pro-s17-connectivity-ppm", "macbook-pro-s18-port-labels-ppm", "macbook-pro-s19-diode-ppm", "macbook-pro-s20-fingerprint-ppm", "macbook-pro-s21-closing-title-ppm", "macbook-pro-s22-apple-logo-ppm"]}
 
 
 def _norm_id(slug: str) -> str:
