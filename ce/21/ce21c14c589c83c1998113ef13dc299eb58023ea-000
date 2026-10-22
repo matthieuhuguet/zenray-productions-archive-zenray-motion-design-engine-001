@@ -1,0 +1,72 @@
+// 22 October 2026: the templates of the Apple MacBook Pro film (youtube JlS6RmAJKnE, 60 s, 1920x1080), workflow Premier Plan Mesuré (ppm), one motion per sequence.
+// FOREGROUND ONLY (Matthieu's rule): the glowing titles, the chips, the beam, the battery, the lens, the mark; never the laptop renders, the footage, the photos or the screens.
+// ap-title: one or several glowing titles. Each title is revealed by a soft edge that crosses it from the left, wears a colour track measured on the reference (left, middle, right colours over time),
+// a double halo (near and wide), a slow push-in, then leaves (a cut, or a fade). Every number is a parameter.
+// FR : les modeles du film Apple MacBook Pro ; titres lumineux, puces, rayon, batterie, objectif, logo ; jamais les rendus de machine, ni les photos, ni les ecrans.
+(function () {
+  const ZS = window.ZS, h = ZS.h;
+  const P = (key, label, type, def, tier, extra) => Object.assign({ key, label, type, default: def, tier }, extra || {});
+  const N = (key, label, def, min, max, step, tier, unit) => ({ key, label, type: "number", default: def, min, max, step, tier, unit });
+  const SEL = (key, label, def, options, tier) => ({ key, label, type: "select", default: def, options, tier });
+  const abs = (parent, css, text) => { const e = h.css(h.el("div", "zs-abs", parent), css); if (text !== undefined) e.textContent = text; return e; };
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const hex = (s) => { const t = String(s || "#000000").replace("#", ""); const v = t.length === 3 ? t.split("").map((c) => c + c).join("") : t.padEnd(6, "0"); return [parseInt(v.slice(0, 2), 16), parseInt(v.slice(2, 4), 16), parseInt(v.slice(4, 6), 16)]; };
+  const mix = (a, b, f) => [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+  const css = (c) => `rgb(${Math.round(c[0])},${Math.round(c[1])},${Math.round(c[2])})`;
+  const outQuad = (x) => 1 - Math.pow(1 - clamp(x, 0, 1), 2), outPow = (x, k) => 1 - Math.pow(1 - clamp(x, 0, 1), k);   // measured: the entering edge follows a quadratic ease out, the leaving edge a power 1.5 ease out
+  // "text | cx | cy | size | start | end" lines; keys "item | time | left | middle | right" lines (time counted from the start of the item)
+  // "text | cx | cy | size | start | end | dIn | dOut | outLead" lines (everything after the size is optional; a blank dIn, dOut or outLead takes the value of the whole scene); keys "item | time | c1 | c2 | ... | cN" lines (N colours spread evenly from the left of the title to its right; time counted from the start of the item)
+  const parseItems = (lines) => (lines || []).map((l) => { const f = String(l).split("|").map((s) => s.trim()); return { text: f[0] || "", cx: Number(f[1]) || 960, cy: Number(f[2]) || 540, size: Number(f[3]) || 120, t0: Number(f[4]) || 0, t1: f[5] === undefined || f[5] === "" ? 1e9 : Number(f[5]), dIn: f[6] === undefined || f[6] === "" ? null : Number(f[6]), dOut: f[7] === undefined || f[7] === "" ? null : Number(f[7]), outLead: f[8] === undefined || f[8] === "" ? null : Number(f[8]) }; });
+  const parseKeys = (lines, n) => { const per = Array.from({ length: n }, () => []); (lines || []).forEach((l) => { const f = String(l).split("|").map((s) => s.trim()); const i = Number(f[0]); if (per[i] && f.length >= 4) per[i].push({ t: Number(f[1]), c: f.slice(2).map(hex) }); }); per.forEach((k) => k.sort((a, b) => a.t - b.t)); return per; };
+  const sampleKeys = (ks, t) => {
+    if (!ks.length) return [[200, 230, 230], [200, 230, 230]];
+    if (t <= ks[0].t) return ks[0].c; if (t >= ks[ks.length - 1].t) return ks[ks.length - 1].c;
+    let i = 0; while (i < ks.length - 2 && ks[i + 1].t < t) i++; const a = ks[i], b = ks[i + 1], f = (t - a.t) / Math.max(1e-6, b.t - a.t);
+    return a.c.map((c, k) => mix(c, b.c[Math.min(k, b.c.length - 1)], f));
+  };
+  const gradOf = (cs, tint, mixF) => `linear-gradient(90deg, ${cs.map((c, k) => `${css(tint ? mix(c, tint, mixF) : c)} ${(k / Math.max(1, cs.length - 1) * 100).toFixed(1)}%`).join(", ")})`;
+
+  ZS.register({
+    id: "ap-title", label: "Apple : titres lumineux", group: "Apple", duration: 3,
+    params: [
+      P("items", "Titres : texte | centre x | centre y | taille | début | fin | apparition (plan 1920 x 1080)", "lines", ["MacBook Pro | 960 | 540 | 131 | 0.1 | 2.2"], 1),
+      P("keys", "Couleurs mesurées : titre | temps | couleurs de la gauche vers la droite", "lines", ["0 | 0 | #61a7c5 | #5295b4 | #3e7693", "0 | 1.1 | #cae5e5 | #b0dedf | #88c7d6", "0 | 2.0 | #3b7492 | #407d9d | #4b8cac"], 1),
+      N("dIn", "Durée de l'apparition (s)", 0.75, 0.05, 1.5, 0.01, 1, "s"), N("dOut", "Durée de l'effacement de gauche à droite (s)", 0.9, 0, 3, 0.01, 1, "s"), N("outLead", "L'effacement commence avant la fin de (s)", 0.65, 0, 3, 0.01, 2, "s"), N("push", "Avance lente (part de la taille)", 0, 0, 0.15, 0.001, 2),
+      N("weight", "Graisse", 500, 300, 800, 10, 2), N("ls", "Interlettrage (em)", -0.012, -0.1, 0.2, 0.002, 2), N("soft", "Bord doux de l'apparition (px)", 300, 0, 800, 5, 2, "px"),
+      P("glowTint", "Teinte du halo", "color", "#3fc2ff", 3), N("glowMix", "Part de teinte dans le halo", 0.55, 0, 1, 0.01, 3), N("glow1", "Halo proche (px)", 9, 0, 60, 0.5, 3, "px"), N("glow2", "Halo large (px)", 34, 0, 160, 1, 3, "px"), N("glowA", "Force du halo", 0.7, 0, 2, 0.01, 3),
+      N("fadeOut", "Fondu de sortie (s)", 0, 0, 2, 0.05, 3, "s"), P("bg", "Fond", "color", "#000000", 3), P("font", "Police", "text", "InterVariable", 3),
+      N("tallZoom", "Agrandissement en format haut", 1.6, 0.5, 4, 0.05, 3), N("film0", "Début dans le film (s)", 0, 0, 60, 0.01, 4, "s"),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0 } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
+      h.css(el, { background: p.bg });
+      const kk = (w / 1920) * (tall ? p.tallZoom : 1), plane = abs(st, { left: w / 2 - 960 * kk + "px", top: sh / 2 - 540 * kk + "px", width: "1920px", height: "1080px", transformOrigin: "0 0", transform: `scale(${kk})` });
+      const items = parseItems(p.items), keys = parseKeys(p.keys, items.length), pad = Math.ceil(p.glow2 * 3.2), live = [];
+      items.forEach((it, i) => {
+        const rev = abs(plane, { left: it.cx + "px", top: it.cy + "px", padding: pad + "px", whiteSpace: "nowrap", opacity: 0 });
+        const font = { fontFamily: h.font(p.font), fontWeight: String(p.weight), fontSize: it.size + "px", letterSpacing: p.ls + "em", lineHeight: "1.2", whiteSpace: "nowrap" };
+        const layer = (blur, extra) => { const e = abs(rev, Object.assign({ position: "absolute", left: pad + "px", top: pad + "px", color: "transparent", webkitTextFillColor: "transparent", webkitBackgroundClip: "text", backgroundClip: "text" }, font, extra), it.text); if (blur) e.style.filter = `blur(${blur}px)`; return e; };
+        const g2 = p.glow2 > 0 ? layer(p.glow2) : null, g1 = p.glow1 > 0 ? layer(p.glow1) : null;
+        const main = h.css(h.el("div", "", rev), Object.assign({ position: "relative", color: "transparent", webkitTextFillColor: "transparent", webkitBackgroundClip: "text", backgroundClip: "text" }, font)); main.textContent = it.text;
+        if (window.gsap) window.gsap.set(rev, { xPercent: -50, yPercent: -50, force3D: true, transformOrigin: "50% 50%" });
+        live.push({ it, rev, main, g1, g2, ks: keys[i] });
+      });
+      const pr = { t: 0 };
+      const update = (t) => {
+        live.forEach(({ it, rev, main, g1, g2, ks }) => {
+          const lt = t - it.t0, life = Math.min(it.t1, ctx.dur + 5) - it.t0;
+          if (lt < 0 || lt > life + p.fadeOut) { rev.style.opacity = "0"; return; }
+          // the mask: the entering edge crosses the title from the left, the leaving edge follows it from the left (the title is erased left to right) just before the end
+          const W = rev.offsetWidth || 1, e = -p.soft + (W + p.soft) * outQuad(lt / (it.dIn || p.dIn)), dO = it.dOut === null ? p.dOut : it.dOut, oL = it.outLead === null ? p.outLead : it.outLead, er = dO > 0 ? -p.soft + (W + p.soft) * outPow((lt - (life - oL)) / dO, 1.5) : -2 * p.soft;
+          const m = `linear-gradient(90deg, transparent ${er}px, #000 ${er + p.soft}px, #000 ${e}px, transparent ${e + p.soft}px)`; rev.style.webkitMaskImage = m; rev.style.maskImage = m;
+          const c = sampleKeys(ks, lt), tint = hex(p.glowTint), grad = gradOf(c, null), gg = gradOf(c, tint, p.glowMix), lum = c.reduce((s2, k) => s2 + k[0] + k[1] + k[2], 0) / (3 * c.length * 255);
+          main.style.backgroundImage = grad; if (g1) { g1.style.backgroundImage = gg; g1.style.opacity = String(clamp(p.glowA * (0.5 + 0.5 * lum), 0, 1)); } if (g2) { g2.style.backgroundImage = gg; g2.style.opacity = String(clamp(p.glowA * (0.4 + 0.6 * lum), 0, 1)); }
+          rev.style.opacity = lt > life ? String(1 - (lt - life) / p.fadeOut) : "1";
+          if (window.gsap) window.gsap.set(rev, { scale: 1 + p.push * clamp(lt / Math.max(0.01, life), 0, 1), force3D: true });
+        });
+      };
+      update(0);
+      tl.fromTo(pr, { t: 0 }, { t: ctx.dur, duration: ctx.dur, ease: "none", onUpdate: () => update(pr.t) }, t0);
+    },
+  });
+})();

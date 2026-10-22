@@ -1,0 +1,86 @@
+"""Reproduction of the Apple MacBook Pro film (youtube JlS6RmAJKnE, 60 s, 1920x1080), workflow Premier Plan Mesuré (22 October 2026): ONE motion per sequence.
+Foreground only: the glowing titles, the chips, the beam, the battery, the lens, the mark; never the machine renders, the footage, the photos or the screens.
+The reference video lives in the refcache slug `macbook-pro-apple-ad`; each project starts at its sequence (referenceOffset = the instant of the sequence in the film).
+FR : un motion par sequence du film Apple. Usage: python3 motion/reproductions/apple_macbook_pro.py [id ...]"""
+import json
+import sys
+from pathlib import Path
+
+import ppm
+from ppm import T
+
+SLUG = "macbook-pro-apple-ad"
+DATA = Path(__file__).resolve().parent / "data" / "apple_macbook_pro.json"   # measured colour tracks and boxes (Scripts/AppleMeasure.py)
+
+# id: (title, film start, length, template, params). Times of the params are counted from the start of the sequence.
+TEXT = {"dIn": 0.75, "dOut": 0.9, "outLead": 0.55, "soft": 240, "glowA": 1.0, "glowMix": 0.3, "glow2": 46}
+SEQUENCES = {
+    "macbook-pro-s01-title": ("MacBook Pro, le titre", 0.0, 2.2, "ap-title", dict(TEXT)),
+    "macbook-pro-s04-now-with": ("Now with", 8.4, 1.65, "ap-title", dict(TEXT)),
+    "macbook-pro-s06-fast-runs": ("Fast runs in the family", 12.7, 1.55, "ap-title", dict(TEXT)),
+    "macbook-pro-s07-pro-at-ai": ("A pro at AI", 16.5, 1.4, "ap-title", dict(TEXT)),
+    "macbook-pro-s08-apple-intelligence": ("Apple Intelligence", 22.6, 1.5, "ap-title", dict(TEXT, glowMix=0.0)),
+    "macbook-pro-s09-personal-private-powerful": ("Personal. Private. Powerful.", 24.0, 1.75, "ap-title", dict(TEXT, glowMix=0.0)),
+    "macbook-pro-s10-all-day-battery": ("All-day battery life", 30.35, 1.4, "ap-title", dict(TEXT)),
+    "macbook-pro-s12-up-to-24-hours": ("Up to 24 hours", 32.45, 1.3, "ap-title", dict(TEXT)),
+    "macbook-pro-s14-extreme-brightness": ("Extreme brightness and high contrast", 35.7, 1.8, "ap-title", dict(TEXT)),
+    "macbook-pro-s15-center-stage": ("12MP Center Stage camera", 39.7, 2.2, "ap-title", dict(TEXT)),
+    "macbook-pro-s17-connectivity": ("Connectivity and security", 44.9, 1.6, "ap-title", dict(TEXT)),
+    "macbook-pro-s21-closing-title": ("MacBook Pro, le titre de fin", 51.1, 1.6, "ap-title", dict(TEXT)),
+}
+
+# MEASURE: per sequence, per item, where to measure on the reference (film coordinates 1920 x 1080): region, brightness threshold, the title string for the size fit,
+# the measured time window (counted from the start of the sequence) and the number of colours of the track. Scripts/AppleMeasure.py writes data/apple_macbook_pro.json from it.
+BAND = "0,380,1920,700"
+MEASURE = {
+    "macbook-pro-s01-title": [{"text": "MacBook Pro", "region": BAND, "thr": 90, "t0": 0.0, "t1": 2.0}],
+    "macbook-pro-s04-now-with": [{"text": "Now with", "region": BAND, "thr": 90, "t0": 0.0, "t1": 1.55}],
+    "macbook-pro-s06-fast-runs": [{"text": "Fast runs in the family", "region": BAND, "thr": 90, "t0": 0.1, "t1": 1.45}],
+    "macbook-pro-s07-pro-at-ai": [{"text": "A pro at AI", "region": BAND, "thr": 90, "t0": 0.0, "t1": 1.3}],
+    "macbook-pro-s08-apple-intelligence": [{"text": "Apple Intelligence", "region": "0,430,1920,650", "thr": 90, "t0": 0.15, "t1": 1.4, "cols": 5}],
+    "macbook-pro-s09-personal-private-powerful": [{"text": "Personal. Private. Powerful.", "region": "0,430,1920,650", "thr": 90, "t0": 0.05, "t1": 1.6, "cols": 6}],
+    "macbook-pro-s10-all-day-battery": [{"text": "All-day battery life", "region": "0,430,1920,650", "thr": 90, "t0": 0.05, "t1": 1.3}],
+    "macbook-pro-s12-up-to-24-hours": [{"text": "Up to 24 hours", "region": "0,480,1920,620", "thr": 90, "t0": 0.5, "t1": 1.2}],
+    "macbook-pro-s14-extreme-brightness": [{"text": "Extreme brightness and high contrast", "region": "0,480,1920,620", "thr": 90, "t0": 0.2, "t1": 1.7, "cols": 6}],
+    "macbook-pro-s15-center-stage": [{"text": "12MP Center Stage camera", "region": "0,430,1920,650", "thr": 90, "t0": 0.05, "t1": 2.1}],
+    "macbook-pro-s17-connectivity": [{"text": "Connectivity and security", "region": "0,480,1920,620", "thr": 90, "t0": 0.5, "t1": 1.5}],
+    "macbook-pro-s21-closing-title": [{"text": "MacBook Pro", "region": "0,430,1920,650", "thr": 90, "t0": 0.05, "t1": 1.5}],
+}
+
+
+def controls(sid: str, template: str, items: list) -> list:
+    ids = ["b01"]
+    allt = lambda k: [T(i, k) for i in ids]  # noqa: E731
+    c = [{"id": "items", "label": "Titres : texte | centre x | centre y | taille | début | fin", "type": "lines", "group": "Phrases", "targets": allt("items")}]
+    c += [{"id": "dIn", "label": "Durée de l'apparition (s)", "type": "number", "group": "Mouvement", "min": 0.05, "max": 1.5, "step": 0.01, "targets": allt("dIn")},
+          {"id": "dOut", "label": "Durée de l'effacement (s)", "type": "number", "group": "Mouvement", "min": 0, "max": 2, "step": 0.01, "targets": allt("dOut")},
+          {"id": "outLead", "label": "L'effacement commence avant la fin de (s)", "type": "number", "group": "Mouvement", "min": 0, "max": 3, "step": 0.01, "targets": allt("outLead")},
+          {"id": "push", "label": "Avance lente (part de la taille)", "type": "number", "group": "Mouvement", "min": 0, "max": 0.15, "step": 0.001, "targets": allt("push")},
+          {"id": "fadeOut", "label": "Fondu de sortie (s)", "type": "number", "group": "Mouvement", "min": 0, "max": 2, "step": 0.05, "targets": allt("fadeOut")},
+          {"id": "weight", "label": "Graisse", "type": "number", "group": "Texte", "min": 300, "max": 800, "step": 10, "targets": allt("weight")},
+          {"id": "ls", "label": "Interlettrage (em)", "type": "number", "group": "Texte", "min": -0.1, "max": 0.2, "step": 0.002, "targets": allt("ls")},
+          {"id": "keys", "label": "Couleurs mesurées : titre | temps | gauche | milieu | droite", "type": "lines", "group": "Couleurs", "targets": allt("keys")},
+          {"id": "glow1", "label": "Halo proche (px)", "type": "number", "group": "Halo", "min": 0, "max": 60, "step": 0.5, "targets": allt("glow1")},
+          {"id": "glow2", "label": "Halo large (px)", "type": "number", "group": "Halo", "min": 0, "max": 160, "step": 1, "targets": allt("glow2")},
+          {"id": "glowA", "label": "Force du halo", "type": "number", "group": "Halo", "min": 0, "max": 2, "step": 0.01, "targets": allt("glowA")}]
+    return c
+
+
+def load_data() -> dict:
+    return json.loads(DATA.read_text(encoding="utf-8")) if DATA.is_file() else {}
+
+
+def build_one(sid: str) -> dict:
+    title, start, length, tpl, params = SEQUENCES[sid]
+    data = load_data().get(sid, {})
+    params = dict(params); params.update(data.get("params", {}))
+    pr = ppm.build(f"Apple MacBook Pro : {title}", SLUG, [(0.0, tpl, params)], length, controls(sid, tpl, params.get("items", [])), fmt="16x9", bg="#000000", ink="#e8f0f0", accent="#4fb0d0",
+                   doc=f"22 October 2026: {title}, sequence of the Apple MacBook Pro film, foreground only (workflow Premier Plan Mesuré).")
+    pr["scenes"][0]["params"]["film0"] = start; pr["scenes"][0]["ref"] = {"start": start}; pr["referenceOffset"] = start
+    return pr
+
+
+if __name__ == "__main__":
+    ids = sys.argv[1:] or list(SEQUENCES)
+    for sid in ids:
+        ppm.run(f"{sid}-ppm", build_one(sid))

@@ -1,0 +1,26 @@
+// 22 October 2026: the real width of a text in a font at 100 px, measured in the managed chrome-headless-shell (the width the page will really have).
+// Run: node Scripts/TextWidth.mjs <weight> <letterSpacingEm> <text> [<text> ...]  -> one line per text: width at 100 px, ink centre offset (em). FR : largeur reelle d'un texte a 100 px.
+import { spawnSync } from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+const ROOT = dirname(dirname(fileURLToPath(import.meta.url))), TOOLING = join(ROOT, "tooling");
+const require = createRequire(join(TOOLING, "package.json"));
+const puppeteer = require("puppeteer-core");
+const env = { ...process.env, HYPERFRAMES_NO_TELEMETRY: "1", DO_NOT_TRACK: "1", HYPERFRAMES_NO_UPDATE_CHECK: "1" };
+const bp = spawnSync(join(TOOLING, "node_modules", ".bin", "hyperframes"), ["browser", "path"], { env, encoding: "utf8" }).stdout.trim();
+const [weight, ls, ...texts] = process.argv.slice(2);
+const browser = await puppeteer.launch({ executablePath: bp, headless: true, args: ["--allow-file-access-from-files", "--no-first-run"] });
+try {
+  const tab = await browser.newPage();
+  await tab.goto((process.env.ZS_BASE || "http://127.0.0.1:3104") + "/motion/web/bench.html", { waitUntil: "load" });   // a page of the app: its fonts.css already serves InterVariable
+  const w = await tab.evaluate(async (wt, l, ts) => {
+    await document.fonts.load(`${wt} 100px InterVariable`); await document.fonts.ready; const cv = document.createElement("canvas").getContext("2d"); cv.font = `${wt} 100px InterVariable`;
+    return ts.map((t) => {
+      const s = document.createElement("span"); s.style.cssText = `font:${wt} 100px InterVariable;letter-spacing:${l}em;white-space:nowrap;position:absolute`; s.textContent = t; document.body.appendChild(s);
+      const m = cv.measureText(t), asc = m.fontBoundingBoxAscent, desc = m.fontBoundingBoxDescent, base = (120 - (asc + desc)) / 2 + asc;   // baseline inside a line box of 1.2
+      return [s.getBoundingClientRect().width, (base - (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2 - 60) / 100];   // [width at 100 px, ink centre below the line box centre, in em]
+    });
+  }, weight, ls, texts);
+  console.log(w.map((x) => x[0].toFixed(2) + " " + x[1].toFixed(4)).join("\n"));
+} finally { await browser.close(); }

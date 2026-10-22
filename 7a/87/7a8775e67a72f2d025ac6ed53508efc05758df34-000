@@ -1,0 +1,42 @@
+"""Timing and colour of a glowing title in a reference video (22 October 2026): per frame, the box of the bright pixels, their mean colour in thirds, the peak.
+FR : mesure un titre lumineux dans une video de reference : boite, couleur par tiers, pic, image par image.
+Usage: python3 Scripts/RefText.py <video> --from 8.4 --to 10 [--step 0.1] [--thr 70] [--region x0,y0,x1,y1]"""
+import argparse
+import subprocess
+import tempfile
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+
+
+def core(im, sel):
+    """The colour of the letters themselves: the mean of the brightest fifth of the pixels of a third (the edges and the halo pull a plain mean down)."""
+    if not sel.sum():
+        return [0, 0, 0]
+    px = im[sel]; lum = px.mean(1); k = max(1, int(len(px) * 0.2)); return px[np.argsort(-lum)[:k]].mean(0)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("video"); ap.add_argument("--from", dest="t0", type=float, required=True); ap.add_argument("--to", dest="t1", type=float, required=True)
+    ap.add_argument("--step", type=float, default=0.1); ap.add_argument("--thr", type=float, default=70); ap.add_argument("--region", default="0,0,1920,1080")
+    a = ap.parse_args()
+    rx0, ry0, rx1, ry1 = [int(v) for v in a.region.split(",")]
+    tmp = Path(tempfile.mkdtemp(prefix="reftext-")); t = a.t0
+    while t <= a.t1 + 1e-6:
+        f = tmp / "f.png"
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{t:.3f}", "-i", a.video, "-frames:v", "1", str(f)], check=True)
+        im = np.asarray(Image.open(f).convert("RGB")).astype(float)[ry0:ry1, rx0:rx1]; lum = im.mean(2); m = lum > a.thr
+        if m.sum() < 30:
+            print(f"{t:6.2f} none  peak {lum.max():.0f}"); t += a.step; continue
+        ys, xs = np.where(m); x0, x1, y0, y1 = xs.min(), xs.max(), ys.min(), ys.max(); w = max(1, x1 - x0); cols = []
+        for k in range(3):
+            sel = m & (np.arange(m.shape[1])[None, :] >= x0 + w * k / 3) & (np.arange(m.shape[1])[None, :] < x0 + w * (k + 1) / 3)
+            c = core(im, sel); cols.append("#%02x%02x%02x" % tuple(int(v) for v in c))
+        print(f"{t:6.2f} box {x0 + rx0}-{x1 + rx0} x {y0 + ry0}-{y1 + ry0}  peak {lum.max():.0f}  {' '.join(cols)}")
+        t += a.step
+
+
+if __name__ == "__main__":
+    main()

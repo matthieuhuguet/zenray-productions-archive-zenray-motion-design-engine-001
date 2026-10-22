@@ -1,0 +1,43 @@
+"""A labelled contact sheet of a reference video between two instants (22 October 2026): exact frames (ffmpeg -ss before -i), optional crop, to read an animation.
+FR : une planche de frames exactes d'une video de reference entre deux instants, avec recadrage facultatif.
+Usage: python3 Scripts/RefSheet.py <video> --from 0 --to 4 --step 0.25 [--cols 4] [--width 480] [--crop x0,y0,x1,y1] --out sheet.png"""
+import argparse
+import subprocess
+import tempfile
+from pathlib import Path
+
+from PIL import Image, ImageDraw
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("video")
+    ap.add_argument("--from", dest="t0", type=float, default=0)
+    ap.add_argument("--to", dest="t1", type=float, default=4)
+    ap.add_argument("--step", type=float, default=0.25)
+    ap.add_argument("--cols", type=int, default=4)
+    ap.add_argument("--width", type=int, default=480)
+    ap.add_argument("--crop", default="")
+    ap.add_argument("--out", required=True)
+    a = ap.parse_args()
+    ts, t = [], a.t0
+    while t <= a.t1 + 1e-6:
+        ts.append(round(t, 3)); t += a.step
+    tmp = Path(tempfile.mkdtemp(prefix="refsheet-")); ims = []
+    for i, t in enumerate(ts):
+        f = tmp / f"{i:04d}.png"
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{t:.3f}", "-i", a.video, "-frames:v", "1", str(f)], check=True)
+        im = Image.open(f).convert("RGB")
+        if a.crop:
+            x0, y0, x1, y1 = [int(v) for v in a.crop.split(",")]; im = im.crop((x0, y0, x1, y1))
+        h = round(im.height * a.width / im.width); im = im.resize((a.width, h), Image.LANCZOS)
+        ImageDraw.Draw(im).text((6, 4), f"{t:.2f}s", fill=(255, 220, 60)); ims.append(im)
+    cols = min(a.cols, len(ims)); rows = (len(ims) + cols - 1) // cols; w, h = ims[0].size
+    sheet = Image.new("RGB", (cols * w + (cols - 1) * 3, rows * h + (rows - 1) * 3), (40, 40, 40))
+    for i, im in enumerate(ims):
+        sheet.paste(im, ((i % cols) * (w + 3), (i // cols) * (h + 3)))
+    sheet.save(a.out); print(a.out, sheet.size)
+
+
+if __name__ == "__main__":
+    main()
