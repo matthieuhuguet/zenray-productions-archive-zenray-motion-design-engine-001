@@ -42,7 +42,7 @@ def main() -> None:
             print("nothing visible for item", i); continue
         lit = [fr for fr in frames if fr[4] >= 245] or frames   # the hold box: the median box of the frames where the title is fully lit
         hb = [int(np.median([fr[3][k] for fr in lit])) for k in range(4)]; first, last = frames[0][0], frames[-1][0]
-        wbox = hb[2] - hb[0]; w100, dy = text_metrics(it.get("sizeText", it["text"]), a.weight, a.ls); size = round(wbox / w100 * 100, 1)
+        wbox = hb[2] - hb[0]; w100, dy = text_metrics(it.get("sizeText", it["text"]), a.weight, a.ls); size = it.get("size") or round(wbox / w100 * 100, 1)
         cx = round((hb[0] + hb[2]) / 2); cy = round((hb[1] + hb[3]) / 2 - dy * size)   # the ink centre is not the centre of the line box when the text has descenders or no capitals
         SOFT = a.soft; q = lambda x: 1 - (1 - min(1, max(0, x))) ** 2; qp = lambda x: 1 - (1 - min(1, max(0, x))) ** 1.5   # noqa: E731
         # entering edge: the visible right edge of the frames still being revealed, fitted by a start and a duration (visible edge = mask edge + 0.45 of the soft width)
@@ -67,6 +67,7 @@ def main() -> None:
         if it.get("track"):   # a title that moves with the machine: its centre at every measured frame
             pos.extend(f"{i} | {t - start_t:.2f} | {round((box[0] + box[2]) / 2)} | {round((box[1] + box[3]) / 2 - dy * size)}" for t, im, m, box, pk in frames)
             cx, cy = [int(v) for v in pos[-len(frames)].split("|")[2:4]]
+        d_in, d_out, lead_out = it.get("dIn", d_in), it.get("dOut", d_out), it.get("outLead", lead_out)   # an item that cannot be fitted (a tiny label) is given its values by hand
         items.append(f"{it['text']} | {cx} | {cy} | {size} | {start_t:.2f} | {end_t:.2f} | {d_in:.2f} | {d_out:.2f} | {lead_out:.2f} | {it.get('glowScale', 1)}")
         for t, im, m, box, pk in frames:   # pass 2: the colour of each third of the FINAL box (a third not yet revealed takes its neighbour's colour)
             cols = []; nc = it.get("cols", 3)
@@ -78,6 +79,8 @@ def main() -> None:
                 if cols[k] is None and cols[k + 1] is not None: cols[k] = cols[k + 1]
             for k in range(1, nc):
                 if cols[k] is None: cols[k] = cols[k - 1]
+            if cols[0] is None:   # a title too small for any third to hold enough pixels: the core colour of all its pixels
+                cols = ["#%02x%02x%02x" % tuple(int(v) for v in core(im, m))] * nc
             keys.append(f"{i} | {t - start_t:.2f} | " + " | ".join(cols))
             if it.get("glow"):   # the measured halo: the colour of the pixels at 5 to 12 px from the letters, third by third (neon titles: white letters, coloured halo)
                 mk = Image.fromarray((m * 255).astype("uint8")); d_out_, d_in_ = np.asarray(mk.filter(ImageFilter.MaxFilter(41))) > 0, np.asarray(mk.filter(ImageFilter.MaxFilter(13))) > 0; ring = d_out_ & ~d_in_; gc = []

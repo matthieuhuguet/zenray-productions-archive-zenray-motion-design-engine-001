@@ -16,7 +16,7 @@ DATA = Path(__file__).resolve().parent / "data" / "apple_macbook_pro.json"   # m
 TEXT = {"dIn": 0.75, "dOut": 0.9, "outLead": 0.55, "soft": 240, "glowA": 1.0, "glowMix": 0.3, "glow2": 46}
 SEQUENCES = {
     "macbook-pro-s01-title": ("MacBook Pro, le titre", 0.0, 2.2, "ap-title", dict(TEXT)),
-    "macbook-pro-s03-size-labels": ("14 et 16 pouces", 6.65, 1.8, "ap-title", dict(TEXT, dIn=0.3, glowMix=0.5, glow2=30)),
+    "macbook-pro-s03-size-labels": ("14 et 16 pouces", 6.65, 1.8, "ap-title", dict(TEXT, dIn=0.3, glowMix=0.5, glowA=1.5, glow2=30)),
     "macbook-pro-s04-now-with": ("Now with", 8.4, 1.65, "ap-title", dict(TEXT)),
     "macbook-pro-s06-fast-runs": ("Fast runs in the family", 12.7, 1.55, "ap-title", dict(TEXT)),
     "macbook-pro-s07-pro-at-ai": ("A pro at AI", 16.5, 1.4, "ap-title", dict(TEXT)),
@@ -36,8 +36,8 @@ SEQUENCES = {
 BAND = "0,380,1920,700"
 MEASURE = {
     "macbook-pro-s01-title": [{"text": "MacBook Pro", "region": BAND, "thr": 90, "t0": 0.0, "t1": 2.0}],
-    "macbook-pro-s03-size-labels": ("14 et 16 pouces", 6.65, 1.8, "ap-title", dict(TEXT, dIn=0.3, glowMix=0.5, glow2=30)),
-    "macbook-pro-s03-size-labels": [{"text": "14\u2033", "region": "200,380,980,640", "thr": 60, "cyan": 25, "t0": 0.1, "t1": 1.65, "cols": 2, "track": True}, {"text": "16\u2033", "region": "980,380,1760,640", "thr": 60, "cyan": 25, "t0": 0.1, "t1": 1.65, "cols": 2, "track": True}],
+    "macbook-pro-s03-size-labels": ("14 et 16 pouces", 6.65, 1.8, "ap-title", dict(TEXT, dIn=0.3, glowMix=0.5, glowA=1.5, glow2=30)),
+    "macbook-pro-s03-size-labels": [{"text": "14\u2033", "region": "200,380,980,640", "thr": 60, "cyan": 25, "t0": 0.1, "t1": 1.65, "cols": 2, "track": True, "size": 95.7, "dIn": 0.3, "dOut": 0.0}, {"text": "16\u2033", "region": "980,380,1760,640", "thr": 60, "cyan": 25, "t0": 0.1, "t1": 1.65, "cols": 2, "track": True, "dIn": 0.3, "dOut": 0.0}],
     "macbook-pro-s04-now-with": [{"text": "Now with", "region": BAND, "thr": 90, "t0": 0.0, "t1": 1.55}],
     "macbook-pro-s06-fast-runs": [{"text": "Fast runs in the family", "region": BAND, "thr": 90, "t0": 0.1, "t1": 1.45}],
     "macbook-pro-s07-pro-at-ai": [{"text": "A pro at AI", "region": BAND, "thr": 90, "t0": 0.0, "t1": 1.3}],
