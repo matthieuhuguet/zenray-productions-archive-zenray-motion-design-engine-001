@@ -11,6 +11,8 @@ import sony_logo as SONY
 from ppm import T
 
 PID = "zenray-sony-playstation-ppm"
+# the five colour versions as separate films (23 October 2026, Matthieu): the same film with the palette stored in the project (post.palette), each its own project
+PALETTE_IDS = {"zenray-sony-playstation-rouge-ppm": "Rouge vif", "zenray-sony-playstation-vert-ppm": "Vert", "zenray-sony-playstation-turquoise-ppm": "Turquoise", "zenray-sony-playstation-jaune-ppm": "Jaune", "zenray-sony-playstation-magenta-ppm": "Magenta"}
 SLUG = SONY.SLUG
 HANDOFF = 6.5   # act 2 starts once the word has reached its paper white (6.5 s of the reveal): the 6 to 10 s of rest and camera push of the Sony reference are cut (Matthieu, 23 October 2026)
 # act 2 starts from the end state of act 1 (the white paper, no camera push), so the cut is invisible
@@ -31,9 +33,13 @@ def build_one(pid: str = PID) -> dict:
     pr = ppm.build("ZenRay : Sony puis PlayStation", SLUG, [(0.0, "sony-open", dict(sp)), (HANDOFF, "ps-open", ps)], HANDOFF + 8.0, controls, fmt="16x9", bg="#000000", ink="#e8f0ff", accent="#2f55f5",
                    doc="23 October 2026: ZenRay, the Sony logo reveal (procedural capitals) then the PlayStation Studios opening where the four buttons are replaced by the word ZENRAY (workflow Premier Plan Mesuré).")
     pr["scenes"][0]["ref"] = {"start": 0.0}; pr["referenceOffset"] = 0.0
+    if pid in PALETTE_IDS:
+        pr["post"] = {"palette": PALETTE_IDS[pid]}; pr["title"] = f"ZenRay : Sony puis PlayStation, {PALETTE_IDS[pid]}"
+        for c in pr["controls"]:
+            if c["id"] == "palette": c["default"] = PALETTE_IDS[pid]
     return pr
 
 
 if __name__ == "__main__":
-    for pid in sys.argv[1:] or [PID]:
+    for pid in sys.argv[1:] or [PID] + list(PALETTE_IDS):
         ppm.run(pid, build_one(pid))

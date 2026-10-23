@@ -311,6 +311,31 @@
       "id": "zenray-sony-playstation-ppm",
       "group": "Sony",
       "reference": "sony-logo-2021"
+    },
+    {
+      "id": "zenray-sony-playstation-rouge-ppm",
+      "group": "Sony",
+      "reference": "sony-logo-2021"
+    },
+    {
+      "id": "zenray-sony-playstation-vert-ppm",
+      "group": "Sony",
+      "reference": "sony-logo-2021"
+    },
+    {
+      "id": "zenray-sony-playstation-turquoise-ppm",
+      "group": "Sony",
+      "reference": "sony-logo-2021"
+    },
+    {
+      "id": "zenray-sony-playstation-jaune-ppm",
+      "group": "Sony",
+      "reference": "sony-logo-2021"
+    },
+    {
+      "id": "zenray-sony-playstation-magenta-ppm",
+      "group": "Sony",
+      "reference": "sony-logo-2021"
     }
   ],
   "formats": [
