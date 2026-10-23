@@ -25,10 +25,11 @@ def controls() -> list:
         num("glowK", "Force de la lumière", "Lumière", 0, 2, 0.01), num("rimK", "Liseré clair des symboles", "Lumière", 0, 2, 0.01), num("frags", "Éclats de lumière", "Lumière", 0, 30, 1),
         num("fadeStart", "Début du fondu final (s)", "Rythme", 3, 8, 0.01), num("fadeEnd", "Fin du fondu final (s)", "Rythme", 4, 10, 0.01),
         {"id": "groupKeys", "label": "Symboles, ensemble : temps | rotation Y | X | Z | échelle | dx | dy | opacité", "type": "lines", "group": "Symboles", "targets": tg("groupKeys")},
-        {"id": "squareKeys", "label": "Carré, mouvement propre : temps | rotation Y | Z | z | dx | dy", "type": "lines", "group": "Symboles", "targets": tg("squareKeys")},
+        {"id": "squareKeys", "label": "Carré, mouvement propre : temps | rotation Y | Z | z | dx | dy | rotation X", "type": "lines", "group": "Symboles", "targets": tg("squareKeys")},
         {"id": "glintKeys", "label": "Éclat : temps | x | y | rayon | opacité", "type": "lines", "group": "Lumière", "targets": tg("glintKeys")},
         {"id": "tileKeys", "label": "Tuile : temps | rotation Y | X | Z | échelle | dx | dy", "type": "lines", "group": "Tuile", "targets": tg("tileKeys")},
-        {"id": "tileLook", "label": "Tuile : temps | contour | remplissage | halo | contour du logo", "type": "lines", "group": "Tuile", "targets": tg("tileLook")},
+        {"id": "glyphKeys", "label": "Logo en verre : temps | z | épaisseur | agrandissement", "type": "lines", "group": "Tuile", "targets": tg("glyphKeys")},
+        {"id": "tileLook", "label": "Tuile : temps | contour | remplissage | halo | contour logo | verre | logo plein", "type": "lines", "group": "Tuile", "targets": tg("tileLook")},
         {"id": "wordKeys", "label": "Mot : temps | balayage | opacité | montée | lumière", "type": "lines", "group": "Tuile", "targets": tg("wordKeys")},
         {"id": "fadeKeys", "label": "Fondu final : temps | opacité", "type": "lines", "group": "Rythme", "targets": tg("fadeKeys")},
     ]

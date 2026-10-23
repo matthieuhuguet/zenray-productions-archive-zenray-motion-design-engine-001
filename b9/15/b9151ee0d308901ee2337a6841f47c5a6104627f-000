@@ -286,6 +286,11 @@
       "id": "macbook-pro-s22-apple-logo-ppm",
       "group": "Apple · MacBook Pro",
       "reference": "macbook-pro-apple-ad"
+    },
+    {
+      "id": "playstation-studios-opening-ppm",
+      "group": "PlayStation Studios",
+      "reference": "playstation-studios-opening"
     }
   ],
   "formats": [

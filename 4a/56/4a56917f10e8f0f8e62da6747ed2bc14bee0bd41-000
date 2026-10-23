@@ -21,8 +21,18 @@
     const p0 = rows[Math.max(0, i - 1)], p1 = rows[i], p2 = rows[i + 1], p3 = rows[Math.min(rows.length - 1, i + 2)], f = (t - p1[0]) / Math.max(1e-6, p2[0] - p1[0]), f2 = f * f, f3 = f2 * f;
     return p1.slice(1).map((_, k) => { const a = p0[k + 1], b = p1[k + 1], c = p2[k + 1], d = p3[k + 1]; return 0.5 * ((2 * b) + (-a + c) * f + (2 * a - 5 * b + 4 * c - d) * f2 + (-a + 3 * b - 3 * c + d) * f3); });
   };
+  // a smooth falloff with no visible rim: alpha = a0 * exp(-(r/sigma)^2), forced to 0 at the edge of the element
+  const gauss = (c, a0, sigma, n) => `radial-gradient(ellipse closest-side, ${Array.from({ length: 13 }, (_, i) => { const r = i / 12, a = i === 12 ? 0 : a0 * Math.exp(-Math.pow(r / sigma, n || 2)); return `${css(c, a.toFixed(3))} ${(r * 100).toFixed(1)}%`; }).join(", ")})`;
   const NS = "http://www.w3.org/2000/svg";
+  let fid = 0;
   const sv = (tag, at2, par) => { const e = document.createElementNS(NS, tag); Object.keys(at2 || {}).forEach((k) => e.setAttribute(k, at2[k])); if (par) par.appendChild(e); return e; };
+  // a glow baked in the SVG: the alpha of the source blurred by each sigma, tinted, then merged under the source; region = [x, y, w, h] in the units of the filtered element
+  const bakedGlow = (svg, region, units, layers, withSource) => {
+    const defs = sv("defs", {}, svg), id = "psf" + (fid++) + "x" + Math.round(Math.random() * 1e6), f = sv("filter", Object.assign({ id, x: region[0], y: region[1], width: region[2], height: region[3], "color-interpolation-filters": "sRGB" }, units ? { filterUnits: units } : {}), defs), names = [];
+    layers.forEach((L, i) => { const b = sv("feGaussianBlur", { in: "SourceAlpha", stdDeviation: L.sigma, result: "b" + i }, f); sv("feColorMatrix", { in: "b" + i, type: "matrix", values: `0 0 0 0 ${L.c[0] / 255} 0 0 0 0 ${L.c[1] / 255} 0 0 0 0 ${L.c[2] / 255} 0 0 0 ${L.a} 0`, result: "t" + i }, f); names.push("t" + i); void b; });
+    const m = sv("feMerge", {}, f); names.reverse().forEach((n) => sv("feMergeNode", { in: n }, m)); if (withSource) sv("feMergeNode", { in: "SourceGraphic" }, m);
+    return id;
+  };
   const seeded = (seed) => { let s = seed >>> 0 || 1; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; };
   // the four symbols, in plane coordinates measured on the reference at 0.6 s (centre x, centre y, then local paths around the centre)
   const plus = (a, t, deg) => { const pts = [[-t, -a], [t, -a], [t, -t], [a, -t], [a, t], [t, t], [t, a], [-t, a], [-t, t], [-a, t], [-a, -t], [-t, -t]], c = Math.cos(deg * Math.PI / 180), s = Math.sin(deg * Math.PI / 180); return "M" + pts.map(([x, y]) => `${(x * c - y * s).toFixed(1)},${(x * s + y * c).toFixed(1)}`).join(" L") + " Z"; };
@@ -36,88 +46,121 @@
   ZS.register({
     id: "ps-open", label: "PlayStation Studios : ouverture", group: "PlayStation", duration: 8,
     params: [
-      P("studios", "Mot sous la tuile", "text", "STUDIOS", 1), P("blue", "Bleu des symboles", "color", "#2f55f5", 1), P("glowColor", "Couleur de la lumière", "color", "#3aa0ff", 1), N("fadeStart", "Début du fondu final (s)", 6.0, 3, 8, 0.01, 1, "s"),
+      P("studios", "Mot sous la tuile", "text", "STUDIOS", 1), P("blue", "Bleu des symboles", "color", "#0a3cfa", 1), P("glowColor", "Couleur de la lumière", "color", "#3aa0ff", 1), N("fadeStart", "Début du fondu final (s)", 6.0, 3, 8, 0.01, 1, "s"),
       N("fadeEnd", "Fin du fondu final (s)", 8.0, 4, 10, 0.01, 2, "s"), N("tallZoom", "Agrandissement en format haut", 1.6, 0.5, 4, 0.05, 2), N("glowK", "Force de la lumière", 1, 0, 2, 0.01, 2), N("rimK", "Liseré clair des symboles", 1, 0, 2, 0.01, 2),
-      N("flareK", "Taille de l'éclat", 1, 0.2, 3, 0.01, 2), N("washK", "Lueur de fond", 1, 0, 2, 0.01, 2), N("streakK", "Force de la traînée horizontale", 1, 0, 2, 0.01, 2), N("film0", "Début dans le film (s)", 9, 0, 60, 0.01, 2, "s"),
-      P("ground", "Fond avant l'éclat", "color", "#000311", 3), P("font", "Police du mot", "text", "InterVariable", 3), N("wordW", "Largeur du mot (px)", 432, 100, 1000, 1, 3, "px"), N("wordCap", "Hauteur des capitales du mot (px)", 55, 10, 160, 1, 3, "px"), N("wordY", "Position verticale du mot (px)", 740, 600, 1000, 1, 3, "px"),
-      N("tileX", "Tuile : centre x", 960, 0, 1920, 1, 3, "px"), N("tileY", "Tuile : centre y", 492, 0, 1080, 1, 3, "px"), N("tileW", "Tuile : largeur", 432, 100, 900, 1, 3, "px"), N("tileH", "Tuile : hauteur", 420, 100, 900, 1, 3, "px"), N("frags", "Éclats de lumière (nombre)", 9, 0, 30, 1, 3), N("seed", "Graine des éclats", 7, 1, 999, 1, 3), N("persp", "Perspective (px)", 1500, 400, 4000, 10, 3, "px"),
-      P("groupKeys", "Symboles, ensemble : temps | rotation Y | rotation X | rotation Z | échelle | dx | dy | opacité", "lines", ["0 | 26 | 5 | -9 | 1.05 | -40 | 30 | 1", "0.45 | 3 | 0 | -1 | 1.0 | 0 | 0 | 1", "0.6 | 0 | 0 | 0 | 1 | 0 | 0 | 1", "1.0 | 0 | 0 | 0 | 0.91 | -12 | 0 | 1", "1.4 | 0 | 0 | 0 | 0.79 | -4 | 3 | 1", "1.8 | -8 | 0 | 0 | 0.65 | 6 | 3 | 0.7", "2.15 | -18 | 0 | 0 | 0.5 | 16 | 4 | 0"], 4),
-      P("squareKeys", "Carré, mouvement propre : temps | rotation Y | rotation Z | z | dx | dy", "lines", ["0 | 64 | -16 | 330 | 60 | 20", "0.2 | 38 | -9 | 160 | 25 | 8", "0.45 | 0 | 0 | 0 | 0 | 0"], 4),
+      N("flareK", "Taille de l'éclat", 1, 0.2, 3, 0.01, 2), N("flareStretch", "Éclat : allongement horizontal", 2.25, 1, 5, 0.05, 3), N("washK", "Lueur de fond", 0.92, 0, 2, 0.01, 2), N("streakK", "Force de la traînée horizontale", 1.35, 0, 2, 0.01, 2), N("film0", "Début dans le film (s)", 9, 0, 60, 0.01, 2, "s"),
+      P("ground", "Fond avant l'éclat", "color", "#000311", 3), P("font", "Police du mot", "text", "InterVariable", 3), N("wordW", "Largeur du mot (px)", 432, 100, 1000, 1, 3, "px"), N("wordCap", "Hauteur des capitales du mot (px)", 60, 10, 160, 1, 3, "px"), N("wordY", "Position verticale du mot (px)", 724, 600, 1000, 1, 3, "px"),
+      N("tileX", "Tuile : centre x", 960, 0, 1920, 1, 3, "px"), N("tileY", "Tuile : centre y", 492, 0, 1080, 1, 3, "px"), N("tileW", "Tuile : largeur", 432, 100, 900, 1, 3, "px"), N("tileH", "Tuile : hauteur", 420, 100, 900, 1, 3, "px"), N("frags", "Éclats de lumière (nombre)", 9, 0, 30, 1, 3), N("outlinePx", "Contour lumineux du logo (px)", 9, 0.5, 16, 0.1, 3, "px"), N("seed", "Graine des éclats", 7, 1, 999, 1, 3), N("persp", "Perspective (px)", 1500, 400, 4000, 10, 3, "px"),
+      P("groupKeys", "Symboles, ensemble : temps | rotation Y | rotation X | rotation Z | échelle | dx | dy | opacité", "lines", ["0 | -8 | 44 | 7 | 1.28 | -10 | -6 | 1", "0.15 | -6 | 33 | 5 | 1.2 | -6 | -4 | 1", "0.3 | -3 | 22 | 2 | 1.1 | 0 | -2 | 1", "0.4 | -1 | 9 | 1 | 1.05 | 0 | 0 | 1", "0.5 | 0 | 0 | 0 | 1.01 | 0 | 0 | 1", "0.6 | 0 | 0 | 0 | 1 | 0 | 0 | 1", "1.0 | 0 | 0 | 0 | 0.91 | -12 | 0 | 1", "1.4 | 0 | 0 | 0 | 0.79 | -4 | 3 | 1", "1.6 | 14 | 0 | -2 | 0.72 | 2 | 3 | 0.9", "1.8 | 28 | 0 | -5 | 0.62 | 6 | 3 | 0.7", "2.15 | 44 | 0 | -8 | 0.5 | 16 | 4 | 0"], 4),
+      P("squareKeys", "Carré, mouvement propre : temps | rotation Y | rotation Z | z | dx | dy | rotation X", "lines", ["0 | 48 | -26 | 110 | -10 | 30 | -32", "0.15 | 30 | -16 | 80 | 0 | 15 | -22", "0.3 | 12 | -7 | 40 | 10 | 4 | -10", "0.5 | 0 | 0 | 0 | 0 | 0 | 0"], 4),
       P("symLook", "Symboles : temps | remplissage | liseré | arrière (épaisseur de verre)", "lines", ["0 | 1 | 1 | 1", "0.5 | 1 | 1 | 0", "1.1 | 1 | 1 | 0", "1.7 | 0.15 | 0.7 | 0"], 4),
-      P("glintKeys", "Éclat de l'objectif : temps | x | y | rayon | opacité", "lines", ["0.1 | 723 | 532 | 0 | 0", "0.25 | 723 | 532 | 12 | 0.9", "0.6 | 724 | 533 | 15 | 1", "1.0 | 735 | 532 | 20 | 1", "1.2 | 755 | 529 | 55 | 1", "1.4 | 764 | 527 | 70 | 1", "1.6 | 773 | 528 | 90 | 1", "1.8 | 788 | 537 | 115 | 1", "2.0 | 809 | 550 | 125 | 1", "2.2 | 831 | 561 | 90 | 0.9", "2.4 | 871 | 592 | 60 | 0.7", "2.6 | 905 | 618 | 35 | 0.5", "2.9 | 930 | 640 | 10 | 0"], 4),
+      P("glintKeys", "Éclat de l'objectif : temps | x | y | rayon | opacité", "lines", ["0.1 | 723 | 532 | 0 | 0", "0.25 | 723 | 532 | 12 | 0.9", "0.6 | 724 | 533 | 15 | 1", "1.0 | 735 | 532 | 20 | 1", "1.2 | 755 | 529 | 55 | 1", "1.4 | 764 | 527 | 70 | 1", "1.6 | 773 | 528 | 90 | 1", "1.8 | 788 | 537 | 115 | 1", "2.0 | 809 | 550 | 125 | 1", "2.2 | 831 | 561 | 100 | 1", "2.4 | 860 | 585 | 90 | 1", "2.6 | 890 | 610 | 70 | 0.95", "2.8 | 920 | 625 | 45 | 0.7", "3.0 | 940 | 630 | 20 | 0.35", "3.2 | 950 | 632 | 0 | 0"], 4),
       P("streakKeys", "Traînée horizontale : temps | y | opacité", "lines", ["0 | 532 | 0", "0.4 | 532 | 0.07", "1.0 | 532 | 0.15", "1.2 | 532 | 0.63", "1.4 | 532 | 0.85", "1.6 | 532 | 0.97", "1.8 | 536 | 1", "2.0 | 548 | 0.97", "2.2 | 568 | 0.6", "2.4 | 596 | 0.54", "2.6 | 624 | 0.23", "2.8 | 640 | 0.03", "3.2 | 650 | 0"], 4),
-      P("washKeys", "Lueur de fond : temps | opacité", "lines", ["0 | 0", "1.0 | 0.03", "1.2 | 0.23", "1.4 | 0.36", "1.6 | 0.65", "1.8 | 0.95", "2.0 | 1", "2.2 | 0.52", "2.4 | 0.44", "2.6 | 0.17", "2.8 | 0.03", "3.2 | 0"], 4),
+      P("washKeys", "Lueur de fond : temps | opacité", "lines", ["0 | 0", "1.0 | 0.03", "1.2 | 0.23", "1.4 | 0.36", "1.6 | 0.65", "1.8 | 0.95", "2.0 | 1", "2.2 | 0.66", "2.4 | 0.66", "2.6 | 0.38", "2.8 | 0.12", "3.2 | 0"], 4),
       P("groundKeys", "Fond bleu nuit : temps | opacité", "lines", ["0 | 1", "2.9 | 1", "3.2 | 0.55", "3.45 | 0"], 4),
-      P("tileKeys", "Tuile : temps | rotation Y | rotation X | rotation Z | échelle | dx | dy", "lines", ["2.0 | 78 | 6 | 12 | 0.45 | -90 | 110", "2.4 | 52 | 6 | 11 | 0.85 | -110 | 70", "2.8 | 28 | 4 | 10 | 1.2 | -60 | -40", "3.2 | 10 | 2 | 8 | 1.36 | 0 | -50", "3.6 | 0 | 0 | 0 | 1.0 | 0 | 0", "4.0 | 0 | 0 | 0 | 1 | 0 | 0"], 4),
-      P("tileLook", "Tuile : temps | tracé du contour | remplissage | halo | contour du logo", "lines", ["2.0 | 0 | 0 | 0.9 | 1", "2.3 | 0.15 | 0 | 1 | 1", "2.9 | 1 | 0 | 1 | 1", "3.6 | 1 | 1 | 0.8 | 0.2", "3.7 | 1 | 1 | 0.75 | 0", "4.2 | 1 | 1 | 0.25 | 0", "4.8 | 1 | 1 | 0 | 0"], 4),
-      P("wordKeys", "Mot : temps | ouverture du balayage | opacité | montée (px) | lumière bleue", "lines", ["2.95 | 0 | 0 | 24 | 1", "3.2 | 0.55 | 0.8 | 14 | 1", "3.6 | 1 | 1 | 5 | 0.7", "4.0 | 1 | 1 | 0 | 0.25", "4.6 | 1 | 1 | 0 | 0"], 4),
+      P("tileKeys", "Tuile : temps | rotation Y | rotation X | rotation Z | échelle | dx | dy", "lines", ["2.2 | 28 | 62 | 14 | 0.85 | -110 | 135", "2.6 | 24 | 54 | 12 | 1.05 | -100 | 110", "2.8 | 18 | 36 | 11 | 1.25 | -60 | 25", "3.0 | 12 | 6 | 9 | 1.38 | -38 | -52", "3.2 | 8 | 2 | 5 | 1.41 | -30 | -15", "3.3 | 6 | 1 | 3 | 1.37 | -10 | -8", "3.4 | 4 | 0 | 2 | 1.29 | 0 | -3", "3.5 | 2 | 0 | 1 | 1.22 | 0 | 0", "3.6 | 0 | 0 | 0 | 1.15 | 0 | 0", "3.7 | 0 | 0 | 0 | 1.10 | 0 | 0", "3.8 | 0 | 0 | 0 | 1.05 | 0 | 0", "3.9 | 0 | 0 | 0 | 1.02 | 0 | 0", "4.0 | 0 | 0 | 0 | 1 | 0 | 0"], 4),
+      P("glyphKeys", "Logo en verre : temps | z devant la tuile (px) | épaisseur (px) | agrandissement par rapport à la tuile", "lines", ["2.2 | 40 | 70 | 1.3", "2.6 | 40 | 70 | 1.3", "2.8 | 40 | 70 | 1.4", "3.0 | 40 | 70 | 1.25", "3.2 | 40 | 60 | 1.14", "3.4 | 25 | 30 | 1.07", "3.6 | 0 | 0 | 1"], 4),
+      P("tileLook", "Tuile : temps | tracé du contour | remplissage clair | halo | contour du logo | verre sombre | logo plein", "lines", ["2.0 | 0 | 0 | 0 | 0 | 0 | 0", "2.2 | 0 | 0 | 0 | 0.15 | 0 | 0.05", "2.5 | 0.08 | 0 | 0.05 | 0.4 | 0 | 0.3", "2.8 | 0.6 | 0 | 0.2 | 0.9 | 0 | 0.8", "3.0 | 1 | 0 | 0.35 | 1 | 0.05 | 1", "3.2 | 1 | 0.05 | 0.55 | 1 | 0.25 | 1", "3.3 | 1 | 0.3 | 0.75 | 1 | 0.45 | 1", "3.4 | 1 | 0.75 | 0.9 | 0.7 | 0.6 | 1", "3.6 | 1 | 1 | 1 | 0.3 | 0.5 | 1", "3.7 | 1 | 1 | 1 | 0 | 0 | 1", "3.8 | 1 | 1 | 0.85 | 0 | 0 | 1", "4.0 | 1 | 1 | 0.6 | 0 | 0 | 1", "4.4 | 1 | 1 | 0.25 | 0 | 0 | 1", "4.9 | 1 | 1 | 0 | 0 | 0 | 1"], 4),
+      P("wordKeys", "Mot : temps | balayage | opacité | décalage vers le bas (px) | lumière bleue | échelle | échelle horizontale", "lines", ["2.95 | 0 | 0 | 40 | 1 | 1.25 | 1.5", "3.2 | 0.3 | 0.35 | 38 | 1 | 1.25 | 1.5", "3.4 | 0.55 | 0.45 | 37 | 1 | 1.23 | 1.45", "3.6 | 0.85 | 0.75 | 34 | 0.85 | 1.19 | 1.4", "3.7 | 1 | 0.88 | 25 | 0.6 | 1.13 | 1.28", "3.8 | 1 | 0.95 | 16.5 | 0.4 | 1.10 | 1.2", "3.9 | 1 | 1 | 9.5 | 0.35 | 1.05 | 1.15", "4.0 | 1 | 1 | 4.5 | 0.25 | 1.02 | 1.08", "4.2 | 1 | 1 | 0 | 0 | 1 | 1", "4.8 | 1 | 1 | 0 | 0 | 1 | 1"], 4),
       P("fadeKeys", "Fondu final de la tuile : temps | opacité", "lines", ["6.0 | 1", "6.4 | 0.944", "6.8 | 0.81", "7.2 | 0.607", "7.6 | 0.327", "7.9 | 0.033", "8.0 | 0"], 4),
     ],
     build(ctx) {
       const { el, p, tl, t0 } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
       const glyph = window.ZSPlayStation;
-      const gk = rowsOf(p.groupKeys), sk = rowsOf(p.squareKeys), lk = rowsOf(p.symLook), gl = rowsOf(p.glintKeys), stk = rowsOf(p.streakKeys), wk = rowsOf(p.washKeys), nk = rowsOf(p.groundKeys), tk = rowsOf(p.tileKeys), tlk = rowsOf(p.tileLook), wdk = rowsOf(p.wordKeys), fk = rowsOf(p.fadeKeys);
+      const gzk = rowsOf(p.glyphKeys), gk = rowsOf(p.groupKeys), sk = rowsOf(p.squareKeys), lk = rowsOf(p.symLook), gl = rowsOf(p.glintKeys), stk = rowsOf(p.streakKeys), wk = rowsOf(p.washKeys), nk = rowsOf(p.groundKeys), tk = rowsOf(p.tileKeys), tlk = rowsOf(p.tileLook), wdk = rowsOf(p.wordKeys), fk = rowsOf(p.fadeKeys);
       const blue = hex(p.blue), glow = hex(p.glowColor);
       h.css(el, { background: "#000000" });
       // the ground: black, the navy of the opening, then the blue wash of the flare (a plain colour and a gradient: no photograph)
-      const navy = abs(st, { left: 0, top: 0, width: w + "px", height: sh + "px", background: p.ground, opacity: 1 });
-      const wash = abs(st, { left: 0, top: 0, width: w + "px", height: sh + "px", opacity: 0, background: `radial-gradient(ellipse 70% 75% at 50% 50%, ${css(mix(glow, [0, 80, 200], 0.5), 1)} 0%, rgb(0,64,138) 38%, rgb(0,37,83) 100%)` });
-      const kk = tall ? Math.min(p.tallZoom * w / 1920, 0.92 * w / 1280) : w / 1920, plane = abs(st, { left: w / 2 - 965 * kk + "px", top: sh / 2 - 540 * kk + "px", width: "1920px", height: "1080px", transformOrigin: "0 0", transform: `scale(${kk})`, perspective: p.persp + "px", perspectiveOrigin: "965px 540px" });
+      const ground = hex(p.ground);
+      // the blue wash, fitted on the reference at its peak (2.0 s): blue channel by distance from the flare, green = 0.45 blue, no red
+      const kk = tall ? Math.min(p.tallZoom * w / 1920, 0.92 * w / 1280) : w / 1920, WASH = [[0, 215], [25, 190], [40, 150], [55, 112], [80, 70], [100, 45]], washCol = (b) => `rgb(0,${Math.round(b * 0.45)},${b})`;
+      const wash = abs(st, { left: -w / 2 + "px", top: 0, width: 2 * w + "px", height: sh + "px", opacity: 0, background: `radial-gradient(ellipse ${1500 * kk}px ${1000 * kk}px at 50% 50%, ${WASH.map(([pc, b]) => `${washCol(b)} ${pc}%`).join(", ")})` });
+      const plane = abs(st, { left: w / 2 - 965 * kk + "px", top: sh / 2 - 540 * kk + "px", width: "1920px", height: "1080px", transformOrigin: "0 0", transform: `scale(${kk})`, willChange: "transform", perspective: p.persp + "px", perspectiveOrigin: "965px 540px" });
       // the horizontal streak of the lens, full width of the stage
       const L0 = -w / kk, SW = (2 * w) / kk + 1920;
-      const streak = abs(plane, { left: L0 + "px", top: "0", width: SW + "px", height: "26px", opacity: 0, marginTop: "-13px", background: `radial-gradient(ellipse 50% 50% at 50% 50%, rgba(255,255,255,0.95) 0%, ${css(glow, 0.95)} 18%, ${css(mix(glow, [0, 40, 255], 0.5), 0.5)} 55%, rgba(0,0,0,0) 100%)`, filter: "blur(1.2px)" });
+      const streak = abs(plane, { left: L0 + "px", top: "0", width: SW + "px", height: "58px", opacity: 0, marginTop: "-29px", background: `radial-gradient(ellipse 50% 50% at 50% 50%, #fff 0%, rgba(210,238,255,0.9) 14%, rgba(110,190,255,0.5) 32%, rgba(60,140,255,0.2) 60%, rgba(0,0,0,0) 100%) center / 100% 6px no-repeat, radial-gradient(ellipse 50% 50% at 50% 50%, rgba(255,255,255,0.95) 0%, ${css(glow, 0.9)} 9%, ${css(glow, 0.6)} 22%, ${css(mix(glow, [0, 40, 255], 0.5), 0.2)} 48%, ${css(mix(glow, [0, 40, 255], 0.5), 0.06)} 75%, rgba(0,0,0,0) 100%)` });
       // the bloom of the flare: a white core, a cyan halo, a wide blue halo (one fixed size, scaled by the measured radius)
-      const bloom = abs(plane, { left: "0", top: "0", width: "0", height: "0", opacity: 0 });
-      const R0 = 100, bmk = (r, bg) => abs(bloom, { left: -r + "px", top: -r + "px", width: 2 * r + "px", height: 2 * r + "px", borderRadius: "50%", background: bg });
-      const bWide = bmk(R0 * 7, `radial-gradient(circle, ${css(glow, 0.5)} 0%, ${css(glow, 0.22)} 30%, rgba(0,0,0,0) 70%)`), bHalo = bmk(R0 * 2.6, `radial-gradient(circle, rgba(190,235,255,0.85) 0%, ${css(glow, 0.55)} 38%, rgba(0,0,0,0) 72%)`), bCore = bmk(R0 * 0.9, "radial-gradient(circle, #fff 0%, rgba(255,255,255,0.96) 38%, rgba(220,244,255,0.6) 70%, rgba(255,255,255,0) 100%)");
-      const bRayH = abs(bloom, { left: -R0 * 1.4 + "px", top: "-1px", width: R0 * 2.8 + "px", height: "2px", background: "linear-gradient(90deg, rgba(255,255,255,0), #fff 50%, rgba(255,255,255,0))", opacity: 0.9 }), bRayV = abs(bloom, { left: "-1px", top: -R0 * 0.9 + "px", width: "2px", height: R0 * 1.8 + "px", background: "linear-gradient(180deg, rgba(255,255,255,0), #fff 50%, rgba(255,255,255,0))", opacity: 0.8 });
+      const bloom = abs(plane, { left: "0", top: "0", width: "0", height: "0", opacity: 0, willChange: "transform" });
+      const R0 = 100, bmk = (r, bg) => abs(bloom, { left: -r + "px", top: -r + "px", width: 2 * r + "px", height: 2 * r + "px", background: bg });
+      // halo, mid halo and core in ONE element (three backgrounds): one layer to composite instead of three
+      bmk(R0 * 3.3, `${gauss([255, 255, 255], 1, 0.55, 3)} center / 34% 52% no-repeat, ${gauss([160, 222, 255], 0.6, 0.62, 3)} center / 79% 79% no-repeat, ${gauss(mix(glow, [110, 210, 255], 0.35), 0.8, 0.4)}`);
+      const bRayH = abs(bloom, { left: -R0 * 1.4 + "px", top: "-1px", width: R0 * 2.8 + "px", height: "2px", background: "linear-gradient(90deg, rgba(255,255,255,0), #fff 50%, rgba(255,255,255,0))", opacity: 0.9 }), bRayV = abs(bloom, { left: "-1px", top: -R0 * 0.9 + "px", width: "2px", height: R0 * 1.8 + "px", background: "linear-gradient(180deg, rgba(255,255,255,0), #fff 50%, rgba(255,255,255,0))", opacity: 0.8, transform: "scaleX(0.4)" });
       // the four glass symbols in a 3D group: the front face (blue, with a pale rim and a halo) and a stack of dark back faces that give the glass its thickness while they turn in
       const grp = abs(plane, { left: "0", top: "0", width: "1920px", height: "1080px", transformStyle: "preserve-3d", transformOrigin: "965px 540px" });
       const syms = SYMS.map((S, si) => {
         const box = abs(grp, { left: S.cx + "px", top: S.cy + "px", width: "0", height: "0", transformStyle: "preserve-3d" }), M = 80, VW = S.w + 2 * M, VH = S.h + 2 * M;
         const mk = (extra) => { const e = sv("svg", { width: VW, height: VH, viewBox: `${-VW / 2} ${-VH / 2} ${VW} ${VH}` }); e.style.cssText = `position:absolute;left:${-VW / 2}px;top:${-VH / 2}px;overflow:visible;${extra || ""}`; box.appendChild(e); return e; };
-        const backs = [], N0 = 8, step = 4;
+        const backs = [], N0 = 12, step = 5;
         for (let i = N0; i >= 1; i--) { const e = mk(`transform:translateZ(${-i * step}px)`), pth = sv("path", { d: S.d, "fill-rule": "evenodd", fill: css(mix(blue, [0, 6, 60], 0.5 + 0.05 * i)) }, e); backs.push(e); }
-        const front = mk(`filter:drop-shadow(0 0 9px ${css(glow, 0.9)}) drop-shadow(0 0 26px ${css(mix(glow, [20, 60, 255], 0.5), 0.55)})`), df = sv("defs", {}, front), gid = "psg" + si + "x" + Math.round(Math.random() * 1e6), lg = sv("linearGradient", { id: gid, x1: "0", y1: "0", x2: "1", y2: "1" }, df);
-        const s0 = sv("stop", { offset: "0", "stop-color": css(mix(blue, [190, 180, 255], si === 0 ? 0.55 : 0.12)) }, lg), s1 = sv("stop", { offset: "1", "stop-color": css(mix(blue, [10, 30, 200], 0.2)) }, lg);
+        const glowA = mk(""), gid2 = bakedGlow(glowA, [-VW / 2, -VH / 2, VW, VH], "userSpaceOnUse", [{ sigma: 24, c: mix(glow, [20, 60, 255], 0.5), a: 0.55 * 1.6 }, { sigma: 9, c: glow, a: 0.9 * 1.6 }], false); sv("path", { d: S.d, "fill-rule": "evenodd", fill: "#fff", filter: `url(#${gid2})` }, glowA); const glowB = glowA;
+        const front = mk(""), df = sv("defs", {}, front), gid = "psg" + si + "x" + Math.round(Math.random() * 1e6), lg = sv("linearGradient", { id: gid, x1: "0", y1: "0", x2: "1", y2: "1" }, df);
+        const s0 = sv("stop", { offset: "0", "stop-color": css(si === 0 ? [96, 100, 190] : mix(blue, [60, 110, 255], 0.25)) }, lg), s1 = sv("stop", { offset: "1", "stop-color": css(si === 0 ? [60, 84, 170] : mix(blue, [0, 40, 220], 0.2)) }, lg);
         const body = sv("path", { d: S.d, "fill-rule": "evenodd", fill: `url(#${gid})` }, front), rim = sv("path", { d: S.d, "fill-rule": "evenodd", fill: "none", stroke: css([170, 232, 255]), "stroke-width": 3, "stroke-linejoin": "round" }, front);
-        return { S, box, backs, front, body, rim, s0, s1 };
+        return { S, box, backs, front, body, rim, s0, s1, glows: [glowA, glowB] };
       });
+      // after the entry (0.5 s) the four symbols are flat: ONE flat group of two layers (baked halo, body and rim) replaces the eight layers of the 3D group, which is what keeps the frame cheap
+      const flat = abs(plane, { left: "0", top: "0", width: "1920px", height: "1080px", transformOrigin: "965px 540px", display: "none", willChange: "transform" }), FX = 340, FY = 330, FW = 1300, FH = 420;
+      const mkF = () => { const e = sv("svg", { width: FW, height: FH, viewBox: `${FX} ${FY} ${FW} ${FH}` }); e.style.cssText = `position:absolute;left:${FX}px;top:${FY}px;overflow:visible;will-change:transform`; flat.appendChild(e); return e; };
+      const fGlow = mkF(), fBody = mkF(), fdef = sv("defs", {}, fBody), fGid = bakedGlow(fGlow, [-260, -240, 520, 480], "userSpaceOnUse", [{ sigma: 24, c: mix(glow, [20, 60, 255], 0.5), a: 0.55 * 1.6 }, { sigma: 9, c: glow, a: 0.9 * 1.6 }], false);
+      const fParts = SYMS.map((S, si) => {
+        sv("path", { d: S.d, "fill-rule": "evenodd", fill: "#fff", filter: `url(#${fGid})`, transform: `translate(${S.cx},${S.cy})` }, fGlow);
+        const id = "psf" + si + "x" + Math.round(Math.random() * 1e6), lg = sv("linearGradient", { id, x1: "0", y1: "0", x2: "1", y2: "1" }, fdef);
+        sv("stop", { offset: "0", "stop-color": syms[si].s0.getAttribute("stop-color") }, lg); sv("stop", { offset: "1", "stop-color": syms[si].s1.getAttribute("stop-color") }, lg);
+        const body = sv("path", { d: S.d, "fill-rule": "evenodd", fill: `url(#${id})`, transform: `translate(${S.cx},${S.cy})` }, fBody), rim = sv("path", { d: S.d, "fill-rule": "evenodd", fill: "none", stroke: css([170, 232, 255]), "stroke-width": 3, "stroke-linejoin": "round", transform: `translate(${S.cx},${S.cy})` }, fBody);
+        return { body, rim };
+      });
+      plane.appendChild(streak); plane.appendChild(bloom);   // light is added on top of the glass
       // the traced mark, drawn flat then tilted as one 3D tile: tile frame, dark glass, mark outline, mark fill
       const TW = p.tileW, TH = p.tileH, tile = abs(plane, { left: p.tileX - TW / 2 + "px", top: p.tileY - TH / 2 + "px", width: TW + "px", height: TH + "px", transformStyle: "preserve-3d", opacity: 0 });
       const tsv = sv("svg", { width: TW + 120, height: TH + 120, viewBox: `-60 -60 ${TW + 120} ${TH + 120}` }); tsv.style.cssText = `position:absolute;left:-60px;top:-60px;overflow:visible`; tile.appendChild(tsv);
-      const tfill = sv("rect", { x: 0, y: 0, width: TW, height: TH, fill: "#ececec", opacity: 0 }, tsv), tdark = sv("rect", { x: 0, y: 0, width: TW, height: TH, fill: "#030a22", opacity: 0.9 }, tsv);
-      const tedge = sv("rect", { x: 0.5, y: 0.5, width: TW - 1, height: TH - 1, fill: "none", stroke: "#cfe9ff", "stroke-width": 3, pathLength: 1, "stroke-dasharray": "1 1", "stroke-dashoffset": 1 }, tsv);
+      const tdefs = sv("defs", {}, tsv), tgrad = sv("linearGradient", { id: "psTile" + Math.round(Math.random() * 1e6), x1: "0", y1: "0", x2: "1", y2: "1" }, tdefs), tg0 = sv("stop", { offset: "0", "stop-color": "#ececec" }, tgrad), tg1 = sv("stop", { offset: "1", "stop-color": "#ececec" }, tgrad);
+      const tfill = sv("rect", { x: 0, y: 0, width: TW, height: TH, fill: `url(#${tgrad.getAttribute("id")})`, opacity: 0 }, tsv), tdark = sv("rect", { x: 0, y: 0, width: TW, height: TH, fill: "#01040f", opacity: 0.9 }, tsv);
+      const tedge = sv("rect", { x: 0.5, y: 0.5, width: TW - 1, height: TH - 1, fill: "none", stroke: "#cfe9ff", "stroke-width": 2, pathLength: 1, "stroke-dasharray": "1 1", "stroke-dashoffset": 1 }, tsv);
       let gmark = null, gline = null;
+      const reg = sv("g", { opacity: 0 }, tsv); sv("circle", { cx: 366 * TW / 432, cy: 343 * TH / 420, r: 11, fill: "none", stroke: "#000", "stroke-width": 2 }, reg); const rr = sv("text", { x: 366 * TW / 432, y: 343 * TH / 420 + 6, "text-anchor": "middle", "font-size": 16, "font-weight": 700, "font-family": "Arial, Helvetica, sans-serif", fill: "#000" }, reg); rr.textContent = "R";
+      // the mark is a slab of glass: a front face lit along its outline, and a few back faces that give it thickness; it floats in front of the frame (translateZ) and comes back into the plane at the end
+      const gLayers = [];
       if (glyph) {
-        const gb = glyph.box, k = gb[2] / (Number(glyph.viewBox.split(" ")[2]) || 1), gx = gb[0] - p.tileX + TW / 2 - (glyph.tile[0] - 0) * 0, ox = gb[0] - glyph.tile[0], oy = gb[1] - glyph.tile[1];
-        const inner = sv("svg", { x: ox + (TW - (glyph.tile[2] - glyph.tile[0])) / 2, y: oy + (TH - (glyph.tile[3] - glyph.tile[1])) / 2, width: gb[2], height: gb[3], viewBox: glyph.viewBox }, tsv); inner.setAttribute("overflow", "visible");
-        const g2 = sv("g", { transform: glyph.transform }, inner);
-        gmark = sv("path", { d: glyph.d, fill: "#000", "fill-rule": "evenodd", opacity: 1 }, g2); gline = sv("path", { d: glyph.d, fill: "none", stroke: "#9fe0ff", "stroke-width": 26, "stroke-linejoin": "round", opacity: 1 }, g2);
-        void gx; void k;
+        const gb = glyph.box, k = gb[2] / (Number(glyph.viewBox.split(" ")[2]) || 1), ox = gb[0] - glyph.tile[0], oy = gb[1] - glyph.tile[1], NL = 5;
+        const mkLayer = (kind) => {
+          const e = sv("svg", { width: TW + 120, height: TH + 120, viewBox: `-60 -60 ${TW + 120} ${TH + 120}` }); e.style.cssText = "position:absolute;left:-60px;top:-60px;overflow:visible"; tile.appendChild(e);
+          const inner = sv("svg", { x: ox, y: oy, width: gb[2], height: gb[3], viewBox: glyph.viewBox }, e); inner.setAttribute("overflow", "visible");
+          const g2 = sv("g", { transform: glyph.transform }, inner);
+          if (kind === "fill") gmark = sv("path", { d: glyph.d, fill: "#000", "fill-rule": "evenodd" }, g2);
+          else if (kind === "line") { const fl = bakedGlow(e, [-0.8, -0.8, 2.6, 2.6], null, [{ sigma: 22 / k * 10, c: glow, a: 1.1 }, { sigma: 9 / k * 10, c: glow, a: 1.4 }, { sigma: 3 / k * 10, c: [150, 220, 255], a: 1.6 }], true); sv("path", { d: glyph.d, fill: "none", stroke: "#eaf9ff", "stroke-width": p.outlinePx / k * 10, "stroke-linejoin": "round", filter: `url(#${fl})` }, g2); gline = e; }
+          else sv("path", { d: glyph.d, fill: "#03104a", "fill-rule": "evenodd", stroke: css(mix(glow, [255, 255, 255], 0.25), 0.75), "stroke-width": 1.8 / k * 10, "stroke-linejoin": "round" }, g2);
+          return e;
+        };
+        for (let i = NL; i >= 1; i--) gLayers.push({ e: mkLayer("back"), i, back: true });
+        gLayers.push({ e: mkLayer("fill"), i: 0, back: false }); gLayers.push({ e: mkLayer("line"), i: 0, back: false });
       }
-      const tglow = abs(tile, { left: 0, top: 0, width: TW + "px", height: TH + "px", boxShadow: `0 0 18px 6px ${css(glow, 0.8)}, 0 0 60px 18px ${css(glow, 0.35)}`, opacity: 0, pointerEvents: "none" });
+      const tglow = abs(tile, { left: 0, top: 0, width: TW + "px", height: TH + "px", boxShadow: `0 0 22px 8px ${css(mix(glow, [200, 235, 255], 0.35), 0.9)}, 0 0 70px 22px ${css(glow, 0.45)}`, opacity: 0, pointerEvents: "none" });
       // the word under the tile: bold, wide, set to the measured width and capital height
-      const word = abs(plane, { left: p.tileX + "px", top: p.wordY + "px", whiteSpace: "nowrap", color: "#ececec", fontFamily: h.font(p.font), fontWeight: "800", fontSize: p.wordCap / 0.727 + "px", lineHeight: "1", opacity: 0, textShadow: `0 0 14px ${css(glow, 0.9)}` }, p.studios);
+      const word = abs(plane, { left: p.tileX + "px", top: p.wordY + "px", whiteSpace: "nowrap", color: "#ececec", fontFamily: h.font(p.font), fontWeight: "900", fontSize: p.wordCap / 0.727 + "px", lineHeight: "1", opacity: 0, textShadow: `0 0 14px ${css(glow, 0.9)}` }, p.studios);
       if (window.gsap) window.gsap.set(word, { xPercent: -50, force3D: true });
-      const fitWord = () => { const nat = word.scrollWidth, n = Math.max(1, (p.studios || "").length); word.style.letterSpacing = "0px"; const w0 = word.scrollWidth; word.style.letterSpacing = ((p.wordW - w0) / Math.max(1, n - 1)) + "px"; void nat; };
+      let ls0 = 0, nW = 1;
+      const fitWord = () => { nW = Math.max(1, (p.studios || "").length); word.style.letterSpacing = "0px"; const w0 = word.scrollWidth; ls0 = (p.wordW - w0) / Math.max(1, nW - 1); word.style.letterSpacing = ls0 + "px"; };
       fitWord();
       // loose lines of light that fly around the flare while the symbols break up
       const rnd = seeded(p.seed), frags = Array.from({ length: Math.round(p.frags) }, () => { const a = rnd() * 6.283, r = 60 + rnd() * 300, born = 1.55 + rnd() * 0.7; return { x: 800 + Math.cos(a) * r * 1.5, y: 560 + Math.sin(a) * r * 0.55, len: 24 + rnd() * 90, rot: (rnd() - 0.5) * 140, born, life: 0.35 + rnd() * 0.5, e: abs(plane, { left: "0", top: "0", width: "1px", height: "2px", background: "linear-gradient(90deg, rgba(255,255,255,0), #cfeaff 50%, rgba(255,255,255,0))", opacity: 0 }) }; });
-      const pr = { t: 0 };
+      const fLast = ["", ""], pr = { t: 0 };
+      // a tall frame: the plane is fitted to the width of the symbols, then zooms to the width of the tile for the logo (the centre of the composition stays on the centre of the frame)
+      const kLogo = tall ? Math.max(kk, 0.5 * w / TW) : kk, smooth = (x) => { const c = clamp(x, 0, 1); return c * c * (3 - 2 * c); };
       const update = (t) => {
         const gsap = window.gsap;
-        navy.style.opacity = String(clamp(at(nk, t)[0], 0, 1));
-        wash.style.opacity = String(clamp(at(wk, t)[0] * p.washK, 0, 1));
+        if (tall) { const kc = kk + (kLogo - kk) * smooth((t - 2.3) / 1.0); gsap.set(plane, { x: 965 * (kk - kc), y: 540 * (kk - kc), scale: kc, transformOrigin: "0 0", force3D: true }); }
+        { const a = clamp(at(nk, t)[0], 0, 1); el.style.background = css([ground[0] * a, ground[1] * a, ground[2] * a]); }
+        wash.style.opacity = String(clamp(at(wk, t)[0] * p.washK, 0, 1)); { const gx = at(gl, t)[0]; gsap.set(wash, { x: (gx - 965) * kk * 0.95, force3D: true }); }
         { const q = at(stk, t); gsap.set(streak, { y: q[0], force3D: true }); streak.style.opacity = String(clamp(q[1] * p.streakK, 0, 1)); }
-        { const q = at(gl, t), r = Math.max(0, q[2]) * p.flareK / R0; gsap.set(bloom, { x: q[0], y: q[1], scale: r, force3D: true }); bloom.style.opacity = String(clamp(q[3] * p.glowK, 0, 1)); const small = clamp(1 - r * R0 / 60, 0, 1); bRayH.style.opacity = String(0.9 * small); bRayV.style.opacity = String(0.8 * small); }
+        { const q = at(gl, t), r = Math.max(0, q[2]) * p.flareK / R0; const ex = 1 + (p.flareStretch - 1) * clamp((r * R0 - 30) / 50, 0, 1); gsap.set(bloom, { x: q[0], y: q[1], scaleX: r * ex, scaleY: r, force3D: true }); bloom.style.opacity = String(clamp(q[3] * p.glowK, 0, 1)); const small = clamp(1 - r * R0 / 60, 0, 1); bRayH.style.opacity = String(0.9 * small); bRayV.style.opacity = String(0.8 * small); }
         // symbols
         { const q = at(gk, t), look = at(lk, t), sq = at(sk, t);
           gsap.set(grp, { rotationY: q[0], rotationX: q[1], rotationZ: q[2], scale: q[3], x: q[4], y: q[5], force3D: true, transformOrigin: "965px 540px" });
-          const visible = q[6] > 0.001 && t < 2.3;
-          grp.style.opacity = String(clamp(q[6], 0, 1)); grp.style.display = visible ? "" : "none";
-          if (visible) syms.forEach((s, si) => {
-            if (si === 3) gsap.set(s.box, { rotationY: sq[0], rotationZ: sq[1], z: sq[2], x: sq[3], y: sq[4], force3D: true }); else gsap.set(s.box, { rotationY: 0, rotationZ: 0, z: 0, x: 0, y: 0 });
+          const visible = q[6] > 0.001 && t < 2.3, entry = t < 0.5;
+          grp.style.opacity = String(clamp(q[6], 0, 1)); grp.style.display = visible && entry ? "" : "none"; flat.style.display = visible && !entry ? "" : "none";
+          if (visible && !entry) { gsap.set(flat, { rotationY: q[0], rotationX: q[1], rotationZ: q[2], scale: q[3], x: q[4], y: q[5], force3D: true, transformOrigin: "965px 540px" }); flat.style.opacity = String(clamp(q[6], 0, 1)); const fo = String(clamp(look[0], 0, 1)), so = String(clamp(look[1] * p.rimK, 0, 1)); if (fo !== fLast[0] || so !== fLast[1]) { fLast[0] = fo; fLast[1] = so; fParts.forEach((f) => { f.body.setAttribute("fill-opacity", fo); f.rim.setAttribute("stroke-opacity", so); }); } }
+          if (visible && entry) syms.forEach((s, si) => {
+            if (si === 3) gsap.set(s.box, { rotationY: sq[0], rotationZ: sq[1], z: sq[2], x: sq[3], y: sq[4], rotationX: sq[5] || 0, force3D: true }); else gsap.set(s.box, { rotationY: 0, rotationZ: 0, rotationX: 0, z: 0, x: 0, y: 0 });
             const back = clamp(look[2], 0, 1); s.backs.forEach((b) => { b.style.display = back > 0.01 ? "" : "none"; b.style.opacity = String(back); });
             s.body.setAttribute("fill-opacity", String(clamp(look[0], 0, 1))); s.rim.setAttribute("stroke-opacity", String(clamp(look[1] * p.rimK, 0, 1)));
           });
@@ -125,14 +168,15 @@
         // tile
         { const q = at(tk, t), look = at(tlk, t);
           const vis = t >= tk[0][0] - 0.01;
-          tile.style.opacity = vis ? String(clamp(at(fk, t)[0] * (t < 3.6 ? clamp((t - 2.0) / 0.2, 0, 1) : 1), 0, 1)) : "0";
+          tile.style.opacity = vis ? String(clamp(at(fk, t)[0], 0, 1)) : "0";
           gsap.set(tile, { rotationY: q[0], rotationX: q[1], rotationZ: q[2], scale: q[3], x: q[4], y: q[5], force3D: true, transformOrigin: "50% 50%", transformPerspective: p.persp });
-          tedge.setAttribute("stroke-dashoffset", String(1 - clamp(look[0], 0, 1)));
-          const f = clamp(look[1], 0, 1); tfill.setAttribute("opacity", String(f)); tfill.setAttribute("fill", css(mix([40, 70, 150], [236, 236, 236], f))); tdark.setAttribute("opacity", String(0.9 * (1 - f)));
-          tglow.style.opacity = String(clamp(look[2] * p.glowK, 0, 1)); if (gline) gline.setAttribute("opacity", String(clamp(look[3], 0, 1))); if (gmark) gmark.setAttribute("fill", css(mix([20, 60, 160], [0, 0, 0], f)));
+          { const gq = at(gzk, t), NL = 5; gLayers.forEach((L) => { const gs = gq[2] || 1, org = `${(glyph ? (glyph.box[0] - glyph.tile[0] + glyph.box[2] / 2) : 216) + 60}px ${(glyph ? (glyph.box[1] - glyph.tile[1] + glyph.box[3] / 2) : 209) + 60}px`; if (L.back) { L.e.style.display = gq[1] > 0.5 ? "" : "none"; gsap.set(L.e, { z: gq[0] - gq[1] * L.i / NL, scale: gs, transformOrigin: org, force3D: true }); } else gsap.set(L.e, { z: Math.max(0.5, gq[0]), scale: gs, transformOrigin: org, force3D: true }); }); }
+          tedge.setAttribute("stroke-dashoffset", String(1 - clamp(look[0], 0, 1))); { const fe = clamp(look[1], 0, 1); tedge.setAttribute("stroke-width", String(2 - 1 * fe)); tedge.setAttribute("stroke", css(mix([207, 233, 255], [255, 255, 255], fe))); if (reg) reg.setAttribute("opacity", String(clamp((fe - 0.5) * 2, 0, 1))); }
+          const f = clamp(look[1], 0, 1); tfill.setAttribute("opacity", String(f > 0 ? 1 : 0)); tg0.setAttribute("stop-color", css(mix([6, 16, 60], [236, 236, 236], Math.pow(f, 1.2)))); tg1.setAttribute("stop-color", css(mix([40, 90, 210], [236, 236, 236], Math.pow(f, 0.55)))); tdark.setAttribute("opacity", String(clamp(look[4], 0, 1) * (1 - f)));
+          tglow.style.opacity = String(clamp(look[2] * p.glowK, 0, 1)); if (gline) gline.style.opacity = String(clamp(look[3], 0, 1)); if (gmark) { gmark.setAttribute("fill", css(mix([0, 0, 0], [18, 66, 235], 0.35 * clamp(1 - (t - 3.1) / 1.4, 0, 1) + 0.04))); gmark.setAttribute("opacity", String(clamp(look[5], 0, 1))); }
         }
         { const q = at(wdk, t), fd = at(fk, t)[0], vis = t >= wdk[0][0];
-          word.style.opacity = vis ? String(clamp(q[1] * fd, 0, 1)) : "0"; gsap.set(word, { y: q[2], force3D: true });
+          word.style.opacity = vis ? String(clamp(q[1] * fd, 0, 1)) : "0"; { const sc = q[4] || 1, sx = q[5] || sc; word.style.letterSpacing = (ls0 + (sx - sc) * p.wordW / (Math.max(1, nW - 1) * sc)) + "px"; gsap.set(word, { y: q[2], scale: sc, force3D: true, transformOrigin: "50% 50%" }); }
           const edge = (1 - q[0]) * 130 - 30, m = `linear-gradient(90deg, #000 ${100 - edge - 30}%, transparent ${100 - edge}%)`; void m;
           const c = mix([236, 236, 236], mix(glow, [150, 210, 255], 0.4), clamp(q[3], 0, 1)); word.style.color = css(c); word.style.textShadow = `0 0 ${14 * q[3] + 2}px ${css(glow, clamp(0.9 * q[3], 0, 1))}`;
           const o = clamp(q[0], 0, 1), mk = `linear-gradient(90deg, transparent ${(1 - o) * 100 - 20}%, #000 ${(1 - o) * 100 + 10}%)`; word.style.webkitMaskImage = o >= 0.999 ? "none" : mk; word.style.maskImage = o >= 0.999 ? "none" : mk;

@@ -63,6 +63,7 @@ def main():
     ap.add_argument("--regions", default="", help="x0,y0,x1,y1;... in 1920x1080 coordinates: ink box of each zone in both images")
     ap.add_argument("--ref-video", default="", help="compare with this video instead of the project reference (e.g. a rectified child)")
     ap.add_argument("--ref-offset", type=float, default=0.0, help="reference time = project time + offset")
+    ap.add_argument("--save-frames", default="", help="copy the rendered motion frames (full size) into this folder, named frame-<t>.png")
     ap.add_argument("--bg", default="", help="background colour r,g,b for the ink measure (default: the median of each image)")
     a = ap.parse_args()
     times = [float(x) for x in a.at.split(",") if x.strip()] if a.at else list(np.round(np.arange(a.t0, a.t1 + 1e-6, a.step), 3))
@@ -81,6 +82,10 @@ def main():
         files = sorted(snaps.glob("frame-*.png"))
         if len(files) != len(times):
             raise SystemExit(f"HyperFrames gave {len(files)} images for {len(times)} instants: {(r.stderr or r.stdout)[-600:]}")
+        if a.save_frames:
+            Path(a.save_frames).mkdir(parents=True, exist_ok=True)
+            for t, f in zip(times, files):
+                shutil.copy(f, Path(a.save_frames) / f"frame-{t:.2f}.png")
         w, h = a.width, round(a.width * H / W)
         font = ImageFont.load_default()
         rows, res = [], []
