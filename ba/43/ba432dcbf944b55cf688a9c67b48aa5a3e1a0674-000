@@ -1,0 +1,50 @@
+"""Trace the PlayStation mark from the reference (23 October 2026), workflow Premier Plan Mesure.
+Coverage field (dark glyph over the resting white tile), cubic upscale, cut at 0.5, potrace; writes the path into motion/runtime/zs-templates-playstation-glyph-1.js (window.ZSPlayStation).
+FR : decalque du logo PS sur un champ de couverture continu (jamais sur un masque binaire). Usage: python3 Scripts/PlayStationTrace.py <frame.png> [--scale 8]"""
+import json
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+from scipy import ndimage
+
+ROOT = Path(__file__).resolve().parents[1]
+OUT = ROOT / "motion" / "runtime" / "zs-templates-playstation-glyph-1.js"
+TILE = (744, 282, 1176, 702)        # measured tile box on the reference: x0, y0, x1, y1 (432 x 420)
+INK, PAPER = 0.0, 236.0              # measured: pure black glyph, tile fill 236
+REG = (835, 1090, 380, 640)          # not used for tracing, only for the report
+
+
+def main():
+    src = sys.argv[1]
+    k = int(sys.argv[sys.argv.index("--scale") + 1]) if "--scale" in sys.argv else 8
+    L = np.asarray(Image.open(src).convert("L")).astype(float)
+    x0, y0, x1, y1 = TILE
+    t = L[y0 + 3:y1 - 3, x0 + 3:x1 - 3]
+    cov = np.clip((PAPER - t) / (PAPER - INK), 0, 1)
+    cov[int((y1 - y0) * 0.86):, int((x1 - x0) * 0.86):] = 0          # the registered mark in the corner is typeset apart
+    big = ndimage.zoom(cov, k, order=3)
+    bm = (big > 0.5)
+    bm = ndimage.binary_opening(bm, iterations=1)
+    with tempfile.TemporaryDirectory() as d:
+        pbm = Path(d) / "g.pbm"
+        Image.fromarray((~bm * 255).astype("uint8")).convert("1").save(pbm)
+        svg = Path(d) / "g.svg"
+        subprocess.run(["potrace", str(pbm), "-b", "svg", "-o", str(svg), "-t", "40", "-a", "1.0", "-O", "0.4", "--tight"], check=True)
+        text = svg.read_text()
+    vb = re.search(r'viewBox="([^"]+)"', text).group(1)
+    tr = re.search(r'<g transform="([^"]+)"', text).group(1)
+    d_all = " ".join(re.findall(r'<path d="([^"]+)"', text))
+    ys, xs = np.where(bm)
+    box = [round(xs.min() / k + x0 + 3, 2), round(ys.min() / k + y0 + 3, 2), round((xs.max() - xs.min() + 1) / k, 2), round((ys.max() - ys.min() + 1) / k, 2)]   # glyph box on the reference, in pixels
+    data = {"box": box, "viewBox": vb, "transform": tr, "d": " ".join(d_all.split()), "tile": [x0, y0, x1, y1], "scale": k, "crop": [x0 + 3, y0 + 3, x1 - 3, y1 - 3]}
+    OUT.write_text("// 23 October 2026: PlayStation mark traced on the reference by Scripts/PlayStationTrace.py (coverage field, potrace). FR : decalque du logo.\nwindow.ZSPlayStation = " + json.dumps(data) + ";\n")
+    print("wrote", OUT, len(data["d"]), "chars", vb, tr)
+
+
+if __name__ == "__main__":
+    main()
