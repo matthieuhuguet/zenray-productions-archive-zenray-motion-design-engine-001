@@ -1,0 +1,63 @@
+"""Reproduction of the Sony logo 2021 reveal (youtube PjJ5VYkdgXI, 0:00 to 0:10, 1280x720), workflow Premier Plan Mesure (23 October 2026).
+Foreground only: the wordmark, the point light inside it and its flare; the ground is plain black. The keyed tables are measured on every frame by Scripts/SonyKeys.py (motion/reproductions/data/sony_keys.json).
+The reference lives in the refcache slug `sony-logo-2021`. FR : le logo Sony 2021 ; un motion de 10 s. Usage: python3 motion/reproductions/sony_logo.py [projet ...]"""
+import json
+import sys
+from pathlib import Path
+
+import ppm
+from ppm import T
+
+SLUG = "sony-logo-2021"
+PID = "sony-logo-2021-ppm"
+DATA = Path(__file__).resolve().parent / "data" / "sony_keys.json"
+# the variation (23 October 2026, Matthieu): the same reveal, the procedural capitals write ZENRAY; the light sits in the counter of the R and its path is scaled to it
+VARIANTS = {
+    PID: {"title": "Sony 2021 : logo", "params": {}},
+    "zenray-sony-reveal-ppm": {"title": "ZenRay : révélation façon Sony", "params": {"word": "ZENRAY", "font": "procedural", "lightLetter": "R", "lightDx": 11, "lightDy": -14, "lightPathK": 0.35, "distScale": 1.45, "gap": 14}},
+}
+LENGTH = 10.0
+
+
+def keys() -> dict:
+    d = json.loads(DATA.read_text())
+    f = lambda rows: [" | ".join(str(v) for v in r) for r in rows]  # noqa: E731
+    lit = [[1.1, 584, 393] + [0] * 8] + d["lit"]
+    glow = [[1.1, 1.0] + [0] * 9] + d["glow"]
+    return {"litKeys": f(lit), "glowKeys": f(glow), "tintKeys": f(d["tint"]), "pushKeys": f([[0, 1, 647.5]] + [[r[0], r[1], r[2]] for r in d["push"]]),
+            **{"lit" + c: f([[1.1] + [0] * 8] + d["lit" + c]) for c in "SONY"}}
+
+
+def controls(ids=None) -> list:
+    ids = ids or ["b01"]
+    tg = lambda k: [T(i, k) for i in ids]  # noqa: E731
+    num = lambda i, label, g, lo, hi, st: {"id": i, "label": label, "type": "number", "group": g, "min": lo, "max": hi, "step": st, "targets": tg(i)}  # noqa: E731
+    return [
+        {"id": "word", "label": "Mot", "type": "text", "group": "Phrases", "targets": tg("word")},
+        {"id": "font", "label": "Lettres", "type": "select", "group": "Phrases", "options": ["traced", "procedural"], "targets": tg("font")},
+        {"id": "glowColor", "label": "Teinte de la lumière", "type": "color", "group": "Couleurs", "targets": tg("glowColor")},
+        num("paper", "Blanc du mot", "Lumière", 120, 255, 1), num("litK", "Force de la révélation", "Lumière", 0, 2, 0.01), num("glowK", "Lueur autour de la lumière", "Lumière", 0, 3, 0.01),
+        num("starK", "Étoile et traînée", "Lumière", 0, 3, 0.01), num("ghostK", "Reflets d'objectif", "Lumière", 0, 3, 0.01), num("pushK", "Poussée de caméra", "Rythme", 0, 3, 0.01),
+        num("gap", "Espace entre lettres (lettres procédurales)", "Lettres", 0, 80, 0.5),
+        {"id": "lightLetter", "label": "Lettre qui porte la lumière", "type": "text", "group": "Lettres", "targets": tg("lightLetter")},
+        num("lightDx", "Lumière : décalage x", "Lettres", -80, 80, 0.5), num("lightDy", "Lumière : décalage y", "Lettres", -80, 80, 0.5),
+        num("lightPathK", "Lumière : amplitude du trajet", "Lettres", 0, 2, 0.01), num("distScale", "Révélation : échelle des distances", "Lettres", 0.3, 4, 0.01),
+        {"id": "starKeys", "label": "Étoile : temps | opacité | longueur H | longueur V | traînée", "type": "lines", "group": "Lumière", "targets": tg("starKeys")},
+        {"id": "coreKeys", "label": "Cœur : temps | opacité | rayon", "type": "lines", "group": "Lumière", "targets": tg("coreKeys")},
+        {"id": "ghostEnv", "label": "Reflets : temps | opacité | échelle", "type": "lines", "group": "Lumière", "targets": tg("ghostEnv")},
+        {"id": "pushKeys", "label": "Poussée de caméra : temps | échelle | centre x", "type": "lines", "group": "Rythme", "targets": tg("pushKeys")},
+    ]
+
+
+def build_one(pid: str = PID) -> dict:
+    v = VARIANTS[pid]
+    params = dict(keys()); params.update(v["params"])
+    pr = ppm.build(v["title"], SLUG, [(0.0, "sony-open", params)], LENGTH, controls(), fmt="16x9", bg="#000000", ink="#e8f0ff", accent="#9cc8ff",
+                   doc=f"23 October 2026: {v['title']}, reproduction of the Sony logo 2021 (0:00 to 0:10), foreground only (workflow Premier Plan Mesuré).")
+    pr["scenes"][0]["ref"] = {"start": 0.0}; pr["referenceOffset"] = 0.0
+    return pr
+
+
+if __name__ == "__main__":
+    for pid in sys.argv[1:] or list(VARIANTS):
+        ppm.run(pid, build_one(pid))

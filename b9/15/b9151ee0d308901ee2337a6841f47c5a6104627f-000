@@ -291,6 +291,26 @@
       "id": "playstation-studios-opening-ppm",
       "group": "PlayStation Studios",
       "reference": "playstation-studios-opening"
+    },
+    {
+      "id": "zenray-logo-opening-ppm",
+      "group": "PlayStation Studios",
+      "reference": "playstation-studios-opening"
+    },
+    {
+      "id": "sony-logo-2021-ppm",
+      "group": "Sony",
+      "reference": "sony-logo-2021"
+    },
+    {
+      "id": "zenray-sony-reveal-ppm",
+      "group": "Sony",
+      "reference": "sony-logo-2021"
+    },
+    {
+      "id": "zenray-sony-playstation-ppm",
+      "group": "Sony",
+      "reference": "sony-logo-2021"
     }
   ],
   "formats": [

@@ -1,0 +1,38 @@
+"""ZenRay opening in two acts (23 October 2026, Matthieu), workflow Premier Plan Mesure.
+Act 1, 0 to 6.5 s: the Sony logo 2021 reveal, the procedural capitals write ZENRAY (template sony-open, variation zenray-sony-reveal-ppm).
+Act 2, from 6.5 s: the PlayStation Studios opening with the ZenRay logo, where the four PlayStation buttons are replaced by the word ZENRAY: the white letters of act 1 turn into blue glass,
+the lens flare swallows them, the ZenRay mark draws itself in its tile and the word comes up under it (template ps-open, symWord = ZENRAY).
+FR : ouverture ZenRay en deux actes : la revelation facon Sony (ZENRAY en capitales procedurales), puis l'ouverture PlayStation ou le mot ZENRAY remplace les quatre boutons. Usage: python3 motion/reproductions/zenray_sony_playstation.py"""
+import sys
+
+import playstation_studios as PSS
+import ppm
+import sony_logo as SONY
+from ppm import T
+
+PID = "zenray-sony-playstation-ppm"
+SLUG = SONY.SLUG
+HANDOFF = 6.5   # act 2 starts once the word has reached its paper white (6.5 s of the reveal): the 6 to 10 s of rest and camera push of the Sony reference are cut (Matthieu, 23 October 2026)
+# act 2 starts from the end state of act 1 (the white paper, no camera push), so the cut is invisible
+PS_PARAMS = {
+    "logo": "zenray", "studios": "ZENRAY", "symWord": "ZENRAY", "wordFont": "inter", "wordTrack": 0.12,
+    "groupKeys": ["0 | 0 | 0 | 0 | 1.0 | 0 | 0 | 1", "0.5 | 0 | 0 | 0 | 1.01 | 0 | 0 | 1", "0.6 | 0 | 0 | 0 | 1 | 0 | 0 | 1", "1.0 | 0 | 0 | 0 | 0.91 | -12 | 0 | 1", "1.4 | 0 | 0 | 0 | 0.79 | -4 | 3 | 1", "1.6 | 14 | 0 | -2 | 0.72 | 2 | 3 | 0.9", "1.8 | 28 | 0 | -5 | 0.62 | 6 | 3 | 0.7", "2.15 | 44 | 0 | -8 | 0.5 | 16 | 4 | 0"],
+    "squareKeys": ["0 | 0 | 0 | 0 | 0 | 0 | 0", "0.5 | 0 | 0 | 0 | 0 | 0 | 0"],
+    "symLook": ["0 | 1 | 1 | 0 | 1", "0.15 | 1 | 1 | 0 | 1", "0.6 | 1 | 1 | 0 | 0", "1.1 | 1 | 1 | 0 | 0", "1.7 | 0.15 | 0.7 | 0 | 0"],
+}
+
+
+def build_one(pid: str = PID) -> dict:
+    sony = SONY.build_one("zenray-sony-reveal-ppm")
+    sp = sony["scenes"][0]["params"]
+    ps = dict(PS_PARAMS)
+    controls = SONY.controls(["b01"]) + [dict(c, id="ps_" + c["id"], label="PlayStation : " + c["label"], group="PlayStation · " + c.get("group", "")) for c in PSS.controls(["b02"])]
+    pr = ppm.build("ZenRay : Sony puis PlayStation", SLUG, [(0.0, "sony-open", dict(sp)), (HANDOFF, "ps-open", ps)], HANDOFF + 8.0, controls, fmt="16x9", bg="#000000", ink="#e8f0ff", accent="#2f55f5",
+                   doc="23 October 2026: ZenRay, the Sony logo reveal (procedural capitals) then the PlayStation Studios opening where the four buttons are replaced by the word ZENRAY (workflow Premier Plan Mesuré).")
+    pr["scenes"][0]["ref"] = {"start": 0.0}; pr["referenceOffset"] = 0.0
+    return pr
+
+
+if __name__ == "__main__":
+    for pid in sys.argv[1:] or [PID]:
+        ppm.run(pid, build_one(pid))

@@ -43,9 +43,9 @@ try {
             else if (th === "Compositor" && e.name === "RunTask") sum.comp += e.dur;
             else if (th === "VizCompositorThread" && e.name === "DisplayScheduler::DrawAndSwap") { sum.draw += e.dur; draws.push(e.dur / 1000); } });
           const f = Math.max(1, run.frames); draws.sort((x, y) => x - y); mainTasks.sort((x, y) => x - y);
-          win.push({ at: +start.toFixed(1), main: sum.main / 1000 / f, raster: sum.raster / 1000 / f, comp: sum.comp / 1000 / f, draw: sum.draw / 1000 / f, drawMax: draws[draws.length - 1] || 0, taskMax: mainTasks[mainTasks.length - 1] || 0 });
+          win.push({ at: +start.toFixed(1), main: sum.main / 1000 / f, raster: sum.raster / 1000 / f, comp: sum.comp / 1000 / f, draw: sum.draw / 1000 / f, drawMax: draws[draws.length - 1] || 0, taskMax: mainTasks[mainTasks.length - 1] || 0, frames: f, drawCount: draws.length });
         }
-        if (process.env.ZS_WINDOWS) win.forEach((w) => console.log(`  window @${w.at}s main ${w.main.toFixed(2)} raster ${w.raster.toFixed(2)} comp ${w.comp.toFixed(2)} draw ${w.draw.toFixed(2)} drawMax ${w.drawMax.toFixed(1)}`));   // 23 October 2026: ZS_WINDOWS=1 lists every window, not only the worst one
+        if (process.env.ZS_WINDOWS) win.forEach((w) => console.log(`  window @${w.at}s main ${w.main.toFixed(2)} raster ${w.raster.toFixed(2)} comp ${w.comp.toFixed(2)} draw ${w.draw.toFixed(2)} drawMax ${w.drawMax.toFixed(1)} frames ${w.frames} draws ${w.drawCount}`));   // 23 October 2026: ZS_WINDOWS=1 lists every window, not only the worst one
         const tot = (w) => w.main + w.raster + w.comp + w.draw, worst = win.reduce((m, w) => (tot(w) > tot(m) ? w : m), win[0]);
         const r = { id, format, nodes: info.nodes, msPerFrame: +tot(worst).toFixed(2), main: +worst.main.toFixed(2), raster: +worst.raster.toFixed(2), comp: +worst.comp.toFixed(2), draw: +worst.draw.toFixed(2), drawMax: +worst.drawMax.toFixed(1), taskMax: +worst.taskMax.toFixed(1), at: worst.at };
         rows.push(r); console.log(`${id.slice(0, 44).padEnd(44)} n${String(r.nodes).padStart(5)} TOTAL ${String(r.msPerFrame).padStart(6)} ms/frame | main ${String(r.main).padStart(5)} raster ${String(r.raster).padStart(5)} comp ${String(r.comp).padStart(5)} draw ${String(r.draw).padStart(5)} drawMax ${r.drawMax} taskMax ${r.taskMax} @${r.at}s`); await tab.close(); continue;

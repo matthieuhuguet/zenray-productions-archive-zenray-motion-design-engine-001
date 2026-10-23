@@ -1,0 +1,3 @@
+// 23 October 2026: logo "zenray" for the ps-open template, written by Scripts/LogoData.mjs from ZenRayLogoSvgBlackTransparent.svg. FR : donnees du logo.
+window.ZSLogos = window.ZSLogos || {};
+window.ZSLogos["zenray"] = {"name":"zenray","box":[797,382.09,326,219.83],"viewBox":"0 0 873 588.68","transform":"translate(-75.5,-218.16)","unit":1,"d":"M239.39,558.61h0A244.75,244.75,0,0,1,430.7,466.52H784.26L926.19,278.14,242.31,276.6a244.71,244.71,0,0,1-120.7-32.15L75.5,218.16Z M784.61,466.39h0A244.75,244.75,0,0,1,593.3,558.48H239.74L97.81,746.86l683.88,1.54a244.71,244.71,0,0,1,120.7,32.15l46.11,26.29Z","tile":[744,282,1176,702],"registered":false};

@@ -1,0 +1,48 @@
+"""One frame, N proposals of the word under the tile (23 October 2026).
+Renders the same instant of a project with different scene-1 parameter sets and puts the crops side by side, labelled.
+FR : un instant, N propositions du mot ; usage: WordVariants.py <projet> --at 5.4 --set "wordFont=inter,wordTrack=0.06" --set "..." """
+import argparse, copy, json, shutil, sys, tempfile
+from pathlib import Path
+from PIL import Image, ImageDraw, ImageFont
+REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO / "motion"))
+import server  # noqa: E402
+
+ap = argparse.ArgumentParser()
+ap.add_argument("project")
+ap.add_argument("--at", type=float, default=5.4)
+ap.add_argument("--set", action="append", required=True, help="name=value,name=value")
+ap.add_argument("--crop", default="520,300,1400,880", help="x0,y0,x1,y1 in the 1920x1080 frame")
+ap.add_argument("--out", required=True)
+a = ap.parse_args()
+base = server.read_project(a.project)
+x0, y0, x1, y1 = [int(v) for v in a.crop.split(",")]
+tiles = []
+orig = server.read_project
+for i, spec in enumerate(a.set):
+    p = copy.deepcopy(base)
+    over = {}
+    for kv in spec.split(","):
+        k, v = kv.split("=")
+        try: v = float(v)
+        except ValueError: pass
+        over[k] = v
+    p["scenes"][0]["params"].update(over)
+    server.read_project = lambda pid, _p=p: _p if pid == a.project else orig(pid)
+    work = Path(tempfile.mkdtemp(prefix="zrmd-wv-"))
+    try:
+        page = server.cook(a.project, work / "page")
+        server.hyperframes(page, "snapshot", "--at", f"{a.at:.3f}", "--no-end", "-o", str(work / "s"), timeout=300)
+        f = sorted((work / "s").glob("frame-*.png"))[0]
+        tiles.append((spec, Image.open(f).convert("RGB").crop((x0, y0, x1, y1))))
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+server.read_project = orig
+w, h = tiles[0][1].size
+sheet = Image.new("RGB", (w * len(tiles) + 8 * (len(tiles) - 1), h + 34), (20, 20, 20))
+d = ImageDraw.Draw(sheet)
+fnt = ImageFont.truetype("/Users/zenray/Library/Fonts/InterVariable.ttf", 18)
+for i, (spec, im) in enumerate(tiles):
+    sheet.paste(im, (i * (w + 8), 34)); d.text((i * (w + 8) + 8, 7), f"{'ABCDEF'[i]}  {spec}", fill=(240, 240, 240), font=fnt)
+sheet.save(a.out)
+print(a.out, sheet.size)

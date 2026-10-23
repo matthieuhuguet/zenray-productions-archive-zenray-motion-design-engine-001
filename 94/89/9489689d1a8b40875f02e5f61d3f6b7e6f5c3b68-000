@@ -1,0 +1,24 @@
+"""Contact sheet of a project at chosen instants (23 October 2026). FR : planche d'un projet a des instants choisis.
+Usage: ProjectSheet.py <projet> out.png t1,t2,... [--cols 3] [--width 640]"""
+import argparse, shutil, sys, tempfile
+from pathlib import Path
+from PIL import Image, ImageDraw
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "motion"))
+import server  # noqa: E402
+
+ap = argparse.ArgumentParser(); ap.add_argument("project"); ap.add_argument("out"); ap.add_argument("times"); ap.add_argument("--cols", type=int, default=3); ap.add_argument("--width", type=int, default=640)
+a = ap.parse_args()
+ts = [float(x) for x in a.times.split(",")]
+work = Path(tempfile.mkdtemp(prefix="zrmd-sheet-"))
+try:
+    page = server.cook(a.project, work / "page")
+    server.hyperframes(page, "snapshot", "--at", ",".join(f"{t:.3f}" for t in ts), "--no-end", "-o", str(work / "s"), timeout=900)
+    fs = sorted((work / "s").glob("frame-*.png"))
+    W = a.width; ims = [Image.open(f).convert("RGB") for f in fs]; H = int(W * ims[0].height / ims[0].width)
+    rows = (len(ims) + a.cols - 1) // a.cols
+    S = Image.new("RGB", (W * a.cols, H * rows)); d = ImageDraw.Draw(S)
+    for i, (t, im) in enumerate(zip(ts, ims)):
+        S.paste(im.resize((W, H), Image.LANCZOS), ((i % a.cols) * W, (i // a.cols) * H)); d.text(((i % a.cols) * W + 6, (i // a.cols) * H + 6), f"{t}s", fill=(255, 255, 0))
+    S.save(a.out); print(a.out, S.size)
+finally:
+    shutil.rmtree(work, ignore_errors=True)

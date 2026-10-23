@@ -9,15 +9,23 @@ from ppm import T
 
 SLUG = "playstation-studios-opening"
 PID = "playstation-studios-opening-ppm"
+# variants: the same animation with another mark and word (23 October 2026, Matthieu: the ZenRay logo and the word ZENRAY; the contours stay blue like the original, their cores are white). Logo data: Scripts/LogoData.mjs
+VARIANTS = {
+    PID: {"title": "PlayStation Studios : ouverture", "params": {}},
+    "zenray-logo-opening-ppm": {"title": "ZenRay : ouverture", "params": {"logo": "zenray", "studios": "ZENRAY"}},
+}
 START, LENGTH = 9.0, 8.0
 
 
-def controls() -> list:
-    ids = ["b01"]
+def controls(ids=None) -> list:
+    ids = ids or ["b01"]
     tg = lambda k: [T(i, k) for i in ids]  # noqa: E731
     num = lambda i, label, g, lo, hi, st: {"id": i, "label": label, "type": "number", "group": g, "min": lo, "max": hi, "step": st, "targets": tg(i)}  # noqa: E731
     return [
         {"id": "studios", "label": "Mot sous la tuile", "type": "text", "group": "Phrases", "targets": tg("studios")},
+        {"id": "logo", "label": "Logo de la tuile", "type": "select", "group": "Phrases", "options": ["playstation", "zenray"], "targets": tg("logo")},
+        {"id": "contour", "label": "Couleur du contour lumineux du logo", "type": "color", "group": "Couleurs", "targets": tg("contour")},
+        num("contourMix", "Contour : part dans les halos du logo, de la tuile et du mot", "Lumière", 0, 1, 0.01),
         {"id": "blue", "label": "Bleu des symboles", "type": "color", "group": "Couleurs", "targets": tg("blue")},
         {"id": "glowColor", "label": "Couleur de la lumière", "type": "color", "group": "Couleurs", "targets": tg("glowColor")},
         {"id": "ground", "label": "Fond avant l'éclat", "type": "color", "group": "Couleurs", "targets": tg("ground")},
@@ -28,20 +36,22 @@ def controls() -> list:
         {"id": "squareKeys", "label": "Carré, mouvement propre : temps | rotation Y | Z | z | dx | dy | rotation X", "type": "lines", "group": "Symboles", "targets": tg("squareKeys")},
         {"id": "glintKeys", "label": "Éclat : temps | x | y | rayon | opacité", "type": "lines", "group": "Lumière", "targets": tg("glintKeys")},
         {"id": "tileKeys", "label": "Tuile : temps | rotation Y | X | Z | échelle | dx | dy", "type": "lines", "group": "Tuile", "targets": tg("tileKeys")},
+        {"id": "edgeKeys", "label": "Cadre en comètes : temps | haut | droite | bas | gauche | dépassement | apaisement | opacité", "type": "lines", "group": "Tuile", "targets": tg("edgeKeys")},
         {"id": "glyphKeys", "label": "Logo en verre : temps | z | épaisseur | agrandissement", "type": "lines", "group": "Tuile", "targets": tg("glyphKeys")},
-        {"id": "tileLook", "label": "Tuile : temps | contour | remplissage | halo | contour logo | verre | logo plein", "type": "lines", "group": "Tuile", "targets": tg("tileLook")},
+        {"id": "tileLook", "label": "Tuile : temps | cadre | remplissage | halo | contour logo | verre | logo plein", "type": "lines", "group": "Tuile", "targets": tg("tileLook")},
         {"id": "wordKeys", "label": "Mot : temps | balayage | opacité | montée | lumière", "type": "lines", "group": "Tuile", "targets": tg("wordKeys")},
         {"id": "fadeKeys", "label": "Fondu final : temps | opacité", "type": "lines", "group": "Rythme", "targets": tg("fadeKeys")},
     ]
 
 
-def build_one() -> dict:
-    params = {}
-    pr = ppm.build("PlayStation Studios : ouverture", SLUG, [(0.0, "ps-open", params)], LENGTH, controls(), fmt="16x9", bg="#000000", ink="#e8f0ff", accent="#2f55f5",
-                   doc="23 October 2026: PlayStation Studios opening animation (0:09 to 0:17), foreground only (workflow Premier Plan Mesuré).")
+def build_one(pid: str = PID) -> dict:
+    v = VARIANTS[pid]
+    pr = ppm.build(v["title"], SLUG, [(0.0, "ps-open", dict(v["params"]))], LENGTH, controls(), fmt="16x9", bg="#000000", ink="#e8f0ff", accent="#2f55f5",
+                   doc=f"23 October 2026: {v['title']}, variation of the PlayStation Studios opening animation (0:09 to 0:17), foreground only (workflow Premier Plan Mesuré).")
     pr["scenes"][0]["params"]["film0"] = START; pr["scenes"][0]["ref"] = {"start": START}; pr["referenceOffset"] = START
     return pr
 
 
 if __name__ == "__main__":
-    ppm.run(PID, build_one())
+    for pid in sys.argv[1:] or list(VARIANTS):
+        ppm.run(pid, build_one(pid))

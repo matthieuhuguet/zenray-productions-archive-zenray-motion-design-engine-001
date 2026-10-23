@@ -1,0 +1,119 @@
+"""Union outline of every procedural Sony capital (23 October 2026).
+The capitals of zs-templates-sony-font-2.js are drawn as overlapping parts (stem, serifs, arms): fine to fill, wrong to stroke (every part would show its own outline).
+This rasterises each glyph x8 (parts added, holes cut by orientation), traces it with potrace at alphamax 0 (sharp corners), and writes one outline per glyph in
+motion/runtime/zs-templates-sony-font-2u.js (window.ZSSonyFont2U), which glyph() prefers.  FR : contour unique de chaque capitale procedurale.  Usage: python3 Scripts/SonyFontUnion.py"""
+import json
+import math
+import re
+import subprocess
+import tempfile
+from pathlib import Path
+
+import numpy as np
+from PIL import Image, ImageDraw
+
+ROOT = Path(__file__).resolve().parents[1]
+JS = "global.window={};require('%s');const F=window.ZSSonyFont2;const o={};for(const c of Object.keys(F.widths)){const g=F.glyph(c);o[c]={w:g.w,parts:g.parts.map(p=>p.d)}};console.log(JSON.stringify({cap:F.cap,g:o}));" % (ROOT / "motion/runtime/zs-templates-sony-font-2.js")
+K, PAD = 8, 10
+
+
+def subpaths(d):
+    """Polygons (lists of points) of a path made of M, H, V, L, A and z; arcs between diametrically opposite points are sampled."""
+    out = []
+    for sub in re.findall(r"M[^z]+z", d):
+        toks = re.findall(r"[MHVLAz]|-?\d+(?:\.\d+)?", sub); i = 0; pts = []; cur = (0.0, 0.0)
+        while i < len(toks):
+            c = toks[i]; i += 1
+            if c == "M" or c == "L":
+                x, y = float(toks[i]), float(toks[i + 1]); i += 2; cur = (x, y); pts.append(cur)
+                while i < len(toks) and re.match(r"-?\d", toks[i]):   # implicit lineto pairs after L / M: "L" lists are comma separated pairs in the font file
+                    x, y = float(toks[i]), float(toks[i + 1]); i += 2; cur = (x, y); pts.append(cur)
+            elif c == "H":
+                cur = (float(toks[i]), cur[1]); i += 1; pts.append(cur)
+            elif c == "V":
+                cur = (cur[0], float(toks[i])); i += 1; pts.append(cur)
+            elif c == "A":
+                rx, ry, _rot, large, sweep, x, y = (float(t) for t in toks[i:i + 7]); i += 7
+                cx, cy = (cur[0] + x) / 2, (cur[1] + y) / 2   # the arcs of the font join the two ends of a vertical diameter
+                a0 = math.atan2(cur[1] - cy, 0.0001 + cur[0] - cx) if False else math.atan2(cur[1] - cy, 0.0)
+                step = math.pi / 40 * (1 if sweep else -1)
+                for k in range(1, 41):
+                    ang = a0 + step * k; pts.append((cx + rx * math.cos(ang) * (1 if True else 1), cy + ry * math.sin(ang)))
+                cur = (x, y)
+        if len(pts) >= 3: out.append(pts)
+    return out
+
+
+def area(p):
+    return sum(p[i][0] * p[(i + 1) % len(p)][1] - p[(i + 1) % len(p)][0] * p[i][1] for i in range(len(p))) / 2
+
+
+def main():
+    data = json.loads(subprocess.run(["node", "-e", JS], capture_output=True, text=True, check=True).stdout); cap = data["cap"]
+    res = {}
+    for c, g in data["g"].items():
+        if not g["parts"]:
+            continue
+        W, H = int(math.ceil(g["w"])) + 2 * PAD, cap + 2 * PAD
+        im = Image.new("L", (W * K, H * K), 0); dr = ImageDraw.Draw(im)
+        polys = [p for d in g["parts"] for p in subpaths(d)]
+        for p in sorted(polys, key=lambda q: -area(q)):   # positive (filled) first, negative (holes) after
+            dr.polygon([((x + PAD) * K, (y + PAD) * K) for x, y in p], fill=255 if area(p) > 0 else 0)
+        with tempfile.TemporaryDirectory() as t:
+            pbm = Path(t) / "g.pbm"; Image.fromarray((np.asarray(im) < 128).astype("uint8") * 255).convert("1").save(pbm)
+            svg = Path(t) / "g.svg"
+            subprocess.run(["potrace", str(pbm), "-b", "svg", "-o", str(svg), "-a", "0", "-O", "0.2", "-t", "4", "--tight" if False else "-u", "10"], check=True)
+            text = svg.read_text()
+        m = re.search(r'<g transform="translate\(([-\d.]+),([-\d.]+)\) scale\(([-\d.]+),([-\d.]+)\)"', text)
+        tx, ty, sx, sy = (float(v) for v in m.groups())
+        dd = " ".join(" ".join(re.findall(r'<path d="([^"]+)"', text)).split())
+        toks = re.findall(r"[MmLlCcZz]|-?\d+(?:\.\d+)?", dd); i = 0; cur = (0.0, 0.0); out = []; start = (0.0, 0.0)
+        tr = lambda x, y: (((tx + sx * x) / K) - PAD, ((ty + sy * y) / K) - PAD)   # noqa: E731
+        f = lambda v: ("%.2f" % v).rstrip("0").rstrip(".")   # noqa: E731
+        while i < len(toks):
+            k = toks[i]; i += 1
+            if k in "Mm":
+                x, y = float(toks[i]), float(toks[i + 1]); i += 2; cur = (x, y) if k == "M" else (cur[0] + x, cur[1] + y); start = cur; px, py = tr(*cur); out.append(f"M{f(px)},{f(py)}")
+            elif k in "Ll":
+                while i < len(toks) and re.match(r"-?\d", toks[i]):
+                    x, y = float(toks[i]), float(toks[i + 1]); i += 2; cur = (x, y) if k == "L" else (cur[0] + x, cur[1] + y); px, py = tr(*cur); out.append(f"L{f(px)},{f(py)}")
+            elif k in "Cc":
+                while i < len(toks) and re.match(r"-?\d", toks[i]):
+                    v = [float(t) for t in toks[i:i + 6]]; i += 6
+                    pts = [(v[j], v[j + 1]) if k == "C" else (cur[0] + v[j], cur[1] + v[j + 1]) for j in (0, 2, 4)]
+                    out.append("C" + " ".join(f"{f(tr(*q)[0])},{f(tr(*q)[1])}" for q in pts)); cur = pts[2]
+            else:
+                out.append("z"); cur = start
+        res[c] = {"w": g["w"], "d": "".join(out)}
+    # N, Y, S and O are not drawn: they are the letters TRACED on the Sony reference (zs-templates-sony-font-1.js), converted to absolute outlines in the cap box (23 October 2026, Matthieu: "tu les as depuis SONY")
+    t1 = (ROOT / "motion/runtime/zs-templates-sony-font-1.js").read_text(); F1 = json.loads(t1[t1.index("= ") + 2:t1.rindex(";")])
+    flat_top = {L["ch"]: L["top"] for L in F1["letters"]}["N"]
+    for L in F1["letters"]:
+        g = F1["glyphs"][L["ch"]]; m = re.match(r"scale\(([-\d.]+)\) translate\(([-\d.]+),([-\d.]+)\) scale\(([-\d.]+),([-\d.]+)\)", g["tf"]); k, a0, b0, sx, sy = (float(v) for v in m.groups())
+        dy = L["top"] - flat_top   # S and O overshoot the cap line by 5 px
+        toks = re.findall(r"[MmLlCcZz]|-?\d+(?:\.\d+)?", g["d"]); i = 0; cur = (0.0, 0.0); start = cur; out = []
+        tr = lambda x, y: (k * (a0 + sx * x), k * (b0 + sy * y) + dy)   # noqa: E731
+        f = lambda v: ("%.2f" % v).rstrip("0").rstrip(".")   # noqa: E731
+        while i < len(toks):
+            c = toks[i]; i += 1
+            if c in "Mm":
+                x, y = float(toks[i]), float(toks[i + 1]); i += 2; cur = (x, y) if c == "M" else (cur[0] + x, cur[1] + y); start = cur; q = tr(*cur); out.append(f"M{f(q[0])},{f(q[1])}")
+                while i < len(toks) and re.match(r"-?\d", toks[i]):
+                    x, y = float(toks[i]), float(toks[i + 1]); i += 2; cur = (cur[0] + x, cur[1] + y) if c == "m" else (x, y); q = tr(*cur); out.append(f"L{f(q[0])},{f(q[1])}")
+            elif c in "Ll":
+                while i < len(toks) and re.match(r"-?\d", toks[i]):
+                    x, y = float(toks[i]), float(toks[i + 1]); i += 2; cur = (x, y) if c == "L" else (cur[0] + x, cur[1] + y); q = tr(*cur); out.append(f"L{f(q[0])},{f(q[1])}")
+            elif c in "Cc":
+                while i < len(toks) and re.match(r"-?\d", toks[i]):
+                    v = [float(t) for t in toks[i:i + 6]]; i += 6
+                    pts = [(v[j], v[j + 1]) if c == "C" else (cur[0] + v[j], cur[1] + v[j + 1]) for j in (0, 2, 4)]
+                    out.append("C" + " ".join(f"{f(tr(*q)[0])},{f(tr(*q)[1])}" for q in pts)); cur = pts[2]
+            else:
+                out.append("z"); cur = start
+        res[L["ch"]] = {"w": L["w"], "d": "".join(out), "traced": True}
+    Path(ROOT / "motion/runtime/zs-templates-sony-font-2u.js").write_text("// 23 October 2026: one union outline per procedural Sony capital, generated by Scripts/SonyFontUnion.py (x8 raster, potrace alphamax 0). FR : contours uniques des capitales.\nwindow.ZSSonyFont2U = " + json.dumps({"cap": cap, "glyphs": res}) + ";\n")
+    print("wrote", len(res), "glyphs", {c: len(v["d"]) for c, v in res.items()})
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,45 @@
+// 23 October 2026: the procedural capitals of the Sony wordmark style (a bold wide Didone: thick round sides, thin hairline stems, flat slab serifs), drawn in code, cap height 88 (reference px of the 1280x720 reference).
+// Every dimension is a parameter measured on the traced SONY (Scripts/SonyTrace.py, stems and serifs read on the rows of N, Y, O): thick stroke T, thin stem t, thin horizontal h, diagonal D, serif height sh.
+// ZSSonyFont2.glyph(ch) -> { w, parts: [{ d, evenodd }] } in pixels, origin = top left of the cap box (y down); ZSSonyFont2.kern(a, b) = the kerning of the pair; ZSSonyFont2.has(ch).
+// FR : capitales procedurales du style Sony (didone large et gras), dessinees en code, cotes mesurees sur SONY decalque.
+(function () {
+  const F = (window.ZSSonyFont2 = window.ZSSonyFont2 || {});
+  F.cap = 88;
+  F.metrics = { T: 28, t: 17, h: 13, D: 37, sh: 10, ext: 16, over: 5 };
+  F.widths = { S: 114, O: 133, A: 146, E: 108, N: 137, R: 126, Y: 135, Z: 112, I: 56, L: 104, T: 112, H: 138, V: 140, X: 134 };
+  F.kerns = { SO: 7, NY: -2, AY: -16, YA: -14, RA: -4, EN: 2, ZE: 2, NR: 2, AV: -12, VA: -12, TA: -12, LY: -14, LT: -12 };
+  const f1 = (v) => (Math.round(v * 100) / 100).toString();
+  const poly = (pts) => "M" + pts.map((p) => f1(p[0]) + "," + f1(p[1])).join("L") + "z";
+  const rect = (x, y, w, h) => poly([[x, y], [x + w, y], [x + w, y + h], [x, y + h]]);
+  F.glyph = (ch) => {
+    const cu = String(ch || "").toUpperCase(), U = window.ZSSonyFont2U;
+    if (U && U.glyphs[cu]) return { w: U.glyphs[cu].w, parts: [{ d: U.glyphs[cu].d, evenodd: false }], h: F.cap };   // one union outline per letter (Scripts/SonyFontUnion.py): strokes show no inner seams
+    const c = String(ch || "").toUpperCase(), m = F.metrics, H = F.cap, T = m.T, t = m.t, h = m.h, sh = m.sh, w = F.widths[c] || 100, P = (...d) => ({ d: d.join(""), evenodd: false });
+    let parts = [];
+    switch (c) {
+      case "N": {   // thin stems, thick diagonal: the diagonal polygon follows the measured edge x = 39 + 1.167 (y - 36), 38 wide, clipped by the right stem
+        const e0 = (y) => 42.5 + 1.167 * (y - 36), xr = 121, yTop = sh - 1, yClip = 36 + (xr - 77) / 1.167;
+        parts = [P(rect(17, 0, t, H), rect(0, 0, 43, sh), rect(1, H - sh, 50, sh), rect(104, 0, t, H), rect(84, 0, 53, sh), poly([[17, yTop], [e0(yTop) + 38, yTop], [xr, yClip], [xr, H], [e0(H), H], [17, 36 + (17 - 39) / 1.167]]))];
+        break;
+      }
+      case "Y": {   // thick left arm, thin right arm, stem of 26
+        parts = [P(rect(0, 0, 60, sh), rect(83, 0, 52, sh), rect(54, 46, 26, H - 46), rect(38, H - sh, 59, sh), poly([[9, 8], [43, 8], [84.8, 52], [50.8, 52]]), poly([[101, 8], [123, 8], [87.8, 52], [65.8, 52]]))];
+        break;
+      }
+      case "E": parts = [P(rect(8, 0, T - 2, H), rect(0, 0, 44, sh), rect(0, H - sh, 44, sh), rect(8, 0, w - 13, h), rect(w - 18, 0, 13, 30), rect(8, H - h, w - 13, h), rect(w - 18, H - 30, 13, 30), rect(8, (H - h) / 2 - 2, w - 38, h - 1), rect(w - 42, (H - h) / 2 - 16, 12, 34))]; break;
+      case "Z": parts = [P(rect(6, 0, w - 12, h), rect(6, 0, 13, 28), rect(6, H - h, w - 12, h), rect(w - 19, H - 28, 13, 28), poly([[w - 42, h - 1], [w - 6, h - 1], [42, H - h + 1], [6, H - h + 1]]))]; break;
+      case "R": parts = [P(rect(14, 0, T - 2, H), rect(0, 0, 56, sh), rect(0, H - sh, 56, sh), poly([[60, 50], [94, 50], [122, H - sh + 1], [88, H - sh + 1]]), rect(76, H - sh, 50, sh)), P("M40,0H74A34,27 0 0 1 74,54H40z", "M40,41H74A8,14 0 0 0 74,13H40z")]; break;
+      case "A": parts = [P(poly([[66, 0], [84, 0], [37, H - sh + 1], [20, H - sh + 1]]), poly([[72, 0], [90, 0], [131, H - sh + 1], [94, H - sh + 1]]), rect(46, 56, 64, 11), rect(4, H - sh, 52, sh), rect(86, H - sh, 56, sh))]; break;
+      case "I": parts = [P(rect(19, 0, T - 2, H), rect(0, 0, w, sh), rect(0, H - sh, w, sh))]; break;
+      case "L": parts = [P(rect(8, 0, T - 2, H), rect(0, 0, 44, sh), rect(0, H - sh, 44, sh), rect(8, H - h, w - 13, h), rect(w - 18, H - 30, 13, 30))]; break;
+      case "T": parts = [P(rect(w / 2 - (T - 2) / 2, 0, T - 2, H), rect(4, 0, w - 8, h), rect(4, 0, 13, 28), rect(w - 17, 0, 13, 28), rect(w / 2 - 28, H - sh, 56, sh))]; break;
+      case "H": parts = [P(rect(18, 0, t, H), rect(w - 35, 0, t, H), rect(18, (H - h) / 2, w - 53 + t, h - 1), rect(2, 0, 50, sh), rect(2, H - sh, 50, sh), rect(w - 52, 0, 50, sh), rect(w - 52, H - sh, 50, sh))]; break;
+      case "V": parts = [P(rect(0, 0, 60, sh), rect(w - 60, 0, 60, sh), poly([[10, sh - 1], [52, sh - 1], [w / 2 + 20, H], [w / 2 - 16, H]]), poly([[w - 36, sh - 1], [w - 20, sh - 1], [w / 2 + 14, H], [w / 2 - 10, H]]))]; break;
+      case "X": parts = [P(rect(0, 0, 54, sh), rect(w - 54, 0, 54, sh), rect(0, H - sh, 54, sh), rect(w - 54, H - sh, 54, sh), poly([[16, sh - 1], [50, sh - 1], [w - 16, H - sh + 1], [w - 50, H - sh + 1]]), poly([[w - 36, sh - 1], [w - 20, sh - 1], [36, H - sh + 1], [20, H - sh + 1]]))]; break;
+      default: parts = [];
+    }
+    return { w, parts, h: H };
+  };
+  F.kern = (a, b) => F.kerns[String(a || "").toUpperCase() + String(b || "").toUpperCase()] || 0;
+  F.has = (ch) => !!F.widths[String(ch || "").toUpperCase()];
+})();

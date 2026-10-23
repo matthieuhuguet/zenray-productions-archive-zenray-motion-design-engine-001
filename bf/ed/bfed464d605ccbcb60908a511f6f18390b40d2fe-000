@@ -1,0 +1,101 @@
+"""Close the loop on the Sony reveal tables (23 October 2026), workflow Premier Plan Mesure, Sharingan style.
+Render the project at every keyed instant, measure the render with the SAME bins and masks as Scripts/SonyKeys.py, and scale each table entry by reference / render.
+The tables are written back to motion/reproductions/data/sony_keys.json (the first run keeps the pure measurement as sony_keys.measured.json).
+FR : calibre les tables sur le rendu reel (rapport reference / rendu), plusieurs passes. Usage: python3 Scripts/SonyCalibrate.py <frames dir> <rest frame> [--iters 2]"""
+import argparse
+import json
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "motion")); sys.path.insert(0, str(ROOT / "motion" / "reproductions"))
+import server  # noqa: E402
+import sony_logo  # noqa: E402
+import ppm  # noqa: E402
+
+DATA = sony_logo.DATA
+LIT_D, GLOW_D = [0, 12, 24, 40, 60, 90, 130, 200, 400], [0, 4, 8, 12, 18, 26, 36, 50, 70, 100]
+RUNS = {"S": (365, 478), "O": (500, 632), "N": (647, 783), "Y": (796, 929)}
+Y, X = np.mgrid[0:720, 0:1280]
+
+
+def masks(rest):
+    letters = np.zeros(rest.shape, bool); letters[300:420, 360:935] = rest[300:420, 360:935] > 128
+    near = np.zeros(rest.shape, bool); near[290:430, 350:945] = True
+    per = {}
+    for c, (x0, x1) in RUNS.items():
+        m = np.zeros(rest.shape, bool); m[300:420, x0:x1 + 1] = letters[300:420, x0:x1 + 1]; per[c] = m
+    return letters, near, per
+
+
+def bins(g, d, mask, edges, minpix):
+    return [float(g[mask & (d >= lo) & (d < hi)].mean()) if (mask & (d >= lo) & (d < hi)).sum() > minpix else None for lo, hi in zip(edges[:-1], edges[1:])]
+
+
+def measure(img, cx, cy, letters, near, per):
+    a = img.astype(float); g = a.mean(2); d = np.hypot(X - cx, Y - cy)
+    out = {"glow": bins(g, d, near & ~letters, GLOW_D, 10)}
+    for c in RUNS:
+        out["lit" + c] = bins(g, d, per[c], LIT_D, 8)
+    k = letters & (g > 50)
+    out["tint"] = (a[k].mean(0) / max(1, a[k].mean())).tolist() if k.sum() > 200 else None
+    return out
+
+
+def main():
+    ap = argparse.ArgumentParser(); ap.add_argument("frames"); ap.add_argument("rest"); ap.add_argument("--iters", type=int, default=2)
+    a = ap.parse_args()
+    fr = Path(a.frames)
+    rest = np.asarray(Image.open(a.rest).convert("L")).astype(float)
+    letters, near, per = masks(rest)
+    if not DATA.with_name("sony_keys.measured.json").exists():
+        shutil.copy(DATA, DATA.with_name("sony_keys.measured.json"))
+    ref_all = {}
+    keys = json.loads(DATA.read_text())
+    times = [r[0] for r in keys["lit"]]
+    for r in keys["lit"]:
+        t = r[0]; img = np.asarray(Image.open(fr / f"{int(round(t * 30)) + 1:04d}.png").convert("RGB"))
+        ref_all[t] = measure(img, r[1], r[2], letters, near, per)
+    for it in range(a.iters):
+        ppm.run(sony_logo.PID, sony_logo.build_one(sony_logo.PID))
+        work = Path(tempfile.mkdtemp(prefix="zrmd-sonycal-"))
+        try:
+            page = server.cook(sony_logo.PID, work / "page")
+            server.hyperframes(page, "snapshot", "--at", ",".join(f"{t:.3f}" for t in times), "--no-end", "-o", str(work / "s"), timeout=900)
+            files = sorted((work / "s").glob("frame-*.png"))
+            if len(files) != len(times):
+                raise SystemExit(f"{len(files)} snapshots for {len(times)} instants")
+            keys = json.loads(DATA.read_text()); err = []
+            for ti, (t, f) in enumerate(zip(times, files)):
+                img = np.asarray(Image.open(f).convert("RGB").resize((1280, 720), Image.LANCZOS)); r = keys["lit"][ti]
+                m = measure(img, r[1], r[2], letters, near, per); ref = ref_all[t]
+                for c in RUNS:
+                    row = keys["lit" + c][ti]
+                    for bi in range(8):
+                        rv, mv = ref["lit" + c][bi], m["lit" + c][bi]
+                        if rv is not None and mv is not None and rv > 3 and mv > 1.5:
+                            err.append(abs(rv - mv)); row[1 + bi] = round(min(255.0, row[1 + bi] * float(np.clip(rv / mv, 0.4, 2.5))), 1)
+                grow = keys["glow"][ti]
+                for bi in range(9):
+                    rv, mv = ref["glow"][bi], m["glow"][bi]
+                    if rv is not None and mv is not None and rv > 3 and mv > 1.5:
+                        grow[2 + bi] = round(min(255.0, grow[2 + bi] * float(np.clip(rv / mv, 0.4, 2.5))), 1)
+                if ref["tint"] and m["tint"] and ti < len(keys["tint"]) + 100:
+                    tr = [x for x in keys["tint"] if abs(x[0] - t) < 1e-6]
+                    if tr:
+                        for ch in range(3):
+                            tr[0][1 + ch] = round(tr[0][1 + ch] * float(np.clip(ref["tint"][ch] / max(1e-3, m["tint"][ch]), 0.8, 1.25)), 3)
+            DATA.write_text(json.dumps(keys))
+            print(f"pass {it + 1}: mean abs error of the lit bins before correction {np.mean(err):.2f} over {len(err)} bins")
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+    ppm.run(sony_logo.PID, sony_logo.build_one(sony_logo.PID))
+
+
+if __name__ == "__main__":
+    main()

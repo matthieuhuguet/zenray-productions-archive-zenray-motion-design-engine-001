@@ -1,0 +1,46 @@
+"""IoU of the procedural Sony capitals against the traced letters, with an overlay (23 October 2026).
+Red = traced only, green = procedural only, white = both.  FR : recouvrement des capitales procedurales avec les lettres decalquees. Usage: python3 Scripts/SonyFontFit.py <rest frame> <out.png>"""
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+import numpy as np
+from PIL import Image, ImageDraw
+
+ROOT = Path(__file__).resolve().parents[1]
+JS = "global.window={};require('%s');const F=window.ZSSonyFont2;const o={};for(const c of 'NYZEARIO'){if(!F.has(c))continue;const g=F.glyph(c);o[c]={w:g.w,parts:g.parts.map(p=>p.d)}};console.log(JSON.stringify(o));" % (ROOT / "motion/runtime/zs-templates-sony-font-2.js")
+CAP_TOP, CAP = 315, 88
+BOX = {"N": 647, "Y": 796}
+
+
+def raster(parts, w):
+    im = Image.new("L", (w + 40, CAP + 40), 0); dr = ImageDraw.Draw(im)
+    for path in parts:
+        for sub in re.findall(r"M[^z]+z", path):
+            pts = [tuple(map(float, p.split(","))) for p in re.findall(r"[-\d.]+,[-\d.]+", sub)]
+            if len(pts) >= 3 and "A" not in sub:
+                dr.polygon([(x + 20, y + 20) for x, y in pts], fill=255)
+    return np.asarray(im) > 0
+
+
+def main():
+    glyphs = json.loads(subprocess.run(["node", "-e", JS], capture_output=True, text=True, check=True).stdout)
+    ref = np.asarray(Image.open(sys.argv[1]).convert("L")).astype(float) > 110
+    rows, scores = [], {}
+    for c, x0 in BOX.items():
+        w = int(glyphs[c]["w"]); m = raster(glyphs[c]["parts"], w)
+        r = ref[CAP_TOP - 20:CAP_TOP + CAP + 20, x0 - 20:x0 + w + 20]
+        h, ww = min(m.shape[0], r.shape[0]), min(m.shape[1], r.shape[1]); m, r = m[:h, :ww], r[:h, :ww]
+        iou = np.logical_and(m, r).sum() / np.logical_or(m, r).sum(); scores[c] = round(float(iou), 4)
+        rgb = np.zeros((h, ww, 3), np.uint8); rgb[r & ~m] = (255, 60, 60); rgb[m & ~r] = (60, 255, 60); rgb[m & r] = (255, 255, 255)
+        rows.append(Image.fromarray(rgb).resize((ww * 3, h * 3), Image.NEAREST))
+    W = sum(i.width for i in rows) + 10; S = Image.new("RGB", (W, max(i.height for i in rows)), (0, 0, 0)); x = 0
+    for i in rows:
+        S.paste(i, (x, 0)); x += i.width + 10
+    S.save(sys.argv[2]); print(scores, sys.argv[2])
+
+
+if __name__ == "__main__":
+    main()

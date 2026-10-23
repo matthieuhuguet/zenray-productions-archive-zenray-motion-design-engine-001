@@ -1,0 +1,83 @@
+"""Measure the keyed tables of the Sony logo 2021 reveal on every frame (23 October 2026), workflow Premier Plan Mesure.
+The wordmark is lit by ONE point light inside the O: every letter pixel is a function of its distance to the light. So the tables are
+  lit   : t | cx | cy | luminance of the letters at distances 6 18 32 50 75 110 165 300 px from the light
+  glow  : t | luminance of the NON-letter pixels at distances 2 6 10 15 22 31 43 60 85 px | blue ratio of the core
+  tint  : t | R/lum | G/lum | B/lum of the lit letters
+  push  : t | scale of the wordmark (camera push), from its measured width
+Writes motion/reproductions/data/sony_keys.json.  FR : tables mesurees sur chaque image. Usage: python3 Scripts/SonyKeys.py <frames dir with 0001.png ...> <rest frame>"""
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+
+FR, REST = Path(sys.argv[1]), sys.argv[2]
+OUT = Path(__file__).resolve().parents[1] / "motion" / "reproductions" / "data" / "sony_keys.json"
+LIGHT = [(1.2, 592, 388), (2.2, 592, 388), (2.7, 588, 387), (3.2, 590, 385), (3.6, 592, 382), (4.0, 594, 379), (4.4, 595, 377), (4.8, 595, 374), (5.0, 592, 368), (5.2, 594, 363), (5.4, 595, 358), (5.6, 597, 350), (5.8, 595, 341), (6.1, 595, 335)]   # centroid of the lit blob inside the O counter (it climbs along the counter)
+LIT_D, GLOW_D = [0, 12, 24, 40, 60, 90, 130, 200, 400], [0, 4, 8, 12, 18, 26, 36, 50, 70, 100]
+
+
+def frame(t):
+    return np.asarray(Image.open(FR / f"{int(round(t * 30)) + 1:04d}.png").convert("RGB")).astype(float)
+
+
+def light(t):
+    xs = [k[0] for k in LIGHT]
+    return float(np.interp(t, xs, [k[1] for k in LIGHT])), float(np.interp(t, xs, [k[2] for k in LIGHT]))
+
+
+def fill(v):   # bins without pixels take the previous value, the leading ones the first measured value (a letter far from the light has no near bins)
+    first = next((x for x in v if x is not None), 0.0)
+    out, last = [], first
+    for x in v:
+        last = last if x is None else x
+        out.append(last)
+    return out
+
+
+def main():
+    rest = np.asarray(Image.open(REST).convert("L")).astype(float)
+    letters = np.zeros(rest.shape, bool); letters[300:420, 360:935] = rest[300:420, 360:935] > 128
+    near = np.zeros(rest.shape, bool); near[290:430, 350:945] = True
+    Y, X = np.mgrid[0:720, 0:1280]
+    lit, glow, tint, push = [], [], [], []
+    runs = {'S': (365, 478), 'O': (500, 632), 'N': (647, 783), 'Y': (796, 929)}
+    per = {c: [] for c in runs}
+    lmask = {c: np.zeros(rest.shape, bool) for c in runs}
+    for c, (x0, x1) in runs.items():
+        lmask[c][300:420, x0:x1 + 1] = letters[300:420, x0:x1 + 1]
+    for i in range(12, 67):
+        t = round(i / 10, 1)
+        a = frame(t); g = a.mean(2); cx, cy = light(t); d = np.hypot(X - cx, Y - cy)
+        row = []
+        for lo, hi in zip(LIT_D[:-1], LIT_D[1:]):
+            k = letters & (d >= lo) & (d < hi)
+            row.append(float(g[k].mean()) if k.sum() > 20 else None)
+        lit.append([t, round(cx, 1), round(cy, 1)] + [round(v, 1) for v in fill(row)])
+        for c in runs:
+            r2 = []
+            for lo, hi in zip(LIT_D[:-1], LIT_D[1:]):
+                k = lmask[c] & (d >= lo) & (d < hi)
+                r2.append(float(g[k].mean()) if k.sum() > 8 else None)
+            per[c].append([t] + [round(v, 1) for v in fill(r2)])
+        row = []
+        for lo, hi in zip(GLOW_D[:-1], GLOW_D[1:]):
+            k = near & ~letters & (d >= lo) & (d < hi)
+            row.append(float(g[k].mean()) if k.sum() > 10 else None)
+        core = a[near & ~letters & (d < 12)]
+        br = float(core[:, 2].mean() / max(1.0, core.mean())) if len(core) else 1.0
+        glow.append([t, round(br, 3)] + [round(v, 1) for v in fill(row)])
+        k = letters & (g > 50)
+        if k.sum() > 200:
+            m = a[k].mean(0); tint.append([t] + [round(float(v / max(1, m.mean())), 3) for v in m])
+    for i in range(70, 101):
+        t = round(i / 10, 1)
+        g = frame(t).mean(2); m = g > 110; cols = np.where(m[300:420].any(0))[0]
+        push.append([t, round(float((cols.max() - cols.min() + 1) / 567.0), 4), round(float((cols.max() + cols.min()) / 2), 1)])
+    OUT.write_text(json.dumps({"lit": lit, "glow": glow, "tint": tint, "push": push, **{"lit" + c: per[c] for c in runs}}))
+    print("wrote", OUT, len(lit), len(glow), len(tint), len(push)); print("push", push[::5])
+
+
+if __name__ == "__main__":
+    main()
