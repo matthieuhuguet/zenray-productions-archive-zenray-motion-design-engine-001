@@ -23,6 +23,7 @@
     N("vibrance", "Vibrance", 0, -100, 100, 1, 2),
     N("vignette", "Vignette", 0, 0, 100, 1, 2, "", "film"),
     N("grain", "Grain", 0, 0, 100, 1, 2, "", "film"),
+    { key: "palette", label: "Palette (la teinte bleue du design devient…)", type: "select", options: ["Bleu", "Rouge vif", "Vert", "Turquoise", "Jaune", "Magenta"], default: "Bleu", tier: 3, scope: "colour" },
     N("hue", "Rotation des couleurs", 0, -180, 180, 1, 3, "°"),
     N("blackAndWhite", "Noir et blanc", 0, 0, 100, 1, 3, "%"),
     N("fade", "Noirs délavés", 0, 0, 100, 1, 3),
@@ -94,7 +95,12 @@
     }
     return pts.join(" ");
   }
-  const isIdentityColour = (v) => v.look === "Original" && !v.exposure && !v.saturation && !v.contrast && !v.highlights && !v.shadows && !v.temperature
+  // palette (23 October 2026): a design drawn in white and blue is read as white + blue excess; the blue excess (B - R) takes the colour of the palette, the white stays white.
+  // out = R + (B - R) * C per channel, so a bright blue becomes a bright red, green, turquoise, yellow or magenta (a plain hue rotation would keep the dark luminance of blue: a dull yellow).
+  // FR : le blanc reste blanc, l'exces de bleu prend la couleur de la palette (une rotation de teinte garderait la faible luminance du bleu).
+  const PALETTES = { "Rouge vif": [1, 0.07, 0.1], "Vert": [0.12, 1, 0.28], "Turquoise": [0.02, 0.92, 0.88], "Jaune": [1, 0.86, 0.04], "Magenta": [1, 0.08, 0.78] };
+  const paletteMatrix = (name) => { const c = PALETTES[name]; return c ? `${1 - c[0]} 0 ${c[0]} 0 0 ${1 - c[1]} 0 ${c[1]} 0 0 ${1 - c[2]} 0 ${c[2]} 0 0 0 0 0 1 0` : null; };
+  const isIdentityColour = (v) => v.look === "Original" && !PALETTES[v.palette] && !v.exposure && !v.saturation && !v.contrast && !v.highlights && !v.shadows && !v.temperature
     && !v.tint && !v.vibrance && !v.hue && !v.blackAndWhite && !v.fade && v.whitePoint === 100 && !v.glow && !v.chromatic && !v.blur && !v.sharpen;
 
   const SVGNS = "http://www.w3.org/2000/svg";
@@ -126,6 +132,7 @@
     if (Math.abs(sat - 1) > 1e-4) step("feColorMatrix", { type: "saturate", values: Math.max(0, sat).toFixed(4) });
     const lm = lookMatrix(v.look, v.lookAmount / 100);
     if (lm) step("feColorMatrix", { type: "matrix", values: lm });
+    { const pm = paletteMatrix(v.palette); if (pm) step("feColorMatrix", { type: "matrix", values: pm }); }
     if (v.hue) step("feColorMatrix", { type: "hueRotate", values: v.hue });
     if (v.glow) {
       const base = last;
@@ -188,5 +195,5 @@
     }
     return { graded, vignette: film.vignette > 0, grain: film.grain > 0 };
   }
-  ZS.post = { PARAMS, LOOKS, values, apply, lookMatrix, toneTable };
+  ZS.post = { PARAMS, LOOKS, PALETTES, values, apply, lookMatrix, toneTable };
 })();

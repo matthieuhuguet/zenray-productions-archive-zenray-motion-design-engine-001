@@ -1,0 +1,29 @@
+"""One sheet: the same instants of a project in every palette (23 October 2026). FR : une planche, mêmes instants, toutes les palettes.
+Usage: PaletteSheet.py <projet> out.png t1,t2,... [--palettes "Rouge vif,Vert"] [--width 480]"""
+import argparse, copy, shutil, sys, tempfile
+from pathlib import Path
+from PIL import Image, ImageDraw
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "motion"))
+import server  # noqa: E402
+
+ap = argparse.ArgumentParser(); ap.add_argument("project"); ap.add_argument("out"); ap.add_argument("times")
+ap.add_argument("--palettes", default="Bleu,Rouge vif,Vert,Turquoise,Jaune,Magenta"); ap.add_argument("--width", type=int, default=480)
+a = ap.parse_args(); ts = [float(x) for x in a.times.split(",")]; pals = a.palettes.split(","); base = server.read_project(a.project); orig = server.read_project
+cols = []
+for pal in pals:
+    pr = copy.deepcopy(base); pr["post"] = dict(pr.get("post") or {}, palette=pal)
+    server.read_project = lambda pid, _p=pr: _p if pid == a.project else orig(pid)
+    work = Path(tempfile.mkdtemp(prefix="zrmd-pal-"))
+    try:
+        page = server.cook(a.project, work / "page")
+        server.hyperframes(page, "snapshot", "--at", ",".join(f"{t:.3f}" for t in ts), "--no-end", "-o", str(work / "s"), timeout=900)
+        cols.append([Image.open(f).convert("RGB") for f in sorted((work / "s").glob("frame-*.png"))])
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+server.read_project = orig
+W = a.width; H = int(W * cols[0][0].height / cols[0][0].width)
+S = Image.new("RGB", (W * len(pals), H * len(ts)), (0, 0, 0)); d = ImageDraw.Draw(S)
+for ci, col in enumerate(cols):
+    for ri, im in enumerate(col):
+        S.paste(im.resize((W, H), Image.LANCZOS), (ci * W, ri * H)); d.text((ci * W + 6, ri * H + 6), f"{pals[ci]}  {ts[ri]}s", fill=(255, 255, 0))
+S.save(a.out); print(a.out, S.size)

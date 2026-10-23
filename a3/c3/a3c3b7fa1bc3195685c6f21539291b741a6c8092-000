@@ -26,7 +26,8 @@ def build_one(pid: str = PID) -> dict:
     sony = SONY.build_one("zenray-sony-reveal-ppm")
     sp = sony["scenes"][0]["params"]
     ps = dict(PS_PARAMS)
-    controls = SONY.controls(["b01"]) + [dict(c, id="ps_" + c["id"], label="PlayStation : " + c["label"], group="PlayStation · " + c.get("group", "")) for c in PSS.controls(["b02"])]
+    palette = {"id": "palette", "label": "Palette du design (le bleu devient…)", "type": "select", "group": "Design", "options": ["Bleu", "Rouge vif", "Vert", "Turquoise", "Jaune", "Magenta"], "default": "Bleu", "targets": [{"post": True, "key": "palette"}]}   # one toggle for the whole film: the post-process palette
+    controls = [palette] + SONY.controls(["b01"]) + [dict(c, id="ps_" + c["id"], label="PlayStation : " + c["label"], group="PlayStation · " + c.get("group", "")) for c in PSS.controls(["b02"])]
     pr = ppm.build("ZenRay : Sony puis PlayStation", SLUG, [(0.0, "sony-open", dict(sp)), (HANDOFF, "ps-open", ps)], HANDOFF + 8.0, controls, fmt="16x9", bg="#000000", ink="#e8f0ff", accent="#2f55f5",
                    doc="23 October 2026: ZenRay, the Sony logo reveal (procedural capitals) then the PlayStation Studios opening where the four buttons are replaced by the word ZENRAY (workflow Premier Plan Mesuré).")
     pr["scenes"][0]["ref"] = {"start": 0.0}; pr["referenceOffset"] = 0.0

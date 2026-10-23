@@ -449,7 +449,7 @@
   // PROMOTED CONTROLS (16 October 2026): the few values that matter for THIS motion, chosen from its graphic bible and storyboard (project.controls),
   // each one driving every scene value it names. A person changes a headline, a colour or a product name here, without opening a scene.
   // control = { id, label, type, group, default, min, max, step, options, targets: [{ scene, child?, key }] }
-  const targetParams = (p, t) => { const sc = p.scenes.find((x) => x.id === t.scene); if (!sc) return null; const o = t.child != null && sc.children ? sc.children[t.child] : sc; return o ? (o.params = o.params || {}) : null; };
+  const targetParams = (p, t) => { if (t.post) return (p.post = p.post || {}); const sc = p.scenes.find((x) => x.id === t.scene); if (!sc) return null; const o = t.child != null && sc.children ? sc.children[t.child] : sc; return o ? (o.params = o.params || {}) : null; };
   // 19 October 2026: a control can drive (a) a scene value, (b) one named line of the free-text `tweaks` ({key: "tweaks", tweak: "l1Weight"}: the line "l1Weight 3"), (c) one slot of a list ({key: "lines", index: 2}: the third text).
   // A control carries its real default (`default`, and `slots` for a list), so the field always shows what the scene really plays, even when the scene stores nothing: an empty field was the "impossible to edit" bug of the title cards.
   const tweakLines = (v) => (Array.isArray(v) ? v : String(v || "").split("\n")).map((x) => String(x).trim()).filter(Boolean);
@@ -473,6 +473,7 @@
   }
   function controlValue(c) {
     const t = (c.targets || [])[0]; if (!t) return c.default;
+    if (t.post) { const pv = (S.project.post || {})[t.key]; return pv !== undefined && pv !== "" ? pv : c.default; }   // a control on the film-level post-process (the palette)
     const sc = S.project.scenes.find((x) => x.id === t.scene), o = sc && (t.child != null && sc.children ? sc.children[t.child] : sc), tpl = o && ZS.templates[o.template];
     if (!tpl) return c.default;
     const own = readTarget(o, t); if (own !== undefined && own !== "") return own;
