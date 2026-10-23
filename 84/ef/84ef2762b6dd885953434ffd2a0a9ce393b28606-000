@@ -5,9 +5,9 @@
 (function () {
   const F = (window.ZSSonyFont2 = window.ZSSonyFont2 || {});
   F.cap = 88;
-  F.metrics = { T: 28, t: 17, h: 13, D: 37, sh: 10, ext: 16, over: 5 };
-  F.widths = { S: 114, O: 133, A: 146, E: 108, N: 137, R: 126, Y: 135, Z: 112, I: 56, L: 104, T: 112, H: 138, V: 140, X: 134 };
-  F.kerns = { SO: 7, NY: -2, AY: -16, YA: -14, RA: -4, EN: 2, ZE: 2, NR: 2, AV: -12, VA: -12, TA: -12, LY: -14, LT: -12 };
+  F.metrics = { T: 28, t: 17, h: 13, D: 37, sh: 10, ext: 16, over: 5, aLeg: 27, aContrast: 0 };
+  F.widths = { S: 114, O: 133, A: 150, E: 108, N: 137, R: 126, Y: 135, Z: 112, I: 56, L: 104, T: 112, H: 138, V: 140, X: 134 };
+  F.kerns = { SO: 7, NY: -2, AY: -25, YA: -22, RA: 0, EN: 2, ZE: 2, NR: 2, AV: -12, VA: -12, TA: -12, LY: -14, LT: -12 };
   const f1 = (v) => (Math.round(v * 100) / 100).toString();
   const poly = (pts) => "M" + pts.map((p) => f1(p[0]) + "," + f1(p[1])).join("L") + "z";
   const rect = (x, y, w, h) => poly([[x, y], [x + w, y], [x + w, y + h], [x, y + h]]);
@@ -29,7 +29,12 @@
       case "E": parts = [P(rect(8, 0, T - 2, H), rect(0, 0, 44, sh), rect(0, H - sh, 44, sh), rect(8, 0, w - 13, h), rect(w - 18, 0, 13, 30), rect(8, H - h, w - 13, h), rect(w - 18, H - 30, 13, 30), rect(8, (H - h) / 2 - 2, w - 38, h - 1), rect(w - 42, (H - h) / 2 - 16, 12, 34))]; break;
       case "Z": parts = [P(rect(6, 0, w - 12, h), rect(6, 0, 13, 28), rect(6, H - h, w - 12, h), rect(w - 19, H - 28, 13, 28), poly([[w - 42, h - 1], [w - 6, h - 1], [42, H - h + 1], [6, H - h + 1]]))]; break;
       case "R": parts = [P(rect(14, 0, T - 2, H), rect(0, 0, 56, sh), rect(0, H - sh, 56, sh), poly([[60, 50], [94, 50], [122, H - sh + 1], [88, H - sh + 1]]), rect(76, H - sh, 50, sh)), P("M40,0H74A34,27 0 0 1 74,54H40z", "M40,41H74A8,14 0 0 0 74,13H40z")]; break;
-      case "A": parts = [P(poly([[66, 0], [84, 0], [37, H - sh + 1], [20, H - sh + 1]]), poly([[72, 0], [90, 0], [131, H - sh + 1], [94, H - sh + 1]]), rect(46, 56, 64, 11), rect(4, H - sh, 52, sh), rect(86, H - sh, 56, sh))]; break;
+      case "A": {   // symmetric about the vertical axis x = w / 2: feet centred 50 px either side, apex centred, serifs of the same width, thin left leg and thick right leg (the Didone contrast) built on the same axis
+        const ax = w / 2, foot = 50, yb = H - sh + 1, lt = m.aLeg - m.aContrast, rt = m.aLeg + m.aContrast, ap = 26;   // aContrast 0 = mirror symmetry, > 0 = thin left and thick right leg (Didone)
+        const lb = ax - foot, rb = ax + foot, topL = ax - ap / 2, topR = ax + ap / 2;
+        parts = [P(poly([[topL, 0], [topL + lt, 0], [lb + lt / 2, yb], [lb - lt / 2, yb]]), poly([[topR - rt, 0], [topR, 0], [rb + rt / 2, yb], [rb - rt / 2, yb]]), rect(ax - 30, 58, 60, 12), rect(lb - 24, H - sh, 48, sh), rect(rb - 24, H - sh, 48, sh))];
+        break;
+      }
       case "I": parts = [P(rect(19, 0, T - 2, H), rect(0, 0, w, sh), rect(0, H - sh, w, sh))]; break;
       case "L": parts = [P(rect(8, 0, T - 2, H), rect(0, 0, 44, sh), rect(0, H - sh, 44, sh), rect(8, H - h, w - 13, h), rect(w - 18, H - 30, 13, 30))]; break;
       case "T": parts = [P(rect(w / 2 - (T - 2) / 2, 0, T - 2, H), rect(4, 0, w - 8, h), rect(4, 0, 13, 28), rect(w - 17, 0, 13, 28), rect(w / 2 - 28, H - sh, 56, sh))]; break;
@@ -40,6 +45,6 @@
     }
     return { w, parts, h: H };
   };
-  F.kern = (a, b) => F.kerns[String(a || "").toUpperCase() + String(b || "").toUpperCase()] || 0;
+  F.kern = (a, b) => { const k = String(a || "").toUpperCase() + String(b || "").toUpperCase(), U = window.ZSSonyFont2U; return (U && U.kerns && U.kerns[k] !== undefined ? U.kerns[k] : F.kerns[k]) || 0; };   // optical kerns (Scripts/SonyKern.py) first, the hand table as a fallback
   F.has = (ch) => !!F.widths[String(ch || "").toUpperCase()];
 })();

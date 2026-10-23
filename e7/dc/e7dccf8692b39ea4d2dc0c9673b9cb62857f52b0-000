@@ -1,0 +1,86 @@
+"""Optical spacing of the procedural Sony capitals (23 October 2026, Matthieu: the spaces R-A and A-Y were not the same).
+The eye reads the AREA of white between two letters, not the distance of their boxes. For two neighbours, the optical gap is the mean over the rows of the cap band of
+min(horizontal gap of the inks at that row, CLIP). The target is what the reference has: the three pairs of SONY (S-O, O-N, N-Y) measured with the same formula and averaged.
+Every pair of the font is then placed (bisection) so that its optical gap equals the target, never closer than the smallest gap of the reference.
+The result is a table of kerns (relative to the nominal gap of 14 px) written into motion/runtime/zs-templates-sony-font-2u.js (run Scripts/SonyFontUnion.py first).
+FR : espacement optique des capitales : meme surface de blanc entre toutes les paires, cible mesuree sur SONY. Usage: python3 Scripts/SonyKern.py"""
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import numpy as np
+from PIL import Image, ImageDraw
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import SonyFontUnion as U  # noqa: E402
+
+ROOT = U.ROOT
+CLIP, GAP0 = 30.0, 14.0
+REST = ROOT / "motion/reproductions/data/sony_rest.png"
+TRACED = {"S": (365, 114), "O": (500, 133), "N": (647, 137), "Y": (796, 135)}   # letter -> (x0 on the reference, width)
+CAP_TOP, CAP = 315, 88
+
+
+def profiles(mask, w):
+    """Left and right ink edge of every row of the cap band, in box coordinates (the mask has U.PAD of margin)."""
+    band = mask[U.PAD:U.PAD + CAP, :]
+    L = np.full(CAP, np.inf); R = np.full(CAP, -np.inf)
+    for y in range(CAP):
+        xs = np.where(band[y])[0]
+        if len(xs): L[y] = xs.min() - U.PAD; R[y] = xs.max() + 1 - U.PAD
+    return L, R
+
+
+def optical_gap(Ra, Lb, dx):
+    g = np.minimum(dx + Lb - Ra, CLIP)   # rows without ink on a side give inf, which the clip turns into CLIP
+    g = np.where(np.isfinite(g), g, CLIP)
+    return float(g.mean()), float(np.min(np.where(np.isfinite(dx + Lb - Ra), dx + Lb - Ra, CLIP)))
+
+
+def place(Ra, Lb, target, wa, floor):
+    lo, hi = wa - 80.0, wa + 120.0
+    for _ in range(60):
+        mid = (lo + hi) / 2; mean, mn = optical_gap(Ra, Lb, mid)
+        if mean < target or mn < floor: lo = mid
+        else: hi = mid
+    return (lo + hi) / 2
+
+
+def main():
+    data = json.loads(subprocess.run(["node", "-e", U.JS], capture_output=True, text=True, check=True).stdout)
+    ref = np.asarray(Image.open(REST).convert("L")).astype(float) > 110
+    masks, widths = {}, {}
+    for c, g in data["g"].items():
+        if c in TRACED or not g["parts"]:
+            continue
+        W, H = int(np.ceil(g["w"])) + 2 * U.PAD, CAP + 2 * U.PAD
+        im = Image.new("L", (W * U.K, H * U.K), 0); dr = ImageDraw.Draw(im)
+        polys = [p for d in g["parts"] for p in U.subpaths(d)]
+        for p in sorted(polys, key=lambda q: -U.area(q)):
+            dr.polygon([((x + U.PAD) * U.K, (y + U.PAD) * U.K) for x, y in p], fill=255 if U.area(p) > 0 else 0)
+        masks[c] = np.asarray(im.resize((W, H), Image.BOX)) > 127; widths[c] = g["w"]
+    for c, (x0, w) in TRACED.items():
+        masks[c] = ref[CAP_TOP - U.PAD:CAP_TOP + CAP + U.PAD, x0 - U.PAD:x0 + w + U.PAD]; widths[c] = w
+    prof = {c: profiles(m, widths[c]) for c, m in masks.items()}
+    # target: the three measured pairs of SONY
+    pairs = [("S", "O"), ("O", "N"), ("N", "Y")]; gaps, mins = [], []
+    for a, b in pairs:
+        dx = TRACED[b][0] - TRACED[a][0]; m, mn = optical_gap(prof[a][1], prof[b][0], dx); gaps.append(m); mins.append(mn)
+    target, floor = float(np.mean(gaps)), float(min(mins))
+    print("SONY optical gaps", [round(g, 2) for g in gaps], "min gaps", [round(m, 2) for m in mins], "-> target", round(target, 2), "floor", round(floor, 2))
+    kerns = {}
+    for a in prof:
+        for b in prof:
+            dx = place(prof[a][1], prof[b][0], target, widths[a], floor)
+            k = dx - widths[a] - GAP0
+            if abs(k) >= 0.25: kerns[a + b] = round(k, 1)
+    out = ROOT / "motion/runtime/zs-templates-sony-font-2u.js"; txt = out.read_text(); d = json.loads(txt[txt.index("= ") + 2:txt.rindex(";")])
+    d["kerns"] = kerns; d["target"] = round(target, 2); d["floor"] = round(floor, 2)
+    out.write_text(txt[:txt.index("window.")] + "window.ZSSonyFont2U = " + json.dumps(d) + ";\n")
+    show = ["ZE", "EN", "NR", "RA", "AY", "SO", "ON", "NY"]
+    print({p: kerns.get(p, 0) for p in show})
+
+
+if __name__ == "__main__":
+    main()
