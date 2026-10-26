@@ -1,0 +1,180 @@
+"""Component sheet and reference score of the Dishonored 2 loot note (26 October 2026), workflow Premier Plan Mesure.
+Every component of the motion (paper, blood stain, curls, corner brackets, text, ink strokes, title, Close prompt, five paper shards, speed lines) is rendered ALONE (the template reads
+window.ZSNoteIsolate), compared with the same component measured on the reference frame, and put on one labelled sheet: reference mask, isolated render, overlay (white = both, red = reference only, blue = motion only), score.
+Scores: iou = plain overlap of the two masks; tol = overlap after thickening both by `--tol` px (thin strokes cannot match to the pixel, a 2 px error should not read as a miss).
+FR : planche de tous les composants, identifies un par un, avec leur score contre la reference.
+Usage: /Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/NoteSheet.py [--t 1.995] [--ref-frame FRAME.png] [--out DIR] [--tol 2]"""
+import argparse
+import json
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+
+import cv2
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
+
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "motion"))
+import server  # noqa: E402
+
+PID = "dishonored2-loot-note-ppm"
+REF_FRAME = Path("/Users/zenray/.claude/tmp/tmp-zenray-motion-design/dishonored2-loot-note/frames/0151.png")
+NAMES = {
+    "paper": "Papier de la note (fond sombre déchiré, fumé)",
+    "stain": "Tache de sang (bord droit du papier)",
+    "orn": "Volutes du haut (arabesques sous le titre)",
+    "orn2": "Volutes des côtés et du bas",
+    "brackets": "Équerres des quatre coins",
+    "body": "Texte du message (7 lignes, code 488 en turquoise)",
+    "ink": "Traits d'encre noirs en X (sous le titre)",
+    "title": "Titre « To Whomever Finds my Body »",
+    "close": "Bouton Close (touche B rouge et filets)",
+    "shard1": "Éclat de papier 1 (haut droite)",
+    "shard2": "Éclat de papier 2 (haut gauche)",
+    "shard3": "Éclat de papier 3 (gauche, le grand)",
+    "shard4": "Éclat de papier 4 (milieu droite)",
+    "shard5": "Éclat de papier 5 (petit, près du papier)",
+    "lines": "Lignes de vitesse (segments blancs fins)",
+}
+
+
+def box(m, x0, y0, x1, y1):
+    out = np.zeros_like(m); out[y0:y1, x0:x1] = m[y0:y1, x0:x1]; return out
+
+
+def reference_masks(img):
+    """The mask of every component on the reference frame, with the same definitions as Scripts/NoteTrace.py (so the score measures the decalque and the procedural parts alike)."""
+    G = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float32); B, Gc, R = [img[..., i].astype(np.float32) for i in range(3)]
+    bh = lambda k: cv2.morphologyEx(G, cv2.MORPH_BLACKHAT, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))  # noqa: E731
+    th = lambda k: cv2.morphologyEx(G, cv2.MORPH_TOPHAT, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))  # noqa: E731
+    m = {}
+    strokes = box((bh(81) > 12).astype(np.uint8), 170, 0, 1400, 192); strokes[150:, 1080:] = 0
+    strokes = cv2.morphologyEx(strokes, cv2.MORPH_OPEN, np.ones((7, 7), np.uint8)); m["ink"] = cv2.morphologyEx(strokes, cv2.MORPH_CLOSE, np.ones((13, 13), np.uint8))
+    from skimage.morphology import skeletonize, remove_small_objects
+    orn = ((bh(13) > 3.2) | (bh(7) > 4.5)).astype(np.uint8)
+    orn = box(orn, 440, 0, 900, 130) | box(orn, 330, 270, 560, 470) | box(orn, 520, 860, 820, 1020) | box(orn, 1250, 20, 1420, 130)
+    orn[m["ink"] > 0] = 0; orn[100:172, 765:1115] = 0
+    sk = cv2.dilate(remove_small_objects(skeletonize(orn > 0), 8, connectivity=2).astype(np.uint8), np.ones((3, 3), np.uint8))
+    top = sk.copy(); top[135:, :] = 0; side = sk.copy(); side[:135, :] = 0
+    m["orn"], m["orn2"] = top, side
+    stain = ((R - (Gc + B) / 2) > 5).astype(np.uint8); stain = box(stain, 1300, 200, 1460, 570)
+    stain = cv2.morphologyEx(stain, cv2.MORPH_CLOSE, np.ones((17, 17), np.uint8)); m["stain"] = cv2.morphologyEx(stain, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+    br = (th(9) > 28).astype(np.uint8)
+    m["brackets"] = box(br, 525, 175, 660, 300) | box(br, 1225, 175, 1350, 300) | box(br, 525, 840, 660, 960) | box(br, 1225, 840, 1350, 960)
+    paper = box((G < 45).astype(np.uint8), 540, 170, 1330, 1010); paper = cv2.morphologyEx(paper, cv2.MORPH_CLOSE, np.ones((25, 25), np.uint8))
+    m["paper"] = cv2.morphologyEx(paper, cv2.MORPH_OPEN, np.ones((15, 15), np.uint8))
+    m["body"] = box((G > 75).astype(np.uint8), 560, 440, 1300, 700)
+    m["title"] = box((G > 110).astype(np.uint8), 700, 90, 1200, 190) & (m["ink"] == 0)
+    m["close"] = box(((G > 110) | ((R - (Gc + B) / 2) > 25)).astype(np.uint8), 830, 955, 1010, 1020)
+    bright = (G > 118).astype(np.uint8); open_ = cv2.morphologyEx(bright, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)))
+    sh = box(open_, 140, 300, 470, 720) | box(open_, 1440, 230, 1680, 720)
+    wide = cv2.dilate(cv2.morphologyEx(sh, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8)), np.ones((9, 9), np.uint8))
+    n, lab = cv2.connectedComponents(wide); found = []
+    for i in range(1, n):
+        c = ((lab == i) & (sh > 0)).astype(np.uint8)
+        if c.sum() < 120: continue
+        ys, xs = np.where(c); found.append((xs.mean(), ys.mean(), c))
+    # the five shards numbered like the template (traced order = connected components order): by their centres 1589,326 / 296,393 / 263,609 / 1551,634 / 419,658
+    centres = {"shard1": (1589, 326), "shard2": (296, 393), "shard3": (263, 609), "shard4": (1551, 634), "shard5": (419, 658)}
+    for k, (cx, cy) in centres.items():
+        best = min(found, key=lambda f: (f[0] - cx) ** 2 + (f[1] - cy) ** 2); m[k] = best[2]
+    thin = (th(7) > 22).astype(np.uint8); thin[cv2.dilate(sh, np.ones((11, 11), np.uint8)) > 0] = 0
+    mo = np.ones_like(thin); mo[100:175, 765:1115] = 0; mo[440:690, 575:1300] = 0; mo[940:1030, 860:1000] = 0
+    for (x0, y0, x1, y1) in ((525, 175, 660, 300), (1225, 175, 1350, 300), (525, 840, 660, 960), (1225, 840, 1350, 960)): mo[y0:y1, x0:x1] = 0
+    thin = thin * mo; thin[box(np.ones_like(thin), 560, 150, 1330, 1010) > 0] = 0; thin[:215, :] = np.where(m["ink"][:215, :] > 0, 0, thin[:215, :])
+    ln = cv2.morphologyEx(thin, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (1, 1)))
+    m["lines"] = ln
+    return m
+
+
+def render_isolated(names, t, work):
+    """One snapshot per component: the cooked page gets `window.ZSNoteIsolate = <name>` before its scripts, HyperFrames captures it at t."""
+    page = server.cook(PID, work / "page"); html = (page / "index.html").read_text(encoding="utf-8"); out = {}
+    for n in names:
+        pg = work / f"page-{n}"; shutil.copytree(page, pg)
+        (pg / "index.html").write_text(html.replace("<script", f'<script>window.ZSNoteIsolate="{n}"</script><script', 1), encoding="utf-8")
+        snaps = work / f"snap-{n}"
+        r = server.hyperframes(pg, "snapshot", "--at", f"{t:.3f}", "--no-end", "-o", str(snaps), timeout=300)
+        f = sorted(snaps.glob("frame-*.png"))
+        if not f: raise SystemExit(f"no image for {n}: {(r.stderr or r.stdout)[-400:]}")
+        out[n] = cv2.imread(str(f[0])); shutil.rmtree(pg, ignore_errors=True)
+    return out
+
+
+def my_mask(name, img):
+    G = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    R = img[..., 2].astype(np.int16); Gc = img[..., 1].astype(np.int16); B = img[..., 0].astype(np.int16)
+    if name in ("body", "title", "shard1", "shard2", "shard3", "shard4", "shard5", "lines"): return (G > 50).astype(np.uint8)
+    if name == "close": return ((G > 50) | ((R - (Gc + B) // 2) > 20)).astype(np.uint8)
+    return (G > 6).astype(np.uint8)
+
+
+def scores(a, b, tol):
+    inter = int((a & b).sum()); union = int((a | b).sum()); iou = inter / union if union else 1.0
+    k = np.ones((2 * tol + 1, 2 * tol + 1), np.uint8); ad, bd = cv2.dilate(a, k), cv2.dilate(b, k)
+    # tolerant overlap: the share of each mask lying within `tol` px of the other (their mean), the usual boundary-F reading
+    prec = float((b & ad).sum()) / max(1, int(b.sum())); rec = float((a & bd).sum()) / max(1, int(a.sum()))
+    tol_s = 2 * prec * rec / (prec + rec) if prec + rec else 0.0
+    return iou, tol_s
+
+
+def tile(name, ref_img, mine_img, a, b, iou, tol, tw=330):
+    ys, xs = np.where((a | b) > 0)
+    if len(xs) == 0: x0, y0, x1, y1 = 0, 0, 100, 100
+    else: x0, x1, y0, y1 = xs.min(), xs.max(), ys.min(), ys.max()
+    pad = 14; x0, y0 = max(0, x0 - pad), max(0, y0 - pad); x1, y1 = min(1920, x1 + pad), min(1080, y1 + pad)
+    w, h = x1 - x0, y1 - y0; s = tw / max(w, h * 1.0); th_ = int(h * s); tw_ = int(w * s); tw_ = max(tw_, 40); th_ = max(th_, 40)
+    crop = lambda im: cv2.resize(im[y0:y1, x0:x1], (tw_, th_), interpolation=cv2.INTER_AREA)  # noqa: E731
+    lift = lambda im: np.clip(im.astype(np.float32) * 2.2 + 8, 0, 255).astype(np.uint8)   # the components are dark: a lift makes them legible
+    ov = np.zeros((y1 - y0, x1 - x0, 3), np.uint8); ac, bc = a[y0:y1, x0:x1] > 0, b[y0:y1, x0:x1] > 0
+    ov[ac & bc] = (255, 255, 255); ov[ac & ~bc] = (60, 60, 255); ov[~ac & bc] = (255, 120, 60)
+    tiles = [lift(crop(ref_img)), lift(crop(mine_img)), crop(ov)]
+    sheet = np.hstack(tiles)
+    img = Image.fromarray(cv2.cvtColor(sheet, cv2.COLOR_BGR2RGB))
+    return img
+
+
+def main():
+    ap = argparse.ArgumentParser(); ap.add_argument("--t", type=float, default=1.995); ap.add_argument("--ref-frame", default=str(REF_FRAME)); ap.add_argument("--out", default=""); ap.add_argument("--tol", type=int, default=2)
+    ap.add_argument("--only", default="", help="comma list of component names")
+    a = ap.parse_args()
+    ref = cv2.imread(a.ref_frame); masks = reference_masks(ref)
+    names = [n for n in NAMES if not a.only or n in a.only.split(",")]
+    out = Path(a.out) if a.out else REPO.parent / "tmp"
+    out = Path(a.out) if a.out else Path("/Users/zenray/.claude/tmp/tmp-zenray-motion-design/dishonored2-loot-note")
+    out.mkdir(parents=True, exist_ok=True)
+    work = Path(tempfile.mkdtemp(prefix="zrmd-notesheet-"))
+    try:
+        shots = render_isolated(names, a.t, work)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 15) if Path("/System/Library/Fonts/Helvetica.ttc").exists() else ImageFont.load_default()
+    small = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 12) if Path("/System/Library/Fonts/Helvetica.ttc").exists() else font
+    rows, res = [], {}
+    for n in names:
+        mine = my_mask(n, shots[n]); ref_m = masks[n].astype(np.uint8)
+        if shots[n].shape[:2] != (1080, 1920): shots[n] = cv2.resize(shots[n], (1920, 1080)); mine = my_mask(n, shots[n])
+        print(n, shots[n].shape, int(mine.sum()), int(ref_m.sum()), file=sys.stderr)
+        iou, tol_s = scores(ref_m, mine, a.tol); res[n] = {"iou": round(iou, 3), "tol": round(tol_s, 3), "refPx": int(ref_m.sum()), "minePx": int(mine.sum())}
+        ref_view = ref.copy(); ref_view[ref_m == 0] = (ref_view[ref_m == 0] * 0.25).astype(np.uint8)
+        img = tile(n, ref_view, shots[n], ref_m, mine, iou, tol_s)
+        row = Image.new("RGB", (img.width, img.height + 36), (22, 22, 24)); row.paste(img, (0, 36))
+        d = ImageDraw.Draw(row); d.text((6, 4), f"{n} : {NAMES[n]}", fill=(240, 240, 240), font=font); d.text((6, 20), f"IoU {iou:.3f}   tolérant ({a.tol} px) {tol_s:.3f}   (référence | rendu isolé | recouvrement : blanc commun, rouge référence seule, bleu rendu seul)", fill=(170, 200, 255), font=small)
+        rows.append(row)
+    W = 3 * 336 + 8; cols = 2
+    cw = max(r.width for r in rows)
+    cells = [r for r in rows]; hh = [max(r.height for r in cells[i:i + cols]) for i in range(0, len(cells), cols)]
+    sheet = Image.new("RGB", (cols * (cw + 8), sum(hh) + 8 * len(hh)), (10, 10, 12)); y = 0
+    for k, i in enumerate(range(0, len(cells), cols)):
+        for j, r in enumerate(cells[i:i + cols]): sheet.paste(r, (j * (cw + 8), y))
+        y += hh[k] + 8
+    sp = out / "components-sheet.png"; sheet.save(sp)
+    mean_iou = float(np.mean([v["iou"] for v in res.values()])); mean_tol = float(np.mean([v["tol"] for v in res.values()]))
+    (out / "components-scores.json").write_text(json.dumps({"t": a.t, "tol": a.tol, "components": res, "meanIou": round(mean_iou, 3), "meanTol": round(mean_tol, 3)}, indent=1, ensure_ascii=False))
+    print(json.dumps({"sheet": str(sp), "meanIou": round(mean_iou, 3), "meanTol": round(mean_tol, 3), **{k: (v["iou"], v["tol"]) for k, v in res.items()}}, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()

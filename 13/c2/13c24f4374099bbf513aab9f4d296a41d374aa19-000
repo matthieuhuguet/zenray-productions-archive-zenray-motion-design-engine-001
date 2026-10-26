@@ -58,109 +58,124 @@
     ],
     build(ctx) {
       const { el, p, tl, t0 } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
-      const NOTE = window.ZSNote || {}, FONT = window.ZSNoteFont;
+      const NOTE = window.ZSNote || {}, FONT = window.ZSNoteFont, iso = window.ZSNoteIsolate ? String(window.ZSNoteIsolate).split(",") : null;   // iso: the names of the only components to draw (the component sheet and its scores, Scripts/NoteSheet.py)
       const wide = w / sh > 1.6, kk = wide ? w / 1920 : Math.min(w / 1100, sh / 1020) * p.tallZoom, cx0 = wide ? 960 : 940, cy0 = wide ? 540 : 520;   // wide: the whole 1920 plane; other formats: the note and its strokes (1100 x 1020) fill the frame
       const ok = rowsOf(p.ornKeys), pk = rowsOf(p.panelKeys), tk = rowsOf(p.titleKeys), gk = rowsOf(p.groundKeys), lgk = rowsOf(p.glowKeys), vk = rowsOf(p.vignetteKeys), pck = rowsOf(p.panelColKeys), xk = rowsOf(p.textKeys), ck = rowsOf(p.closeKeys), sk = rowsOf(p.strokeKeys), stk = rowsOf(p.stainKeys), shk = rowsOf(p.shardKeys), lk = rowsOf(p.lineKeys);
       h.css(el, { background: "#000" });
       const id = "dn" + (uid++);
-      // the plane (1920x1080 design pixels) fitted to the stage
-      const ground = abs(st, { left: "0", top: "0", width: "100%", height: "100%" });
-      const glow = abs(st, { left: "0", top: "0", width: "100%", height: "100%", background: `radial-gradient(ellipse ${360 * kk}px ${480 * kk}px at ${(190 - cx0) * kk + w / 2}px ${(560 - cy0) * kk + sh / 2}px, rgba(150,170,160,0.85) 0%, rgba(120,140,135,0.45) 45%, rgba(0,0,0,0) 100%)`, opacity: 0 });
+      // 60 fps rule: every component is its own small composited cell (a div over its bounding box, with its own svg) whose content never changes; a frame only moves, fades or scales cells
+      // (compositor work), nothing is repainted and no filter is evaluated after the build (the filters are baked once, in the cells)
+      const ground = abs(st, { left: "0", top: "0", width: "100%", height: "100%", background: "#000" });
+      const glow = abs(st, { left: "0", top: "0", width: "100%", height: "100%", background: `radial-gradient(ellipse ${360 * kk}px ${480 * kk}px at ${(190 - cx0) * kk + w / 2}px ${(560 - cy0) * kk + sh / 2}px, rgba(150,170,160,0.85) 0%, rgba(120,140,135,0.45) 45%, rgba(0,0,0,0) 100%)`, opacity: 0, willChange: "opacity" });
       const plane = abs(st, { left: w / 2 - cx0 * kk + "px", top: sh / 2 - cy0 * kk + "px", width: "1920px", height: "1080px", transformOrigin: "0 0", transform: `scale(${kk})` });
-      const layer = (extra) => abs(plane, Object.assign({ left: "0", top: "0", width: "1920px", height: "1080px" }, extra || {}));
-      const svgOf = (par) => { const s = sv("svg", { width: 1920, height: 1080, viewBox: "0 0 1920 1080" }, null); s.style.cssText = "position:absolute;left:0;top:0;overflow:visible"; par.appendChild(s); return s; };
-      // ground: a plain colour (the blurred game scene is not reproduced), a soft glow at the left, then the vignette at the end
-      // the note: paper, brackets, ornaments, text, all moved together
-      const note = layer({ transformOrigin: `${p.panelX}px ${p.panelY}px`, willChange: "transform", opacity: 0 });
-      const ns = svgOf(note), defs = sv("defs", {}, ns);
-      // the paper: a ragged rectangle with a cloudy dark texture (turbulence), edges roughened by displacement
-      const flt = sv("filter", { id: id + "p", x: "-8%", y: "-8%", width: "116%", height: "116%", "color-interpolation-filters": "sRGB" }, defs);
-      sv("feTurbulence", { type: "fractalNoise", baseFrequency: "0.012 0.016", numOctaves: 4, seed: p.seed, result: "n" }, flt);
-      sv("feDisplacementMap", { in: "SourceGraphic", in2: "n", scale: p.edgeJitter * 2, xChannelSelector: "R", yChannelSelector: "G", result: "d" }, flt);
-      sv("feGaussianBlur", { in: "d", stdDeviation: p.edgeSoft }, flt);
-      const rnd = seeded(p.seed), px0 = p.panelX - p.panelW / 2, py0 = p.panelY - p.panelH / 2;
-      const edge = []; const stepE = 40;
+      const bboxOf = (d) => { const n = (String(d).match(/-?\d+\.?\d*/g) || []).map(Number); let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (let i = 0; i + 1 < n.length; i += 2) { x0 = Math.min(x0, n[i]); x1 = Math.max(x1, n[i]); y0 = Math.min(y0, n[i + 1]); y1 = Math.max(y1, n[i + 1]); } return [Math.floor(x0) - 4, Math.floor(y0) - 4, Math.ceil(x1 - x0) + 8, Math.ceil(y1 - y0) + 8]; };
+      // a cell: bbox = [x, y, w, h] in plane pixels; parent offset (ox, oy) is the origin the cell is positioned against
+      const cell = (par, name, bb, ox, oy, extra) => {
+        const d = abs(par, Object.assign({ left: bb[0] - ox + "px", top: bb[1] - oy + "px", width: bb[2] + "px", height: bb[3] + "px", willChange: "opacity, transform" }, extra || {}));
+        d.dataset.comp = name; const s = sv("svg", { width: bb[2], height: bb[3], viewBox: bb.join(" ") }, null); s.style.cssText = "position:absolute;left:0;top:0;overflow:visible"; d.appendChild(s);
+        if (iso && iso.indexOf(name) < 0) d.style.display = "none";
+        return { d, s, defs: sv("defs", {}, s) };
+      };
+      // the note: a zero-size anchor at the centre of the paper (transform-origin 0 0), so the cells turn and scale around the paper centre
+      const note = abs(plane, { left: p.panelX + "px", top: p.panelY + "px", width: "0", height: "0", transformOrigin: "0 0", willChange: "transform", display: "none" });
+      const px0 = p.panelX - p.panelW / 2, py0 = p.panelY - p.panelH / 2, PB = [Math.floor(px0 - 70), Math.floor(py0 - 70), p.panelW + 140, p.panelH + 140];
+      // the paper: a ragged rectangle (edges roughened by a displacement, then softened), baked twice (dark and light) in two cells: the colour is a cross fade of the light one
+      const rnd = seeded(p.seed), edge = [], stepE = 40;
       for (let x = 0; x <= p.panelW; x += stepE) edge.push([px0 + x, py0 + (rnd() - 0.5) * 18]);
       for (let y = 0; y <= p.panelH; y += stepE) edge.push([px0 + p.panelW + (rnd() - 0.5) * 18, py0 + y]);
       for (let x = p.panelW; x >= 0; x -= stepE) edge.push([px0 + x, py0 + p.panelH + (rnd() - 0.5) * 18]);
       for (let y = p.panelH; y >= 0; y -= stepE) edge.push([px0 + (rnd() - 0.5) * 18, py0 + y]);
-      const paper = sv("path", { d: "M" + edge.map((q) => q[0].toFixed(1) + "," + q[1].toFixed(1)).join("L") + "z", fill: "#191719", filter: `url(#${id}p)` }, ns);
-      const cloud = sv("filter", { id: id + "c", x: "0", y: "0", width: "100%", height: "100%", "color-interpolation-filters": "sRGB" }, defs);
+      const paperD = "M" + edge.map((q) => q[0].toFixed(1) + "," + q[1].toFixed(1)).join("L") + "z";
+      const pcol = pck.length ? pck : [[0, 25, 23, 25]], dark = pcol[pcol.length - 1].slice(1), light = pcol[0].slice(1), lumOf = (c) => (c[0] + c[1] + c[2]) / 3;
+      const paperCell = (name, color) => {
+        const c = cell(note, name, PB, p.panelX, p.panelY);
+        const flt = sv("filter", { id: id + name, x: "-8%", y: "-8%", width: "116%", height: "116%", "color-interpolation-filters": "sRGB" }, c.defs);
+        sv("feTurbulence", { type: "fractalNoise", baseFrequency: "0.012 0.016", numOctaves: 4, seed: p.seed, result: "n" }, flt);
+        sv("feDisplacementMap", { in: "SourceGraphic", in2: "n", scale: p.edgeJitter * 2, xChannelSelector: "R", yChannelSelector: "G", result: "d" }, flt);
+        sv("feGaussianBlur", { in: "d", stdDeviation: p.edgeSoft }, flt);
+        sv("path", { d: paperD, fill: rgb(color), filter: `url(#${id + name})` }, c.s); return c;
+      };
+      const paperDark = paperCell("paper", dark), paperLight = paperCell("paper-light", light);
+      if (iso) paperLight.d.style.display = "none";
+      // the smoke: dark clouds and a light grey mist over the paper (the reference mottles by 3 to 5 grey levels at 12 px), clipped to its shape
+      const sm = cell(note, "paper-smoke", PB, p.panelX, p.panelY);
+      const cloud = sv("filter", { id: id + "c", x: "0", y: "0", width: "100%", height: "100%", "color-interpolation-filters": "sRGB" }, sm.defs);
       sv("feTurbulence", { type: "fractalNoise", baseFrequency: "0.006 0.009", numOctaves: 5, seed: p.seed + 3, result: "c" }, cloud);
       sv("feColorMatrix", { in: "c", type: "matrix", values: "0 0 0 0 0.04  0 0 0 0 0.035  0 0 0 0 0.04  0.9 0.6 0 0 -0.35", result: "m" }, cloud);
       sv("feComposite", { in: "m", in2: "SourceGraphic", operator: "in" }, cloud);
-      const cloudP = sv("path", { d: paper.getAttribute("d"), fill: "#000", filter: `url(#${id}c)`, opacity: 0.55 }, ns);
-      // the smoke: light grey mist drifting over the paper, clipped to it (the reference mottles by 3 to 5 grey levels at 12 px)
-      const mist = sv("filter", { id: id + "m", x: "0", y: "0", width: "100%", height: "100%", "color-interpolation-filters": "sRGB" }, defs);
+      sv("path", { d: paperD, fill: "#000", filter: `url(#${id}c)`, opacity: 0.55 }, sm.s);
+      const mist = sv("filter", { id: id + "m", x: "0", y: "0", width: "100%", height: "100%", "color-interpolation-filters": "sRGB" }, sm.defs);
       sv("feTurbulence", { type: "fractalNoise", baseFrequency: "0.0045 0.0065", numOctaves: 4, seed: p.seed + 11, result: "m" }, mist);
       sv("feColorMatrix", { in: "m", type: "matrix", values: "0 0 0 0 0.30  0 0 0 0 0.31  0 0 0 0 0.30  0.6 0 0 0 -0.24", result: "mm" }, mist);
       sv("feComposite", { in: "mm", in2: "SourceGraphic", operator: "in" }, mist);
-      const mistP = sv("path", { d: paper.getAttribute("d"), fill: "#000", filter: `url(#${id}m)`, opacity: 0 }, ns);
-      // stain, ornaments and brackets (traced)
-      const stain = NOTE.stain ? sv("path", { d: NOTE.stain.d, fill: rgb([36, 13, 20]), opacity: 0, "fill-rule": "evenodd" }, ns) : null;
-      const orn = NOTE.orn ? sv("path", { d: NOTE.orn.d, fill: rgb(NOTE.orn.fill.map((v) => v * 0.5)), "fill-rule": "evenodd", opacity: 0.9 }, ns) : null;
-      const orn2 = NOTE.orn2 ? sv("path", { d: NOTE.orn2.d, fill: rgb(NOTE.orn2.fill.map((v) => v * 0.5)), "fill-rule": "evenodd", opacity: 0 }, ns) : null;
-      const brk = NOTE.brackets ? sv("path", { d: NOTE.brackets.d, fill: rgb(NOTE.brackets.fill), "fill-rule": "evenodd", opacity: 0.75 }, ns) : null;
-      // body text, the procedural note font, one path per line
-      const bodyG = sv("g", { fill: "none", "stroke-linecap": "round", "stroke-linejoin": "round", "stroke-width": p.bodyWeight }, ns);
-      const acc = hex(p.accent);
+      sv("path", { d: paperD, fill: "#000", filter: `url(#${id}m)`, opacity: clamp(p.smokeK, 0, 1) }, sm.s);
+      if (iso && iso.indexOf("paper") >= 0) sm.d.style.display = "";
+      // traced components, each in its own cell
+      const traced = (name, layerKey, fill, opacity, par, ox, oy) => { const L = NOTE[layerKey]; if (!L) return null; const c = cell(par, name, bboxOf(L.d), ox, oy, { opacity }); sv("path", { d: L.d, fill: rgb(fill), "fill-rule": "evenodd" }, c.s); return c; };
+      const stain = traced("stain", "stain", [36, 13, 20], 0, note, p.panelX, p.panelY);
+      const orn = traced("orn", "orn", (NOTE.orn || { fill: [30, 30, 30] }).fill.map((v) => v * 0.5), 0.9, note, p.panelX, p.panelY);
+      const orn2 = traced("orn2", "orn2", (NOTE.orn2 || { fill: [30, 30, 30] }).fill.map((v) => v * 0.5), 0, note, p.panelX, p.panelY);
+      const brk = traced("brackets", "brackets", (NOTE.brackets || { fill: [90, 90, 90] }).fill, 0.75, note, p.panelX, p.panelY);
+      // body text, the procedural note font, one path per line, in grey (its fade is the opacity of its cell)
+      const BB = [Math.floor(p.textX) - 12, 440, 760, 280], body = cell(note, "body", BB, p.panelX, p.panelY, { opacity: 0 });
+      const bodyG = sv("g", { fill: "none", "stroke-linecap": "round", "stroke-linejoin": "round", "stroke-width": p.bodyWeight, stroke: rgb([175, 175, 179]) }, body.s), acc = hex(p.accent);
       (p.body || []).forEach((raw) => {
         const parts = String(raw).split("|"), text = parts[0].trim(), fit = Number(parts[1]) || 0, base = Number(parts[2]) || 0;
         if (!text || !FONT) return;
-        const code = text.indexOf("488");   // the code is drawn in the accent colour, the rest of the line in grey
-        const L = FONT.line(text, { xh: p.bodyXh, slant: p.bodySlant, track: 0.07, space: 0.5, fit });
+        const code = text.indexOf("488"), o = { xh: p.bodyXh, slant: p.bodySlant, track: 0.07, space: 0.5 };   // the code is drawn in the accent colour, the rest of the line in grey
         const g = sv("g", { transform: `translate(${p.textX},${base})` }, bodyG);
-        if (code < 0) { sv("path", { d: L.d, stroke: "currentColor", class: "zn-body" }, g); return; }
-        const L0 = FONT.line(text.slice(0, code), { xh: p.bodyXh, slant: p.bodySlant, track: 0.07, space: 0.5, fit: fit * code / text.length }), L1 = FONT.line(text.slice(code, code + 3), { xh: p.bodyXh, slant: p.bodySlant, track: 0.07, space: 0.5 }), L2 = FONT.line(text.slice(code + 3), { xh: p.bodyXh, slant: p.bodySlant, track: 0.07, space: 0.5 });
-        sv("path", { d: L0.d, class: "zn-body" }, g);
+        if (code < 0) { sv("path", { d: FONT.line(text, Object.assign({ fit }, o)).d }, g); return; }
+        const L0 = FONT.line(text.slice(0, code), Object.assign({ fit: fit * code / text.length }, o)), L1 = FONT.line(text.slice(code, code + 3), o), L2 = FONT.line(text.slice(code + 3), o);
+        sv("path", { d: L0.d }, g);
         sv("path", { d: L1.d, stroke: rgb(acc), transform: `translate(${L0.width + p.bodyXh * 0.5},0)` }, g);
-        sv("path", { d: L2.d, class: "zn-body", transform: `translate(${L0.width + p.bodyXh * 0.5 + L1.width + p.bodyXh * 0.07},0)` }, g);
+        sv("path", { d: L2.d, transform: `translate(${L0.width + p.bodyXh * 0.5 + L1.width + p.bodyXh * 0.07},0)` }, g);
       });
-      const bodyPaths = [...bodyG.querySelectorAll(".zn-body")];
-      // ink strokes across the top (traced), with the title above them, moving separately
-      const inkL = layer({ willChange: "transform", opacity: 0 }), is = svgOf(inkL);
-      const ink = NOTE.strokes ? sv("path", { d: NOTE.strokes.d, fill: rgb(NOTE.strokes.fill), "fill-rule": "evenodd" }, is) : null;
-      const titleL = layer({ willChange: "transform", opacity: 0 }), ts = svgOf(titleL), tdef = sv("defs", {}, ts);
-      const tglow = sv("filter", { id: id + "t", x: "-10%", y: "-60%", width: "120%", height: "220%" }, tdef); sv("feGaussianBlur", { in: "SourceAlpha", stdDeviation: 2.2, result: "b" }, tglow);
+      // ink strokes across the top (traced), then the title above them (glow baked in its cell); both drift with the paper
+      const ink = traced("ink", "strokes", (NOTE.strokes || { fill: [23, 18, 22] }).fill, 1, plane, 0, 0); if (ink) ink.d.style.opacity = "0";
+      const title = cell(plane, "title", [Math.floor(p.titleX) - 40, Math.floor(p.titleY) - 70, 460, 140], 0, 0, { opacity: 0 });
+      const tglow = sv("filter", { id: id + "t", x: "-10%", y: "-60%", width: "120%", height: "220%" }, title.defs); sv("feGaussianBlur", { in: "SourceAlpha", stdDeviation: 2.2, result: "b" }, tglow);
       const tm = sv("feMerge", {}, tglow); sv("feMergeNode", { in: "b" }, tm); sv("feMergeNode", { in: "SourceGraphic" }, tm);
-      const tg = sv("g", { transform: `translate(${p.titleX},${p.titleY}) rotate(${p.titleTilt})`, filter: `url(#${id}t)` }, ts);
+      const tg = sv("g", { transform: `translate(${p.titleX},${p.titleY}) rotate(${p.titleTilt})`, filter: `url(#${id}t)` }, title.s);
       if (FONT) { const L = FONT.line(p.title, { xh: p.titleXh, slant: p.titleSlant, track: 0.05, space: 0.45, fit: 322 }); sv("path", { d: L.d, fill: "none", stroke: "#ececf0", "stroke-width": p.titleWeight, "stroke-linecap": "round", "stroke-linejoin": "round" }, tg); }
       // the Close prompt
-      const closeL = layer({ opacity: 0, willChange: "transform" }), cs = svgOf(closeL);
+      const close = cell(plane, "close", [Math.floor(p.closeX) - 340, Math.floor(p.closeY) - 40, 700, 80], 0, 0, { opacity: 0 }), cs = close.s;
       sv("rect", { x: p.closeX - 28, y: p.closeY - 28, width: 112, height: 56, fill: "#0a090b", opacity: 0.55 }, cs);
       sv("circle", { cx: p.closeX, cy: p.closeY, r: 21, fill: "#3a0d10", stroke: "#8c8a8e", "stroke-width": 1.6 }, cs);
       sv("circle", { cx: p.closeX, cy: p.closeY, r: 15.5, fill: "#7a1318" }, cs);
       if (FONT) { const B = FONT.line("B", { xh: 9, slant: 0.2, track: 0 }); sv("path", { d: B.d, fill: "none", stroke: "#e8e0e0", "stroke-width": 2.2, "stroke-linecap": "round", transform: `translate(${p.closeX - 6},${p.closeY + 9})` }, cs); const C = FONT.line(p.closeLabel, { xh: 13, slant: 0.28, track: 0.06 }); sv("path", { d: C.d, fill: "none", stroke: "#f0f0f2", "stroke-width": 1.7, "stroke-linecap": "round", "stroke-linejoin": "round", transform: `translate(${p.closeX + 31},${p.closeY + 6})` }, cs); }
       sv("path", { d: `M${p.closeX - 330},${p.closeY - 12} L${p.closeX - 28},${p.closeY - 3} M${p.closeX + 84},${p.closeY + 7} L${p.closeX + 346},${p.closeY + 10}`, stroke: "#c8c8cc", "stroke-width": 1.1, fill: "none", opacity: 0.8 }, cs);
-      // paper shards (traced, one shape each) and the speed lines
-      const shardL = layer({ opacity: 1 }), shs = svgOf(shardL);
+      // paper shards: each one a cell of polygons (a colour per facet) that is moved by transform; the speed lines are one cell scaled from the centre of the frame
       const shards = (NOTE.shardList || []).map((S, i) => {
-        const g = sv("g", { opacity: 0 }, shs), inner = sv("g", { transform: `translate(${-S.cx},${-S.cy})` }, g);
-        (S.tris || []).forEach((q) => { const c = rgb(q.c.map((v) => clamp(v * p.shardLift, 0, 255))); sv("polygon", { points: q.p.join(" "), fill: c, stroke: c, "stroke-width": 0.8, "stroke-linejoin": "round" }, inner); });
-        return { g, S };
+        const pts = (S.tris || []).map((q) => q.p).reduce((a, b) => a.concat(b), []), xs = pts.filter((_, k) => k % 2 === 0), ys = pts.filter((_, k) => k % 2 === 1);
+        const bx = Math.floor(Math.min(...xs)) - 3, by = Math.floor(Math.min(...ys)) - 3, c = cell(plane, "shard" + (i + 1), [bx, by, Math.ceil(Math.max(...xs)) - bx + 6, Math.ceil(Math.max(...ys)) - by + 6], 0, 0, { opacity: 0, transformOrigin: `${S.cx - bx}px ${S.cy - by}px` });
+        (S.tris || []).forEach((q) => { const col = rgb(q.c.map((v) => clamp(v * p.shardLift, 0, 255))); sv("polygon", { points: q.p.join(" "), fill: col, stroke: col, "stroke-width": 0.8, "stroke-linejoin": "round" }, c.s); });
+        return { d: c.d, S };
       });
-      const linesG = sv("g", { stroke: "#e6e6ec", "stroke-width": 1.3, "stroke-linecap": "round", opacity: 0 }, shs);
+      const lines = cell(plane, "lines", [0, 0, 1920, 1080], 0, 0, { opacity: 0, transformOrigin: "960px 540px" });
+      const linesG = sv("g", { stroke: "#e6e6ec", "stroke-width": 1.3, "stroke-linecap": "round" }, lines.s);
       ((NOTE.lines && NOTE.lines.segs) || []).forEach((q) => sv("line", { x1: q[0], y1: q[1], x2: q[2], y2: q[3] }, linesG));
       // vignette on top
-      const vig = abs(st, { left: "0", top: "0", width: "100%", height: "100%", background: "radial-gradient(ellipse 75% 80% at 50% 50%, rgba(0,0,0,0) 38%, rgba(0,0,0,1) 100%)", opacity: 0, pointerEvents: "none" });
+      const vig = abs(st, { left: "0", top: "0", width: "100%", height: "100%", background: "radial-gradient(ellipse 75% 80% at 50% 50%, rgba(0,0,0,0) 38%, rgba(0,0,0,1) 100%)", opacity: 0, pointerEvents: "none", willChange: "opacity" });
+      if (iso) { glow.style.display = "none"; vig.style.display = "none"; ground.style.background = "#000"; }
+      window.ZSNoteComponents = ["paper", "stain", "orn", "orn2", "brackets", "body", "ink", "title", "close"].concat(shards.map((s, i) => "shard" + (i + 1)), ["lines"]);
       const shardIdx = {}; shk.forEach((r) => { (shardIdx[r[1]] = shardIdx[r[1]] || []).push([r[0]].concat(r.slice(2))); });
+      const last = {};   // a cell property is written only when its value changed (the browser then repaints nothing)
+      const put = (e, k, v) => { const key = (e.dataset && e.dataset.comp || "g") + k; if (last[key] === v) return; last[key] = v; e.style[k] = v; };
+      const lightGain = Math.max(1e-6, lumOf(light) - lumOf(dark));
       const pr = { t: 0 }, update = (t) => {
-        const gc = at(gk, t); ground.style.background = rgb(gc);
-        glow.style.opacity = String(clamp(lin(lgk, t)[0], 0, 1));
-        const q = at(pk, t), al = clamp(lin(pk.map((r) => [r[0], r[6]]), t)[0], 0, 1);
-        note.style.opacity = String(al);
+        if (!iso) { put(ground, "background", rgb(at(gk, t).map(Math.round))); put(glow, "opacity", String(Math.round(clamp(lin(lgk, t)[0], 0, 1) * 200) / 200)); put(vig, "opacity", String(Math.round(clamp(lin(vk, t)[0], 0, 1) * 200) / 200)); }
+        const q = at(pk, t), al = lin(pk.map((r) => [r[0], r[6]]), t)[0];
+        put(note, "display", al > 0.02 ? "" : "none");
         gsap.set(note, { x: q[0], y: q[1], rotation: q[2], scaleX: q[3], scaleY: q[4], force3D: true });
-        const pc = at(pck, t); paper.setAttribute("fill", rgb(pc)); mistP.setAttribute("opacity", String(clamp(al * p.smokeK, 0, 1)));
-        const xq = lin(xk, t), gr = xq[1] || 170; bodyPaths.forEach((e) => { e.setAttribute("stroke", rgb([gr, gr, gr + 4])); }); bodyG.setAttribute("opacity", String(clamp(xq[0], 0, 1)));
-        if (orn2) orn2.setAttribute("opacity", String(clamp(lin(ok, t)[0] * 0.9, 0, 1)));
-        if (stain) stain.setAttribute("opacity", String(clamp(lin(stk, t)[0] * p.stainK, 0, 1)));
-        // the ink strokes and the title drift with the paper; the title slides in on its own
-        const ik = lin(sk, t); inkL.style.opacity = String(clamp(ik[0] * p.inkK, 0, 1)); gsap.set(inkL, { x: q[0], y: q[1], force3D: true });
-        const tq = at(tk, t), ta = clamp(lin(tk.map((r) => [r[0], r[2]]), t)[0], 0, 1); titleL.style.opacity = String(ta); gsap.set(titleL, { x: q[0] + tq[0], y: q[1], force3D: true });
-        closeL.style.opacity = String(clamp(lin(ck, t)[0], 0, 1)); gsap.set(closeL, { x: q[0], force3D: true });
-        shards.forEach((s, i) => { const rows = shardIdx[i + 1]; if (!rows || t < rows[0][0] - 1e-6) { s.g.setAttribute("opacity", 0); return; } const v = at(rows, t), a = clamp(lin(rows.map((r) => [r[0], r[5]]), t)[0] * p.shardK, 0, 1); s.g.setAttribute("opacity", String(a)); s.g.setAttribute("transform", `translate(${v[0]},${v[1]}) rotate(${v[3]}) scale(${v[2]},${v[2]})`); });
-        const lq = lin(lk, t); linesG.setAttribute("opacity", String(clamp(lq[0] * p.lineK, 0, 1))); linesG.setAttribute("transform", `translate(960,540) scale(${lq[1] || 1}) translate(-960,-540)`);
-        vig.style.opacity = String(clamp(lin(vk, t)[0], 0, 1));
+        if (!iso) put(paperLight.d, "opacity", String(Math.round(clamp((lumOf(at(pck, t)) - lumOf(dark)) / lightGain, 0, 1) * 200) / 200));
+        const xq = lin(xk, t); put(body.d, "opacity", String(Math.round(clamp(xq[0] * (xq[1] || 175) / 175, 0, 1) * 200) / 200));
+        if (orn2) put(orn2.d, "opacity", String(Math.round(clamp(lin(ok, t)[0] * 0.9, 0, 1) * 200) / 200));
+        if (stain) put(stain.d, "opacity", String(Math.round(clamp(lin(stk, t)[0] * p.stainK, 0, 1) * 200) / 200));
+        if (ink) { put(ink.d, "opacity", String(Math.round(clamp(lin(sk, t)[0] * p.inkK, 0, 1) * 200) / 200)); gsap.set(ink.d, { x: q[0], y: q[1], force3D: true }); }
+        const tq = at(tk, t); put(title.d, "opacity", String(Math.round(clamp(lin(tk.map((r) => [r[0], r[2]]), t)[0], 0, 1) * 200) / 200)); gsap.set(title.d, { x: q[0] + tq[0], y: q[1], force3D: true });
+        put(close.d, "opacity", String(Math.round(clamp(lin(ck, t)[0], 0, 1) * 200) / 200)); gsap.set(close.d, { x: q[0], force3D: true });
+        shards.forEach((s, i) => { const rows = shardIdx[i + 1]; if (!rows || t < rows[0][0] - 1e-6) { put(s.d, "opacity", "0"); return; } const v = at(rows, t), a = clamp(lin(rows.map((r) => [r[0], r[5]]), t)[0] * p.shardK, 0, 1); put(s.d, "opacity", String(Math.round(a * 200) / 200)); gsap.set(s.d, { x: v[0] - s.S.cx, y: v[1] - s.S.cy, rotation: v[3], scale: v[2], force3D: true }); });
+        const lq = lin(lk, t); put(lines.d, "opacity", String(Math.round(clamp(lq[0] * p.lineK, 0, 1) * 200) / 200)); gsap.set(lines.d, { scale: lq[1] || 1, force3D: true });
       };
       update(0);
       tl.fromTo(pr, { t: 0 }, { t: ctx.dur, duration: ctx.dur, ease: "none", onUpdate: () => update(pr.t + (p.film0 || 0)) }, t0);
