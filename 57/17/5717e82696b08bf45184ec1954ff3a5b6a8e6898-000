@@ -1,0 +1,9 @@
+#!/bin/zsh
+# 26 October 2026: restart the local engine (port 3104) the way the macOS app starts it: the venv python of shell/Resources/python-path.txt, not the bare Homebrew binary
+# (launched bare, the venv packages are missing and the app shows "ModuleNotFoundError: No module named 'numpy'"). FR : relance le moteur local avec le bon Python.
+set -e
+cd "$(dirname "$0")/.."
+PY="$(cat 'ZenRay Motion Design.app/Contents/Resources/python-path.txt' 2>/dev/null || echo /Users/zenray/.venvs/zenray-motion/bin/python)"
+pkill -f "Orchestrate.py serve" 2>/dev/null || true; sleep 1.5
+nohup "$PY" -I Scripts/Orchestrate.py serve >"$HOME/Library/Application Support/ZenRayMotion/Shell-engine.log" 2>&1 &
+sleep 5; "$PY" -I -c "import numpy" && curl -s http://127.0.0.1:3104/api/motion/runtime-version && echo
