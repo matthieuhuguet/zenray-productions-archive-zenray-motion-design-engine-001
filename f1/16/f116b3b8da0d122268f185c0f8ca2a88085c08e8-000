@@ -1,0 +1,31 @@
+"""Fluidity check of a motion project (26 October 2026): renders consecutive instants at the project fps and measures the change between neighbours.
+A smooth motion changes by similar amounts from one image to the next; a repeated image (a staircase of keys) shows as a change of 0 followed by a spike. Prints, per window, the share of repeated images and the worst spike (change / median of its neighbours).
+FR : controle de fluidite : images consecutives au fps du projet, parts d'images repetees et plus gros a-coup.
+Usage: PYTHONPATH=motion /Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/FluidityCheck.py <project-id> --from 1.0 --to 2.0 [--fps 60]"""
+import argparse
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "motion"))
+import server  # noqa: E402
+
+ap = argparse.ArgumentParser(); ap.add_argument("project"); ap.add_argument("--from", dest="t0", type=float, default=0); ap.add_argument("--to", dest="t1", type=float, default=2); ap.add_argument("--fps", type=int, default=60); ap.add_argument("--region", default="")
+a = ap.parse_args()
+n = int(round((a.t1 - a.t0) * a.fps)); times = [a.t0 + i / a.fps for i in range(n + 1)]
+work = Path(tempfile.mkdtemp(prefix="zrmd-fluid-"))
+try:
+    page = server.cook(a.project, work / "page"); snaps = work / "snaps"
+    server.hyperframes(page, "snapshot", "--at", ",".join(f"{t:.4f}" for t in times), "--no-end", "-o", str(snaps), timeout=900)
+    files = sorted(snaps.glob("frame-*.png")); imgs = [np.asarray(Image.open(f).convert("L").resize((480, 270)), dtype=np.float32) for f in files]
+finally:
+    shutil.rmtree(work, ignore_errors=True)
+d = np.array([np.abs(imgs[i + 1] - imgs[i]).mean() for i in range(len(imgs) - 1)])
+rep = int((d < 0.02).sum()); med = np.array([np.median(d[max(0, i - 3):i + 4]) for i in range(len(d))]); ratio = d / np.maximum(med, 0.05)
+print(f"{a.project}: {len(imgs)} images {a.t0:.2f}-{a.t1:.2f} s at {a.fps} fps; repeated images {rep}/{len(d)}; change per image min {d.min():.3f} median {np.median(d):.3f} max {d.max():.3f}; worst spike x{ratio.max():.1f} at {times[int(ratio.argmax()) + 1]:.3f} s")
+print("changes:", " ".join(f"{v:.2f}" for v in d))
