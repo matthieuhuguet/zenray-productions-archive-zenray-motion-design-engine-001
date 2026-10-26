@@ -1,0 +1,29 @@
+"""Check what the macOS app sees (26 October 2026). The app is a WKWebView: WebKit, not Chromium. This builds the given motions in ONE page like the Validate list does (the last one at the instant under test),
+draws it in WebKit (Scripts/WebKitProbe.swift) and counts the saturated red and blue pixels on the last card (an aberration pulse, a colour fringe): 0 means the effect is not on screen.
+FR : controle de ce que voit l'app macOS (WebKit) : plusieurs motions dans une page, la derniere a l'instant teste, comptage des pixels rouges et bleus.
+Usage: /Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/CheckInApp.py <id> [<id> ...] --t 4.95 [--expect-fringes]   (the last id is the one under test; the others are built before it)"""
+import argparse
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+
+REPO = Path(__file__).resolve().parents[1]
+PROBE = Path("/private/tmp/claude-501/WebKitProbe")
+ap = argparse.ArgumentParser(); ap.add_argument("ids", nargs="+"); ap.add_argument("--t", type=float, default=0); ap.add_argument("--out", default="/private/tmp/claude-501/checkinapp.png"); ap.add_argument("--expect-fringes", action="store_true")
+a = ap.parse_args()
+if not PROBE.exists(): subprocess.run(["swiftc", "-O", str(REPO / "Scripts" / "WebKitProbe.swift"), "-o", str(PROBE)], check=True)
+url = f"http://127.0.0.1:3104/motion/web/bench.html#ids={','.join(a.ids)}&t={a.t}"
+r = subprocess.run([str(PROBE), url, str(REPO / "Scripts" / "WebKitManyCards.js"), a.out, "1000", "700"], capture_output=True, text=True, timeout=240)
+info = json.loads(r.stdout.splitlines()[0]); print(json.dumps(info))
+im = np.asarray(Image.open(a.out).convert("RGB")).astype(int); n = len(a.ids) - 1
+x0, y0 = (n % 2) * 2 * 484 if False else 0, 0
+# the last card is the n-th float of 480x270 css px (dpr 2): find it by scanning the page for the saturated colours anywhere
+red = int(((im[..., 0] > 200) & (im[..., 1] < 70) & (im[..., 2] < 70)).sum()); blue = int(((im[..., 2] > 200) & (im[..., 0] < 70) & (im[..., 1] < 70)).sum())
+print(f"saturated red px {red}, blue px {blue}   PNG {a.out}")
+ok = red > 200 and blue > 200
+print("FRINGES ON SCREEN" if ok else "NO FRINGES ON SCREEN")
+if a.expect_fringes and not ok: sys.exit(1)

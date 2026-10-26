@@ -1,0 +1,20 @@
+// 26 October 2026: the Validate situation in one page, for Scripts/WebKitProbe.swift (the engine of the macOS app): several motions are built side by side in the SAME document (as the Validate list does),
+// each parked on its resting frame, and the last one is moved to the instant under test. Result: JSON with the filters seen on it; the PNG shows what WebKit draws.
+// Usage: WebKitProbe http://127.0.0.1:3104/motion/web/bench.html#ids=a,b,c,d&t=4.95 Scripts/WebKitManyCards.js out.png 1000 700   FR : plusieurs motions dans la meme page, comme la liste Validate.
+return (async () => {
+  await new Promise(r => setTimeout(r, 800));
+  const q = Object.fromEntries(location.hash.slice(1).split('&').map(kv => kv.split('=')));
+  const ids = (q.ids || '').split(','), t = Number(q.t || 0), builds = [];
+  for (let i = 0; i < ids.length; i++) {
+    const pj = await (await fetch('/api/motion/projects/' + ids[i])).json(); const proj = pj.project || pj;
+    const host = document.createElement('div'); host.style.cssText = 'position:relative;width:480px;height:270px;overflow:hidden;background:#000;margin:4px;float:left;contain:content';
+    const inner = document.createElement('div'); inner.style.cssText = 'position:relative;width:1920px;height:1080px;transform:scale(0.25);transform-origin:0 0'; host.appendChild(inner); document.body.appendChild(host);
+    const keep = window.__timelines && window.__timelines.main;
+    const b = ZS.build(proj, inner, { preview: true, assetBase: '/motion/files/' + ids[i] + '/', hideRefs: true }); if (window.__timelines) window.__timelines.main = keep;
+    b.tl.seek(i === ids.length - 1 ? t : b.duration * 0.5, false); builds.push({ id: ids[i], b, host });
+  }
+  await new Promise(r => setTimeout(r, 900));
+  const last = builds[builds.length - 1].host;
+  const dup = {}; document.querySelectorAll('filter[id]').forEach(f => { dup[f.id] = (dup[f.id] || 0) + 1; });
+  return JSON.stringify({ cards: builds.length, filtersOnLast: [...last.querySelectorAll('.zs-scene')].map(e => e.style.filter), dxOnLast: [...last.querySelectorAll('feOffset')].map(f => f.getAttribute('dx')), duplicateFilterIds: Object.entries(dup).filter(([, n]) => n > 1).map(([k, n]) => k + 'x' + n) });
+})()

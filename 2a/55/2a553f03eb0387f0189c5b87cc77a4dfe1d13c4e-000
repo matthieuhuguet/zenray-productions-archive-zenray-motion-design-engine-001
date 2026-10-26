@@ -168,6 +168,9 @@
       const msg = `réglage inconnu de ce moteur : ${[...new Set(unknown)].join(", ")} (page plus ancienne que le projet : recharger avec Cmd+R)`;
       console.error("[zs-post] " + msg); ZS.h.css(ZS.h.el("div", "zs-abs", root, msg), { left: "12px", top: "12px", right: "12px", color: "#fff", background: "rgba(200,67,31,.92)", font: "600 16px system-ui", padding: "6px 10px", zIndex: 99, pointerEvents: "none" });
     }
+    // 26 October 2026: filter ids are unique per build. A page that shows many motions (the Validate list builds a card per project) holds many copies of the same filter; a CSS filter: url(#id) finds
+    // the FIRST element with that id in the document, i.e. another card's filter, driven by another card's time. The aberration pulse (and the palette before it) therefore never showed in the app.
+    const tok = Math.random().toString(36).slice(2, 8);
     const film = values(project.post);
     const svg = node("svg", { width: 0, height: 0, "aria-hidden": "true" });
     svg.style.position = "absolute";
@@ -176,12 +179,12 @@
     let graded = 0;
     sections.forEach(({ el, scene }, i) => {
       const v = values({ ...(project.post || {}), ...(scene.post || {}) });
-      const id = colourFilter(defs, `zs-post-${i}`, v, u);
+      const id = colourFilter(defs, `zs-post-${tok}-${i}`, v, u);
       if (id) { el.style.filter = `url(#${id})`; graded++; }
     });
     if (film.abPx > 0) {   // the pulse: red and blue copies of the frame pulled apart by px * envelope, only while the pulse lasts (outside it the section keeps its own filter, so the frame costs nothing)
       const abf = sections.map(({ el }, i) => {
-        const id = `zs-ab-${i}`, f = node("filter", { id, x: "-6%", y: "-6%", width: "112%", height: "112%", "color-interpolation-filters": "sRGB" }, defs);
+        const id = `zs-ab-${tok}-${i}`, f = node("filter", { id, x: "-6%", y: "-6%", width: "112%", height: "112%", "color-interpolation-filters": "sRGB" }, defs);
         const ch = (m, r) => node("feColorMatrix", { in: "SourceGraphic", type: "matrix", values: m, result: r }, f);
         ch("1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0", "ro"); const offR = node("feOffset", { in: "ro", dx: 0, dy: 0, result: "r" }, f);
         ch("0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0", "g");
@@ -209,12 +212,12 @@
       vg.dataset.post = "vignette";
     }
     if (film.grain > 0) {
-      const f = node("filter", { id: "zs-post-grain", x: "0", y: "0", width: "100%", height: "100%" }, defs);
+      const f = node("filter", { id: `zs-post-grain-${tok}`, x: "0", y: "0", width: "100%", height: "100%" }, defs);
       const turb = node("feTurbulence", { type: "fractalNoise", baseFrequency: (0.9 / (film.grainSize * u)).toFixed(3), numOctaves: 2, seed: 1, stitchTiles: "stitch" }, f);
       node("feColorMatrix", { type: "saturate", values: 0 }, f);
       const g = node("svg", { width: W, height: H }, null);
       g.style.cssText = `position:absolute;left:0;top:0;pointer-events:none;z-index:51;mix-blend-mode:overlay;opacity:${(film.grain / 100 * 0.6).toFixed(3)}`;
-      node("rect", { width: "100%", height: "100%", filter: "url(#zs-post-grain)" }, g);
+      node("rect", { width: "100%", height: "100%", filter: `url(#zs-post-grain-${tok})` }, g);
       g.dataset.post = "grain";
       root.appendChild(g);
       // the grain moves at a fixed number of images per second, from the timeline: the same frame always has the same grain
