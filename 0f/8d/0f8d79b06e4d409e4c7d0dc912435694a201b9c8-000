@@ -96,19 +96,19 @@ def fit_body(font, ref, rounds):
     return P, lines, final
 
 
-def fit_title(font, ref, rounds):
+def fit_title(font, ref, rounds, passes=3):
     P = {"x": 778.0, "y": 138.0, "xh": 15.0, "slant": 0.3, "tilt": 2.1, "weight": 2.1, "fit": 322.0, "track": 0.05, "space": 0.45}
     ev = lambda Q: score(ref, raster(title_svg(font, Q, None)))  # noqa: E731
     print("start", ev(P))
     P, best = descent(P, {"x": 2.0, "y": 2.0, "xh": 0.4, "slant": 0.04, "tilt": 0.4, "weight": 0.12, "fit": 3.0, "track": 0.01, "space": 0.05}, ev, rounds, {"weight": (0.5, 3.5)})
     n = len(TITLE); adj = [[0.0, 0.0, 1.0] for _ in range(n)]
-    for rnd in range(3):
+    for rnd in range(passes):
         for i, ch in enumerate(TITLE):
             if ch == " ": continue
             def evl(Q, i=i):
                 a = [list(x) for x in adj]; a[i] = [Q["dx"], Q["dy"], Q["s"]]; return score(ref, raster(title_svg(font, P, a)))
             Q = {"dx": adj[i][0], "dy": adj[i][1], "s": adj[i][2]}
-            Q, s = descent(Q, {"dx": 0.12, "dy": 0.12, "s": 0.06}, evl, 3, {"s": (0.6, 1.6)})
+            Q, s = descent(Q, {"dx": 0.12, "dy": 0.12, "s": 0.06}, evl, 3, {"s": (0.5, 1.6)})
             adj[i] = [round(Q["dx"], 3), round(Q["dy"], 3), round(Q["s"], 3)]
         print(f"  letters pass {rnd + 1}: {score(ref, raster(title_svg(font, P, adj)))}", flush=True)
     final = score(ref, raster(title_svg(font, P, adj)))
@@ -123,7 +123,7 @@ def sub(path, old, new, count=1):
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("what", choices=["body", "title"]); ap.add_argument("--rounds", type=int, default=4); ap.add_argument("--apply", action="store_true")
+    ap = argparse.ArgumentParser(); ap.add_argument("what", choices=["body", "title"]); ap.add_argument("--rounds", type=int, default=4); ap.add_argument("--apply", action="store_true"); ap.add_argument("--passes", type=int, default=3)
     a = ap.parse_args()
     ref = cv2.imread(str(NoteSheet.REF_FRAME)); masks = NoteSheet.reference_masks(ref); font = Font()
     if a.what == "body":
@@ -141,7 +141,7 @@ def main():
             f = re.sub(r"body: \{ track: [\d.]+, space: [\d.]+ \}", f'body: {{ track: {round(P["track"], 3)}, space: {round(P["space"], 3)} }}', f, count=1)
             FONTJS.write_text(f, encoding="utf-8"); print("applied")
     else:
-        P, adj, final = fit_title(font, masks["title"], a.rounds)
+        P, adj, final = fit_title(font, masks["title"], a.rounds, a.passes)
         if a.apply:
             s = TPL.read_text(encoding="utf-8")
             for key, val in (("titleXh", P["xh"]), ("titleSlant", P["slant"]), ("titleTilt", P["tilt"]), ("titleWeight", P["weight"]), ("titleX", P["x"]), ("titleY", P["y"])):
