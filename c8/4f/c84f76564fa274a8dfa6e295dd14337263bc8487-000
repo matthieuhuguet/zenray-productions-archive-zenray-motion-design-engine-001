@@ -16,7 +16,9 @@ final class Probe: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         web = WKWebView(frame: NSRect(x: 0, y: 0, width: W, height: H), configuration: WKWebViewConfiguration())
         web.navigationDelegate = self
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: W, height: H), styleMask: [.titled], backing: .buffered, defer: false)
-        window.contentView = web; window.alphaValue = 0; window.ignoresMouseEvents = true; window.orderFrontRegardless()
+        window.contentView = web; window.ignoresMouseEvents = true
+        // an invisible (alpha 0) window does not scroll or run IntersectionObserver like a shown one: keep it opaque but park it far off screen
+        window.setFrameOrigin(NSPoint(x: -20000, y: 0)); window.orderFrontRegardless()
         web.load(URLRequest(url: url))
         DispatchQueue.main.asyncAfter(deadline: .now() + 90) { print("{\"error\":\"timeout\"}"); exit(1) }
     }
