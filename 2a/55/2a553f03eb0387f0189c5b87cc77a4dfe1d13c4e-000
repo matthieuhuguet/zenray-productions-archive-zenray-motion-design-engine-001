@@ -185,7 +185,7 @@
         node("feComposite", { in: "rg", in2: "b", operator: "arithmetic", k1: 0, k2: 1, k3: 1, k4: 0 }, f);
         return { el, id, base: el.style.filter || "", offR, offB, on: false };
       });
-      const env = (t) => { const k = (t - film.abStart) / film.abLen; return k <= 0 || k >= 1 ? 0 : Math.pow(Math.sin(Math.PI * Math.pow(k, 0.7)), 0.8) * film.abPx * u; };   // quick attack, slower release
+      const env = (t) => { const k = (t - film.abStart) / film.abLen, ss = (x) => x * x * (3 - 2 * x); return k <= 0 || k >= 1 ? 0 : (k < 0.12 ? ss(k / 0.12) : k < 0.7 ? 1 : ss((1 - k) / 0.3)) * film.abPx * u; };   // 26 October 2026: quick attack (12 %), a plateau to 70 % of the pulse so that it can be SEEN for most of its length, then a smooth release
       const pulse = { t: 0 };
       tl.fromTo(pulse, { t: 0 }, { t: duration, duration, ease: "none", onUpdate: () => {
         const px = env(pulse.t);

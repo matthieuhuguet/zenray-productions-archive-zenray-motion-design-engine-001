@@ -13,7 +13,8 @@ VARIANTS = {
     "zenray-sony-playstation-a-ppm": {"title": "ZenRay : Sony puis PlayStation, rythme A (10 s)", "s1": 2.0, "s2": 1.0},
     "zenray-sony-playstation-b-ppm": {"title": "ZenRay : Sony puis PlayStation, rythme B (8,5 s)", "s1": 2.0, "s2": 1.25},
     "zenray-sony-playstation-c-ppm": {"title": "ZenRay : Sony puis PlayStation, rythme C (7 s)", "s1": 2.5, "s2": 1.5},
-    "zenray-sony-playstation-d-ppm": {"title": "ZenRay : Sony puis PlayStation, rythme D (5,5 s)", "s1": 3.0, "s2": 2.0},
+    # D: 6 s in total (it was 5.47 s) and an aberration of 1 s (Matthieu, 26 October 2026: shorter, it cannot be seen); the fade starts at 5.15 s of the film, 0.15 s before the pulse ends
+    "zenray-sony-playstation-d-ppm": {"title": "ZenRay : Sony puis PlayStation, rythme D (6 s)", "s1": 3.0, "s2": 2.0, "total": 6.0, "ab_len": 1.0, "fade_from": 5.15},
 }
 ACT1 = BASE.HANDOFF            # reference seconds of act 1 that are played (the word has reached its paper white)
 LOGO_UP = 4.5                  # act 2 source time at which the ZenRay logo has just come up (the 11th second of the 14.5 s film)
@@ -22,8 +23,8 @@ FADE_START, FADE_LEN = 5.3, 1.3   # act 2 source time: the logo holds 0.8 s afte
 ORIG_FADE = [(6.0, 1), (6.4, 0.944), (6.8, 0.81), (7.2, 0.607), (7.6, 0.327), (7.9, 0.033), (8.0, 0)]   # the shape of the original fade (time, opacity)
 
 
-def fade_keys() -> list:
-    return [f"{FADE_START + (t - 6.0) * FADE_LEN / 2.0:.3f} | {o}" for t, o in ORIG_FADE]
+def fade_keys(fs: float = FADE_START, fl: float = FADE_LEN) -> list:
+    return [f"{fs + (t - 6.0) * fl / 2.0:.3f} | {o}" for t, o in ORIG_FADE]
 
 
 def build_one(pid: str) -> dict:
@@ -33,11 +34,13 @@ def build_one(pid: str) -> dict:
     pr["controls"] = [c for c in pr["controls"] if c["id"] != "palette"]   # the palette toggle did not work in the app: not in the new copies
     a1, a2 = pr["scenes"]
     a1["params"]["speed"] = s1; a1["duration"] = round(ACT1 / s1, 4)
-    a2["params"]["speed"] = s2; a2["params"]["fadeKeys"] = fade_keys(); a2["duration"] = round((FADE_START + FADE_LEN) / s2, 4)
-    start = a1["duration"] + LOGO_UP / s2
-    pr["post"] = {"abPx": AB_PX, "abStart": round(start, 3), "abLen": AB_LEN}
-    pr["doc"] = (f"26 October 2026: timing variation of the ZenRay film: act 1 x{s1}, act 2 x{s2}, logo fade from {FADE_START} s of act 2, "
-                 f"chromatic aberration pulse {AB_LEN} s at {start:.2f} s of the film (workflow Premier Plan Mesuré).")
+    d1 = a1["duration"]; fs, fl, ab_len = FADE_START, FADE_LEN, v.get("ab_len", AB_LEN)
+    if "total" in v: fs = (v["fade_from"] - d1) * s2; fl = (v["total"] - v["fade_from"]) * s2   # a variant can fix its total length and where the fade starts in the film (seconds of film time)
+    a2["params"]["speed"] = s2; a2["params"]["fadeKeys"] = fade_keys(fs, fl); a2["duration"] = round((fs + fl) / s2, 4)
+    start = d1 + LOGO_UP / s2
+    pr["post"] = {"abPx": AB_PX, "abStart": round(start, 3), "abLen": ab_len}
+    pr["doc"] = (f"26 October 2026: timing variation of the ZenRay film: act 1 x{s1}, act 2 x{s2}, logo fade from {fs:.2f} s of act 2, "
+                 f"chromatic aberration pulse {ab_len} s at {start:.2f} s of the film (workflow Premier Plan Mesuré).")
     return pr
 
 
