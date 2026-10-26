@@ -1,0 +1,18 @@
+// 26 October 2026: a small server for the note font fit (Scripts/NoteFontFit.py): one JSON request per line on stdin, one JSON answer per line on stdout.
+// {"kind":"body","p":{bodyXh,bodySlant},"lines":[...],"styles":{track,space}} -> [{base, dx, parts:[{d,dx,accent}]}]
+// {"kind":"title","p":{title,titleXh,titleSlant,titleFit},"styles":{track,space},"adj":[[dx,dy,size],...]} -> {d, width}
+// FR : serveur minimal de la police de la note pour l'ajustement sur la reference.
+import { createInterface } from "node:readline";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+globalThis.window = globalThis;
+const root = join(dirname(fileURLToPath(import.meta.url)), "..", "motion", "runtime");
+(0, eval)(readFileSync(join(root, "zs-templates-notefont-1.js"), "utf8"));
+const F = globalThis.ZSNoteFont;
+createInterface({ input: process.stdin }).on("line", (l) => {
+  const r = JSON.parse(l);
+  if (r.styles) F.styles[r.kind] = r.styles;
+  if (r.kind === "body") console.log(JSON.stringify(F.bodyLines(r.lines, r.p)));
+  else { F.fits = r.adj ? { [r.p.title]: r.adj } : {}; console.log(JSON.stringify(F.titleLine(r.p))); }
+});
