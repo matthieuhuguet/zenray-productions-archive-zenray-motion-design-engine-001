@@ -40,8 +40,8 @@
       N("titleWeight", "Titre : épaisseur du trait (px)", 2.1, 0.5, 5, 0.05, 2, "px"), N("titleSlant", "Titre : inclinaison", 0.3, 0, 0.7, 0.01, 2), N("titleTilt", "Titre : rotation (°)", 2.1, -10, 10, 0.1, 2, "°"), N("tallZoom", "Autres formats : échelle", 1, 0.5, 2, 0.01, 2),
       N("panelX", "Papier : centre x", 937.5, 0, 1920, 0.5, 3, "px"), N("panelY", "Papier : centre y", 567.5, 0, 1080, 0.5, 3, "px"), N("panelW", "Papier : largeur", 815, 100, 1900, 1, 3, "px"), N("panelH", "Papier : hauteur", 815, 100, 1080, 1, 3, "px"),
       N("textX", "Texte : x du bord gauche", 584, 0, 1920, 0.5, 3, "px"), N("titleX", "Titre : x du bord gauche", 778, 0, 1920, 0.5, 3, "px"), N("titleY", "Titre : y de la ligne de base", 138, 0, 1080, 0.5, 3, "px"),
-      N("closeX", "Bouton : x du centre", 906, 0, 1920, 0.5, 3, "px"), N("closeY", "Bouton : y du centre", 987, 0, 1080, 0.5, 3, "px"), N("seed", "Graine du papier", 7, 1, 999, 1, 3), N("edgeJitter", "Papier : irrégularité du bord (px)", 14, 0, 60, 0.5, 3, "px"),
-      N("film0", "Début dans le film (s)", 3, 0, 8, 0.01, 4, "s"), N("shardLift", "Éclats : clarté des facettes", 1.15, 0.5, 2, 0.01, 3), N("inkK", "Traits d'encre : force", 1, 0, 2, 0.01, 3), N("shardK", "Éclats : force", 1, 0, 2, 0.01, 3), N("lineK", "Lignes de vitesse : force", 1, 0, 2, 0.01, 3), N("stainK", "Tache rouge : force", 1, 0, 2, 0.01, 3),
+      N("closeX", "Bouton : x du centre", 906, 0, 1920, 0.5, 3, "px"), N("closeY", "Bouton : y du centre", 987, 0, 1080, 0.5, 3, "px"), N("seed", "Graine du papier", 7, 1, 999, 1, 4), N("edgeJitter", "Papier : irrégularité du bord (px)", 14, 0, 60, 0.5, 4, "px"),
+      N("film0", "Début dans le film (s)", 3, 0, 8, 0.01, 4, "s"), N("smokeK", "Papier : force de la fumée", 1, 0, 2.5, 0.01, 3), N("edgeSoft", "Papier : douceur du bord (px)", 3, 0, 14, 0.1, 3, "px"), N("shardLift", "Éclats : clarté des facettes", 1.15, 0.5, 2, 0.01, 3), N("inkK", "Traits d'encre : force", 1, 0, 2, 0.01, 3), N("shardK", "Éclats : force", 1, 0, 2, 0.01, 3), N("lineK", "Lignes de vitesse : force", 1, 0, 2, 0.01, 3), N("stainK", "Tache rouge : force", 1, 0, 2, 0.01, 3),
       P("panelKeys", "Papier : temps | dx | dy | rotation | échelle x | échelle y | opacité", "lines", ["4.15 | -400 | -40 | -14 | 0.88 | 1 | 0", "4.18 | -147 | -20 | -10 | 0.93 | 1.02 | 1", "4.267 | -110 | 0 | -4.5 | 0.97 | 1 | 1", "4.333 | -91 | 0 | -1.5 | 0.99 | 1 | 1", "4.4 | -76 | 0 | -0.4 | 1 | 1 | 1", "4.433 | -67 | 0 | -0.2 | 1 | 1 | 1", "4.467 | -59 | 0 | 0 | 1 | 1 | 1", "4.5 | -52 | 0 | 0 | 1 | 1 | 1", "4.567 | -45 | 0 | 0 | 1 | 1 | 1", "4.6 | -39 | 0 | 0 | 1 | 1 | 1", "4.633 | -34 | 0 | 0 | 1 | 1 | 1", "4.667 | -29 | 0 | 0 | 1 | 1 | 1", "4.7 | -24 | 0 | 0 | 1 | 1 | 1", "4.733 | -20 | 0 | 0 | 1 | 1 | 1", "4.8 | -16 | 0 | 0 | 1 | 1 | 1", "4.833 | -12 | 0 | 0 | 1 | 1 | 1", "4.9 | -6 | 0 | 0 | 1 | 1 | 1", "4.967 | 0 | 0 | 0 | 1 | 1 | 1"], 4),
       P("titleKeys", "Titre : temps | dx (en plus du papier) | opacité", "lines", ["4.22 | -700 | 0", "4.267 | -740 | 1", "4.333 | -330 | 1", "4.4 | -120 | 1", "4.433 | -24 | 1", "4.467 | -3 | 1", "4.5 | 0 | 1"], 4),
       P("groundKeys", "Fond : temps | rouge | vert | bleu", "lines", ["3.0 | 96 | 75 | 57", "3.5 | 96 | 75 | 57", "3.7 | 59 | 49 | 68", "4.2 | 59 | 49 | 68", "4.5 | 52 | 46 | 60", "5.0 | 47 | 42 | 56"], 4),
@@ -77,6 +77,7 @@
       const flt = sv("filter", { id: id + "p", x: "-8%", y: "-8%", width: "116%", height: "116%", "color-interpolation-filters": "sRGB" }, defs);
       sv("feTurbulence", { type: "fractalNoise", baseFrequency: "0.012 0.016", numOctaves: 4, seed: p.seed, result: "n" }, flt);
       sv("feDisplacementMap", { in: "SourceGraphic", in2: "n", scale: p.edgeJitter * 2, xChannelSelector: "R", yChannelSelector: "G", result: "d" }, flt);
+      sv("feGaussianBlur", { in: "d", stdDeviation: p.edgeSoft }, flt);
       const rnd = seeded(p.seed), px0 = p.panelX - p.panelW / 2, py0 = p.panelY - p.panelH / 2;
       const edge = []; const stepE = 40;
       for (let x = 0; x <= p.panelW; x += stepE) edge.push([px0 + x, py0 + (rnd() - 0.5) * 18]);
@@ -89,10 +90,16 @@
       sv("feColorMatrix", { in: "c", type: "matrix", values: "0 0 0 0 0.04  0 0 0 0 0.035  0 0 0 0 0.04  0.9 0.6 0 0 -0.35", result: "m" }, cloud);
       sv("feComposite", { in: "m", in2: "SourceGraphic", operator: "in" }, cloud);
       const cloudP = sv("path", { d: paper.getAttribute("d"), fill: "#000", filter: `url(#${id}c)`, opacity: 0.55 }, ns);
+      // the smoke: light grey mist drifting over the paper, clipped to it (the reference mottles by 3 to 5 grey levels at 12 px)
+      const mist = sv("filter", { id: id + "m", x: "0", y: "0", width: "100%", height: "100%", "color-interpolation-filters": "sRGB" }, defs);
+      sv("feTurbulence", { type: "fractalNoise", baseFrequency: "0.0045 0.0065", numOctaves: 4, seed: p.seed + 11, result: "m" }, mist);
+      sv("feColorMatrix", { in: "m", type: "matrix", values: "0 0 0 0 0.30  0 0 0 0 0.31  0 0 0 0 0.30  0.6 0 0 0 -0.24", result: "mm" }, mist);
+      sv("feComposite", { in: "mm", in2: "SourceGraphic", operator: "in" }, mist);
+      const mistP = sv("path", { d: paper.getAttribute("d"), fill: "#000", filter: `url(#${id}m)`, opacity: 0 }, ns);
       // stain, ornaments and brackets (traced)
-      const stain = NOTE.stain ? sv("path", { d: NOTE.stain.d, fill: rgb(NOTE.stain.fill.map((v) => v * 1.5)), opacity: 0, "fill-rule": "evenodd" }, ns) : null;
-      const orn = NOTE.orn ? sv("path", { d: NOTE.orn.d, fill: rgb(NOTE.orn.fill.map((v) => v * 0.8)), "fill-rule": "evenodd", opacity: 0.6 }, ns) : null;
-      const orn2 = NOTE.orn2 ? sv("path", { d: NOTE.orn2.d, fill: rgb(NOTE.orn2.fill.map((v) => v * 0.8)), "fill-rule": "evenodd", opacity: 0 }, ns) : null;
+      const stain = NOTE.stain ? sv("path", { d: NOTE.stain.d, fill: rgb([36, 13, 20]), opacity: 0, "fill-rule": "evenodd" }, ns) : null;
+      const orn = NOTE.orn ? sv("path", { d: NOTE.orn.d, fill: rgb(NOTE.orn.fill.map((v) => v * 0.5)), "fill-rule": "evenodd", opacity: 0.9 }, ns) : null;
+      const orn2 = NOTE.orn2 ? sv("path", { d: NOTE.orn2.d, fill: rgb(NOTE.orn2.fill.map((v) => v * 0.5)), "fill-rule": "evenodd", opacity: 0 }, ns) : null;
       const brk = NOTE.brackets ? sv("path", { d: NOTE.brackets.d, fill: rgb(NOTE.brackets.fill), "fill-rule": "evenodd", opacity: 0.75 }, ns) : null;
       // body text, the procedural note font, one path per line
       const bodyG = sv("g", { fill: "none", "stroke-linecap": "round", "stroke-linejoin": "round", "stroke-width": p.bodyWeight }, ns);
@@ -143,9 +150,9 @@
         const q = at(pk, t), al = clamp(lin(pk.map((r) => [r[0], r[6]]), t)[0], 0, 1);
         note.style.opacity = String(al);
         gsap.set(note, { x: q[0], y: q[1], rotation: q[2], scaleX: q[3], scaleY: q[4], force3D: true });
-        const pc = at(pck, t); paper.setAttribute("fill", rgb(pc));
+        const pc = at(pck, t); paper.setAttribute("fill", rgb(pc)); mistP.setAttribute("opacity", String(clamp(al * p.smokeK, 0, 1)));
         const xq = lin(xk, t), gr = xq[1] || 170; bodyPaths.forEach((e) => { e.setAttribute("stroke", rgb([gr, gr, gr + 4])); }); bodyG.setAttribute("opacity", String(clamp(xq[0], 0, 1)));
-        if (orn2) orn2.setAttribute("opacity", String(clamp(lin(ok, t)[0] * 0.65, 0, 1)));
+        if (orn2) orn2.setAttribute("opacity", String(clamp(lin(ok, t)[0] * 0.9, 0, 1)));
         if (stain) stain.setAttribute("opacity", String(clamp(lin(stk, t)[0] * p.stainK, 0, 1)));
         // the ink strokes and the title drift with the paper; the title slides in on its own
         const ik = lin(sk, t); inkL.style.opacity = String(clamp(ik[0] * p.inkK, 0, 1)); gsap.set(inkL, { x: q[0], y: q[1], force3D: true });

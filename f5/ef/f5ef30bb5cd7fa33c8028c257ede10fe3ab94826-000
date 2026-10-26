@@ -50,13 +50,17 @@ add("strokes", strokes, (255, 0, 255), turd=30)
 orn = ((blackhat(13) > 3.2) | (blackhat(7) > 4.5)).astype(np.uint8)
 orn = box(orn, 440, 0, 900, 130) | box(orn, 330, 270, 560, 470) | box(orn, 520, 860, 820, 1020) | box(orn, 1250, 20, 1420, 130)
 orn[strokes > 0] = 0; orn[100:172, 765:1115] = 0
-orn_top = orn.copy(); orn_top[135:, :] = 0; orn_side = orn.copy(); orn_side[:135, :] = 0   # the top curls are there from the start, the side and bottom curls come in later
+from skimage.morphology import skeletonize, remove_small_objects  # noqa: E402
+def thin(m):   # the curls are hairlines in the reference: keep the skeleton of the mask, 3 px wide, without the specks
+    sk = skeletonize(m > 0); sk = remove_small_objects(sk, 8, connectivity=2)
+    return cv2.dilate(sk.astype(np.uint8), np.ones((3, 3), np.uint8))
+orn_top = thin(orn); orn_top[135:, :] = 0; orn_side = thin(orn); orn_side[:135, :] = 0   # the top curls are there from the start, the side and bottom curls come in later
 add("orn", orn_top, (0, 255, 255), turd=4, alphamax=1.2)
 add("orn2", orn_side, (0, 200, 255), turd=4, alphamax=1.2)
 # 3. the red stain on the right edge of the panel
-stain = ((R - (Gc + B) / 2) > 8).astype(np.uint8); stain = box(stain, 1300, 200, 1450, 520)
-stain = cv2.morphologyEx(stain, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
-add("stain", stain, (255, 60, 60), turd=40)
+stain = ((R - (Gc + B) / 2) > 5).astype(np.uint8); stain = box(stain, 1300, 200, 1460, 570)
+stain = cv2.morphologyEx(stain, cv2.MORPH_CLOSE, np.ones((17, 17), np.uint8)); stain = cv2.morphologyEx(stain, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+add("stain", stain, (255, 60, 60), turd=60, blur=1.2)
 # 4. corner brackets: thin bright strokes in four boxes
 br = (tophat(9) > 28).astype(np.uint8)
 brk = box(br, 525, 175, 660, 300) | box(br, 1225, 175, 1350, 300) | box(br, 525, 840, 660, 960) | box(br, 1225, 840, 1350, 960)
