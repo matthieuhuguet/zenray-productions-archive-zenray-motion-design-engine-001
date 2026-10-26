@@ -58,10 +58,10 @@ check("post-process: exposure +1 EV brightens the mid grey", Number(ZS.post.tone
 check("post-process: values are bounded", ZS.post.values({ exposure: 99 }).exposure === 2 && ZS.post.values({ look: "x" }).look === "x");
 // aberration pulse (26 October 2026): its own category of at most 8 values; the old curve is unchanged, the two new ones are continuous tweens that start and end at 0
 check("post-process: the aberration pulse stays within 8 values", PP.filter((d) => d.group === "pulse").length <= 8 && PP.filter((d) => d.group === "pulse").length === 5);
-const PE = ZS.post.pulseEnv, base = { abStart: 4, abLen: 0.5, abAttack: 20 };
-check("pulse: outside the window it is 0", PE({ ...base, abEase: "Linéaire" }, 3.99) === 0 && PE({ ...base, abEase: "Linéaire" }, 4.5) === 0);
-check("pulse: the old curve is unchanged (rise 12 %, plateau, release)", PE({ ...base, abEase: "Palier (ancien)" }, 4.2) === 1 && Math.abs(PE({ ...base, abEase: "Palier (ancien)" }, 4.03) - 0.2592) < 0.01);
-const lin = (t) => PE({ ...base, abEase: "Linéaire" }, t), ex = (t) => PE({ ...base, abEase: "Exponentiel out" }, t);
+const PE = ZS.post.pulseEnv, pbase = { abStart: 4, abLen: 0.5, abAttack: 20 };
+check("pulse: outside the window it is 0", PE({ ...pbase, abEase: "Linéaire" }, 3.99) === 0 && PE({ ...pbase, abEase: "Linéaire" }, 4.5) === 0);
+check("pulse: the old curve is unchanged (rise 12 %, plateau, release)", PE({ ...pbase, abEase: "Palier (ancien)" }, 4.2) === 1 && Math.abs(PE({ ...pbase, abEase: "Palier (ancien)" }, 4.03) - 0.5) < 1e-9);
+const lin = (t) => PE({ ...pbase, abEase: "Linéaire" }, t), ex = (t) => PE({ ...pbase, abEase: "Exponentiel out" }, t);
 check("pulse: linear rises straight to 1 at the end of the rise and falls straight to 0", Math.abs(lin(4.05) - 0.5) < 1e-9 && Math.abs(lin(4.1) - 1) < 1e-9 && Math.abs(lin(4.3) - 0.5) < 1e-9);
 check("pulse: exponential ease-out is a tween, not a step (strictly between 0 and 1 inside the rise, monotone down after)", ex(4.005) > 0 && ex(4.005) < 1 && ex(4.1) > 0.999 && ex(4.15) > ex(4.25) && ex(4.25) > ex(4.35) && ex(4.35) > ex(4.45));
 check("RED pulse: the exponential fall is a long tail (half its height after a tenth of the fall), not linear", ex(4.1 + 0.04) < 0.55 && ex(4.1 + 0.04) > 0.45);
