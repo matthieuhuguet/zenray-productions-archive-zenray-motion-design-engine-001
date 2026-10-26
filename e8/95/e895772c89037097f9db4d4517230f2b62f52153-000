@@ -519,7 +519,8 @@ def run_export(job: dict, pid: str, wav: bytes, draft: bool):
         job.update(state="render", step="rendu des images (HyperFrames)")
         t0 = time.time()
         silent = base / "video.mp4"
-        r = hyperframes(hf, "render", "-f", str(ex["fps"]), "-q", ex["draftQuality"] if draft else ex["quality"], "-w", str(ex["workers"]), "-o", str(silent),
+        fps = int(read_project(pid).get("fps") or ex["fps"])   # 26 October 2026: the project fps (60 for the smooth motions) is the render rate; the export used to render every project at the config fps (30) whatever the project said
+        r = hyperframes(hf, "render", "-f", str(fps), "-q", ex["draftQuality"] if draft else ex["quality"], "-w", str(ex["workers"]), "-o", str(silent),
                         timeout=int(ex["timeoutS"]))
         if r.returncode != 0 or not silent.exists():
             raise RuntimeError(f"HyperFrames: {(r.stderr or r.stdout)[-800:]}")

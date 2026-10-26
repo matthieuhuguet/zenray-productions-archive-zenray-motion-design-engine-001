@@ -163,6 +163,11 @@
   // apply(build): grades every scene (film values, overridden by the scene's own) and lays the film overlays on top
   function apply(b) {
     const { root, project, tl, W, H, duration, sections } = b, u = Math.min(W, H) / 1080;
+    const known = new Set(PARAMS.map((p) => p.key)), unknown = Object.keys(project.post || {}).concat(...sections.map(({ scene }) => Object.keys(scene.post || {}))).filter((k) => !known.has(k));
+    if (unknown.length) {   // a setting this engine does not know is never ignored in silence (26 October 2026: the aberration pulse was invisible in a page loaded before the engine learned it)
+      const msg = `réglage inconnu de ce moteur : ${[...new Set(unknown)].join(", ")} (page plus ancienne que le projet : recharger avec Cmd+R)`;
+      console.error("[zs-post] " + msg); ZS.h.css(ZS.h.el("div", "zs-abs", root, msg), { left: "12px", top: "12px", right: "12px", color: "#fff", background: "rgba(200,67,31,.92)", font: "600 16px system-ui", padding: "6px 10px", zIndex: 99, pointerEvents: "none" });
+    }
     const film = values(project.post);
     const svg = node("svg", { width: 0, height: 0, "aria-hidden": "true" });
     svg.style.position = "absolute";

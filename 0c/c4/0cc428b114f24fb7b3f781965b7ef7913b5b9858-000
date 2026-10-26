@@ -99,5 +99,6 @@
   <script src="/motion/web/app.js"></script>
   <script src="/motion/web/music-player.js"></script>
   <script src="/motion/web/gallery.js"></script>
+  <script src="/motion/web/version-guard.js"></script>
 </body>
 </html>

@@ -28,5 +28,6 @@
   <script src="/motion/web/hoverplay-core.js"></script>
   <script src="/motion/web/hoverplay.js"></script>
   <script src="/motion/web/previous.js"></script>
+  <script src="/motion/web/version-guard.js"></script>
 </body>
 </html>

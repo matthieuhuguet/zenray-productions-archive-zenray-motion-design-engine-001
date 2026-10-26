@@ -25,5 +25,6 @@
   <section class="th-legend" id="thLegend"></section>
   <main class="th-wrap"><table class="th-table"><thead><tr><th>#</th><th>Vidéo</th><th>Lien source</th><th>Lien local</th><th>Méthode</th><th>Onglet</th><th>Statut</th></tr></thead><tbody id="thBody"></tbody></table></main>
   <script src="/motion/web/threads.js"></script>
+  <script src="/motion/web/version-guard.js"></script>
 </body>
 </html>
