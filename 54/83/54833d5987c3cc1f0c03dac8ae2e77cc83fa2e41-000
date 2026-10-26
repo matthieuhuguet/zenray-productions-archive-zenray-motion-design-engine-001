@@ -130,7 +130,7 @@ def tile(name, ref_img, mine_img, a, b, iou, tol, tw=330):
     lift = lambda im: np.clip(im.astype(np.float32) * 2.2 + 8, 0, 255).astype(np.uint8)   # the components are dark: a lift makes them legible
     ov = np.zeros((y1 - y0, x1 - x0, 3), np.uint8); ac, bc = a[y0:y1, x0:x1] > 0, b[y0:y1, x0:x1] > 0
     ov[ac & bc] = (255, 255, 255); ov[ac & ~bc] = (60, 60, 255); ov[~ac & bc] = (255, 120, 60)
-    tiles = [lift(crop(ref_img)), lift(crop(mine_img)), crop(ov)]
+    tiles = [lift(crop(ref_img)), lift(crop(mine_img)), cv2.resize(ov, (tw_, th_), interpolation=cv2.INTER_NEAREST)]
     sheet = np.hstack(tiles)
     img = Image.fromarray(cv2.cvtColor(sheet, cv2.COLOR_BGR2RGB))
     return img
