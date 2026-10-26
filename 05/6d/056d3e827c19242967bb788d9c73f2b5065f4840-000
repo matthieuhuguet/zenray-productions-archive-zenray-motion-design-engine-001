@@ -8,7 +8,7 @@ SRC = Path("/Users/zenray/Create/Build/Productions/GithubProductions/ZenRaySFX/o
 PROJECTS = Path("/Users/zenray/.claude/tmp/tmp-zenray-motion-design/motion-projects")
 # the two sounds of the film: file prefix, label, the cue that its strong instant meets, that instant in seconds from the start of the file (measured in ZenRay SFX), the chosen version
 SOUNDS = [{"id": "son1", "label": "Son 1 · la lentille", "cue": "lens", "hit": 1.667, "start": 0.0, "choice": "v3"},
-          {"id": "son2", "label": "Son 2 · vers l'autre dimension", "cue": "aberrationStart", "hit": 1.417, "start": 3.0, "choice": "v3"}]
+          {"id": "son2", "label": "Son 2 · vers l'autre dimension", "cue": "aberrationStart", "hit": 1.417, "start": 3.0, "choice": "v3", "suffix": "-5s"}]   # 26 October 2026: son 2 has its music cut at 5 s (last note removed), new file names so an open page never plays the old files
 VERSIONS = {"v1": "musique devant", "v2": "équilibré", "v3": "effets devant"}
 
 def main(pid):
@@ -19,11 +19,12 @@ def main(pid):
         variants = {}
         for v, name in VERSIONS.items():
             src = SRC / f"{s['id']}-{v}.wav"; assert src.is_file(), src
-            shutil.copy2(src, d / "assets" / src.name); variants[v] = {"file": src.name, "name": name}
+            out = f"{s['id']}-{v}{s.get('suffix', '')}.wav"; shutil.copy2(src, d / "assets" / out); variants[v] = {"file": out, "name": name}
         cue_t = float(cues[s["cue"]]); start = round(cue_t - s["hit"], 3)
         assert abs(start - s["start"]) < 0.02, f"{pid}: the {s['cue']} cue is at {cue_t} s, the sound would start at {start} s, not {s['start']} s: the film changed, check the cues"
-        clips.append({"id": s["id"], "label": s["label"], "variants": variants, "choice": s["choice"], "start": start, "duration": 3.0, "anchor": {"cue": s["cue"], "cueT": cue_t, "hit": s["hit"]},
-                      "offsetMs": 0, "gainDb": 0, "mute": False})
+        old = next((c for c in (p.get("clips") or []) if c.get("id") == s["id"]), {})      # what Matthieu already chose is kept (version, start, level, mute)
+        clips.append({"id": s["id"], "label": s["label"], "variants": variants, "choice": old.get("choice", s["choice"]), "start": old.get("start", start), "duration": 3.0, "anchor": {"cue": s["cue"], "cueT": cue_t, "hit": s["hit"]},
+                      "offsetMs": old.get("offsetMs", 0), "gainDb": old.get("gainDb", 0), "mute": old.get("mute", False)})
     p["clips"] = clips; p["music"] = {"mode": "none"}; p["sfx"] = {**(p.get("sfx") or {}), "enabled": False}
     p["updated"] = time.strftime("%d %B %Y, %H:%M")
     pf.write_text(json.dumps(p, indent=1, ensure_ascii=False), encoding="utf-8")
