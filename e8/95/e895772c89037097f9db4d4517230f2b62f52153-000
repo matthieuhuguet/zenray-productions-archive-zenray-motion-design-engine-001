@@ -552,6 +552,22 @@ def start_export(pid: str, wav: bytes, draft: bool) -> dict:
     return JOBS[jid]
 
 
+# ---------------------------------------------------------------------------------------------------- engine version (26 October 2026)
+# A page that stays open keeps the JavaScript it loaded: when the engine (runtime and web files) or this server changes, the data it fetches is new and its code is old, and the new settings are silently ignored
+# (a chromatic aberration written into the project that the open page did not know: it was seen by the agent in a fresh page and never by Matthieu). The pages ask for this version and reload when it moves.
+# FR : version du moteur : les pages ouvertes depuis longtemps rechargent seules quand le moteur change.
+BOOT_ID = f"{os.getpid()}-{int(time.time())}"
+
+
+def runtime_version() -> str:
+    h = hashlib.sha1(BOOT_ID.encode())
+    for d, exts in (("runtime", (".js", ".css")), ("web", (".js", ".css", ".html"))):
+        for f in sorted((MOTION / d).iterdir()):
+            if f.suffix in exts:
+                st = f.stat(); h.update(f"{d}/{f.name}:{st.st_mtime_ns}:{st.st_size}".encode())
+    return h.hexdigest()[:12]
+
+
 # ---------------------------------------------------------------------------------------------------- routing
 def handle(method: str, path: str, q: dict, read, length: int) -> dict:
     """One request of the motion module: paths under /motion (page, runtime, fonts, media, exports, banks) and /api/motion (projects, versions,
@@ -560,6 +576,8 @@ def handle(method: str, path: str, q: dict, read, length: int) -> dict:
     if method == "GET":
         if p in ("/motion", "/motion/"):
             return F(MOTION / "web" / "index.html", "text/html; charset=utf-8")
+        if p == "/api/motion/runtime-version":
+            return {"json": {"version": runtime_version()}}
         if p == "/motion/runtime/templates.js":
             # every template file in load order, as one script: the pages need no list of files to edit when a motion adds its own
             return B(b"\n".join((MOTION / "runtime" / f).read_bytes() for f in runtime_scripts() if f not in ("zs-core.js", "zs-post.js")), "text/javascript; charset=utf-8")
