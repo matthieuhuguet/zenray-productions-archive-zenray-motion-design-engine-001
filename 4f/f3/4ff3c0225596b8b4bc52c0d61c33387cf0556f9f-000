@@ -5,7 +5,18 @@
 (function () {
   "use strict";
   let boot = null, pending = false, banner = null;
-  const ask = () => fetch("/api/motion/runtime-version", { cache: "no-store" }).then((r) => r.json()).then((j) => j.version).catch(() => null);
+  // what this page is doing right now, sent with each poll (26 October 2026): the agent cannot look at the user's window, so the window says what it holds (the engine version it loaded, whether it knows the pulse setting,
+  // the filters attached to its scenes, the time of its timeline). FR : ce que la page fait, envoye avec chaque interrogation.
+  const diag = () => {
+    try {
+      const tl = window.__timelines && window.__timelines.main, secs = [...document.querySelectorAll(".zs-scene")];
+      const ab = secs.filter((e) => /zs-ab/.test(e.style.filter || "")), dx = [...document.querySelectorAll("feOffset")].map((f) => Math.abs(+f.getAttribute("dx") || 0));
+      return { boot, path: location.pathname, post: !!(window.ZS && ZS.post && ZS.post.PARAMS && ZS.post.PARAMS.some((p) => p.key === "abPx")), dpr: window.devicePixelRatio, w: innerWidth, visible: document.visibilityState,
+        t: tl ? +tl.time().toFixed(2) : null, dur: tl ? +tl.duration().toFixed(2) : null, scenes: secs.length, abOn: ab.length, maxDx: dx.length ? Math.max(...dx) : 0, abFilters: document.querySelectorAll("filter[id^=zs-ab]").length, errors: (window.__zsErrors || []).slice(-3) };
+    } catch (e) { return { diagError: String(e) }; }
+  };
+  window.__zsErrors = window.__zsErrors || []; window.addEventListener("error", (e) => window.__zsErrors.push(`${e.message} @${(e.filename || "").split("/").pop()}:${e.lineno}`));
+  const ask = () => fetch("/api/motion/runtime-version?d=" + encodeURIComponent(JSON.stringify(diag())), { cache: "no-store" }).then((r) => r.json()).then((j) => j.version).catch(() => null);
   const typing = () => { const a = document.activeElement; return !!a && (a.tagName === "TEXTAREA" || (a.tagName === "INPUT" && !/^(range|checkbox|radio|button)$/.test(a.type)) || a.isContentEditable); };
   const show = (text, button) => {
     if (!banner) { banner = document.createElement("div"); banner.style.cssText = "position:fixed;left:0;right:0;top:0;z-index:99999;padding:8px 14px;background:#c8431f;color:#fff;font:14px/1.3 system-ui,sans-serif;text-align:center"; document.body.appendChild(banner); }

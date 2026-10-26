@@ -563,8 +563,12 @@ BOOT_ID = f"{os.getpid()}-{int(time.time())}"
 CLIENTS: dict = {}   # who asked for the version lately: user agent -> {"last": time, "version": the version it was told, "n": count}; WKWebView (the macOS app) has no "Chrome" or "Safari" token, so "is the app on the new page?" is answered from here
 
 
-def note_client(ua: str) -> None:
-    c = CLIENTS.setdefault(ua or "?", {"n": 0}); c["n"] += 1; c["last"] = round(time.time(), 1); c["version"] = runtime_version()
+def note_client(ua: str, diag: str = "") -> None:
+    # one entry per (user agent, page): a window and a probe do not overwrite each other
+    try: d = json.loads(diag) if diag else {}
+    except ValueError: d = {}
+    key = (ua or "?") + " | " + str(d.get("path", ""))
+    c = CLIENTS.setdefault(key, {"n": 0, "ua": ua or "?"}); c["n"] += 1; c["last"] = round(time.time(), 1); c["version"] = runtime_version(); c["diag"] = d
 
 
 def runtime_version() -> str:
@@ -587,7 +591,7 @@ def handle(method: str, path: str, q: dict, read, length: int) -> dict:
         if p == "/api/motion/runtime-version":
             return {"json": {"version": runtime_version()}}
         if p == "/api/motion/runtime-clients":
-            now = time.time(); return {"json": {"version": runtime_version(), "clients": [{"ua": ua, "kind": "app (WebKit)" if "AppleWebKit" in ua and "Chrome" not in ua and "Safari" not in ua else "browser", "ageS": round(now - c["last"], 1), "version": c["version"], "n": c["n"]} for ua, c in CLIENTS.items()]}}
+            now = time.time(); return {"json": {"version": runtime_version(), "clients": [{"kind": "app (WebKit)" if "AppleWebKit" in c["ua"] and "Chrome" not in c["ua"] and "Safari" not in c["ua"] else "browser", "ageS": round(now - c["last"], 1), "currentVersion": c["version"], "n": c["n"], "page": c["diag"]} for k, c in CLIENTS.items()]}}
         if p == "/motion/runtime/templates.js":
             # every template file in load order, as one script: the pages need no list of files to edit when a motion adds its own
             return B(b"\n".join((MOTION / "runtime" / f).read_bytes() for f in runtime_scripts() if f not in ("zs-core.js", "zs-post.js")), "text/javascript; charset=utf-8")
