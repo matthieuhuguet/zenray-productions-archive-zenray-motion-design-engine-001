@@ -159,6 +159,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:  # noqa: BLE001  a crash is reported with its cause, never swallowed
             return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
         if "json" in r:
+            if path == "/api/motion/runtime-version": r["json"]["cmd"] = ms.take_command(self.headers.get("User-Agent", ""))
             return self._json(r["json"], r.get("status", 200))
         if "bytes" in r:
             return self._bytes(r["bytes"], r["mime"])

@@ -1,0 +1,29 @@
+#!/bin/zsh
+# 26 October 2026: look at the macOS app window itself. Waits for the app page to be on the current engine version with the motion built, sends it debug commands (version-guard.js: seek:<t>, scrub:a:b:s, reload;
+# one command per version poll, i.e. every 3 s), captures the window (screencapture -l, no focus taken) and counts the saturated red and blue pixels (an aberration pulse).
+# Usage: Scripts/CheckHisWindow.sh seek:4.43 seek:4.6      FR : regarder la fenetre de l'app elle-meme apres lui avoir fait deplacer sa tete de lecture.
+OUT=/private/tmp/claude-501/his_window.png
+for i in $(seq 1 40); do
+  R=$(curl -s http://127.0.0.1:3104/api/motion/runtime-clients | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+for c in d['clients']:
+    p=c['page']
+    if c['kind'].startswith('app') and c['ageS']<8 and p.get('boot')==d['version'] and p.get('scenes',0)>0: print('ok', p.get('path'), p.get('scenes'), p.get('visible'))
+")
+  [ -n "$R" ] && break; sleep 2
+done
+[ -z "$R" ] && { echo "app page not ready (not on the current version, or no motion built)"; exit 2; }
+echo "app page: $R"
+for C in "$@"; do curl -s "http://127.0.0.1:3104/api/motion/runtime-cmd?do=$C" >/dev/null; sleep 3.6; done; sleep 1.5
+ID=$(/private/tmp/claude-501/winlist | head -1 | awk '{print $1}')
+screencapture -x -o -l$ID $OUT && /Users/zenray/.venvs/zenray-motion/bin/python -I - <<PY
+from PIL import Image; import numpy as np
+im=np.asarray(Image.open("$OUT").convert("RGB")).astype(int)
+red=int(((im[...,0]>200)&(im[...,1]<70)&(im[...,2]<70)).sum()); blue=int(((im[...,2]>200)&(im[...,0]<70)&(im[...,1]<70)).sum())
+print(f"window capture $OUT: red {red} blue {blue} ->", "FRINGES VISIBLE IN HIS WINDOW" if red>300 and blue>300 else "NO FRINGES IN HIS WINDOW")
+PY
+curl -s http://127.0.0.1:3104/api/motion/runtime-clients | python3 -c "
+import sys,json
+for c in json.load(sys.stdin)['clients']:
+    if c['kind'].startswith('app'): print({k:c['page'].get(k) for k in ('t','abOn','maxDx','abFilters','path','visible')})"

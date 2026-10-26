@@ -15,8 +15,16 @@
         t: tl ? +tl.time().toFixed(2) : null, dur: tl ? +tl.duration().toFixed(2) : null, scenes: secs.length, abOn: ab.length, maxDx: dx.length ? Math.max(...dx) : 0, abFilters: document.querySelectorAll("filter[id^=zs-ab]").length, errors: (window.__zsErrors || []).slice(-3) };
     } catch (e) { return { diagError: String(e) }; }
   };
+  // debug commands from the server (26 October 2026): "seek:<t>", "scrub:<from>:<to>:<seconds>" (a drag of the playhead at 60 images per second), "reload"; they only move the page's own timeline
+  const run = (c) => {
+    const tl = window.__timelines && window.__timelines.main, [k, a, b, d] = String(c).split(":");
+    if (k === "reload") return location.reload();
+    if (!tl) return;
+    if (k === "seek") tl.seek(+a, false);
+    if (k === "scrub") { const t0 = performance.now(), dur = (+d || 1) * 1000, step = () => { const u = Math.min(1, (performance.now() - t0) / dur); tl.seek(+a + (+b - +a) * u, false); if (u < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }
+  };
   window.__zsErrors = window.__zsErrors || []; window.addEventListener("error", (e) => window.__zsErrors.push(`${e.message} @${(e.filename || "").split("/").pop()}:${e.lineno}`));
-  const ask = () => fetch("/api/motion/runtime-version?d=" + encodeURIComponent(JSON.stringify(diag())), { cache: "no-store" }).then((r) => r.json()).then((j) => j.version).catch(() => null);
+  const ask = () => fetch("/api/motion/runtime-version?d=" + encodeURIComponent(JSON.stringify(diag())), { cache: "no-store" }).then((r) => r.json()).then((j) => { if (j.cmd) run(j.cmd); return j.version; }).catch(() => null);
   const typing = () => { const a = document.activeElement; return !!a && (a.tagName === "TEXTAREA" || (a.tagName === "INPUT" && !/^(range|checkbox|radio|button)$/.test(a.type)) || a.isContentEditable); };
   const show = (text, button) => {
     if (!banner) { banner = document.createElement("div"); banner.style.cssText = "position:fixed;left:0;right:0;top:0;z-index:99999;padding:8px 14px;background:#c8431f;color:#fff;font:14px/1.3 system-ui,sans-serif;text-align:center"; document.body.appendChild(banner); }

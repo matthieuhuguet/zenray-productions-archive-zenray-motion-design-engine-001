@@ -560,6 +560,18 @@ def start_export(pid: str, wav: bytes, draft: bool) -> dict:
 BOOT_ID = f"{os.getpid()}-{int(time.time())}"
 
 
+PENDING: list = []   # debug commands for the page of the macOS app (seek, scrub, reload), delivered once with the next version poll (26 October 2026): the agent cannot touch the user's window, but it can ask it to move its own timeline
+
+
+def queue_command(cmd: str) -> None:
+    PENDING.append(cmd)
+
+
+def take_command(ua: str):
+    if "AppleWebKit" in (ua or "") and "Chrome" not in ua and PENDING: return PENDING.pop(0)
+    return None
+
+
 CLIENTS: dict = {}   # who asked for the version lately: user agent -> {"last": time, "version": the version it was told, "n": count}; WKWebView (the macOS app) has no "Chrome" or "Safari" token, so "is the app on the new page?" is answered from here
 
 
@@ -590,6 +602,8 @@ def handle(method: str, path: str, q: dict, read, length: int) -> dict:
             return F(MOTION / "web" / "index.html", "text/html; charset=utf-8")
         if p == "/api/motion/runtime-version":
             return {"json": {"version": runtime_version()}}
+        if p == "/api/motion/runtime-cmd":
+            queue_command(str(q.get("do", ""))); return {"json": {"queued": list(PENDING)}}
         if p == "/api/motion/runtime-clients":
             now = time.time(); return {"json": {"version": runtime_version(), "clients": [{"kind": "app (WebKit)" if "AppleWebKit" in c["ua"] and "Chrome" not in c["ua"] and "Safari" not in c["ua"] else "browser", "ageS": round(now - c["last"], 1), "currentVersion": c["version"], "n": c["n"], "page": c["diag"]} for k, c in CLIENTS.items()]}}
         if p == "/motion/runtime/templates.js":
