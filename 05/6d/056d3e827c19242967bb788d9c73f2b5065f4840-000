@@ -1,0 +1,33 @@
+# 26 October 2026: installs the SOUND CLIPS (capsules of the "Sons" lane) in motion projects: copies the sound files into <project>/assets and writes project.clips with the
+# versions v1..v3 of each sound, the choice, the start and the ANCHOR (a cue of the film, read from the project's cues.json written by the ZenRay SFX storyboard tool, and the instant of
+# the sound that must land on it). No other part of the project is touched; the music is set to none and the generated effects off so the sounds are not doubled.
+# Usage: python3 Scripts/AddSoundClips.py <project-id> [...]   FR : pose les capsules de son dans un ou plusieurs projets Motion.
+import json, shutil, sys, time
+from pathlib import Path
+SRC = Path("/Users/zenray/Create/Build/Productions/GithubProductions/ZenRaySFX/out/assembly")
+PROJECTS = Path("/Users/zenray/.claude/tmp/tmp-zenray-motion-design/motion-projects")
+# the two sounds of the film: file prefix, label, the cue that its strong instant meets, that instant in seconds from the start of the file (measured in ZenRay SFX), the chosen version
+SOUNDS = [{"id": "son1", "label": "Son 1 · la lentille", "cue": "lens", "hit": 1.667, "start": 0.0, "choice": "v3"},
+          {"id": "son2", "label": "Son 2 · vers l'autre dimension", "cue": "aberrationStart", "hit": 1.417, "start": 3.0, "choice": "v3"}]
+VERSIONS = {"v1": "musique devant", "v2": "équilibré", "v3": "effets devant"}
+
+def main(pid):
+    d = PROJECTS / pid; pf = d / "project.json"; cf = d / "cues.json"
+    assert pf.is_file(), f"no project {pid}"; assert cf.is_file(), f"no cues.json for {pid}: run the ZenRay SFX Storyboard.py first"
+    cues = json.loads(cf.read_text())["cues"]; p = json.loads(pf.read_text()); (d / "assets").mkdir(exist_ok=True); clips = []
+    for s in SOUNDS:
+        variants = {}
+        for v, name in VERSIONS.items():
+            src = SRC / f"{s['id']}-{v}.wav"; assert src.is_file(), src
+            shutil.copy2(src, d / "assets" / src.name); variants[v] = {"file": src.name, "name": name}
+        cue_t = float(cues[s["cue"]]); start = round(cue_t - s["hit"], 3)
+        assert abs(start - s["start"]) < 0.02, f"{pid}: the {s['cue']} cue is at {cue_t} s, the sound would start at {start} s, not {s['start']} s: the film changed, check the cues"
+        clips.append({"id": s["id"], "label": s["label"], "variants": variants, "choice": s["choice"], "start": start, "duration": 3.0, "anchor": {"cue": s["cue"], "cueT": cue_t, "hit": s["hit"]},
+                      "offsetMs": 0, "gainDb": 0, "mute": False})
+    p["clips"] = clips; p["music"] = {"mode": "none"}; p["sfx"] = {**(p.get("sfx") or {}), "enabled": False}
+    p["updated"] = time.strftime("%d %B %Y, %H:%M")
+    pf.write_text(json.dumps(p, indent=1, ensure_ascii=False), encoding="utf-8")
+    print(pid, [(c["id"], c["choice"], c["start"], c["anchor"]) for c in clips])
+
+if __name__ == "__main__":
+    for pid in sys.argv[1:]: main(pid)

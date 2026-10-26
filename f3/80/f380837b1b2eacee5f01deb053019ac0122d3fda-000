@@ -348,6 +348,16 @@
     if (music.mode === "bank") musicBank(ctx, master, A.values(A.BANK_PARAMS, music.bank || {}), buffers, T0, from, duration);
     else if (music.mode === "file") musicFile(ctx, master, A.values(A.FILE_PARAMS, music.file || {}), buffers && buffers[(music.file || {}).file], T0, from, duration);
     else if (music.mode !== "none") musicGenerated(ctx, master, A.values(A.MUSIC_PARAMS, music.generate || {}), T0, from, duration);
+    // the sound clips of the film (project.clips, 26 October 2026): the chosen version of every capsule at its start and level; live from any playhead, offline in the export
+    ((project && project.clips) || []).forEach((c) => {
+      const f = !c.mute && c.variants && c.variants[c.choice], buf = f && buffers && buffers["clip:" + f.file];
+      if (!buf) return;
+      const start = Number(c.start) || 0;
+      if (start + buf.duration <= from) return;
+      const g = ctx.createGain(); g.gain.value = db(Number(c.gainDb) || 0); g.connect(master);
+      const src = ctx.createBufferSource(); src.buffer = buf; src.connect(g);
+      if (start >= from) src.start(at(ctx, T0 + start)); else src.start(at(ctx, T0 + from), from - start);
+    });
     const s = A.values(A.SFX_PARAMS, project.sfx || {});
     if (s.enabled) {
       const bus = ctx.createGain(); bus.gain.value = db(s.volume) * 2.5; bus.connect(master);

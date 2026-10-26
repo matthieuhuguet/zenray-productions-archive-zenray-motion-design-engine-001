@@ -1,0 +1,57 @@
+// 26 October 2026: ZenRay Motion Design, the SOUND CLIPS of a film (project.clips), with no screen in it so that node proves it (motion/tests/test_clips.mjs).
+// A clip is a capsule on the "Sons" lane: a sound with 1 to 3 versions to choose from (v1, v2, v3), a start in seconds of the film, a level, and an ANCHOR
+// (a cue of the film, the instant of the sound that must land on it) so that "recaler" puts it back on the cue to the millisecond. The choices live in
+// project.clips and are saved with the project; a one-line text (ZRSON1) copies ALL the choices and pastes them back. Matthieu's words (26 October 2026):
+// "comme sur DaVinci Resolve", "avoir tous les choix, je te remets une ligne et tu copies et tu sauves". FR : les capsules de son d'un film, logique pure.
+(function (root, factory) {
+  if (typeof module === "object" && module.exports) module.exports = factory(); else root.ZSClips = factory();
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+  const FORMAT = "ZRSON1";
+  const r3 = (x) => Math.round(Number(x) * 1000) / 1000;
+  const num = (x, d) => (Number.isFinite(Number(x)) && x !== "" && x !== null && x !== undefined ? Number(x) : d);
+  const list = (p) => (p && Array.isArray(p.clips) ? p.clips : []);
+  const active = (c) => (c && c.variants && c.variants[c.choice]) || null;
+  // where the sound starts when it sits exactly on its cue (offset 0)
+  const home = (c) => (c.anchor && Number.isFinite(c.anchor.cueT) ? r3(c.anchor.cueT - num(c.anchor.hit, 0)) : r3(num(c.start, 0)));
+  const offsetMs = (c) => Math.round((num(c.start, 0) - home(c)) * 10000) / 10;
+  // set the start (seconds) and keep the offset to the cue in step
+  function setStart(c, s, filmDur) {
+    let v = r3(s);
+    if (Number.isFinite(filmDur)) v = Math.min(Math.max(v, -num(c.duration, 3) + 0.05), filmDur - 0.05);
+    c.start = v; c.offsetMs = offsetMs(c); return c;
+  }
+  const nudge = (c, ms, filmDur) => setStart(c, num(c.start, 0) + ms / 1000, filmDur);
+  const recall = (c) => { c.start = home(c); c.offsetMs = 0; return c; };
+  const gain = (c, db) => { c.gainDb = Math.min(12, Math.max(-60, Math.round(num(db, 0) * 10) / 10)); return c; };
+  // the one-line text of ALL the choices: ZRSON1 son1=v3@0.000,0 son2=v3@3.000,0   (id=version@start in seconds,level in dB)
+  function line(p) {
+    return [FORMAT].concat(list(p).map((c) => `${c.id}=${c.choice}@${r3(num(c.start, 0)).toFixed(3)},${num(c.gainDb, 0)}`)).join(" ");
+  }
+  // read a line without touching anything: { ok, items: [{id, choice, start, gainDb}], errors }
+  function parse(p, text) {
+    const errors = [], items = [], parts = String(text || "").trim().split(/\s+/).filter(Boolean);
+    if (parts[0] !== FORMAT) return { ok: false, items, errors: [`la ligne doit commencer par ${FORMAT}`] };
+    parts.slice(1).forEach((tok) => {
+      const m = /^([A-Za-z0-9-]+)=([A-Za-z0-9-]+)@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/.exec(tok);
+      if (!m) return errors.push(`« ${tok} » n'est pas de la forme id=version@début,niveau`);
+      const c = list(p).find((x) => x.id === m[1]);
+      if (!c) return errors.push(`pas de capsule « ${m[1]} » dans ce film`);
+      if (!c.variants || !c.variants[m[2]]) return errors.push(`la capsule ${m[1]} n'a pas de version « ${m[2]} »`);
+      if (items.some((x) => x.id === m[1])) return errors.push(`la capsule ${m[1]} est donnée deux fois`);
+      items.push({ id: m[1], choice: m[2], start: r3(m[3]), gainDb: Number(m[4]) });
+    });
+    if (!items.length && !errors.length) errors.push("la ligne ne contient aucune capsule");
+    return { ok: !errors.length, items, errors };
+  }
+  // apply a line: all or nothing (one wrong token and nothing moves)
+  function apply(p, text, filmDur) {
+    const r = parse(p, text);
+    if (!r.ok) return r;
+    r.items.forEach((it) => { const c = list(p).find((x) => x.id === it.id); c.choice = it.choice; setStart(c, it.start, filmDur); gain(c, it.gainDb); });
+    return r;
+  }
+  // the sounds the page must decode: the active version of every clip that is not muted
+  const needed = (p) => list(p).filter((c) => !c.mute && active(c)).map((c) => active(c).file);
+  return { FORMAT, list, active, home, offsetMs, setStart, nudge, recall, gain, line, parse, apply, needed };
+});

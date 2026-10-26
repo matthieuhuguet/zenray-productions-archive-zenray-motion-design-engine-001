@@ -1,0 +1,39 @@
+// 26 October 2026: the sound clips of a film proven without a screen (motion/web/clips-core.js): the anchor puts a sound on its cue to the millisecond, a drag keeps the offset in step,
+// the one-line text copies every choice and pastes it back all or nothing, a wrong line moves nothing. Run: node motion/tests/test_clips.mjs. FR : les capsules de son, verifiees dans les deux sens.
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+const C = require("../web/clips-core.js");
+const fails = [];
+const check = (name, ok, detail) => { console.log((ok ? "ok   " : "FAIL ") + name + (ok ? "" : "  " + (detail || ""))); if (!ok) fails.push(name); };
+const film = () => ({ clips: [
+  { id: "son1", label: "Son 1", variants: { v1: { file: "son1-v1.wav" }, v2: { file: "son1-v2.wav" }, v3: { file: "son1-v3.wav" } }, choice: "v3", start: 0, duration: 3, anchor: { cue: "lens", cueT: 1.667, hit: 1.667 }, offsetMs: 0, gainDb: 0 },
+  { id: "son2", label: "Son 2", variants: { v1: { file: "son2-v1.wav" }, v2: { file: "son2-v2.wav" }, v3: { file: "son2-v3.wav" } }, choice: "v3", start: 3, duration: 3, anchor: { cue: "aberrationStart", cueT: 4.417, hit: 1.417 }, offsetMs: 0, gainDb: 0 } ] });
+
+let p = film();
+check("home: the sound lands on its cue", C.home(p.clips[0]) === 0 && C.home(p.clips[1]) === 3, `${C.home(p.clips[0])} ${C.home(p.clips[1])}`);
+check("line of the default choices", C.line(p) === "ZRSON1 son1=v3@0.000,0 son2=v3@3.000,0", C.line(p));
+check("needed: only the chosen version", JSON.stringify(C.needed(p)) === JSON.stringify(["son1-v3.wav", "son2-v3.wav"]));
+// a drag of +120 ms keeps the offset to the cue
+C.setStart(p.clips[1], 3.12, 6);
+check("drag: start and offset in step", p.clips[1].start === 3.12 && p.clips[1].offsetMs === 120, `${p.clips[1].start} ${p.clips[1].offsetMs}`);
+C.nudge(p.clips[1], -20, 6);
+check("nudge by -20 ms", p.clips[1].start === 3.1 && p.clips[1].offsetMs === 100, `${p.clips[1].start} ${p.clips[1].offsetMs}`);
+C.recall(p.clips[1]);
+check("recall: back on the cue, offset 0", p.clips[1].start === 3 && p.clips[1].offsetMs === 0);
+C.setStart(p.clips[0], 99, 6);
+check("start is bounded by the film", p.clips[0].start <= 5.95, String(p.clips[0].start));
+// the line: copy, change, paste back
+p = film(); const saved = C.line(p);
+p.clips[0].choice = "v1"; C.setStart(p.clips[0], 0.25, 6); C.gain(p.clips[0], -4.5); p.clips[1].choice = "v2";
+const changed = C.line(p);
+check("line shows every change", changed === "ZRSON1 son1=v1@0.250,-4.5 son2=v2@3.000,0", changed);
+const r = C.apply(p, saved, 6);
+check("pasting the saved line restores every choice", r.ok && C.line(p) === saved && p.clips[0].choice === "v3" && p.clips[0].offsetMs === 0 && p.clips[0].gainDb === 0, JSON.stringify(r));
+// one line for the other film
+const q = film(); const r2 = C.apply(q, "ZRSON1 son1=v2@0.040,-3 son2=v1@3.000,0", 6);
+check("a line sets version, start and level", r2.ok && q.clips[0].choice === "v2" && q.clips[0].start === 0.04 && q.clips[0].offsetMs === 40 && q.clips[0].gainDb === -3 && q.clips[1].choice === "v1");
+// red: wrong lines move nothing
+const bads = ["", "son1=v3@0,0", "ZRSON1 son9=v3@0,0", "ZRSON1 son1=v9@0,0", "ZRSON1 son1=v3@abc,0", "ZRSON1 son1=v3@0,0 son1=v2@1,0", "ZRSON1 son1=v1@1.000,0 son2=v9@3,0"];
+bads.forEach((b) => { const z = film(), before = JSON.stringify(z), rr = C.apply(z, b, 6); check(`red: refused and nothing moved: ${JSON.stringify(b)}`, !rr.ok && rr.errors.length > 0 && JSON.stringify(z) === before, JSON.stringify(rr)); });
+check("muted clips are not loaded", (() => { const z = film(); z.clips[0].mute = true; return JSON.stringify(C.needed(z)) === JSON.stringify(["son2-v3.wav"]); })());
+console.log(fails.length ? `\n${fails.length} FAIL` : "\nall ok"); process.exit(fails.length ? 1 : 0);

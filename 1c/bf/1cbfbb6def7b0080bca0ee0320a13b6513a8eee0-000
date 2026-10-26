@@ -124,7 +124,14 @@
     Object.values((S.project.sfx || {}).pick || {}).forEach((id) => { if (url[id] && S.audio.buffers[`sfx:${id}`] === undefined) need[`sfx:${id}`] = url[id]; });
     if (Object.keys(need).length) Object.assign(S.audio.buffers, await ZS.audio.decode(S.audio.ctx, need));
   }
+  // the sound clips of the film (project.clips): the chosen version of every capsule, decoded once (26 October 2026)
+  async function clipBuffers() {
+    const need = {};
+    ZSClips.needed(S.project).forEach((f) => { if (S.audio.buffers["clip:" + f] === undefined) need["clip:" + f] = `/motion/files/${S.project.id}/${encodeURIComponent(f)}`; });
+    if (Object.keys(need).length) Object.assign(S.audio.buffers, await ZS.audio.decode(S.audio.ctx, need));
+  }
   async function audioBuffers() {
+    await clipBuffers();
     await sfxBuffers();
     if ((S.project.music || {}).mode === "bank") { await bankBuffers(); return S.audio.buffers; }
     const m = S.project.music || {}, f = m.mode === "file" && m.file && m.file.file;
@@ -308,7 +315,38 @@
     const sv = ZS.audio.values(ZS.audio.SFX_PARAMS, S.project.sfx || {});
     if (sv.sceneCues) (S.built.cues || []).forEach((c) => { const i = document.createElement("i"); i.style.left = pc(c.t); i.title = c.type; sl.appendChild(i); });
     if (sv.refEvents) ((S.project.sfx || {}).events || []).forEach((e) => { const i = document.createElement("i"); i.className = "ref"; i.style.left = pc(e.t); i.title = e.kind; sl.appendChild(i); });
+    renderClipLane(pc, k);
     updateTime();
+  }
+  // the Sons lane: one capsule per clip, dragged with the pointer (Shift = ten times finer), magnetic to its cue within 12 ms (26 October 2026)
+  function renderClipLane(pc, k) {
+    const lane = $("#clipLane"); if (!lane) return; lane.innerHTML = "";
+    ZSClips.list(S.project).forEach((c) => {
+      if (c.anchor && Number.isFinite(c.anchor.cueT)) { const u = document.createElement("u"); u.className = "cue"; u.style.left = pc(c.anchor.cueT); u.innerHTML = `<em>${esc(c.anchor.cue)}</em>`; lane.appendChild(u); }
+    });
+    ZSClips.list(S.project).forEach((c) => {
+      const d = document.createElement("div"), start = Number(c.start) || 0;
+      d.className = "clip" + (S.clipSel === c.id ? " on" : "") + (c.mute ? " mute" : ""); d.dataset.id = c.id;
+      d.style.left = pc(start); d.style.width = Math.max(12, (Number(c.duration) || 3) * k) + "px";
+      d.innerHTML = `<b>${esc(c.label || c.id)}</b><span>${esc(c.choice)}</span>` + (c.anchor ? `<i class="hit" style="left:${(Number(c.anchor.hit) || 0) * k}px"></i>` : "");
+      d.title = `${c.label || c.id} · ${c.choice} · début ${fmtT(start)} · décalage ${ZSClips.offsetMs(c)} ms`;
+      d.onpointerdown = (e) => {
+        e.preventDefault(); e.stopPropagation(); d.setPointerCapture(e.pointerId);
+        const x0 = e.clientX, s0 = Number(c.start) || 0; let moved = false, cur = s0;
+        d.onpointermove = (ev) => {
+          if (Math.abs(ev.clientX - x0) > 2) moved = true;
+          cur = Math.round((s0 + (ev.clientX - x0) / k / (ev.shiftKey ? 10 : 1)) * 1000) / 1000;
+          if (Math.abs(cur - ZSClips.home(c)) < 0.012) cur = ZSClips.home(c);
+          d.style.left = pc(cur); d.title = `début ${fmtT(cur)} · décalage ${Math.round((cur - ZSClips.home(c)) * 1000)} ms`;
+        };
+        d.onpointerup = () => {
+          d.onpointermove = d.onpointerup = null;
+          if (moved) change((p) => ZSClips.setStart(p.clips.find((x) => x.id === c.id), cur, S.built.duration));
+          else { S.clipSel = c.id; if (S.tab !== "sons") setTab("sons"); else renderPanel(); renderTrack(); }
+        };
+      };
+      lane.appendChild(d);
+    });
   }
   function renderScenes() {
     const ol = $("#sceneList"); ol.innerHTML = "";
@@ -444,7 +482,7 @@
   $("#tabs").onclick = (e) => { if (e.target.dataset.tab) setTab(e.target.dataset.tab); };
   function renderPanel() {
     panel.innerHTML = "";
-    ({ controls: controlsPanel, scene: scenePanel, theme: themePanel, music: musicPanel, sfx: sfxPanel, media: mediaPanel, post: postPanel, versions: versionsPanel })[S.tab]();
+    ({ controls: controlsPanel, scene: scenePanel, theme: themePanel, music: musicPanel, sfx: sfxPanel, sons: sonsPanel, media: mediaPanel, post: postPanel, versions: versionsPanel })[S.tab]();
   }
   // PROMOTED CONTROLS (16 October 2026): the few values that matter for THIS motion, chosen from its graphic bible and storyboard (project.controls),
   // each one driving every scene value it names. A person changes a headline, a colour or a product name here, without opening a scene.
@@ -603,6 +641,48 @@
     panel.appendChild(tiered(ZS.audio.SFX_PARAMS, stored, (d) => vals[d.key], (d, v, reset) => change((p) => {
       p.sfx = p.sfx || {}; if (reset) delete p.sfx[d.key]; else p.sfx[d.key] = v;
     }, { keepPanel: !reset })));
+  }
+  // the Sons tab (26 October 2026): the capsules of sound of the film, their versions, their start to the millisecond, their level, and ONE line that copies and pastes every choice
+  function sonsPanel() {
+    const clips = ZSClips.list(S.project), D = S.built.duration;
+    panel.insertAdjacentHTML("beforeend", `<h3>Sons du film</h3><p class="hint">Une capsule par son sur la piste « Sons » : on la fait glisser (Maj pour plus fin) ou on la décale ici à la milliseconde. Le trait noir dans la capsule est l'instant fort du son, le trait orange le repère du film où il doit tomber. Les choix sont enregistrés avec le projet.</p>`);
+    if (!clips.length) { panel.insertAdjacentHTML("beforeend", `<p class="hint">Aucune capsule dans ce film.</p>`); return; }
+    clips.forEach((c) => {
+      const card = document.createElement("div"), off = ZSClips.offsetMs(c);
+      card.className = "sonCard" + (S.clipSel === c.id ? " on" : "");
+      card.innerHTML = `<div class="lbl"><b>${esc(c.label || c.id)}</b> <span class="hint num">${esc(c.id)}${c.anchor ? ` · repère ${esc(c.anchor.cue)} ${Number(c.anchor.cueT).toFixed(3)} s` : ""}</span></div>
+        <div class="vers">${Object.keys(c.variants || {}).map((v) => `<button type="button" data-v="${esc(v)}" class="${v === c.choice ? "on" : ""}" title="${esc((c.variants[v] || {}).name || v)}">${esc(v)}${(c.variants[v] || {}).name ? " · " + esc(c.variants[v].name) : ""}</button>`).join("")}</div>
+        <div class="row"><label class="hint">Début (s)</label><input type="number" step="0.001" class="val st" value="${(Number(c.start) || 0).toFixed(3)}" style="width:90px"><span class="hint num">décalage au repère : ${off > 0 ? "+" : ""}${off} ms</span></div>
+        <div class="nudges">${[-100, -10, -1, 1, 10, 100].map((m) => `<button type="button" data-n="${m}">${m > 0 ? "+" : ""}${m} ms</button>`).join("")}<button type="button" data-a="recall" title="Remet la capsule exactement sur son repère">Recaler</button><button type="button" data-a="mute">${c.mute ? "Réactiver" : "Muet"}</button></div>
+        <div class="row"><label class="hint">Niveau (dB)</label><input type="range" min="-30" max="12" step="0.5" class="lv" value="${Number(c.gainDb) || 0}"><span class="hint num lvv">${Number(c.gainDb) || 0} dB</span></div>`;
+      const set = (fn) => change((p) => fn(p.clips.find((x) => x.id === c.id)));
+      card.onclick = (e) => {
+        const b = e.target.closest("button"); if (!b) { if (S.clipSel !== c.id) { S.clipSel = c.id; renderTrack(); } return; }
+        S.clipSel = c.id;
+        if (b.dataset.v) set((x) => { x.choice = b.dataset.v; });
+        else if (b.dataset.n) set((x) => ZSClips.nudge(x, Number(b.dataset.n), D));
+        else if (b.dataset.a === "recall") set((x) => ZSClips.recall(x));
+        else if (b.dataset.a === "mute") set((x) => { x.mute = !x.mute; });
+      };
+      card.querySelector(".st").onchange = (e) => set((x) => ZSClips.setStart(x, Number(e.target.value) || 0, D));
+      const lv = card.querySelector(".lv"); lv.oninput = () => { card.querySelector(".lvv").textContent = lv.value + " dB"; };
+      lv.onchange = () => set((x) => ZSClips.gain(x, Number(lv.value)));
+      panel.appendChild(card);
+    });
+    const box = document.createElement("div");
+    box.innerHTML = `<h3>Mes choix en une ligne</h3><p class="hint">Copie cette ligne pour garder tous les choix (versions, débuts, niveaux) ; colle une ligne pour les remettre tous d'un coup.</p>
+      <input class="sonLine cur" readonly value="${esc(ZSClips.line(S.project))}"><div class="nudges"><button type="button" data-a="copy">Copier mes choix</button></div>
+      <input class="sonLine paste" placeholder="ZRSON1 son1=v3@0.000,0 son2=v3@3.000,0"><div class="sonErr"></div><div class="nudges"><button type="button" data-a="paste">Coller une ligne</button></div>`;
+    box.onclick = async (e) => {
+      const b = e.target.closest("button"); if (!b) return;
+      if (b.dataset.a === "copy") { const t = ZSClips.line(S.project); try { await navigator.clipboard.writeText(t); toast("Choix copiés : " + t); } catch (err) { box.querySelector(".cur").select(); toast("Sélectionné : copie avec Cmd+C"); } }
+      if (b.dataset.a === "paste") {
+        const text = box.querySelector(".paste").value, r = ZSClips.parse(S.project, text);
+        if (!r.ok) { box.querySelector(".sonErr").textContent = r.errors.join(" · "); return; }
+        change((p) => ZSClips.apply(p, text, D)); toast("Choix appliqués et enregistrés");
+      }
+    };
+    panel.appendChild(box);
   }
   // post-process (15 October 2026): the film's grade, then the selected scene's own colour values when "this scene only" is on
   function postPanel() {
