@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="fr" data-theme="dark" data-body-font="gtstandard"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ZenRay Motion Design · Galerie SFX</title><link rel="stylesheet" href="/motion/web/gallery.css" /></head><body>
+<header class="deck"><div class="deck-top">
+  <nav class="nav"><a href="/motion/">Éditeur</a><a href="/motion/validate">Validate</a><a href="/motion/gallery">Galerie Motion</a><a class="on" href="/motion/gallery-sfx">Galerie SFX</a><a href="/motion/threads">Threads</a><a href="/motion/previous">Previous Videos</a></nav>
+  <div class="actions"><input id="q" class="search" type="search" placeholder="Chercher un son" />
+    <div class="seg"><span class="tag">Corps :</span><button id="fGt" class="on" type="button">GT Standard L</button><button id="fLit" type="button">Literata</button></div>
+    <button id="themeB" class="btn" type="button">🌓 Thème</button><button id="cssB" class="btn" type="button">📋 Copier CSS</button></div></div>
+  <div class="sliders"><div class="g"><label for="colS">Colonnes :</label><input id="colS" type="range" min="2" max="6" step="1" /><span class="v" id="colV"></span></div>
+    <div class="g"><label for="gapS">Espacement :</label><input id="gapS" type="range" min="8" max="36" step="2" /><span class="v" id="gapV"></span></div>
+    <div class="g"><label for="radS">Arrondi :</label><input id="radS" type="range" min="0" max="24" step="2" /><span class="v" id="radV"></span></div>
+    <div class="g"><label for="ratioS">Ratio :</label><select id="ratioS" class="pill"><option value="16 / 9">16 : 9</option><option value="4 / 3">4 : 3</option><option value="1 / 1">1 : 1</option></select></div>
+    <div class="g"><label for="fitS">Ajustement :</label><select id="fitS" class="pill"><option value="cover">Cover</option><option value="contain">Contain</option></select></div></div>
+</header>
+<main class="container"><div class="hero"><div><h1 class="title">Galerie SFX</h1><p class="subtitle">Tous les sons déjà générés, rangés par projet d'origine avec le contexte où ils ont été faits. Survole ou clique un son pour l'écouter ; le trait bleu en bas est la progression.</p></div><div class="hero-meta" id="meta"></div></div><div id="groups"></div></main><div class="toast" id="toast"></div>
+<script src="/motion/web/gallery.js"></script>
+<script>
+(async () => {
+  const G = ZSGallery, esc = G.esc, d = await G.api("/api/motion/gallery/sounds"); G.deck(d.view);
+  document.getElementById("meta").innerHTML = `<span><span class="num">${d.count}</span> sons</span><span>·</span><span><span class="num">${d.groups.length}</span> projets d'origine</span>`;
+  const host = document.getElementById("groups"), CAP = 24;
+  const tile = (s) => `<article class="tile" data-id="${esc(s.id)}"><div class="media"><canvas class="wave" data-src="/motion/gallery/sound/${encodeURIComponent(s.id).replace(/%3A/g, ':').replace(/%2F/g, '/')}"></canvas><button class="play" type="button">▶</button><div class="scrub"><i></i></div><span class="badge num">${G.mmss(s.duration)}</span>${s.local ? '<span class="badge left local">LOCAL</span>' : ''}</div>
+    <div class="caption"><div class="caption-title">${esc(s.title)}</div><div class="caption-note">${esc(s.note || '')}</div></div></article>`;
+  const draw = (q) => {
+    host.innerHTML = d.groups.map((g) => {
+      const items = g.items.filter((s) => !q || (s.title + ' ' + s.note + ' ' + g.title + ' ' + g.project).toLowerCase().includes(q)); if (!items.length) return '';
+      const shown = g.id === 'bank' && !q && !g.open ? items.slice(0, CAP) : items;
+      return `<section class="group" data-g="${esc(g.id)}"><div class="section"><div><h2 class="title">${esc(g.title)}</h2><p>${esc(g.note)}</p></div><div class="meta"><span class="num">${items.length}</span> sons · projet : ${esc(g.project)}${g.local ? ' · <span class="local">SOURCE LOCALE</span>' : ''}</div></div>
+        <div class="grid">${shown.map(tile).join('')}</div>${shown.length < items.length ? `<p style="margin-top:12px"><button class="btn" data-more="${esc(g.id)}" type="button">Voir les ${items.length - shown.length} autres</button></p>` : ''}</section>`;
+    }).join('') || '<div class="empty">Aucun son ne correspond.</div>';
+    host.querySelectorAll('canvas.wave').forEach(G.lazyWave);
+  };
+  host.addEventListener('click', (e) => {
+    const more = e.target.closest('[data-more]'); if (more) { d.groups.find((g) => g.id === more.dataset.more).open = true; draw(document.getElementById('q').value.trim().toLowerCase()); return; }
+    const t = e.target.closest('.tile'); if (t) G.playSound(t, t.querySelector('canvas').dataset.src);
+  });
+  G.search(draw);
+})();
+</script></body></html>
+

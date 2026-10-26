@@ -1,356 +1,55 @@
-// ZenRay Motion Design, the gallery of the Motion page (15 October 2026): every project, the 12 reference videos, the media of the open
-// project, the 33 musics reproduced at 99.9 % with their variations, and the 226 sound effects, each playable and usable in one click.
-// It reads the editor's state and calls the editor's own actions (window.ZS_APP), so a choice made here is undoable and saved like any edit.
-// FR : la galerie de la page Motion ; tout se retrouve, s'ecoute et s'utilise en un clic, avec les actions de l'editeur.
+// 26 October 2026: the shared script of the two galleries (Motion and SFX): the deck (view sliders, theme, body font, copy of the CSS values), the search, the hover play of the sounds and the render of the cards.
+// The data come from /api/motion/gallery and /api/motion/gallery/sounds; every number of the view comes from params/gallery.json (view) and is kept in the browser. FR : le script commun des deux galeries.
 (function () {
   "use strict";
-  const $ = (q) => document.querySelector(q);
-  const A = () => window.ZS_APP;
-  const G = { section: "anim", kind: "", cache: {}, proj: "", tpl: "" };
-  const CUE_LABELS = { whoosh: "Souffles", pop: "Pops", click: "Clics", type: "Frappe", tick: "Tics", riser: "Montées", impact: "Impacts", shimmer: "Scintillements" };
-  let audio = null, playingUrl = "";
-  const listen = (url, btn) => {
-    if (audio) { audio.pause(); document.querySelectorAll(".playing").forEach((b) => { b.classList.remove("playing"); b.textContent = "▶"; }); }
-    if (playingUrl === url) { playingUrl = ""; audio = null; return; }
-    audio = new Audio(url); playingUrl = url; audio.play().catch(() => {});
-    if (btn) { btn.classList.add("playing"); btn.textContent = "■"; }
-    audio.onended = () => { playingUrl = ""; if (btn) { btn.classList.remove("playing"); btn.textContent = "▶"; } };
+  const $ = (q, r) => (r || document).querySelector(q), root = document.documentElement;
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const LS = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
+  const mmss = (s) => { s = Math.round(s * 10) / 10; return s >= 60 ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}` : `${s.toFixed(s % 1 ? 1 : 0)} s`; };
+  const api = async (p) => { const r = await fetch(p), j = await r.json(); if (!j.ok) throw new Error(j.error || r.status); return j; };
+  const G = (window.ZSGallery = {});
+  G.esc = esc; G.mmss = mmss; G.api = api;
+
+  // ---- the deck: the view values (columns, gap, radius, ratio, fit) as CSS variables, saved in the browser; defaults come from the server (params/gallery.json)
+  G.deck = (view, page) => {
+    const key = (k) => `zg-${k}`, get = (k, d) => LS(key(k)) || String(d);
+    const set = { cols: get("cols", view.columns), gap: get("gap", view.gap), radius: get("radius", view.radius), ratio: get("ratio", view.ratio), fit: get("fit", view.fit), theme: get("theme", view.theme), font: get("font", view.bodyFont) };
+    const apply = () => {
+      root.style.setProperty("--gal-cols", set.cols); root.style.setProperty("--gal-gap", set.gap + "px"); root.style.setProperty("--gal-radius", set.radius + "px");
+      root.style.setProperty("--gal-ratio", set.ratio); root.style.setProperty("--gal-fit", set.fit); root.setAttribute("data-theme", set.theme); root.setAttribute("data-body-font", set.font);
+      $("#fGt").classList.toggle("on", set.font !== "literata"); $("#fLit").classList.toggle("on", set.font === "literata");
+      [["cols", "#colV", ""], ["gap", "#gapV", "px"], ["radius", "#radV", "px"]].forEach(([k, id, u]) => { $(id).textContent = set[k] + u; });
+    };
+    const bind = (id, k, ev) => { const e = $(id); e.value = set[k]; e.addEventListener(ev || "input", () => { set[k] = e.value; LS(key(k), set[k]); apply(); }); };
+    bind("#colS", "cols"); bind("#gapS", "gap"); bind("#radS", "radius"); bind("#ratioS", "ratio", "change"); bind("#fitS", "fit", "change");
+    $("#fGt").onclick = () => { set.font = "gtstandard"; LS(key("font"), set.font); apply(); }; $("#fLit").onclick = () => { set.font = "literata"; LS(key("font"), set.font); apply(); };
+    $("#themeB").onclick = () => { set.theme = set.theme === "dark" ? "light" : "dark"; LS(key("theme"), set.theme); apply(); };
+    $("#cssB").onclick = () => {
+      const css = `:root {\n  --gallery-columns: ${set.cols};\n  --gallery-gap: ${set.gap}px;\n  --gallery-radius: ${set.radius}px;\n  --gallery-image-ratio: ${set.ratio};\n  --gallery-image-fit: ${set.fit};\n  --font-title: 'GT Ultra', sans-serif;\n  --font-num: 'GT Ultra', sans-serif;\n  --font-body: ${set.font === "literata" ? "'Literata', serif" : "'GT Standard L', sans-serif"};\n  --font-ui: 'GT Standard L', sans-serif;\n}`;
+      navigator.clipboard.writeText(css).then(() => G.toast("Réglages copiés"));
+    };
+    apply();
   };
-  const get = async (key, path) => (G.cache[key] = G.cache[key] || await A().api("GET", path));
-  const el = (tag, cls, html) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html !== undefined) n.innerHTML = html; return n; };
-  const btn = (label, fn, title) => { const b = el("button"); b.type = "button"; b.textContent = label; if (title) b.title = title; b.onclick = (e) => { e.stopPropagation(); fn(b); }; return b; };
-  const head = (body, title, sub) => { body.appendChild(el("h3", "", A().esc(title))); body.appendChild(el("p", "sub", sub)); };
-  // the media value of the selected scene (or sub-scene), when its template has one
-  const mediaTarget = () => {
-    const { S } = A(), sc = S.project.scenes[S.sel], obj = S.child != null && sc.children ? sc.children[S.child] : sc;
-    const tpl = ZS.templates[obj && obj.template], d = tpl && tpl.params.find((x) => x.type === "media");
-    return d ? { obj, key: d.key, label: tpl.label } : null;
+  G.toast = (t) => { const e = $("#toast"); e.textContent = t; e.classList.add("show"); clearTimeout(G.toast.k); G.toast.k = setTimeout(() => e.classList.remove("show"), 2200); };
+  G.search = (onChange) => { const s = $("#q"); s.value = LS("zg-q-" + location.pathname) || ""; s.addEventListener("input", () => { LS("zg-q-" + location.pathname, s.value); onChange(s.value.trim().toLowerCase()); }); onChange(s.value.trim().toLowerCase()); };
+
+  // ---- sounds: one audio at a time, a thin scrubber under the media, the waveform drawn once from the decoded file
+  let ctx = null, current = null;
+  G.playSound = (tile, url) => {
+    if (current && current.tile !== tile) { current.audio.pause(); current.tile.classList.remove("is-playing"); }
+    if (current && current.tile === tile) { if (current.audio.paused) { current.audio.play(); tile.classList.add("is-playing"); } else { current.audio.pause(); tile.classList.remove("is-playing"); } return; }
+    const a = new Audio(url), fill = $(".scrub i", tile); a.addEventListener("timeupdate", () => { if (a.duration) fill.style.width = (100 * a.currentTime / a.duration) + "%"; });
+    a.addEventListener("ended", () => { tile.classList.remove("is-playing"); fill.style.width = "0"; current = null; });
+    current = { tile, audio: a }; a.play(); tile.classList.add("is-playing");
   };
-  const useMedia = (name) => {
-    const t = mediaTarget();
-    if (!t) { A().toast("La scène choisie n'a pas de média : choisis une scène « Rendu 3D en vitrine » dans l'éditeur.", true); return; }
-    A().change((p) => { const sc = p.scenes[A().S.sel], obj = A().S.child != null && sc.children ? sc.children[A().S.child] : sc; obj.params = obj.params || {}; obj.params[t.key] = name; });
-    A().toast(`Média placé dans « ${t.label} »`);
+  G.wave = async (canvas, url) => {
+    try {
+      ctx = ctx || new (window.AudioContext || window.webkitAudioContext)(); const buf = await ctx.decodeAudioData(await (await fetch(url)).arrayBuffer());
+      const w = canvas.width = canvas.clientWidth * 2 || 600, h = canvas.height = canvas.clientHeight * 2 || 340, c = canvas.getContext("2d"), d = buf.getChannelData(0), step = Math.max(1, Math.floor(d.length / w));
+      c.clearRect(0, 0, w, h); c.fillStyle = getComputedStyle(root).getPropertyValue("--accent").trim() || "#0a84ff";
+      for (let x = 0; x < w; x++) { let mx = 0; for (let i = 0; i < step; i += 8) mx = Math.max(mx, Math.abs(d[x * step + i] || 0)); const bh = Math.max(1, mx * h * 0.9); c.globalAlpha = 0.9; c.fillRect(x, (h - bh) / 2, 1, bh); }
+    } catch (e) { console.warn('wave', canvas.dataset.src, e); /* a sound that cannot be decoded keeps an empty frame */ }
   };
-
-  async function projects(body) {
-    const j = await A().api("GET", "/api/motion/projects");
-    head(body, "Projets", `${j.projects.length} projets Motion. Une conversion de référence porte la vignette de sa vidéo.`);
-    const grid = el("div", "cards");
-    j.projects.forEach((p) => {
-      const c = el("div", "card" + (p.id === A().S.project.id ? " on" : ""));
-      const pic = el("div", "pic"); if (p.reference) pic.style.backgroundImage = `url(/motion/gallery/ref/${encodeURIComponent(p.reference)}.jpg)`;
-      pic.appendChild(el("span", "badge", `${p.format || ""} · ${Number(p.duration || 0).toFixed(1)} s`));
-      const b = el("div", "body");
-      b.appendChild(el("div", "title", A().esc(p.title || p.id)));
-      b.appendChild(el("div", "meta", `${p.scenes || "?"} scènes${p.versions ? " · " + p.versions + " versions" : ""}${p.reference ? " · réf. " + A().esc(p.reference) : ""}`));
-      const acts = el("div", "acts");
-      acts.appendChild(btn("Ouvrir", async () => { await A().openProject(p.id); window.ZS_MODE("edit"); }));
-      b.appendChild(acts); c.append(pic, b); grid.appendChild(c);
-      c.onclick = async () => { await A().openProject(p.id); window.ZS_MODE("edit"); };
-    });
-    body.appendChild(grid);
-  }
-
-  async function refs(body) {
-    const [r, pj] = await Promise.all([get("refs", "/api/motion/banks/references"), A().api("GET", "/api/motion/projects")]);
-    head(body, "Vidéos de référence", `${r.references.length} vidéos mesurées. Leurs plans peuvent servir de média, et leur musique est dans « Musiques reproduites ».`);
-    const grid = el("div", "cards");
-    r.references.forEach((x) => {
-      const c = el("div", "card"), pic = el("div", "pic");
-      pic.style.backgroundImage = `url(/motion/gallery/ref/${encodeURIComponent(x.slug)}.jpg)`;
-      pic.appendChild(el("span", "badge", `${x.duration} s · ${x.shots} plans`));
-      if (window.ZSHover) window.ZSHover.tile(pic, `/motion/bank/ref/${encodeURIComponent(x.slug)}`);   // 18 October 2026: the pointer over the poster plays the video
-      const b = el("div", "body");
-      b.appendChild(el("div", "title", A().esc(x.slug)));
-      b.appendChild(el("div", "meta", `${x.musics.length} musique(s) reproduite(s)`));
-      const acts = el("div", "acts");
-      acts.appendChild(btn("Voir", () => {
-        const d = $("#dlg"); d.innerHTML = `<h3 style="margin-top:0">${A().esc(x.slug)}</h3><video src="/motion/bank/ref/${encodeURIComponent(x.slug)}" controls autoplay style="width:min(80vw,960px);border-radius:8px"></video><div class="row" style="margin-top:10px"><button type="button" id="dlgClose">Fermer</button></div>`;
-        d.showModal(); $("#dlgClose").onclick = () => { d.querySelector("video").pause(); d.close(); };
-      }));
-      pj.projects.filter((p) => p.reference === x.slug).forEach((p) => acts.appendChild(btn("Ouvrir « " + (p.title || p.id).slice(0, 18) + " »", async () => { await A().openProject(p.id); window.ZS_MODE("edit"); })));
-      acts.appendChild(btn("Utiliser comme média", () => useMedia("ref:" + x.slug), "Dans la scène choisie de l'éditeur"));
-      b.appendChild(acts); c.append(pic, b); grid.appendChild(c);
-    });
-    body.appendChild(grid);
-  }
-
-  async function media(body) {
-    const { S } = A();
-    head(body, "Médias du projet", `${S.assets.length} fichier(s) dans « ${A().esc(S.project.title || S.project.id)} ». Dépose ici des rendus 3D, des images ou des musiques.`);
-    const drop = el("div", "drop", "Dépose tes fichiers ici<br><span class=\"hint\">ou clique pour choisir</span>");
-    const input = document.createElement("input"); input.type = "file"; input.multiple = true; input.accept = "video/*,image/*,audio/*";
-    drop.onclick = () => input.click();
-    input.onchange = async () => { await A().upload([...input.files]); render(); };
-    drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("hot"); };
-    drop.ondragleave = () => drop.classList.remove("hot");
-    drop.ondrop = async (e) => { e.preventDefault(); drop.classList.remove("hot"); await A().upload([...e.dataTransfer.files]); render(); };
-    body.appendChild(drop);
-    const grid = el("div", "cards");
-    S.assets.forEach((a) => {
-      const c = el("div", "card"), pic = el("div", "pic");
-      if (a.kind === "video") pic.style.backgroundImage = `url(/motion/gallery/file/${S.project.id}/${encodeURIComponent(a.name)}.jpg)`;
-      if (a.kind === "image") pic.style.backgroundImage = `url(${a.url})`;
-      if (a.kind === "video" && window.ZSHover) window.ZSHover.tile(pic, a.url);   // 18 October 2026: the pointer over the poster plays the video
-      pic.appendChild(el("span", "badge", a.kind));
-      const b = el("div", "body"); b.appendChild(el("div", "title", A().esc(a.name)));
-      b.appendChild(el("div", "meta", `${(a.bytes / 1e6).toFixed(1)} Mo`));
-      const acts = el("div", "acts");
-      if (a.kind === "audio") {
-        acts.appendChild(btn("▶", (bb) => listen(a.url, bb)));
-        acts.appendChild(btn("Utiliser comme musique", () => { A().change((p) => { p.music = p.music || {}; p.music.mode = "file"; p.music.file = { ...(p.music.file || {}), file: a.name }; }); A().toast("Musique du projet : " + a.name); }));
-      } else acts.appendChild(btn("Utiliser comme média", () => useMedia(a.name)));
-      b.appendChild(acts); c.append(pic, b); grid.appendChild(c);
-    });
-    body.appendChild(grid);
-  }
-
-  async function music(body) {
-    const j = await get("music", "/api/motion/banks/music"), cur = (A().S.project.music || {});
-    // 16 October 2026: the music player (music-player.js): a list, one click plays, a variation chip changes the mix at once on the running music
-    body.classList.add("mp-page");
-    const vcount = j.music.reduce((n, m) => n + (m.variations || []).length, 0);
-    body.appendChild(el("h3", "", "Musiques reproduites"));
-    body.appendChild(el("p", "sub", `${j.count} musiques reproduites à 99,9 % depuis les références, ${vcount} variations. Clique une musique pour l'écouter, puis une variation : le mix change tout de suite.`));
-    window.ZS_MUSIC.mount(body, {
-      music: j.music, current: cur, esc: A().esc,
-      use: (m, vid, vals) => {
-        A().change((p) => {
-          p.music = p.music || {}; p.music.mode = "bank";
-          const keep = { track: m.id, volume: (p.music.bank || {}).volume ?? -8, offset: (p.music.bank || {}).offset, fadeOut: (p.music.bank || {}).fadeOut };
-          p.music.bank = Object.fromEntries(Object.entries(keep).filter(([, x]) => x !== undefined));
-          const v = (m.variations || []).find((x) => x.id === vid);
-          if (v) Object.assign(p.music.bank, v.values, { variation: v.id });
-        });
-        A().loadBank(); A().toast(vid ? `« ${m.id} » en variation ${vid}, dans le projet` : "Musique du projet : " + m.id);
-      },
-    });
-    // the audio of the references, stored for editing (local, never published): listen, or put it under the project's film
-    const st = j.stored || [];
-    if (st.length) {
-      body.appendChild(el("h3", "", `Pistes des références rangées pour le montage (${st.length})`));
-      body.appendChild(el("p", "hint", "Le son d'origine de chaque vidéo du corpus, gardé en local pour monter dessus. « Utiliser » l'importe dans le projet comme fichier audio."));
-      const list = el("div", "mp-stored");
-      st.forEach((m) => {
-        const on = cur.mode === "file" && (cur.file || {}).file === m.file;
-        const r = el("div", "mp-srow" + (on ? " on" : ""));
-        r.appendChild(btn("▶", (bb) => listen(m.url, bb), "Écouter la piste"));
-        r.appendChild(el("span", "t", `<b>${String(m.n).padStart(3, "0")} ${A().esc(m.title)}</b><small>${A().esc(m.category)} · ${m.tempoBpm ? Math.round(m.tempoBpm) + " bpm · " : ""}${m.duration ? Math.round(m.duration) + " s" : ""}</small>`));
-        r.appendChild(btn(on ? "Dans le projet" : "Utiliser", async () => {
-          try {
-            const blob = await (await fetch(m.url)).blob();
-            await A().upload([new File([blob], m.file, { type: "audio/mpeg" })]);
-            const name = (A().S.assets.find((a) => a.name.startsWith(m.file.replace(/\.mp3$/, ""))) || {}).name || m.file;
-            A().change((p) => { p.music = { mode: "file", file: { file: name } }; });
-            A().loadBank(); A().toast("Musique du projet : " + m.title); render();
-          } catch (e) { A().toast(e.message, true); }
-        }));
-        list.appendChild(r);
-      });
-      body.appendChild(list);
-    }
-  }
-
-  async function sfx(body) {
-    const j = await get("sfx", "/api/motion/banks/sfx"), picks = ((A().S.project.sfx || {}).pick) || {};
-    head(body, "Effets sonores", `${j.count} effets : ${j.count - (j.kinds.synth || 0)} isolés des références, ${j.kinds.synth || 0} synthétisés. « Assigner » fait jouer cet effet à chaque repère de ce type dans le projet.`);
-    if (Object.keys(picks).length) {
-      const cur = el("div", "filters");
-      Object.entries(picks).forEach(([k, id]) => cur.appendChild(btn(`${CUE_LABELS[k] || k} : ${id.split(":").pop()}  ✕`, () => {
-        A().change((p) => { delete p.sfx.pick[k]; }); render();
-      }, "Retirer cette assignation")));
-      body.appendChild(cur);
-    }
-    const f = el("div", "filters");
-    [["", "Tous"], ...Object.entries(j.kinds).sort((a, b) => b[1] - a[1]).map(([k, n]) => [k, `${k} · ${n}`])].forEach(([k, label]) => {
-      const b = btn(label, () => { G.kind = k; render(); }); if (G.kind === k) b.className = "on"; f.appendChild(b);
-    });
-    body.appendChild(f);
-    const grid = el("div", "sfxgrid");
-    j.sfx.filter((x) => !G.kind || x.kind === G.kind).forEach((x) => {
-      const used = Object.entries(picks).filter(([, id]) => id === x.id).map(([k]) => CUE_LABELS[k] || k);
-      const c = el("div", "sfx" + (used.length ? " on" : ""));
-      const pb = btn("▶", (bb) => listen(x.url, bb)); pb.className = "play";
-      const info = el("div", "", `<div class="k">${A().esc(x.kind === "synth" ? x.name : x.kind)}${used.length ? " · " + used.join(", ") : ""}</div><div class="src">${A().esc(x.reference)}${x.duration ? " · " + x.duration.toFixed(2) + " s" : ""}</div>`);
-      const acts = el("div", "acts"), sel = el("select");
-      sel.innerHTML = `<option value="">Assigner à…</option>` + Object.entries(CUE_LABELS).map(([k, l]) => `<option value="${k}">${l}</option>`).join("");
-      sel.onchange = () => {
-        if (!sel.value) return;
-        const k = sel.value;
-        A().change((p) => { p.sfx = p.sfx || {}; p.sfx.enabled = true; p.sfx.pick = { ...(p.sfx.pick || {}), [k]: x.id }; });
-        A().toast(`${CUE_LABELS[k]} : ${x.id}`); render();
-      };
-      acts.appendChild(sel); c.append(pb, info, acts); grid.appendChild(c);
-    });
-    body.appendChild(grid);
-  }
-
-  // ------------------------------------------------------------------ live miniatures (15 October 2026)
-  // A scene alone, built into a small stage with the reference footage hidden: frozen on a meaningful frame, played in a loop under
-  // the mouse. Built only when the card scrolls into view, so a gallery of hundreds of animations stays light.
-  const isMotion = (sc) => {
-    if (sc.template === "media-text") { const pa = sc.params || {}; return (pa.style || "sous-titre") !== "aucun" && !!(pa.text || pa.text2); }
-    return sc.template !== "media-showcase";
-  };
-  // 16 October 2026: the miniatures stay light however many cards there are. A card is built only near the screen, one build per frame
-  // (the page never freezes), and torn down again once it is far away (its timeline and its DOM are freed), so memory does not grow
-  // while scrolling. A build in "thumb" mode never loads more than one picture of a vector scene.
-  const buildQueue = [];
-  let pumping = false;
-  const pump = () => {
-    if (pumping) return;
-    pumping = true;
-    const step = () => {
-      const job = buildQueue.shift();
-      if (job) job();
-      if (buildQueue.length) requestAnimationFrame(step); else pumping = false;
-    };
-    requestAnimationFrame(step);
-  };
-  const observer = new IntersectionObserver((entries) => entries.forEach((e) => {
-    const pic = e.target;
-    if (e.isIntersecting) {
-      if (pic.zsWanted) return;
-      pic.zsWanted = true;
-      buildQueue.push(() => { if (pic.zsWanted && pic.zsBuild) pic.zsBuild(); });
-      pump();
-    } else {
-      pic.zsWanted = false;
-      if (pic.zsTear) pic.zsTear();
-    }
-  }), { rootMargin: "400px" });
-  const REST = (built) => Math.min(built.duration * 0.6, Math.max(0.5, built.duration - 0.3));
-  function mini(pic, project, w) {
-    const [W, H] = ZS.size(project), k = w / W;
-    pic.style.background = "#0f0f0e";
-    const inner = el("div", "");
-    inner.style.cssText = `position:absolute;left:0;top:0;width:${W}px;height:${H}px;transform:scale(${k});transform-origin:0 0;pointer-events:none`;
-    pic.appendChild(inner);
-    let built = null;
-    pic.zsBuild = () => {
-      if (built) return;
-      inner.style.transform = `scale(${(pic.clientWidth || w) / W})`;   // the card's real width
-      const keep = window.__timelines && window.__timelines.main;
-      try { built = ZS.build(project, inner, { hideRefs: true, thumb: true, assetBase: project.__assetBase || "" }); } catch (e) { inner.textContent = e.message; return; }
-      if (window.__timelines) window.__timelines.main = keep;
-      built.tl.seek(REST(built), false);
-      document.fonts && document.fonts.ready.then(() => { if (built) ZS.refit(built); });
-    };
-    pic.zsTear = () => {
-      if (!built) return;
-      try { built.tl.kill(); } catch (e) { /* already gone */ }
-      inner.innerHTML = ""; built = null;
-    };
-    observer.observe(pic);
-    const card = pic.closest(".card") || pic;
-    // 18 October 2026: the hover player (hoverplay.js). The pointer plays the animation in a loop from its beginning; space pauses and plays (it goes on from where it stopped), the arrows move by one image,
-    // a held arrow scrolls fast; leaving stops it on the resting frame. A seek by key suppresses the events, so the loop never restarts under the arrows.
-    let fresh = false;
-    const adapter = {
-      stopOnLeave: true,
-      play() { pic.zsBuild(); if (!built) return; built.tl.eventCallback("onComplete", () => built && built.tl.restart()); if (fresh) { fresh = false; built.tl.restart(); } else built.tl.play(); },
-      pause() { if (built) built.tl.pause(); },
-      playing() { return !!built && !built.tl.paused(); },
-      time() { return built ? built.tl.time() : 0; },
-      duration() { return built ? built.duration : 0; },
-      seek(t) { if (built) built.tl.seek(t, true); },
-      fps() { return Number(project.fps) || 30; },
-    };
-    const rest = () => { if (built) { built.tl.pause(); built.tl.seek(REST(built), false); } };
-    if (window.ZSHover) window.ZSHover.attach(card, adapter, { hudHost: pic, onEnter() { fresh = true; pic.zsBuild(); }, onLeave: rest });
-    else {
-      card.addEventListener("mouseenter", () => { pic.zsBuild(); if (built) { built.tl.eventCallback("onComplete", () => built && built.tl.restart()); built.tl.restart(); } });
-      card.addEventListener("mouseleave", rest);
-    }
-  }
-  const one = (project, scene) => ({ ...project, scenes: [{ ...JSON.parse(JSON.stringify(scene)), id: "g" }], __assetBase: `/motion/files/${project.id}/` });
-
-  let renderToken = 0;   // a new render of the Animations page stops the packets of the previous one
-  async function anim(body) {
-    const { projects: list } = await A().api("GET", "/api/motion/projects");
-    const full = await Promise.all(list.map((p) => A().api("GET", `/api/motion/projects/${p.id}`).then((j) => j.project).catch(() => null)));
-    const items = [];
-    full.filter(Boolean).forEach((pr) => pr.scenes.forEach((sc, i) => {
-      if (isMotion(sc)) items.push({ pr, sc, i, k: null, start: pr.scenes.slice(0, i).reduce((a, x) => a + Number(x.duration || 0), 0) });
-      (sc.children || []).forEach((c, k) => items.push({ pr, sc: c, i, k, start: pr.scenes.slice(0, i).reduce((a, x) => a + Number(x.duration || 0), 0) + (Number(c.start) || 0) }));
-    }));
-    const labelOf = (id) => (ZS.templates[id] || {}).label || id;
-    head(body, "Animations", `${items.length} animations reproduites, une par carte, plan d'origine masqué. Survole une carte pour la jouer, clique pour l'ouvrir dans l'éditeur à cet instant.`);
-    const f1 = el("div", "filters"), f2 = el("div", "filters");
-    const projs = [...new Set(items.map((x) => x.pr.id))], tpls = [...new Set(items.map((x) => x.sc.template))];
-    [["", "Toutes les vidéos"], ...projs.map((id) => [id, (full.find((p) => p && p.id === id) || {}).title || id])].forEach(([v, l]) => {
-      const n = v ? items.filter((x) => x.pr.id === v).length : items.length;
-      const b = btn(`${l} · ${n}`, () => { G.proj = v; render(); }); if (G.proj === v) b.className = "on"; f1.appendChild(b);
-    });
-    [["", "Tous les effets"], ...tpls.map((t) => [t, labelOf(t)])].forEach(([v, l]) => {
-      const n = items.filter((x) => (!G.proj || x.pr.id === G.proj) && (!v || x.sc.template === v)).length;
-      if (v && !n) return;
-      const b = btn(`${l} · ${n}`, () => { G.tpl = v; render(); }); if (G.tpl === v) b.className = "on"; f2.appendChild(b);
-    });
-    body.append(f1, f2);
-    const grid = el("div", "cards");
-    const shown = items.filter((x) => (!G.proj || x.pr.id === G.proj) && (!G.tpl || x.sc.template === G.tpl));
-    // the cards arrive by packets, one packet per frame: hundreds of cards never block the page
-    const PACKET = 48, token = ++renderToken;
-    let at = 0;
-    const fill = () => {
-      if (token !== renderToken) return;
-      shown.slice(at, at + PACKET).forEach(addCard);
-      at += PACKET;
-      if (at < shown.length) requestAnimationFrame(fill);
-    };
-    const addCard = (x) => {
-      const c = el("div", "card"), pic = el("div", "pic");
-      const pa = x.sc.params || {}, word = pa.text || pa.title || pa.word || pa.prompt || pa.name || pa.sentence || pa.tokens || "";
-      const b = el("div", "body");
-      b.appendChild(el("div", "title", A().esc(labelOf(x.sc.template) + (word ? " · " + String(word).split("\n")[0] : ""))));
-      b.appendChild(el("div", "meta", `${A().esc(x.pr.title || x.pr.id)} · ${x.start.toFixed(1)} s · ${Number(x.sc.duration).toFixed(1)} s${x.k != null ? " · sous-scène" : ""}`));
-      c.append(pic, b); grid.appendChild(c);
-      mini(pic, one(x.pr, x.sc), 280);
-      c.onclick = async () => {
-        await A().openProject(x.pr.id);
-        const S = A().S; S.sel = x.i; S.child = x.k; window.ZS_MODE("edit"); A().renderScenes(); A().setTab("scene"); A().renderTrack(); A().seek(x.start + Math.min(0.6, Number(x.sc.duration) / 2));
-      };
-    };
-    body.appendChild(grid);
-    fill();
-  }
-
-  async function models(body) {
-    const S = A().S, groups = {};
-    Object.values(ZS.templates).forEach((t) => { (groups[t.group || "Autres"] = groups[t.group || "Autres"] || []).push(t); });
-    head(body, "Modèles", `${Object.keys(ZS.templates).length} modèles, joués avec leurs valeurs par défaut. Survole pour voir l'animation ; « Ajouter » l'insère après la scène choisie.`);
-    Object.entries(groups).forEach(([g, ts]) => {
-      body.appendChild(el("p", "sub", `<b>${A().esc(g)}</b>`));
-      const grid = el("div", "cards");
-      ts.forEach((t) => {
-        const c = el("div", "card"), pic = el("div", "pic"), b = el("div", "body");
-        b.appendChild(el("div", "title", A().esc(t.label)));
-        b.appendChild(el("div", "meta", `${t.params.length} valeurs · ${t.duration} s par défaut`));
-        const acts = el("div", "acts");
-        acts.appendChild(btn("Ajouter au projet", () => {
-          A().change((p) => { p.scenes.splice(S.sel + 1, 0, { id: "s" + Date.now().toString(36), template: t.id, duration: t.duration || 3, params: {} }); S.sel = S.sel + 1; S.child = null; });
-          window.ZS_MODE("edit"); A().toast(`« ${t.label} » ajouté après la scène ${S.sel}`);
-        }));
-        b.appendChild(acts); c.append(pic, b); grid.appendChild(c);
-        mini(pic, { schema: "zrmd/motion-project@1", format: "16x9", fps: 30, theme: S.project.theme || {}, scenes: [{ id: "m", template: t.id, duration: t.duration || 3, params: {} }] }, 280);
-      });
-      body.appendChild(grid);
-    });
-  }
-
-  const SECTIONS = { anim, models, projects, refs, media, music, sfx };
-  async function render() {
-    if (!A() || !A().S.project) return;
-    // a render builds its page apart and shows it only if no newer render started meanwhile (two quick clicks never mix two sections)
-    const token = (G.token = (G.token || 0) + 1), host = $("#gbody"), top = host.scrollTop, page = document.createElement("div");
-    [...$("#gnav").children].forEach((b) => b.classList.toggle("on", b.dataset.g === G.section));
-    try { await SECTIONS[G.section](page); } catch (e) { page.appendChild(el("p", "hint", "Erreur : " + A().esc(e.message))); }
-    if (token !== G.token) return;
-    host.replaceChildren(page);
-    host.scrollTop = top;
-  }
-  $("#gnav").onclick = (e) => { if (e.target.dataset.g) { G.section = e.target.dataset.g; $("#gbody").scrollTop = 0; render(); } };
-  window.ZSGallery = { render };
+  const io = "IntersectionObserver" in window ? new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { io.unobserve(e.target); G.wave(e.target, e.target.dataset.src); } }), { rootMargin: "300px" }) : null;
+  G.lazyWave = (canvas) => { if (io) io.observe(canvas); else G.wave(canvas, canvas.dataset.src); };
 })();

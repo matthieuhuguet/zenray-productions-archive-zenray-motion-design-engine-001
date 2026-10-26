@@ -1,0 +1,234 @@
+{
+  "_doc": "26 October 2026: the interface of the two galleries of ZenRay Motion Design (Motion and SFX), built from the 'Galerie Rework' view 0.3 Studio. FAMILIES gathers every variant of a film under ONE card (a film made in several rhythms, formats or copies is one project); a project that matches no family is gathered with its twin by its base name (x-ppm and x-motion are the same film). SOUNDS lists where the sounds live and what each group is, in the words of the project where it was made. Every path, text and number of the galleries is here, nothing in the page code. FR : l'interface des deux galeries ; une carte par film, tous les sons décrits par leur projet d'origine. posterAtById = the frame of a single-project card, by project id, when the default fraction lands on an empty moment.",
+  "view": {
+    "columns": 4,
+    "gap": 18,
+    "radius": 8,
+    "ratio": "16 / 9",
+    "fit": "cover",
+    "theme": "dark",
+    "bodyFont": "gtstandard"
+  },
+  "posterDir": "~/.claude/tmp/tmp-zenray-motion-design/posters",
+  "posterAt": 0.7,
+  "families": [
+    {
+      "id": "zenray-sony-playstation",
+      "title": "ZenRay : Sony puis PlayStation",
+      "prefixes": [
+        "zenray-sony-",
+        "sony-logo-2021",
+        "zenray-logo-opening",
+        "playstation-studios-opening"
+      ],
+      "poster": "zenray-sony-playstation-f-ppm",
+      "posterAt": 0.72,
+      "note": "Révélation façon Sony puis ouverture façon PlayStation, en rythmes A à F (de 10 s à 6 s) avec son aberration chromatique et ses sons. La version validée est le rythme F (6 s) avec la note Ghibli à 3,15 s.",
+      "tags": [
+        "Sony",
+        "PlayStation",
+        "logo",
+        "son"
+      ]
+    },
+    {
+      "id": "macbook-pro",
+      "title": "Apple MacBook Pro, film publicitaire",
+      "prefixes": [
+        "macbook-pro-s"
+      ],
+      "poster": "macbook-pro-s13-liquid-retina-ppm",
+      "note": "Une publicité découpée en 22 séquences, chacune un motion procédural (titres lumineux, rayons, compteurs).",
+      "tags": [
+        "publicité",
+        "22 séquences"
+      ]
+    },
+    {
+      "id": "cartes-titre",
+      "title": "Cartes titre, une apparition",
+      "prefixes": [
+        "inoxtag-collection-",
+        "louisiana-bayou-church",
+        "league-of-legends",
+        "christopher-nolan"
+      ],
+      "poster": "league-of-legends-cinematic-01-ppm",
+      "note": "Lettrage isolé, police personnalisée et texte modifiable sans casser le design : Inoxtag, League of Legends, Nolan, Louisiana Bayou.",
+      "tags": [
+        "lettrage",
+        "texte modifiable"
+      ]
+    },
+    {
+      "id": "ghost-of-yotei",
+      "title": "Ghost of Yōtei",
+      "prefixes": [
+        "ghost-of-yotei"
+      ],
+      "poster": "ghost-of-yotei-title-apparition-01-ppm",
+      "note": "Bannière à feuilles dorées et titre aux pétales portés par le vent.",
+      "tags": [
+        "pétales",
+        "bannière"
+      ]
+    },
+    {
+      "id": "fire-emblem",
+      "title": "Fire Emblem Fortune's Weave",
+      "prefixes": [
+        "fe-"
+      ],
+      "poster": "fe-phases-ppm",
+      "note": "Bandeaux de phase (Player, Enemy, Next Round) et Pale Raven's Perch.",
+      "tags": [
+        "jeu"
+      ]
+    },
+    {
+      "id": "paget",
+      "title": "David Paget",
+      "prefixes": [
+        "paget-"
+      ],
+      "poster": "paget-indiana-jones-ppm",
+      "note": "Cartes de concept art, trois apparitions chacune.",
+      "tags": [
+        "concept art"
+      ]
+    },
+    {
+      "id": "film-de-lancement",
+      "title": "Film de lancement 30 s",
+      "prefixes": [
+        "film-de-lancement-30-s"
+      ],
+      "note": "Trois copies du même film de lancement, regroupées.",
+      "tags": [
+        "lancement"
+      ]
+    },
+    {
+      "id": "zenray-meshes",
+      "title": "ZenRay Meshes",
+      "prefixes": [
+        "zenray-meshes-"
+      ],
+      "note": "Miniature et fin de montage de la série ZenRay Meshes.",
+      "tags": [
+        "miniature"
+      ]
+    }
+  ],
+  "sounds": {
+    "sfxRepo": "/Users/zenray/Create/Build/Productions/GithubProductions/ZenRaySFX",
+    "motionBank": "~/.claude/tmp/tmp-zenray-motion-design/motion-bank/sfx",
+    "groups": [
+      {
+        "id": "death-stranding",
+        "title": "Reproductions Death Stranding",
+        "project": "ZenRay SFX",
+        "glob": "out/repro-03/*.wav",
+        "tags": [
+          "reproduction",
+          "99,35"
+        ],
+        "local": true,
+        "note": "Six sons d'interface reproduits sans échantillon par des recettes de nombres (partiels, grille de souffle, portes de niveau), 99,35 de moyenne mesurée sur des graines neuves. Ils servent de matière aux sons du film Sony.",
+        "perFile": {
+          "15-TimeFall-Shelter": "L'abri du Timefall : un lit continu qui monte puis tient.",
+          "3-Cufflinks-Open": "Les boutons de manchette : un déclic net et sa queue.",
+          "10-Mail-Open": "L'ouverture du courrier : un déclic doux puis une montée.",
+          "12-Denied": "Le refus : deux notes sourdes.",
+          "21-Awaiting-Signal": "Le signal en attente : un fil très discret.",
+          "25-Inv-Close-End": "La fermeture d'inventaire : une note grave de fin."
+        }
+      },
+      {
+        "id": "sfx1",
+        "title": "Rythme D, son 1 (la lentille sur le R)",
+        "project": "ZenRay : Sony puis PlayStation, rythme D",
+        "glob": "out/proposals/zenray-sony-playstation-d-ppm/sfx1-*.wav",
+        "tags": [
+          "synthèse",
+          "lentille"
+        ],
+        "note": "Le son qui accompagne la lentille quand elle apparaît sur le R (impact à 1,667 s). A, B, C : trois synthèses du premier tour ; B1, B2, B3 : variations de la première seconde de B ; B1s, B2s, B3s : fins douces avec un tout petit impact sourd."
+      },
+      {
+        "id": "sfx2",
+        "title": "Rythme D, son 2 (la progression vers une autre dimension)",
+        "project": "ZenRay : Sony puis PlayStation, rythme D",
+        "glob": "out/proposals/zenray-sony-playstation-d-ppm/sfx2-*.wav",
+        "tags": [
+          "progression",
+          "3 s"
+        ],
+        "note": "Le son de 3 s qui part à 3,0 s du film et culmine au début de l'aberration chromatique (4,417 s). A à C : synthèses ; D : sons Death Stranding ajustés ; E : sons Death Stranding tels quels ; F : variations douces de E ; G : tons purs sans bruit ; H : apparition Sony reproduite ; J : variations propres de la référence Sony."
+      },
+      {
+        "id": "melanges",
+        "title": "Mixages du film (musique et effets)",
+        "project": "ZenRay : Sony puis PlayStation, rythmes E et F",
+        "glob": "out/assembly/*.wav",
+        "tags": [
+          "mixage",
+          "normalisé"
+        ],
+        "note": "Les deux sons du film mixés avec la musique d'une vidéo de méditation : chaque entrée est normalisée d'abord puis fusionnée. v1 musique devant, v2 équilibré, v3 effets devant. Le son 1 de 0 à 3 s, le son 2 de 3 à 6 s (musique coupée à 5 s)."
+      },
+      {
+        "id": "note-ghibli",
+        "title": "La note Ghibli",
+        "project": "ZenRay : Sony puis PlayStation, rythme F",
+        "glob": "out/assembly-note/*.wav",
+        "tags": [
+          "note",
+          "Ghibli"
+        ],
+        "local": true,
+        "note": "Une note unique prise de 1,5 s à 3 s d'une bande-annonce, ajoutée au son 1 ou au son 2 à quatre arrivées possibles. Source locale, non publiée."
+      },
+      {
+        "id": "pistes",
+        "title": "Pistes sonores de 6 s",
+        "project": "ZenRay : Sony puis PlayStation, rythme F",
+        "glob": "out/assembly-track/*.wav",
+        "tags": [
+          "piste",
+          "6 s"
+        ],
+        "note": "La note au début, puis le son 1 retardé de 60, 120 ou 180 ms, puis le son 2."
+      },
+      {
+        "id": "finales",
+        "title": "Pistes finales masterisées de F",
+        "project": "ZenRay : Sony puis PlayStation, rythme F",
+        "glob": "out/assembly-final/*.wav",
+        "tags": [
+          "master",
+          "-14 LUFS"
+        ],
+        "note": "Gain pur à −14 LUFS et limiteur doux sur les seuls pics. logo-flare (note à 3,15 s) est la version validée par Matthieu ; logo-plate (3,733 s), logo-tile (3,883 s) et start-d… sont les autres propositions, toutes gardées."
+      },
+      {
+        "id": "archetypes",
+        "title": "Archétypes et créations sans référence",
+        "project": "ZenRay SFX",
+        "glob": "out/compose-*/*.wav",
+        "tags": [
+          "création"
+        ],
+        "note": "Sons composés depuis une description en mots (loquet, grincement, choc de bois, poussière), trois propositions chacun."
+      }
+    ],
+    "bank": {
+      "title": "Banque d'effets des références",
+      "project": "ZenRay Motion Design",
+      "note": "155 effets isolés des vidéos de référence reproduites (clics, souffles, impacts), rangés par projet d'origine. Matière locale de l'éditeur."
+    }
+  },
+  "posterAtById": {
+    "rdr2-ppm": 0.16
+  }
+}

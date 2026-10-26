@@ -1,0 +1,105 @@
+# 26 October 2026: the data of the two galleries of ZenRay Motion Design (params/gallery.json is the only place of their words and paths).
+# families(): every project of the projects folder gathered into ONE card per film (explicit families by id prefix, then the twin rule: x-ppm and x-motion are the same film).
+# sounds(): every sound that exists (ZenRay SFX folders, the motion bank), described by the project where it was made; the audio is served only through the ids built here (no free path).
+# FR : les données des galeries : une carte par film (toutes ses variantes), tous les sons décrits par leur projet d'origine.
+from __future__ import annotations
+
+import glob
+import json
+import os
+import re
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+CONF = json.loads((HERE / "params" / "gallery.json").read_text(encoding="utf-8"))
+EXP = lambda s: Path(os.path.expanduser(s))
+SUFFIX = re.compile(r"-(ppm|motion|preview)$")
+_DUR = {}
+
+
+def base_key(pid: str) -> str:
+    return SUFFIX.sub("", pid)
+
+
+def poster_dir() -> Path:
+    d = EXP(CONF["posterDir"]); d.mkdir(parents=True, exist_ok=True); return d
+
+
+def family_of(pid: str) -> tuple[str, dict | None]:
+    for f in CONF["families"]:
+        if any(pid.startswith(p) for p in f["prefixes"]):
+            return f["id"], f
+    return base_key(pid), None
+
+
+def families(projects: list[dict], read_project) -> list[dict]:
+    """One entry per film: title, note, poster project, every member (with its duration, format, fps, verdict and sound capsules) and the totals."""
+    by: dict[str, dict] = {}
+    for p in projects:
+        fid, spec = family_of(p["id"])
+        fam = by.setdefault(fid, {"id": fid, "spec": spec, "members": []})
+        try:
+            full = read_project(p["id"])
+        except Exception:
+            full = {}
+        fam["members"].append({"id": p["id"], "title": p["title"], "duration": p["duration"], "format": p.get("format"), "fps": full.get("fps") or 30,
+                               "scenes": p.get("scenes"), "validation": (full.get("validation") or {}).get("state", ""), "clips": len(full.get("clips") or []),
+                               "workflow": (full.get("workflow") or {}).get("id", ""), "updated": p.get("updated")})
+    out = []
+    for fid, f in by.items():
+        spec = f["spec"] or {}; mem = sorted(f["members"], key=lambda m: m["id"])
+        ppm = [m for m in mem if m["id"].endswith("-ppm")] or mem
+        poster = spec.get("poster") or (ppm[-1]["id"])
+        title = spec.get("title") or re.sub(r",? premier plan mesuré|,? trois apparitions|,? trois couleurs| reproduit| · base motion", "", (ppm[0]["title"])).strip()
+        durs = [m["duration"] for m in mem]
+        out.append({"id": fid, "title": title, "note": spec.get("note", "Une seule carte pour toutes les versions de ce film."), "tags": spec.get("tags", []), "poster": poster,
+                    "posterAt": spec.get("posterAt", CONF.get("posterAtById", {}).get(poster, CONF["posterAt"])), "members": mem, "count": len(mem), "minDuration": min(durs), "maxDuration": max(durs),
+                    "clips": sum(m["clips"] for m in mem), "validated": sum(1 for m in mem if m["validation"] == "validated")})
+    return sorted(out, key=lambda f: (-f["count"] if f["count"] > 3 else 0, f["title"].lower()))
+
+
+def _duration(path: Path) -> float:
+    key = (str(path), path.stat().st_mtime_ns)
+    if key not in _DUR:
+        try:
+            import soundfile as sf
+            i = sf.info(str(path)); _DUR[key] = round(i.frames / i.samplerate, 3)
+        except Exception:
+            _DUR[key] = 0.0
+    return _DUR[key]
+
+
+def _variant_note(group_id: str, stem: str) -> str:
+    """The short reading of a file name of the rhythm D family (sfx1-B1s, sfx2-F4, son1-v3...), written once here from the rounds of work."""
+    m = re.match(r"sfx([12])-([A-Z])(\d?)(s?)$", stem)
+    if not m:
+        return ""
+    n, letter, k, soft = m.groups()
+    names = {"1": {"A": "verre et lentille", "B": "nappe de cinéma et coup grave (la 1re seconde est la bonne)", "C": "minimal, une cloche", "B1": "B avec de l'air", "B2": "B plus sombre et large", "B3": "B à montée plus raide"},
+             "2": {"A": "chargement dimensionnel", "B": "portail", "C": "minimal, battement et accord", "D": "sons Death Stranding ajustés", "E": "son Death Stranding tel quel",
+                   "F": "variation douce de E", "G": "tons purs sans bruit", "H": "apparition Sony reproduite", "J": "variation propre de la référence Sony"}}
+    key = letter + k
+    base = names[n].get(key) or names[n].get(letter, "")
+    return (base + (", fin douce, petit impact sourd" if soft else "")).strip(", ")
+
+
+def sounds(sfx_repo_override: str | None = None) -> dict:
+    S = CONF["sounds"]; repo = Path(sfx_repo_override or S["sfxRepo"]); groups, index = [], {}
+    for g in S["groups"]:
+        items = []
+        for f in sorted(glob.glob(str(repo / g["glob"]))):
+            p = Path(f)
+            if p.suffix != ".wav" or p.name.startswith("_"):
+                continue
+            sid = f"{g['id']}:{p.stem}"; index[sid] = str(p)
+            note = g.get("perFile", {}).get(p.stem) or _variant_note(g["id"], p.stem)
+            items.append({"id": sid, "title": p.stem, "duration": _duration(p), "note": note, "local": bool(g.get("local")), "bytes": p.stat().st_size})
+        if items:
+            groups.append({"id": g["id"], "title": g["title"], "project": g["project"], "note": g["note"], "tags": g.get("tags", []), "items": items, "local": bool(g.get("local"))})
+    bank = EXP(S["motionBank"]); b = S["bank"]; items = []
+    for p in sorted(bank.rglob("*.wav")) if bank.is_dir() else []:
+        rel = p.relative_to(bank).as_posix(); sid = "bank:" + rel; index[sid] = str(p)
+        items.append({"id": sid, "title": p.stem, "duration": _duration(p), "note": f"Isolé de la référence « {rel.split('/')[0]} ».", "local": True, "bytes": p.stat().st_size})
+    if items:
+        groups.append({"id": "bank", "title": b["title"], "project": b["project"], "note": b["note"], "tags": ["banque"], "items": items, "local": True})
+    return {"groups": groups, "count": sum(len(g["items"]) for g in groups), "_index": index}

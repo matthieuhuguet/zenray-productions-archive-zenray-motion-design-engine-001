@@ -12,7 +12,7 @@
 <body class="pv">
   <header class="top">
     <a class="brand" href="/#/">ZenRay Motion Design</a>
-    <nav class="appnav"><a href="/#/">Projets</a><a href="/#/music">Musique</a><a href="/#/montage">Montage</a><a href="/motion/">Motion</a><a href="/motion/validate">Validate</a><a href="/motion/not-validate">Not Validate</a><a href="/motion/threads">Threads</a><a class="on" href="/motion/previous">Previous Videos</a></nav>
+    <nav class="appnav"><a href="/#/">Projets</a><a href="/#/music">Musique</a><a href="/#/montage">Montage</a><a href="/motion/">Motion</a><a href="/motion/validate">Validate</a><a href="/motion/not-validate">Not Validate</a><a href="/motion/gallery">Galerie Motion</a><a href="/motion/gallery-sfx">Galerie SFX</a><a href="/motion/threads">Threads</a><a class="on" href="/motion/previous">Previous Videos</a></nav>
     <div class="grow"></div>
     <span class="hint" id="pvCount"></span>
   </header>

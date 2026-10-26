@@ -1,0 +1,23 @@
+# 26 October 2026: the poster of every film card of the gallery (one frame of the representative project, at posterAt of its length). Cooks each project like the export, then the managed
+# headless Chrome shoots one frame (Scripts/PosterShot.mjs). Skips a poster newer than its project.json (--force redoes all). Output: posterDir of params/gallery.json, <project>.jpg, 800 px wide.
+# Usage: /Users/zenray/.venvs/zenray-motion/bin/python -W ignore Scripts/Posters.py [--force] [family-id ...]   FR : l'affiche de chaque carte de film.
+import json, shutil, subprocess, sys, tempfile
+from pathlib import Path
+ROOT = Path(__file__).resolve().parents[1]; sys.path.insert(0, str(ROOT / "motion"))
+import server, gallery_data as G
+force = "--force" in sys.argv; only = [a for a in sys.argv[1:] if not a.startswith("--")]
+fams = G.families(server.list_projects(), server.read_project); jobs = []; work = Path(tempfile.mkdtemp(prefix="zrposter-"))
+try:
+    for f in fams:
+        if only and f["id"] not in only: continue
+        pid = f["poster"]; dst = G.poster_dir() / f"{pid}.jpg"; pj = server.project_dir(pid) / "project.json"
+        if dst.is_file() and not force and dst.stat().st_mtime > pj.stat().st_mtime: continue
+        d = next(m["duration"] for m in f["members"] if m["id"] == pid)
+        page = server.cook(pid, work / pid); jobs.append({"page": str(page / "index.html"), "out": str(dst), "t": round(d * f["posterAt"], 3)})
+    (work / "jobs.json").write_text(json.dumps(jobs))
+    if jobs:
+        r = subprocess.run(["node", str(ROOT / "Scripts/PosterShot.mjs"), str(work / "jobs.json")], capture_output=True, text=True)
+        print(r.stdout[-1500:], r.stderr[-800:])
+    print(f"{len(jobs)} poster(s) made, folder {G.poster_dir()}")
+finally:
+    shutil.rmtree(work, ignore_errors=True)

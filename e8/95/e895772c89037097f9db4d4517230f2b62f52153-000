@@ -53,6 +53,13 @@ def F(path: Path, mime: str | None = None) -> dict:
     return {"file": Path(path), "mime": mime or mimetypes.guess_type(Path(path).name)[0] or "application/octet-stream"}
 
 
+def _gallery():
+    import importlib
+    if str(MOTION) not in sys.path:   # the engine runs with -I (no script folder on the path)
+        sys.path.insert(0, str(MOTION))
+    return importlib.import_module("gallery_data")
+
+
 def B(body: bytes, mime: str) -> dict:
     return {"bytes": body, "mime": mime}
 
@@ -667,6 +674,22 @@ def handle(method: str, path: str, q: dict, read, length: int) -> dict:
             if not it:
                 raise Refusal("no such video", 404)
             return F(Path(it["path"]), "video/mp4") if m.group(1) == "video" else F(pv.thumb(Path(_bank().WORKSHOP), it), "image/jpeg")
+        # the two galleries (26 October 2026): one card per film, and every sound with its project of origin (params/gallery.json, motion/gallery_data.py)
+        if p in ("/motion/gallery", "/motion/gallery/", "/motion/gallery-sfx", "/motion/gallery-sfx/"):
+            return F(MOTION / "web" / ("gallery-sfx.html" if "sfx" in p else "gallery-motion.html"), "text/html; charset=utf-8")
+        if p == "/api/motion/gallery":
+            gd = _gallery(); return J({"ok": True, "view": gd.CONF["view"], "families": gd.families(list_projects(), read_project)})
+        if p == "/api/motion/gallery/sounds":
+            gd = _gallery(); s = gd.sounds(); s.pop("_index"); return J({"ok": True, "view": gd.CONF["view"], **s})
+        m = re.fullmatch(r"/motion/gallery/poster/([a-z0-9-]+)\.jpg", p)
+        if m:
+            return F(_gallery().poster_dir() / f"{m.group(1)}.jpg", "image/jpeg")
+        m = re.fullmatch(r"/motion/gallery/sound/([a-z0-9-]+:[A-Za-z0-9._ /-]+)", p)
+        if m:
+            path = _gallery().sounds()["_index"].get(unquote(m.group(1)))
+            if not path:
+                raise Refusal("no such sound", 404)
+            return F(Path(path), "audio/wav")
         if p in ("/motion/threads", "/motion/threads/"):
             return F(MOTION / "web" / "threads.html", "text/html; charset=utf-8")
         if p == "/api/motion/banks/music":

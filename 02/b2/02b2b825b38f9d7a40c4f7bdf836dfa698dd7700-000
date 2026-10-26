@@ -1,0 +1,29 @@
+// 26 October 2026: shoots one frame of each cooked motion page in the managed headless Chrome (never a personal browser). Input: a JSON list [{page, out, t}]. FR : une image par page cuite.
+import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
+const TOOLING = join(dirname(dirname(fileURLToPath(import.meta.url))), "tooling");
+const require = createRequire(join(TOOLING, "package.json")); const puppeteer = require("puppeteer-core");
+const env = { ...process.env, HYPERFRAMES_NO_TELEMETRY: "1", DO_NOT_TRACK: "1", HYPERFRAMES_NO_UPDATE_CHECK: "1" };
+const exe = spawnSync(join(TOOLING, "node_modules", ".bin", "hyperframes"), ["browser", "path"], { env, encoding: "utf8" }).stdout.trim();
+const jobs = JSON.parse(readFileSync(process.argv[2], "utf8"));
+const browser = await puppeteer.launch({ executablePath: exe, headless: true, args: ["--allow-file-access-from-files", "--no-first-run", "--disable-extensions"] });
+try {
+  for (const j of jobs) {
+    const tab = await browser.newPage();
+    try {
+      await tab.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
+      await tab.goto(pathToFileURL(j.page).href, { waitUntil: "load", timeout: 120000 });
+      const size = await tab.evaluate(async (t) => {
+        await document.fonts.ready; const r = document.getElementById("root"), b = window.ZS_BUILT;
+        if (window.ZS && ZS.refit) ZS.refit(b); b.tl.pause(); b.tl.seek(t, false); await new Promise((x) => setTimeout(x, 250));
+        return [r.offsetWidth, r.offsetHeight];
+      }, j.t);
+      await tab.setViewport({ width: size[0], height: size[1], deviceScaleFactor: Math.min(1, 800 / size[0]) });
+      await tab.screenshot({ path: j.out, type: "jpeg", quality: 82, clip: { x: 0, y: 0, width: size[0], height: size[1] } });
+      console.log("ok", j.out.split("/").pop(), size.join("x"), "t", j.t);
+    } catch (e) { console.log("FAIL", j.out.split("/").pop(), String(e).slice(0, 160)); } finally { await tab.close(); }
+  }
+} finally { await browser.close(); }
