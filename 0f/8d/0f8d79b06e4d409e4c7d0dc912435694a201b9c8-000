@@ -100,7 +100,7 @@ def fit_title(font, ref, rounds, passes=3):
     P = {"x": 778.0, "y": 138.0, "xh": 15.0, "slant": 0.3, "tilt": 2.1, "weight": 2.1, "fit": 322.0, "track": 0.05, "space": 0.45}
     ev = lambda Q: score(ref, raster(title_svg(font, Q, None), 110))  # noqa: E731
     print("start", ev(P))
-    P, best = descent(P, {"x": 2.0, "y": 2.0, "xh": 0.4, "slant": 0.04, "tilt": 0.4, "weight": 0.12, "fit": 3.0, "track": 0.01, "space": 0.05}, ev, rounds, {"weight": (0.5, 3.5)})
+    P, best = descent(P, {"x": 2.0, "y": 2.0, "xh": 0.4, "slant": 0.04, "tilt": 0.4, "weight": 0.12, "fit": 3.0, "track": 0.01, "space": 0.05}, ev, rounds, {"weight": (0.5, 3.5), "space": (0.4, 0.62), "track": (0.03, 0.09), "xh": (13, 17)})
     n = len(TITLE); adj = [[0.0, 0.0, 1.0] for _ in range(n)]
     for rnd in range(passes):
         for i, ch in enumerate(TITLE):
@@ -108,7 +108,7 @@ def fit_title(font, ref, rounds, passes=3):
             def evl(Q, i=i):
                 a = [list(x) for x in adj]; a[i] = [Q["dx"], Q["dy"], Q["s"]]; return score(ref, raster(title_svg(font, P, a), 110))
             Q = {"dx": adj[i][0], "dy": adj[i][1], "s": adj[i][2]}
-            Q, s = descent(Q, {"dx": 0.08, "dy": 0.08, "s": 0.04}, evl, 3, {"s": (0.85, 1.2), "dx": (-0.4, 0.4), "dy": (-0.3, 0.3)})   # bounded: a fit that wins by shrinking letters is a fit that spells nothing
+            Q, s = descent(Q, {"dx": 0.05, "dy": 0.05, "s": 0.03}, evl, 3, {"s": (0.92, 1.12), "dx": (-0.18, 0.18), "dy": (-0.15, 0.15)})   # bounded: a fit that wins by shrinking letters is a fit that spells nothing
             adj[i] = [round(Q["dx"], 3), round(Q["dy"], 3), round(Q["s"], 3)]
         print(f"  letters pass {rnd + 1}: {score(ref, raster(title_svg(font, P, adj), 110))}", flush=True)
     final = score(ref, raster(title_svg(font, P, adj), 110))
