@@ -79,17 +79,23 @@ for i_ in range(1, n):
     whitec = ((G > 190) & (comp > 0)).astype(np.uint8)
     # a wider grey halo: the silhouette of the paper is a little larger than its bright facets
     sil = cv2.dilate(comp, np.ones((5, 5), np.uint8))
-    cnts, _ = cv2.findContours(sil, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-    cnt = max(cnts, key=cv2.contourArea); poly = cv2.approxPolyDP(cnt, 3.2, True).reshape(-1, 2).astype(float)
+    cnts, _ = cv2.findContours(comp, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)   # every bright facet of the shard is its own blob, drawn as a polygon fan with the mean colour of the reference under each triangle
     tris = []
-    for j in range(len(poly)):   # a fan from the centroid: each facet takes the mean colour of the reference under it
-        tri = np.array([[cx, cy], poly[j], poly[(j + 1) % len(poly)]]); tm = np.zeros((H, W), np.uint8); cv2.fillConvexPoly(tm, tri.astype(np.int32), 1); tm &= sil
-        if tm.sum() < 4: continue
-        tris.append({"p": [round(float(v), 1) for v in tri.reshape(-1)], "c": mean_rgb(tm)})
+    for cnt in cnts:
+        if cv2.contourArea(cnt) < 18: continue
+        bx_, by_ = cnt.reshape(-1, 2).mean(0); poly = cv2.approxPolyDP(cnt, 1.6, True).reshape(-1, 2).astype(float)
+        for j in range(len(poly)):
+            tri = np.array([[bx_, by_], poly[j], poly[(j + 1) % len(poly)]]); tm = np.zeros((H, W), np.uint8); cv2.fillConvexPoly(tm, tri.astype(np.int32), 1); tm &= comp
+            if tm.sum() < 3: continue
+            tris.append({"p": [round(float(v), 1) for v in tri.reshape(-1)], "c": mean_rgb(tm)})
     shard_list.append({"tris": tris, "cx": round(cx, 1), "cy": round(cy, 1), "area": int(comp.sum()), "d": trace_mask(sil, scale=4, turd=4, opttol=0.3, alphamax=0.6), "dw": trace_mask(whitec, scale=4, turd=2, opttol=0.3, alphamax=0.6) if whitec.sum() > 30 else "", "fill": mean_rgb(comp)})
     sheet[comp > 0] = (0.4 * sheet[comp > 0] + 0.6 * np.array((0, 255, 255)[::-1])).astype(np.uint8)
     print("shard", len(shard_list), "centre", round(cx), round(cy), "area", int(comp.sum()))
 layers["shardList"] = shard_list
+# 5b. the filets of the Close prompt: thin bright strokes left and right of the button (the button and its word are written by the procedural font)
+fil = (tophat(7) > 16).astype(np.uint8); fil = box(fil, 560, 950, 1320, 1025); fil[:, 850:1000] = 0
+fil = cv2.morphologyEx(fil, cv2.MORPH_OPEN, np.ones((1, 3), np.uint8))
+add("closeLines", fil, (255, 255, 0), turd=3, alphamax=0.8)
 # 6. speed lines: thin bright segments by Hough (the shards, the text, the title and the brackets are masked out)
 th = tophat(7); thin = (th > 22).astype(np.uint8)
 thin[cv2.dilate(sh, np.ones((11, 11), np.uint8)) > 0] = 0

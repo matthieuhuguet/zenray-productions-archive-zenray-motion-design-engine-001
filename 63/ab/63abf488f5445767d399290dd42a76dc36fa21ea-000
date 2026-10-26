@@ -62,8 +62,8 @@
   };
   F.glyphs = G;
   // measured style constants of each use (tracking and word space in x-height units), the single place to change them (Scripts/NoteFontFit.py writes the fitted values here)
-  F.styles = { body: { track: 0.068, space: 0.518 }, title: { track: 0.059, space: 0.578 } };
-  F.fits = {"To Whomever Finds my Body": [[0.102, 0.139, 0.664], [-0.511, 0.408, 0.655], [0.0, 0.0, 1.0], [0.703, -0.011, 0.652], [-0.15, -0.047, 0.853], [-0.048, 0.125, 0.769], [-0.102, 0.018, 0.778], [0.678, 0.06, 0.874], [0.174, 0.0, 0.769], [0.42, 0.092, 0.736], [-0.036, 0.066, 0.61], [0.0, 0.0, 1.0], [0.666, -0.474, 0.916], [0.12, 0.0, 0.88], [0.0, 0.109, 0.658], [-0.156, 0.0, 0.892], [-0.426, 0.036, 0.748], [0.0, 0.0, 1.0], [0.654, 0.564, 0.616], [0.186, -0.096, 0.666], [0.0, 0.0, 1.0], [0.601, -0.15, 0.6], [0.943, 0.0, 0.865], [0.258, -0.036, 0.868], [-0.325, -0.51, 1.174]]};   // per-letter nudges measured on the reference, keyed by the exact text: { "<text>": [[dx, dy, size] per character] }
+  F.styles = { body: { track: 0.059, space: 0.547 }, title: { track: 0.051, space: 0.605 } };
+  F.fits = {"To Whomever Finds my Body": [[0.3, 0.167, 0.5], [0.236, 0.0, 0.5], [0.0, 0.0, 1.0], [0.444, -0.319, 1.087], [0.138, 0.113, 0.676], [0.029, 0.211, 0.658], [-0.066, 0.121, 0.703], [0.685, 0.066, 0.856], [0.078, 0.018, 0.973], [0.361, 0.055, 0.5], [-0.565, -0.084, 0.628], [0.0, 0.0, 1.0], [0.823, -0.427, 0.802], [-0.084, 0.06, 0.763], [-0.073, 0.066, 0.7], [-0.282, 0.066, 0.547], [-0.493, -0.162, 0.5], [0.0, 0.0, 1.0], [0.349, 0.029, 0.526], [0.241, 0.432, 0.5], [0.0, 0.0, 1.0], [2.107, -0.187, 0.578], [1.053, -0.102, 0.757], [0.27, -0.438, 0.907], [-0.481, -0.667, 1.087]]};   // per-letter nudges measured on the reference, keyed by the exact text: { "<text>": [[dx, dy, size] per character] }
   F.has = (ch) => ch === " " || !!G[ch];
   // tokens of a path string -> absolute points sampled as a polyline is not needed: the path is emitted as SVG with the transform applied to every coordinate (shear, scale, flip)
   const emit = (path, ox, xh, slant, wscale, oy) => {

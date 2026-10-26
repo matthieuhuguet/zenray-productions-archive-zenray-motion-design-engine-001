@@ -32,11 +32,11 @@ class Font:
         self.p.stdin.write(json.dumps(req) + "\n"); self.p.stdin.flush(); return json.loads(self.p.stdout.readline())
 
 
-def raster(svg_body):
+def raster(svg_body, thr=50):
     svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080"><rect width="1920" height="1080" fill="#000"/>{svg_body}</svg>'
     r = subprocess.run(["rsvg-convert", "-w", "1920", "-h", "1080"], input=svg.encode(), capture_output=True)
     img = cv2.imdecode(np.frombuffer(r.stdout, np.uint8), cv2.IMREAD_GRAYSCALE)
-    return (img > 50).astype(np.uint8)
+    return (img > thr).astype(np.uint8)   # the same colour and threshold as the sheet (Scripts/NoteSheet.py my_mask): a grey stroke is only counted where it covers enough of the pixel
 
 
 def score(ref, mine, tol=2):
@@ -46,7 +46,7 @@ def score(ref, mine, tol=2):
 
 def body_svg(font, P, lines):
     L = font.ask({"kind": "body", "p": {"bodyXh": P["xh"], "bodySlant": P["slant"]}, "lines": lines, "styles": {"track": P["track"], "space": P["space"]}})
-    out = [f'<g fill="none" stroke="#fff" stroke-width="{P["weight"]}" stroke-linecap="round" stroke-linejoin="round">']
+    out = [f'<g fill="none" stroke="#afafb3" stroke-width="{P["weight"]}" stroke-linecap="round" stroke-linejoin="round">']
     for ln in L:
         out.append(f'<g transform="translate({P["textX"] + ln["dx"]},{ln["base"]})">' + "".join(f'<path d="{q["d"]}" transform="translate({q["dx"]},0)"/>' for q in ln["parts"]) + "</g>")
     return "".join(out) + "</g>"
@@ -54,7 +54,7 @@ def body_svg(font, P, lines):
 
 def title_svg(font, P, adj):
     L = font.ask({"kind": "title", "p": {"title": TITLE, "titleXh": P["xh"], "titleSlant": P["slant"], "titleFit": P["fit"]}, "styles": {"track": P["track"], "space": P["space"]}, "adj": adj})
-    return f'<g transform="translate({P["x"]},{P["y"]}) rotate({P["tilt"]})"><path d="{L["d"]}" fill="none" stroke="#fff" stroke-width="{P["weight"]}" stroke-linecap="round" stroke-linejoin="round"/></g>'
+    return f'<g transform="translate({P["x"]},{P["y"]}) rotate({P["tilt"]})"><path d="{L["d"]}" fill="none" stroke="#ececf0" stroke-width="{P["weight"]}" stroke-linecap="round" stroke-linejoin="round"/></g>'
 
 
 def descent(P, steps, evalf, rounds, bounds=None):
@@ -79,7 +79,7 @@ def descent(P, steps, evalf, rounds, bounds=None):
 def fit_body(font, ref, rounds):
     P = {"xh": 11.0, "weight": 1.35, "slant": 0.2, "textX": 584.0, "track": 0.07, "space": 0.5}
     lines = list(BODY0)
-    ev = lambda Q: score(ref, raster(body_svg(font, Q, lines)))  # noqa: E731
+    ev = lambda Q: score(ref, raster(body_svg(font, Q, lines), 65))  # noqa: E731
     print("start", ev(P))
     P, best = descent(P, {"xh": 0.3, "weight": 0.12, "slant": 0.04, "textX": 1.0, "track": 0.012, "space": 0.06}, ev, rounds, {"weight": (0.5, 3.5), "xh": (6, 18)})
     # per line: a nudge of the baseline and of the left edge
@@ -87,18 +87,18 @@ def fit_body(font, ref, rounds):
     for i, raw in enumerate(lines):
         t, fit, base = [x.strip() for x in raw.split("|")]; base = float(base); dx = 0.0
         def evl(Q, i=i, t=t, fit=fit):
-            ls = list(lines); ls[i] = f"{t} | {Q['fit']} | {Q['base']} | {Q['dx']}"; return score(ref, raster(body_svg(font, P, ls)))
+            ls = list(lines); ls[i] = f"{t} | {Q['fit']} | {Q['base']} | {Q['dx']}"; return score(ref, raster(body_svg(font, P, ls), 65))
         Q = {"fit": float(fit), "base": base, "dx": dx}
         Q, s = descent(Q, {"fit": 3.0, "base": 1.0, "dx": 1.0}, evl, 3)
         lines[i] = f"{t} | {round(Q['fit'], 1)} | {round(Q['base'], 1)} | {round(Q['dx'], 1)}"; out.append(lines[i])
-    final = score(ref, raster(body_svg(font, P, lines)))
+    final = score(ref, raster(body_svg(font, P, lines), 65))
     print("FINAL body", final, P); print(json.dumps(lines, ensure_ascii=False))
     return P, lines, final
 
 
 def fit_title(font, ref, rounds, passes=3):
     P = {"x": 778.0, "y": 138.0, "xh": 15.0, "slant": 0.3, "tilt": 2.1, "weight": 2.1, "fit": 322.0, "track": 0.05, "space": 0.45}
-    ev = lambda Q: score(ref, raster(title_svg(font, Q, None)))  # noqa: E731
+    ev = lambda Q: score(ref, raster(title_svg(font, Q, None), 110))  # noqa: E731
     print("start", ev(P))
     P, best = descent(P, {"x": 2.0, "y": 2.0, "xh": 0.4, "slant": 0.04, "tilt": 0.4, "weight": 0.12, "fit": 3.0, "track": 0.01, "space": 0.05}, ev, rounds, {"weight": (0.5, 3.5)})
     n = len(TITLE); adj = [[0.0, 0.0, 1.0] for _ in range(n)]
@@ -106,12 +106,12 @@ def fit_title(font, ref, rounds, passes=3):
         for i, ch in enumerate(TITLE):
             if ch == " ": continue
             def evl(Q, i=i):
-                a = [list(x) for x in adj]; a[i] = [Q["dx"], Q["dy"], Q["s"]]; return score(ref, raster(title_svg(font, P, a)))
+                a = [list(x) for x in adj]; a[i] = [Q["dx"], Q["dy"], Q["s"]]; return score(ref, raster(title_svg(font, P, a), 110))
             Q = {"dx": adj[i][0], "dy": adj[i][1], "s": adj[i][2]}
             Q, s = descent(Q, {"dx": 0.12, "dy": 0.12, "s": 0.06}, evl, 3, {"s": (0.5, 1.6)})
             adj[i] = [round(Q["dx"], 3), round(Q["dy"], 3), round(Q["s"], 3)]
-        print(f"  letters pass {rnd + 1}: {score(ref, raster(title_svg(font, P, adj)))}", flush=True)
-    final = score(ref, raster(title_svg(font, P, adj)))
+        print(f"  letters pass {rnd + 1}: {score(ref, raster(title_svg(font, P, adj), 110))}", flush=True)
+    final = score(ref, raster(title_svg(font, P, adj), 110))
     print("FINAL title", final, P); print(json.dumps(adj))
     return P, adj, final
 

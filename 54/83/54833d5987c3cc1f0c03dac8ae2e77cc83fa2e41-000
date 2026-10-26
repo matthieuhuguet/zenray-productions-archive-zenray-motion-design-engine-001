@@ -67,7 +67,8 @@ def reference_masks(img):
     m["paper"] = cv2.morphologyEx(paper, cv2.MORPH_OPEN, np.ones((15, 15), np.uint8))
     m["body"] = box((G > 75).astype(np.uint8), 560, 440, 1300, 700)
     m["title"] = box((G > 110).astype(np.uint8), 700, 90, 1200, 190) & (m["ink"] == 0)
-    m["close"] = box(((G > 110) | ((R - (Gc + B) / 2) > 25)).astype(np.uint8), 830, 955, 1010, 1020)
+    fil = (th(7) > 16).astype(np.uint8); fil = box(fil, 560, 950, 1320, 1025); fil[:, 850:1000] = 0; fil = cv2.morphologyEx(fil, cv2.MORPH_OPEN, np.ones((1, 3), np.uint8))
+    m["close"] = box(((G > 110) | ((R - (Gc + B) / 2) > 25)).astype(np.uint8), 830, 955, 1010, 1020) | fil
     bright = (G > 118).astype(np.uint8); open_ = cv2.morphologyEx(bright, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)))
     sh = box(open_, 140, 300, 470, 720) | box(open_, 1440, 230, 1680, 720)
     wide = cv2.dilate(cv2.morphologyEx(sh, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8)), np.ones((9, 9), np.uint8))
@@ -106,7 +107,9 @@ def render_isolated(names, t, work):
 def my_mask(name, img):
     G = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     R = img[..., 2].astype(np.int16); Gc = img[..., 1].astype(np.int16); B = img[..., 0].astype(np.int16)
-    if name in ("body", "title", "shard1", "shard2", "shard3", "shard4", "shard5", "lines"): return (G > 50).astype(np.uint8)
+    if name == "body": return (G > 65).astype(np.uint8)
+    if name == "title": return (G > 110).astype(np.uint8)
+    if name in ("shard1", "shard2", "shard3", "shard4", "shard5", "lines"): return (G > 50).astype(np.uint8)
     if name == "close": return ((G > 50) | ((R - (Gc + B) // 2) > 20)).astype(np.uint8)
     return (G > 6).astype(np.uint8)
 

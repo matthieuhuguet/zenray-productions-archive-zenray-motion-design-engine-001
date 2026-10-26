@@ -10,6 +10,7 @@ from ppm import T
 SLUG = "dishonored2-loot-note"
 PID = "dishonored2-loot-note-ppm"
 START, END = 3.0, 5.0
+FPS = 60
 VARIANTS = {PID: {"title": "Dishonored 2 : note de loot", "params": {}}}
 
 
@@ -38,6 +39,7 @@ def build_one(pid: str = PID) -> dict:
     pr = ppm.build(v["title"], SLUG, [(START, "d2-note", dict(v["params"]))], END, controls(), fmt="16x9", bg="#000000", ink="#ececf0", accent="#78b9af",
                    doc=f"26 October 2026: {v['title']}, reproduction of the Dishonored 2 loot note (1:25:11 to 1:25:13), foreground only (workflow Premier Plan Mesuré).")
     pr["scenes"][0]["ref"] = {"start": START}; pr["referenceOffset"] = START
+    pr["fps"] = FPS   # 60 fps (Matthieu, 26 October 2026): the motion is analytic (keyed tables read at any instant), so every frame is a new sample, not a repeat of the 30 fps reference
     return pr
 
 
