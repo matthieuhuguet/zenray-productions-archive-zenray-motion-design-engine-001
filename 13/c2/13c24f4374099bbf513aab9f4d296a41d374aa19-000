@@ -147,7 +147,8 @@
       });
       const lines = cell(plane, "lines", [0, 0, 1920, 1080], 0, 0, { opacity: 0, transformOrigin: "960px 540px" });
       const linesG = sv("g", { stroke: "#e6e6ec", "stroke-width": 1.3, "stroke-linecap": "round" }, lines.s);
-      ((NOTE.lines && NOTE.lines.segs) || []).forEach((q) => sv("line", { x1: q[0], y1: q[1], x2: q[2], y2: q[3] }, linesG));
+      if (NOTE.linesTrace) sv("path", { d: NOTE.linesTrace.d, fill: "#e6e6ec", stroke: "none", "fill-rule": "evenodd" }, linesG);   // traced and tapered like the reference
+      else ((NOTE.lines && NOTE.lines.segs) || []).forEach((q) => sv("line", { x1: q[0], y1: q[1], x2: q[2], y2: q[3] }, linesG));
       // vignette on top
       const vig = abs(st, { left: "0", top: "0", width: "100%", height: "100%", background: "radial-gradient(ellipse 75% 80% at 50% 50%, rgba(0,0,0,0) 38%, rgba(0,0,0,1) 100%)", opacity: 0, pointerEvents: "none", willChange: "opacity" });
       if (iso) { glow.style.display = "none"; vig.style.display = "none"; ground.style.background = "#000"; }

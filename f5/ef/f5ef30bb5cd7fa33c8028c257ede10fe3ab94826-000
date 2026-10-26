@@ -112,6 +112,12 @@ if segs is not None:
         lines.append([x0, y0, x1, y1]); cv2.line(sheet, (x0, y0), (x1, y1), (0, 128, 255), 2)
 print("speed line segments", len(lines))
 layers["lines"] = {"segs": lines}
+# the speed lines as traced shapes (tapered like the reference): the thin mask without its specks and without the shards' halos
+n_, lab_, st_, _ = cv2.connectedComponentsWithStats(thin.astype(np.uint8))
+keep = np.zeros_like(thin, np.uint8)
+for i_ in range(1, n_):
+    if st_[i_, 4] >= 28 and max(st_[i_, 2], st_[i_, 3]) >= 22: keep[lab_ == i_] = 1
+add("linesTrace", keep, (0, 128, 255), turd=6, alphamax=0.9)
 OUT.write_text("// 26 October 2026: foreground shapes of the Dishonored 2 loot note traced on the settled frame by Scripts/NoteTrace.py (potrace, plane = 1920x1080). FR : formes decalquees de la note de loot.\nwindow.ZSNote = " + json.dumps(layers) + ";\n")
 cv2.imwrite(sys.argv[2], sheet)
 print("wrote", OUT)

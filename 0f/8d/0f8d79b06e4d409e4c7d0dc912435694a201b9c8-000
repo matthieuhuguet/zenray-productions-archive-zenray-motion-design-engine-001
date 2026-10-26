@@ -108,7 +108,7 @@ def fit_title(font, ref, rounds, passes=3):
             def evl(Q, i=i):
                 a = [list(x) for x in adj]; a[i] = [Q["dx"], Q["dy"], Q["s"]]; return score(ref, raster(title_svg(font, P, a), 110))
             Q = {"dx": adj[i][0], "dy": adj[i][1], "s": adj[i][2]}
-            Q, s = descent(Q, {"dx": 0.12, "dy": 0.12, "s": 0.06}, evl, 3, {"s": (0.5, 1.6)})
+            Q, s = descent(Q, {"dx": 0.08, "dy": 0.08, "s": 0.04}, evl, 3, {"s": (0.85, 1.2), "dx": (-0.4, 0.4), "dy": (-0.3, 0.3)})   # bounded: a fit that wins by shrinking letters is a fit that spells nothing
             adj[i] = [round(Q["dx"], 3), round(Q["dy"], 3), round(Q["s"], 3)]
         print(f"  letters pass {rnd + 1}: {score(ref, raster(title_svg(font, P, adj), 110))}", flush=True)
     final = score(ref, raster(title_svg(font, P, adj), 110))
