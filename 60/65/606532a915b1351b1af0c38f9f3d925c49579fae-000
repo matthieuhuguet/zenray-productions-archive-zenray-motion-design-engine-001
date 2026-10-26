@@ -1,7 +1,7 @@
 """Timing variations of the ZenRay film "Sony then PlayStation" (26 October 2026, Matthieu), workflow Premier Plan Mesure. New copies only: the 14.5 s film is untouched.
 Act 1 (the Sony style reveal, 6.5 s of reference time) plays `s1` times faster, act 2 (the PlayStation opening) `s2` times faster, the logo fades out much earlier than the original (fade from `fs`, source time, over `fl` s,
 the scene is cut at the end of the fade), and a 0.5 s pulse of red and blue chromatic aberration hits the frame when the ZenRay logo has just come up (4.5 s into act 2, which was the 11th second of the 14.5 s film).
-Every number below is a parameter of the variation. FR : variations de rythme du film ZenRay (nouvelles copies) : partie 1 acceleree, partie 2 acceleree, fondu du logo plus tot, impulsion d'aberration chromatique.
+Every number below is a parameter of the variation (`ab_px` and `ab_len` per variant: peak separation and duration of the aberration). FR : variations de rythme du film ZenRay (nouvelles copies) : partie 1 acceleree, partie 2 acceleree, fondu du logo plus tot, impulsion d'aberration chromatique.
 Usage: python3 motion/reproductions/zenray_sony_playstation_timing.py [projet ...]"""
 import sys
 
@@ -15,6 +15,8 @@ VARIANTS = {
     "zenray-sony-playstation-c-ppm": {"title": "ZenRay : Sony puis PlayStation, rythme C (7 s)", "s1": 2.5, "s2": 1.5},
     # D: 6 s in total (it was 5.47 s) and an aberration of 1 s (Matthieu, 26 October 2026: shorter, it cannot be seen); the fade starts at 5.15 s of the film, 0.15 s before the pulse ends
     "zenray-sony-playstation-d-ppm": {"title": "ZenRay : Sony puis PlayStation, rythme D (6 s)", "s1": 3.0, "s2": 2.0, "total": 6.0, "ab_len": 1.0, "fade_from": 5.15},
+    # E: D with a shorter and softer aberration (Matthieu, 26 October 2026, after seeing D in his Chrome window: "it stays too long": twice shorter, three times weaker in scaling and offset): 1.0 s -> 0.5 s, 28 px -> 28 / 3 px; the timing, the fade and the 6 s total are those of D
+    "zenray-sony-playstation-e-ppm": {"title": "ZenRay : Sony puis PlayStation, rythme E (6 s, aberration douce)", "s1": 3.0, "s2": 2.0, "total": 6.0, "ab_len": 0.5, "ab_px": 28.0 / 3.0, "fade_from": 5.15},
 }
 ACT1 = BASE.HANDOFF            # reference seconds of act 1 that are played (the word has reached its paper white)
 LOGO_UP = 4.5                  # act 2 source time at which the ZenRay logo has just come up (the 11th second of the 14.5 s film)
@@ -38,7 +40,7 @@ def build_one(pid: str) -> dict:
     if "total" in v: fs = (v["fade_from"] - d1) * s2; fl = (v["total"] - v["fade_from"]) * s2   # a variant can fix its total length and where the fade starts in the film (seconds of film time)
     a2["params"]["speed"] = s2; a2["params"]["fadeKeys"] = fade_keys(fs, fl); a2["duration"] = round((fs + fl) / s2, 4)
     start = d1 + LOGO_UP / s2
-    pr["post"] = {"abPx": AB_PX, "abStart": round(start, 3), "abLen": ab_len}
+    pr["post"] = {"abPx": round(v.get("ab_px", AB_PX), 3), "abStart": round(start, 3), "abLen": ab_len}
     pr["doc"] = (f"26 October 2026: timing variation of the ZenRay film: act 1 x{s1}, act 2 x{s2}, logo fade from {fs:.2f} s of act 2, "
                  f"chromatic aberration pulse {ab_len} s at {start:.2f} s of the film (workflow Premier Plan Mesuré).")
     return pr
