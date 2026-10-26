@@ -572,7 +572,7 @@ def take_command(ua: str):
     return None
 
 
-CLIENTS: dict = {}   # who asked for the version lately: user agent -> {"last": time, "version": the version it was told, "n": count}; WKWebView (the macOS app) has no "Chrome" or "Safari" token, so "is the app on the new page?" is answered from here
+CLIENTS: dict = {}   # who asked for the version lately: user agent -> {"last": time, "version": the version it was told, "n": count}; WKWebView (the macOS shell, DEPRECATED on 26 October 2026: the app now opens the page in Chrome) has no "Chrome" or "Safari" token, so "is the app on the new page?" is answered from here
 
 
 def note_client(ua: str, diag: str = "") -> None:

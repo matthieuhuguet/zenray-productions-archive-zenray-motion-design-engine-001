@@ -72,6 +72,8 @@ Dans le navigateur : `const m = await import('/app/studio-selftest.js'); await m
 
 ## La coque native (14 October 2026)
 
+**26 October 2026, DÉPRÉCIÉE.** « ZenRay Motion Design.app » n'est plus une coque WKWebView : c'est un lanceur Chrome (`shell/ZenRayMotionDesign.sh`) qui démarre le moteur puis ouvre `http://127.0.0.1:3104/motion/validate` dans une fenêtre Chrome à profil privé (`~/Library/Application Support/ZenRayMotion/Chrome`). Raison mesurée : WebKit ne repeint pas l'aberration chromatique (filtre SVG) dans une fenêtre vivante, Chrome oui. Tout passe désormais par la page HTML dans Chrome ; la coque Swift n'existe plus que pour le diagnostic WebKit (`Scripts/BuildApp.sh --webkit`). Les lignes ci-dessous décrivent l'état du 14 October 2026. (26 October 2026)
+
 ```bash
 Scripts/BuildApp.sh            # construit « ZenRay Motion Design.app » à côté du moteur (un appel swiftc, aucun projet Xcode)
 Scripts/BuildApp.sh --check    # puis lance la page DANS WebKit (hors écran) et imprime le résultat de ses 31 contrôles
