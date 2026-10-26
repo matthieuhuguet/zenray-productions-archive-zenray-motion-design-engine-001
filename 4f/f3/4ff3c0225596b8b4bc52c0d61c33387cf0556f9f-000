@@ -19,7 +19,17 @@
   const run = (c) => {
     const tl = window.__timelines && window.__timelines.main, [k, a, b, d] = String(c).split(":");
     if (k === "reload") return location.reload();
+    if (k === "exp") {   // named rendering experiments (a fixed list, never code from the network): what does THIS engine draw for a given filter on the scenes?
+      const F = { none: "", hue: "hue-rotate(120deg)", shadow: "drop-shadow(28px 0 0 #f00) drop-shadow(-28px 0 0 #00f)", blur: "blur(6px)", url: "" }, secs = [...document.querySelectorAll(".zs-scene")];
+      if (a === "url") { const f = document.querySelector("filter[id^=zs-ab]"); secs.forEach((e) => (e.style.filter = f ? `url(#${f.id})` : "")); }
+      else secs.forEach((e) => (e.style.filter = F[a] || ""));
+      return;
+    }
     if (!tl) return;
+    if (k === "seq") {   // "seq:seek@0.5,wait@1.2,seek@4.43,wait@1.2,seek@4.6": a whole sequence in ONE command (a hidden window polls rarely, so one command per poll never finishes)
+      let at = 0; String(c).slice(4).split(",").forEach((st) => { const [kk, v] = st.split("@"); if (kk === "wait") at += (+v) * 1000; else setTimeout(() => run(kk + ":" + v), at); });
+      return;
+    }
     if (k === "seek") tl.seek(+a, false);
     if (k === "scrub") { const t0 = performance.now(), dur = (+d || 1) * 1000, step = () => { const u = Math.min(1, (performance.now() - t0) / dur); tl.seek(+a + (+b - +a) * u, false); if (u < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }
   };

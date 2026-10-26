@@ -182,27 +182,30 @@
       const id = colourFilter(defs, `zs-post-${tok}-${i}`, v, u);
       if (id) { el.style.filter = `url(#${id})`; graded++; }
     });
-    if (film.abPx > 0) {   // the pulse: red and blue copies of the frame pulled apart by px * envelope, only while the pulse lasts (outside it the section keeps its own filter, so the frame costs nothing)
+    if (film.abPx > 0) {   // the pulse: red and blue copies of the frame pulled apart, only while the pulse lasts (outside it the section keeps its own filter, so the frame costs nothing)
+      // 26 October 2026: WebKit (the engine of the macOS app) does NOT repaint an element when an attribute of a primitive of its SVG filter changes (feOffset dx): a filter attached at 0.4 px stayed at 0.4 px on screen
+      // while dx went up to 28 (the DOM said 28, the pixels said nothing). Chromium repaints, so the agent saw it and the user did not. The strength is therefore a STEP between filters that are never modified:
+      // LEVELS filters per section with fixed offsets, and the section's style.filter is switched between them (a changed style always repaints).
+      const LEVELS = 24;
       const abf = sections.map(({ el }, i) => {
-        const id = `zs-ab-${tok}-${i}`, f = node("filter", { id, x: "-6%", y: "-6%", width: "112%", height: "112%", "color-interpolation-filters": "sRGB" }, defs);
-        const ch = (m, r) => node("feColorMatrix", { in: "SourceGraphic", type: "matrix", values: m, result: r }, f);
-        ch("1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0", "ro"); const offR = node("feOffset", { in: "ro", dx: 0, dy: 0, result: "r" }, f);
-        ch("0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0", "g");
-        ch("0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0", "bo"); const offB = node("feOffset", { in: "bo", dx: 0, dy: 0, result: "b" }, f);
-        node("feComposite", { in: "r", in2: "g", operator: "arithmetic", k1: 0, k2: 1, k3: 1, k4: 0, result: "rg" }, f);
-        node("feComposite", { in: "rg", in2: "b", operator: "arithmetic", k1: 0, k2: 1, k3: 1, k4: 0 }, f);
-        return { el, id, base: el.style.filter || "", offR, offB, on: false };
+        const levels = [];
+        for (let k = 1; k <= LEVELS; k++) {
+          const id = `zs-ab-${tok}-${i}-${k}`, d = film.abPx * u * k / LEVELS, f = node("filter", { id, x: "-6%", y: "-6%", width: "112%", height: "112%", "color-interpolation-filters": "sRGB" }, defs);
+          const ch = (m, r) => node("feColorMatrix", { in: "SourceGraphic", type: "matrix", values: m, result: r }, f);
+          ch("1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0", "ro"); node("feOffset", { in: "ro", dx: d.toFixed(2), dy: (d * 0.25).toFixed(2), result: "r" }, f);
+          ch("0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0", "g");
+          ch("0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0", "bo"); node("feOffset", { in: "bo", dx: (-d).toFixed(2), dy: (-d * 0.25).toFixed(2), result: "b" }, f);
+          node("feComposite", { in: "r", in2: "g", operator: "arithmetic", k1: 0, k2: 1, k3: 1, k4: 0, result: "rg" }, f);
+          node("feComposite", { in: "rg", in2: "b", operator: "arithmetic", k1: 0, k2: 1, k3: 1, k4: 0 }, f);
+          levels.push(id);
+        }
+        return { el, levels, base: el.style.filter || "", on: 0 };
       });
-      const env = (t) => { const k = (t - film.abStart) / film.abLen, ss = (x) => x * x * (3 - 2 * x); return k <= 0 || k >= 1 ? 0 : (k < 0.12 ? ss(k / 0.12) : k < 0.7 ? 1 : ss((1 - k) / 0.3)) * film.abPx * u; };   // 26 October 2026: quick attack (12 %), a plateau to 70 % of the pulse so that it can be SEEN for most of its length, then a smooth release
+      const env = (t) => { const k = (t - film.abStart) / film.abLen, ss = (x) => x * x * (3 - 2 * x); return k <= 0 || k >= 1 ? 0 : (k < 0.12 ? ss(k / 0.12) : k < 0.7 ? 1 : ss((1 - k) / 0.3)); };   // 0..1: quick attack (12 %), a plateau to 70 % of the pulse, then a smooth release
       const pulse = { t: 0 };
       tl.fromTo(pulse, { t: 0 }, { t: duration, duration, ease: "none", onUpdate: () => {
-        const px = env(pulse.t);
-        abf.forEach((a) => {
-          if (px > 0.05) {
-            a.offR.setAttribute("dx", px.toFixed(2)); a.offR.setAttribute("dy", (px * 0.25).toFixed(2)); a.offB.setAttribute("dx", (-px).toFixed(2)); a.offB.setAttribute("dy", (-px * 0.25).toFixed(2));
-            if (!a.on) { a.el.style.filter = (a.base + " url(#" + a.id + ")").trim(); a.on = true; }
-          } else if (a.on) { a.el.style.filter = a.base; a.on = false; }
-        });
+        const lvl = Math.round(env(pulse.t) * LEVELS);
+        abf.forEach((a) => { if (lvl === a.on) return; a.on = lvl; a.el.style.filter = lvl ? (a.base + " url(#" + a.levels[lvl - 1] + ")").trim() : a.base; });
       } }, 0);
     }
     if (film.vignette > 0) {
