@@ -1,0 +1,87 @@
+// 26 October 2026: a procedural handwriting / italic note font drawn in code (window.ZSNoteFont), for the Dishonored 2 loot note and any UI text of the same family.
+// Every letter is a SKELETON: a few strokes written as SVG path data in x-height units (x right, y UP, baseline 0, x-height 1, ascender 1.55, capital 1.45, descender -0.5).
+// The look is made by parameters, never by outlines: size (x-height in px), slant, stroke weight, tracking, word space, a width factor, and a fitted line width (each line can be stretched to a measured width).
+// ZSNoteFont.line(text, opts) -> { d, width } where d is ONE path (px, y down, origin = baseline left); opts = { xh, slant, weight (stored by the caller, not here), track, space, wscale, fit }.
+// FR : police manuscrite et italique procedurale (squelettes de traits + parametres), pour la note de loot de Dishonored 2.
+(function () {
+  const F = (window.ZSNoteFont = window.ZSNoteFont || {});
+  // advance width, path of the strokes (a stroke starts with M); a dot is a zero-length stroke drawn with round caps
+  const G = {
+    a: [0.98, "M0.84 0.75 C0.76 0.95 0.62 1 0.44 1 C0.18 1 0.02 0.8 0.02 0.5 C0.02 0.2 0.18 0 0.44 0 C0.64 0 0.78 0.1 0.86 0.3 M0.86 1 L0.86 0.06 C0.86 0 0.92 -0.02 1.0 0.04"],
+    b: [1.0, "M0.05 1.55 L0.05 0 M0.05 0.72 C0.15 0.93 0.3 1 0.5 1 C0.76 1 0.92 0.8 0.92 0.5 C0.92 0.2 0.76 0 0.5 0 C0.3 0 0.15 0.06 0.05 0.28"],
+    c: [0.9, "M0.84 0.8 C0.72 0.95 0.58 1 0.44 1 C0.18 1 0.02 0.8 0.02 0.5 C0.02 0.2 0.18 0 0.44 0 C0.6 0 0.74 0.07 0.85 0.22"],
+    d: [1.02, "M0.92 1.55 L0.92 0.06 C0.92 0 0.98 -0.02 1.04 0.04 M0.92 0.75 C0.82 0.95 0.66 1 0.46 1 C0.2 1 0.04 0.8 0.04 0.5 C0.04 0.2 0.2 0 0.46 0 C0.66 0 0.82 0.07 0.92 0.28"],
+    e: [0.95, "M0.03 0.52 L0.88 0.52 C0.88 0.82 0.72 1 0.45 1 C0.19 1 0.02 0.8 0.02 0.5 C0.02 0.2 0.19 0 0.45 0 C0.64 0 0.8 0.08 0.88 0.2"],
+    f: [0.62, "M0.72 1.45 C0.46 1.56 0.32 1.4 0.32 1.1 L0.32 0 M0.05 1 L0.66 1"],
+    g: [0.98, "M0.86 1 L0.86 -0.12 C0.86 -0.4 0.66 -0.5 0.4 -0.5 C0.22 -0.5 0.08 -0.44 0 -0.32 M0.86 0.75 C0.78 0.95 0.64 1 0.45 1 C0.19 1 0.03 0.8 0.03 0.5 C0.03 0.2 0.19 0 0.45 0 C0.64 0 0.78 0.08 0.86 0.28"],
+    h: [0.95, "M0.05 1.55 L0.05 0 M0.05 0.68 C0.17 0.92 0.33 1 0.5 1 C0.75 1 0.86 0.85 0.86 0.6 L0.86 0.06 C0.86 0 0.92 -0.02 0.98 0.04"],
+    i: [0.42, "M0.2 1 L0.2 0.06 C0.2 0 0.26 -0.02 0.34 0.04 M0.2 1.32 L0.2 1.33"],
+    j: [0.46, "M0.2 1 L0.2 -0.2 C0.2 -0.4 0.08 -0.5 -0.1 -0.46 M0.2 1.32 L0.2 1.33"],
+    k: [0.9, "M0.05 1.55 L0.05 0 M0.8 1 L0.05 0.42 M0.3 0.62 L0.86 0"],
+    l: [0.5, "M0.2 1.55 L0.2 0.08 C0.2 0.01 0.28 -0.02 0.42 0.06"],
+    m: [1.45, "M0.05 1 L0.05 0 M0.05 0.7 C0.14 0.93 0.28 1 0.4 1 C0.58 1 0.66 0.86 0.66 0.62 L0.66 0 M0.66 0.7 C0.75 0.93 0.9 1 1.02 1 C1.2 1 1.28 0.86 1.28 0.62 L1.28 0.06 C1.28 0 1.34 -0.02 1.42 0.04"],
+    n: [0.95, "M0.05 1 L0.05 0 M0.05 0.7 C0.15 0.93 0.3 1 0.46 1 C0.68 1 0.84 0.86 0.84 0.62 L0.84 0.06 C0.84 0 0.9 -0.02 0.98 0.04"],
+    o: [0.95, "M0.46 1 C0.2 1 0.02 0.8 0.02 0.5 C0.02 0.2 0.2 0 0.46 0 C0.72 0 0.92 0.2 0.92 0.5 C0.92 0.8 0.72 1 0.46 1 Z"],
+    p: [1.0, "M0.05 1 L0.05 -0.5 M0.05 0.72 C0.15 0.93 0.3 1 0.5 1 C0.76 1 0.92 0.8 0.92 0.5 C0.92 0.2 0.76 0 0.5 0 C0.3 0 0.15 0.06 0.05 0.28"],
+    q: [1.02, "M0.92 1 L0.92 -0.5 M0.92 0.75 C0.82 0.95 0.66 1 0.46 1 C0.2 1 0.04 0.8 0.04 0.5 C0.04 0.2 0.2 0 0.46 0 C0.66 0 0.82 0.07 0.92 0.28"],
+    r: [0.7, "M0.05 1 L0.05 0 M0.05 0.62 C0.15 0.9 0.3 1 0.52 1"],
+    s: [0.78, "M0.7 0.86 C0.6 0.97 0.46 1 0.36 1 C0.16 1 0.06 0.9 0.06 0.75 C0.06 0.6 0.2 0.53 0.4 0.48 C0.6 0.43 0.72 0.36 0.72 0.22 C0.72 0.08 0.58 0 0.38 0 C0.2 0 0.08 0.06 0 0.16"],
+    t: [0.66, "M0.3 1.32 L0.3 0.14 C0.3 0.03 0.4 -0.01 0.58 0.06 M0.05 1 L0.62 1"],
+    u: [0.95, "M0.05 1 L0.05 0.38 C0.05 0.12 0.2 0 0.42 0 C0.62 0 0.8 0.12 0.84 0.36 M0.86 1 L0.86 0.06 C0.86 0 0.92 -0.02 1 0.04"],
+    v: [0.9, "M0.02 1 L0.45 0 L0.88 1"],
+    w: [1.28, "M0.02 1 L0.3 0 L0.64 0.82 L0.98 0 L1.26 1"],
+    x: [0.86, "M0.05 1 L0.8 0 M0.82 1 L0.04 0"],
+    y: [0.9, "M0.03 1 L0.44 0.1 M0.86 1 L0.4 -0.22 C0.3 -0.42 0.12 -0.5 -0.06 -0.46"],
+    z: [0.86, "M0.05 1 L0.8 1 L0.05 0 L0.82 0"],
+    A: [1.08, "M0 0 L0.52 1.45 L1.04 0 M0.2 0.5 L0.86 0.5"],
+    B: [0.98, "M0.05 0 L0.05 1.45 C0.5 1.45 0.78 1.4 0.78 1.1 C0.78 0.86 0.58 0.76 0.05 0.76 C0.62 0.76 0.9 0.66 0.9 0.38 C0.9 0.1 0.62 0 0.05 0"],
+    C: [1.02, "M0.96 1.2 C0.86 1.4 0.68 1.45 0.55 1.45 C0.2 1.45 0 1.15 0 0.72 C0 0.3 0.2 0 0.55 0 C0.7 0 0.9 0.08 0.99 0.25"],
+    D: [1.12, "M0.05 0 L0.05 1.45 C0.72 1.45 1.04 1.2 1.04 0.72 C1.04 0.25 0.72 0 0.05 0"],
+    E: [0.9, "M0.86 1.45 L0.05 1.45 L0.05 0 L0.86 0 M0.05 0.74 L0.7 0.74"],
+    F: [0.82, "M0.86 1.45 L0.05 1.45 L0.05 0 M0.05 0.74 L0.7 0.74"],
+    H: [1.08, "M0.05 0 L0.05 1.45 M0.92 0 L0.92 1.45 M0.05 0.72 L0.92 0.72"],
+    I: [0.42, "M0.2 1.45 L0.2 0 M0.03 1.45 L0.37 1.45 M0.03 0 L0.37 0"],
+    J: [0.78, "M0.62 1.45 L0.62 0.35 C0.62 0.08 0.46 0 0.3 0 C0.15 0 0.05 0.07 0 0.2"],
+    L: [0.86, "M0.05 1.45 L0.05 0 L0.82 0"],
+    O: [1.2, "M0.58 1.45 C0.22 1.45 0 1.15 0 0.72 C0 0.3 0.22 0 0.58 0 C0.94 0 1.16 0.3 1.16 0.72 C1.16 1.15 0.94 1.45 0.58 1.45 Z"],
+    P: [0.96, "M0.05 0 L0.05 1.45 C0.55 1.45 0.86 1.4 0.86 1.08 C0.86 0.78 0.55 0.68 0.05 0.68"],
+    R: [1.02, "M0.05 0 L0.05 1.45 C0.55 1.45 0.86 1.4 0.86 1.08 C0.86 0.78 0.55 0.68 0.05 0.68 M0.45 0.68 L0.92 0"],
+    S: [0.92, "M0.86 1.26 C0.76 1.4 0.6 1.45 0.46 1.45 C0.2 1.45 0.05 1.3 0.05 1.1 C0.05 0.9 0.2 0.8 0.46 0.72 C0.72 0.65 0.86 0.55 0.86 0.35 C0.86 0.12 0.66 0 0.4 0 C0.2 0 0.08 0.07 0 0.2"],
+    T: [0.96, "M0 1.45 L0.92 1.45 M0.46 1.45 L0.46 0"],
+    U: [1.06, "M0.05 1.45 L0.05 0.45 C0.05 0.12 0.26 0 0.52 0 C0.78 0 0.98 0.12 0.98 0.45 L0.98 1.45"],
+    V: [1.12, "M0 1.45 L0.56 0 L1.12 1.45"],
+    W: [1.3, "M0 1.45 L0.32 0 L0.65 1.1 L0.98 0 L1.3 1.45"],
+    Y: [1.06, "M0 1.45 L0.52 0.7 L1.04 1.45 M0.52 0.7 L0.52 0"],
+    4: [0.95, "M0.66 0 L0.66 1.45 L0 0.4 L0.92 0.4"],
+    8: [0.92, "M0.46 0.78 C0.16 0.86 0.06 1 0.06 1.15 C0.06 1.35 0.22 1.45 0.46 1.45 C0.7 1.45 0.86 1.35 0.86 1.15 C0.86 1 0.76 0.86 0.46 0.78 C0.1 0.7 0 0.5 0 0.35 C0 0.12 0.2 0 0.46 0 C0.72 0 0.92 0.12 0.92 0.35 C0.92 0.5 0.82 0.7 0.46 0.78 Z"],
+    ".": [0.32, "M0.12 0 L0.12 0.01"],
+    ",": [0.34, "M0.14 0.04 L0.04 -0.22"],
+    "'": [0.3, "M0.12 1.45 L0.08 1.12"],
+    "(": [0.46, "M0.4 1.5 C0.06 1.1 0.06 0.2 0.4 -0.32"],
+    ")": [0.46, "M0.06 1.5 C0.4 1.1 0.4 0.2 0.06 -0.32"],
+  };
+  F.glyphs = G;
+  F.has = (ch) => ch === " " || !!G[ch];
+  // tokens of a path string -> absolute points sampled as a polyline is not needed: the path is emitted as SVG with the transform applied to every coordinate (shear, scale, flip)
+  const emit = (path, ox, xh, slant, wscale) => {
+    const t = path.replace(/([MLCZ])/g, " $1 ").trim().split(/\s+/); let out = [], i = 0;
+    const px = (x, y) => (ox + (x * wscale + y * slant) * xh).toFixed(2), py = (y) => (-y * xh).toFixed(2);
+    while (i < t.length) {
+      const c = t[i++];
+      if (c === "M" || c === "L") { out.push(c + px(+t[i], +t[i + 1]) + " " + py(+t[i + 1])); i += 2; }
+      else if (c === "C") { const p = []; for (let k = 0; k < 3; k++) { p.push(px(+t[i], +t[i + 1]) + " " + py(+t[i + 1])); i += 2; } out.push("C" + p.join(" ")); }
+      else if (c === "Z") out.push("Z");
+    }
+    return out.join("");
+  };
+  // one line of text: x-height xh px, shear slant (tan of the angle), tracking in x-height units, space width in x-height units, width factor wscale; fit = target width in px (the line is stretched to it by tracking)
+  F.line = (text, o) => {
+    const xh = o.xh, slant = o.slant == null ? 0.2 : o.slant, track = o.track == null ? 0.06 : o.track, space = o.space == null ? 0.42 : o.space, chars = [...String(text)];
+    const glyphSum = chars.reduce((a, ch) => a + (ch === " " ? 0 : (G[ch] || [0.6])[0]), 0), nSp = chars.filter((ch) => ch === " ").length, gaps = Math.max(1, chars.length - 1);
+    let ws = o.wscale == null ? 1 : o.wscale, tr = track;
+    if (o.fit) { ws = Math.max(0.6, Math.min(1.4, (o.fit / xh - gaps * track - nSp * space) / glyphSum)); tr = track + (o.fit / xh - (glyphSum * ws + nSp * space + gaps * track)) / gaps; }   // fit: the line takes the measured width, by the glyph width factor first, then by the tracking
+    let x = 0, d = "";
+    chars.forEach((ch) => { if (ch === " ") { x += space + tr; return; } const g = G[ch]; if (!g) { x += 0.6 + tr; return; } d += emit(g[1], x * xh, xh, slant, ws); x += g[0] * ws + tr; });
+    return { d, width: (x - tr) * xh };
+  };
+})();

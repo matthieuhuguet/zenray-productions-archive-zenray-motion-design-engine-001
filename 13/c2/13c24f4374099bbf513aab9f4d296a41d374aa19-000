@@ -1,0 +1,162 @@
+// 26 October 2026: the Dishonored 2 loot note (youtube 91qamm6oUoA, 1:25:11 to 1:25:13, 1920x1080), workflow Premier Plan Mesure (ppm).
+// FOREGROUND ONLY: the dark paper, its corner brackets and ink ornaments, the title, the body text, the Close prompt, the ink strokes, the paper shards, the speed lines and the red stain.
+// The lettering is written by the procedural note font (zs-templates-notefont-1.js); the organic shapes are traced on the reference (zs-templates-note-data-1.js, Scripts/NoteTrace.py).
+// Every measured number lives in a keyed table (lines "t | a | b ..."), read with a Catmull-Rom curve; nothing is a literal in the code.
+// FR : la note de loot de Dishonored 2 ; papier sombre, titre et texte en police procedurale, formes decalquees, eclats de papier et lignes de vitesse ; le fond est une couleur.
+(function () {
+  const ZS = window.ZS, h = ZS.h;
+  const P = (key, label, type, def, tier, extra) => Object.assign({ key, label, type, default: def, tier }, extra || {});
+  const N = (key, label, def, min, max, step, tier, unit) => ({ key, label, type: "number", default: def, min, max, step, tier, unit });
+  const abs = (parent, css, text) => { const e = h.css(h.el("div", "zs-abs", parent), css); if (text !== undefined) e.textContent = text; return e; };
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const hex = (s) => { const t = String(s || "#000000").replace("#", ""); const v = t.length === 3 ? t.split("").map((c) => c + c).join("") : t.padEnd(6, "0"); return [parseInt(v.slice(0, 2), 16), parseInt(v.slice(2, 4), 16), parseInt(v.slice(4, 6), 16)]; };
+  const rgb = (c, a) => (a === undefined ? `rgb(${Math.round(c[0])},${Math.round(c[1])},${Math.round(c[2])})` : `rgba(${Math.round(c[0])},${Math.round(c[1])},${Math.round(c[2])},${a})`);
+  const rowsOf = (lines) => (lines || []).map((l) => String(l).split("|").map((x) => Number(x.trim()))).filter((q) => q.length >= 2 && q.every((v) => !isNaN(v))).sort((a, b) => a[0] - b[0]);
+  const at = (rows, t) => {   // Catmull-Rom through the keys, clamped outside
+    if (!rows.length) return [0];
+    if (t <= rows[0][0]) return rows[0].slice(1); if (t >= rows[rows.length - 1][0]) return rows[rows.length - 1].slice(1);
+    let i = 0; while (i < rows.length - 2 && rows[i + 1][0] <= t) i++;
+    const p0 = rows[Math.max(0, i - 1)], p1 = rows[i], p2 = rows[i + 1], p3 = rows[Math.min(rows.length - 1, i + 2)], f = (t - p1[0]) / Math.max(1e-6, p2[0] - p1[0]), f2 = f * f, f3 = f2 * f;
+    return p1.slice(1).map((_, k) => { const a = p0[k + 1], b = p1[k + 1], c = p2[k + 1], d = p3[k + 1]; return 0.5 * ((2 * b) + (-a + c) * f + (2 * a - 5 * b + 4 * c - d) * f2 + (-a + 3 * b - 3 * c + d) * f3); });
+  };
+  const lin = (rows, t) => {   // linear read (no overshoot): opacities
+    if (!rows.length) return [0];
+    if (t <= rows[0][0]) return rows[0].slice(1); if (t >= rows[rows.length - 1][0]) return rows[rows.length - 1].slice(1);
+    let i = 0; while (i < rows.length - 2 && rows[i + 1][0] <= t) i++;
+    const f = (t - rows[i][0]) / Math.max(1e-6, rows[i + 1][0] - rows[i][0]); return rows[i].slice(1).map((v, k) => v + (rows[i + 1][k + 1] - v) * f);
+  };
+  const NS = "http://www.w3.org/2000/svg";
+  const sv = (tag, at2, par) => { const e = document.createElementNS(NS, tag); Object.keys(at2 || {}).forEach((k) => e.setAttribute(k, at2[k])); if (par) par.appendChild(e); return e; };
+  let uid = 0;
+  const seeded = (seed) => { let s = seed >>> 0 || 1; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; };
+
+  ZS.register({
+    id: "d2-note", label: "Dishonored 2 : note de loot", group: "Dishonored 2", duration: 3,
+    params: [
+      P("title", "Titre de la note", "text", "To Whomever Finds my Body", 1),
+      P("body", "Texte : une ligne par rang, « texte | largeur en px »", "lines", ["I know I'm dying, haunted by failure. I couldn't save Dr. Hypatia from | 660 | 478", "herself. | 69 | 502", "If someone finds this note, please don't blame her. She has no idea what | 686 | 550", "her other self is doing. She doesn't know the monster she has become. | 662 | 574", "If only I had been braver, maybe I could have cured her. If it's not too late, | 700 | 622", "please, I beg of you, prepare the antidote and save her. The instructions | 684 | 646", "are in my personal safe. The code is 488. | 388 | 670"], 1),
+      P("accent", "Couleur du code", "color", "#78b9af", 1), P("closeLabel", "Libellé du bouton", "text", "Close", 1),
+      N("bodyXh", "Texte : hauteur d'x (px)", 11, 6, 20, 0.1, 2, "px"), N("bodyWeight", "Texte : épaisseur du trait (px)", 1.35, 0.5, 4, 0.05, 2, "px"), N("bodySlant", "Texte : inclinaison", 0.2, 0, 0.6, 0.01, 2), N("titleXh", "Titre : hauteur d'x (px)", 15, 8, 30, 0.1, 2, "px"),
+      N("titleWeight", "Titre : épaisseur du trait (px)", 2.1, 0.5, 5, 0.05, 2, "px"), N("titleSlant", "Titre : inclinaison", 0.3, 0, 0.7, 0.01, 2), N("titleTilt", "Titre : rotation (°)", 2.1, -10, 10, 0.1, 2, "°"), N("tallZoom", "Autres formats : échelle", 1, 0.5, 2, 0.01, 2),
+      N("panelX", "Papier : centre x", 937.5, 0, 1920, 0.5, 3, "px"), N("panelY", "Papier : centre y", 567.5, 0, 1080, 0.5, 3, "px"), N("panelW", "Papier : largeur", 815, 100, 1900, 1, 3, "px"), N("panelH", "Papier : hauteur", 815, 100, 1080, 1, 3, "px"),
+      N("textX", "Texte : x du bord gauche", 584, 0, 1920, 0.5, 3, "px"), N("titleX", "Titre : x du bord gauche", 778, 0, 1920, 0.5, 3, "px"), N("titleY", "Titre : y de la ligne de base", 138, 0, 1080, 0.5, 3, "px"),
+      N("closeX", "Bouton : x du centre", 906, 0, 1920, 0.5, 3, "px"), N("closeY", "Bouton : y du centre", 987, 0, 1080, 0.5, 3, "px"), N("seed", "Graine du papier", 7, 1, 999, 1, 3), N("edgeJitter", "Papier : irrégularité du bord (px)", 14, 0, 60, 0.5, 3, "px"),
+      N("film0", "Début dans le film (s)", 3, 0, 8, 0.01, 4, "s"), N("shardLift", "Éclats : clarté des facettes", 1.15, 0.5, 2, 0.01, 3), N("inkK", "Traits d'encre : force", 1, 0, 2, 0.01, 3), N("shardK", "Éclats : force", 1, 0, 2, 0.01, 3), N("lineK", "Lignes de vitesse : force", 1, 0, 2, 0.01, 3), N("stainK", "Tache rouge : force", 1, 0, 2, 0.01, 3),
+      P("panelKeys", "Papier : temps | dx | dy | rotation | échelle x | échelle y | opacité", "lines", ["4.15 | -400 | -40 | -14 | 0.88 | 1 | 0", "4.18 | -147 | -20 | -10 | 0.93 | 1.02 | 1", "4.267 | -110 | 0 | -4.5 | 0.97 | 1 | 1", "4.333 | -91 | 0 | -1.5 | 0.99 | 1 | 1", "4.4 | -76 | 0 | -0.4 | 1 | 1 | 1", "4.433 | -67 | 0 | -0.2 | 1 | 1 | 1", "4.467 | -59 | 0 | 0 | 1 | 1 | 1", "4.5 | -52 | 0 | 0 | 1 | 1 | 1", "4.567 | -45 | 0 | 0 | 1 | 1 | 1", "4.6 | -39 | 0 | 0 | 1 | 1 | 1", "4.633 | -34 | 0 | 0 | 1 | 1 | 1", "4.667 | -29 | 0 | 0 | 1 | 1 | 1", "4.7 | -24 | 0 | 0 | 1 | 1 | 1", "4.733 | -20 | 0 | 0 | 1 | 1 | 1", "4.8 | -16 | 0 | 0 | 1 | 1 | 1", "4.833 | -12 | 0 | 0 | 1 | 1 | 1", "4.9 | -6 | 0 | 0 | 1 | 1 | 1", "4.967 | 0 | 0 | 0 | 1 | 1 | 1"], 4),
+      P("titleKeys", "Titre : temps | dx (en plus du papier) | opacité", "lines", ["4.22 | -700 | 0", "4.267 | -740 | 1", "4.333 | -330 | 1", "4.4 | -120 | 1", "4.433 | -24 | 1", "4.467 | -3 | 1", "4.5 | 0 | 1"], 4),
+      P("groundKeys", "Fond : temps | rouge | vert | bleu", "lines", ["3.0 | 96 | 75 | 57", "3.5 | 96 | 75 | 57", "3.7 | 59 | 49 | 68", "4.2 | 59 | 49 | 68", "4.5 | 52 | 46 | 60", "5.0 | 47 | 42 | 56"], 4),
+      P("glowKeys", "Lueur du fond à gauche : temps | opacité", "lines", ["3.5 | 0", "3.7 | 1", "4.2 | 1", "4.5 | 0.75", "5.0 | 0.55"], 4),
+      P("vignetteKeys", "Vignette : temps | opacité aux coins", "lines", ["4.1 | 0", "4.2 | 0", "4.5 | 0.9", "5.0 | 0.97"], 4),
+      P("panelColKeys", "Papier : temps | rouge | vert | bleu", "lines", ["4.15 | 61 | 60 | 61", "4.5 | 35 | 32 | 34", "5.0 | 25 | 23 | 25"], 4),
+      P("textKeys", "Texte : temps | opacité | gris", "lines", ["4.15 | 0 | 150", "4.18 | 0.7 | 150", "4.5 | 0.9 | 165", "5.0 | 1 | 175"], 4),
+      P("closeKeys", "Bouton Close : temps | opacité", "lines", ["4.45 | 0", "4.5 | 1"], 4),
+      P("strokeKeys", "Traits d'encre : temps | opacité | échelle x de révélation", "lines", ["4.45 | 0 | 0.3", "4.5 | 1 | 0.7", "4.6 | 1 | 1"], 4),
+      P("ornKeys", "Volutes du bas et des côtés : temps | opacité", "lines", ["4.6 | 0", "4.85 | 1"], 4),
+      P("stainKeys", "Tache rouge : temps | opacité", "lines", ["4.6 | 0", "4.8 | 0.9"], 4),
+      P("shardKeys", "Éclats : temps | numéro | x | y | échelle | rotation | opacité (centre de l'éclat)", "lines", ["4.8 | 1 | 1531 | 377 | 0.2 | 0 | 0", "4.833 | 1 | 1581 | 354 | 0.3 | 0 | 1", "4.933 | 1 | 1564 | 322 | 0.85 | 0 | 1", "5.0 | 1 | 1585 | 321 | 0.97 | 0 | 1", "4.9 | 2 | 296 | 392 | 0.8 | 0 | 0", "4.933 | 2 | 296 | 392 | 0.85 | 0 | 1", "5.0 | 2 | 296 | 392 | 1 | 0 | 1", "4.85 | 3 | 394 | 588 | 0.6 | 0 | 0", "4.867 | 3 | 394 | 588 | 0.6 | 0 | 1", "4.967 | 3 | 263 | 611 | 1 | 0 | 1", "5.0 | 3 | 263 | 612 | 1 | 0 | 1", "4.8 | 4 | 1541 | 648 | 1 | 0 | 0", "4.833 | 4 | 1541 | 648 | 1 | 0 | 1", "5.0 | 4 | 1541 | 633 | 0.97 | 0 | 1", "4.85 | 5 | 424 | 643 | 1 | 0 | 0", "4.867 | 5 | 424 | 643 | 1 | 0 | 1", "5.0 | 5 | 418 | 656 | 1 | 0 | 1"], 4),
+      P("lineKeys", "Lignes de vitesse : temps | opacité | écartement", "lines", ["4.7 | 0 | 0.86", "4.8 | 0.55 | 0.95", "5.0 | 1 | 1"], 4),
+    ],
+    build(ctx) {
+      const { el, p, tl, t0 } = ctx, { st, tall, w, h: sh } = ZS.stageAdaptive(ctx);
+      const NOTE = window.ZSNote || {}, FONT = window.ZSNoteFont;
+      const wide = w / sh > 1.6, kk = wide ? w / 1920 : Math.min(w / 1100, sh / 1020) * p.tallZoom, cx0 = wide ? 960 : 940, cy0 = wide ? 540 : 520;   // wide: the whole 1920 plane; other formats: the note and its strokes (1100 x 1020) fill the frame
+      const ok = rowsOf(p.ornKeys), pk = rowsOf(p.panelKeys), tk = rowsOf(p.titleKeys), gk = rowsOf(p.groundKeys), lgk = rowsOf(p.glowKeys), vk = rowsOf(p.vignetteKeys), pck = rowsOf(p.panelColKeys), xk = rowsOf(p.textKeys), ck = rowsOf(p.closeKeys), sk = rowsOf(p.strokeKeys), stk = rowsOf(p.stainKeys), shk = rowsOf(p.shardKeys), lk = rowsOf(p.lineKeys);
+      h.css(el, { background: "#000" });
+      const id = "dn" + (uid++);
+      // the plane (1920x1080 design pixels) fitted to the stage
+      const ground = abs(st, { left: "0", top: "0", width: "100%", height: "100%" });
+      const glow = abs(st, { left: "0", top: "0", width: "100%", height: "100%", background: `radial-gradient(ellipse ${360 * kk}px ${480 * kk}px at ${(190 - cx0) * kk + w / 2}px ${(560 - cy0) * kk + sh / 2}px, rgba(150,170,160,0.85) 0%, rgba(120,140,135,0.45) 45%, rgba(0,0,0,0) 100%)`, opacity: 0 });
+      const plane = abs(st, { left: w / 2 - cx0 * kk + "px", top: sh / 2 - cy0 * kk + "px", width: "1920px", height: "1080px", transformOrigin: "0 0", transform: `scale(${kk})` });
+      const layer = (extra) => abs(plane, Object.assign({ left: "0", top: "0", width: "1920px", height: "1080px" }, extra || {}));
+      const svgOf = (par) => { const s = sv("svg", { width: 1920, height: 1080, viewBox: "0 0 1920 1080" }, null); s.style.cssText = "position:absolute;left:0;top:0;overflow:visible"; par.appendChild(s); return s; };
+      // ground: a plain colour (the blurred game scene is not reproduced), a soft glow at the left, then the vignette at the end
+      // the note: paper, brackets, ornaments, text, all moved together
+      const note = layer({ transformOrigin: `${p.panelX}px ${p.panelY}px`, willChange: "transform", opacity: 0 });
+      const ns = svgOf(note), defs = sv("defs", {}, ns);
+      // the paper: a ragged rectangle with a cloudy dark texture (turbulence), edges roughened by displacement
+      const flt = sv("filter", { id: id + "p", x: "-8%", y: "-8%", width: "116%", height: "116%", "color-interpolation-filters": "sRGB" }, defs);
+      sv("feTurbulence", { type: "fractalNoise", baseFrequency: "0.012 0.016", numOctaves: 4, seed: p.seed, result: "n" }, flt);
+      sv("feDisplacementMap", { in: "SourceGraphic", in2: "n", scale: p.edgeJitter * 2, xChannelSelector: "R", yChannelSelector: "G", result: "d" }, flt);
+      const rnd = seeded(p.seed), px0 = p.panelX - p.panelW / 2, py0 = p.panelY - p.panelH / 2;
+      const edge = []; const stepE = 40;
+      for (let x = 0; x <= p.panelW; x += stepE) edge.push([px0 + x, py0 + (rnd() - 0.5) * 18]);
+      for (let y = 0; y <= p.panelH; y += stepE) edge.push([px0 + p.panelW + (rnd() - 0.5) * 18, py0 + y]);
+      for (let x = p.panelW; x >= 0; x -= stepE) edge.push([px0 + x, py0 + p.panelH + (rnd() - 0.5) * 18]);
+      for (let y = p.panelH; y >= 0; y -= stepE) edge.push([px0 + (rnd() - 0.5) * 18, py0 + y]);
+      const paper = sv("path", { d: "M" + edge.map((q) => q[0].toFixed(1) + "," + q[1].toFixed(1)).join("L") + "z", fill: "#191719", filter: `url(#${id}p)` }, ns);
+      const cloud = sv("filter", { id: id + "c", x: "0", y: "0", width: "100%", height: "100%", "color-interpolation-filters": "sRGB" }, defs);
+      sv("feTurbulence", { type: "fractalNoise", baseFrequency: "0.006 0.009", numOctaves: 5, seed: p.seed + 3, result: "c" }, cloud);
+      sv("feColorMatrix", { in: "c", type: "matrix", values: "0 0 0 0 0.04  0 0 0 0 0.035  0 0 0 0 0.04  0.9 0.6 0 0 -0.35", result: "m" }, cloud);
+      sv("feComposite", { in: "m", in2: "SourceGraphic", operator: "in" }, cloud);
+      const cloudP = sv("path", { d: paper.getAttribute("d"), fill: "#000", filter: `url(#${id}c)`, opacity: 0.55 }, ns);
+      // stain, ornaments and brackets (traced)
+      const stain = NOTE.stain ? sv("path", { d: NOTE.stain.d, fill: rgb(NOTE.stain.fill.map((v) => v * 1.5)), opacity: 0, "fill-rule": "evenodd" }, ns) : null;
+      const orn = NOTE.orn ? sv("path", { d: NOTE.orn.d, fill: rgb(NOTE.orn.fill.map((v) => v * 0.8)), "fill-rule": "evenodd", opacity: 0.6 }, ns) : null;
+      const orn2 = NOTE.orn2 ? sv("path", { d: NOTE.orn2.d, fill: rgb(NOTE.orn2.fill.map((v) => v * 0.8)), "fill-rule": "evenodd", opacity: 0 }, ns) : null;
+      const brk = NOTE.brackets ? sv("path", { d: NOTE.brackets.d, fill: rgb(NOTE.brackets.fill), "fill-rule": "evenodd", opacity: 0.75 }, ns) : null;
+      // body text, the procedural note font, one path per line
+      const bodyG = sv("g", { fill: "none", "stroke-linecap": "round", "stroke-linejoin": "round", "stroke-width": p.bodyWeight }, ns);
+      const acc = hex(p.accent);
+      (p.body || []).forEach((raw) => {
+        const parts = String(raw).split("|"), text = parts[0].trim(), fit = Number(parts[1]) || 0, base = Number(parts[2]) || 0;
+        if (!text || !FONT) return;
+        const code = text.indexOf("488");   // the code is drawn in the accent colour, the rest of the line in grey
+        const L = FONT.line(text, { xh: p.bodyXh, slant: p.bodySlant, track: 0.07, space: 0.5, fit });
+        const g = sv("g", { transform: `translate(${p.textX},${base})` }, bodyG);
+        if (code < 0) { sv("path", { d: L.d, stroke: "currentColor", class: "zn-body" }, g); return; }
+        const L0 = FONT.line(text.slice(0, code), { xh: p.bodyXh, slant: p.bodySlant, track: 0.07, space: 0.5, fit: fit * code / text.length }), L1 = FONT.line(text.slice(code, code + 3), { xh: p.bodyXh, slant: p.bodySlant, track: 0.07, space: 0.5 }), L2 = FONT.line(text.slice(code + 3), { xh: p.bodyXh, slant: p.bodySlant, track: 0.07, space: 0.5 });
+        sv("path", { d: L0.d, class: "zn-body" }, g);
+        sv("path", { d: L1.d, stroke: rgb(acc), transform: `translate(${L0.width + p.bodyXh * 0.5},0)` }, g);
+        sv("path", { d: L2.d, class: "zn-body", transform: `translate(${L0.width + p.bodyXh * 0.5 + L1.width + p.bodyXh * 0.07},0)` }, g);
+      });
+      const bodyPaths = [...bodyG.querySelectorAll(".zn-body")];
+      // ink strokes across the top (traced), with the title above them, moving separately
+      const inkL = layer({ willChange: "transform", opacity: 0 }), is = svgOf(inkL);
+      const ink = NOTE.strokes ? sv("path", { d: NOTE.strokes.d, fill: rgb(NOTE.strokes.fill), "fill-rule": "evenodd" }, is) : null;
+      const titleL = layer({ willChange: "transform", opacity: 0 }), ts = svgOf(titleL), tdef = sv("defs", {}, ts);
+      const tglow = sv("filter", { id: id + "t", x: "-10%", y: "-60%", width: "120%", height: "220%" }, tdef); sv("feGaussianBlur", { in: "SourceAlpha", stdDeviation: 2.2, result: "b" }, tglow);
+      const tm = sv("feMerge", {}, tglow); sv("feMergeNode", { in: "b" }, tm); sv("feMergeNode", { in: "SourceGraphic" }, tm);
+      const tg = sv("g", { transform: `translate(${p.titleX},${p.titleY}) rotate(${p.titleTilt})`, filter: `url(#${id}t)` }, ts);
+      if (FONT) { const L = FONT.line(p.title, { xh: p.titleXh, slant: p.titleSlant, track: 0.05, space: 0.45, fit: 322 }); sv("path", { d: L.d, fill: "none", stroke: "#ececf0", "stroke-width": p.titleWeight, "stroke-linecap": "round", "stroke-linejoin": "round" }, tg); }
+      // the Close prompt
+      const closeL = layer({ opacity: 0, willChange: "transform" }), cs = svgOf(closeL);
+      sv("rect", { x: p.closeX - 28, y: p.closeY - 28, width: 112, height: 56, fill: "#0a090b", opacity: 0.55 }, cs);
+      sv("circle", { cx: p.closeX, cy: p.closeY, r: 21, fill: "#3a0d10", stroke: "#8c8a8e", "stroke-width": 1.6 }, cs);
+      sv("circle", { cx: p.closeX, cy: p.closeY, r: 15.5, fill: "#7a1318" }, cs);
+      if (FONT) { const B = FONT.line("B", { xh: 9, slant: 0.2, track: 0 }); sv("path", { d: B.d, fill: "none", stroke: "#e8e0e0", "stroke-width": 2.2, "stroke-linecap": "round", transform: `translate(${p.closeX - 6},${p.closeY + 9})` }, cs); const C = FONT.line(p.closeLabel, { xh: 13, slant: 0.28, track: 0.06 }); sv("path", { d: C.d, fill: "none", stroke: "#f0f0f2", "stroke-width": 1.7, "stroke-linecap": "round", "stroke-linejoin": "round", transform: `translate(${p.closeX + 31},${p.closeY + 6})` }, cs); }
+      sv("path", { d: `M${p.closeX - 330},${p.closeY - 12} L${p.closeX - 28},${p.closeY - 3} M${p.closeX + 84},${p.closeY + 7} L${p.closeX + 346},${p.closeY + 10}`, stroke: "#c8c8cc", "stroke-width": 1.1, fill: "none", opacity: 0.8 }, cs);
+      // paper shards (traced, one shape each) and the speed lines
+      const shardL = layer({ opacity: 1 }), shs = svgOf(shardL);
+      const shards = (NOTE.shardList || []).map((S, i) => {
+        const g = sv("g", { opacity: 0 }, shs), inner = sv("g", { transform: `translate(${-S.cx},${-S.cy})` }, g);
+        (S.tris || []).forEach((q) => { const c = rgb(q.c.map((v) => clamp(v * p.shardLift, 0, 255))); sv("polygon", { points: q.p.join(" "), fill: c, stroke: c, "stroke-width": 0.8, "stroke-linejoin": "round" }, inner); });
+        return { g, S };
+      });
+      const linesG = sv("g", { stroke: "#e6e6ec", "stroke-width": 1.3, "stroke-linecap": "round", opacity: 0 }, shs);
+      ((NOTE.lines && NOTE.lines.segs) || []).forEach((q) => sv("line", { x1: q[0], y1: q[1], x2: q[2], y2: q[3] }, linesG));
+      // vignette on top
+      const vig = abs(st, { left: "0", top: "0", width: "100%", height: "100%", background: "radial-gradient(ellipse 75% 80% at 50% 50%, rgba(0,0,0,0) 38%, rgba(0,0,0,1) 100%)", opacity: 0, pointerEvents: "none" });
+      const shardIdx = {}; shk.forEach((r) => { (shardIdx[r[1]] = shardIdx[r[1]] || []).push([r[0]].concat(r.slice(2))); });
+      const pr = { t: 0 }, update = (t) => {
+        const gc = at(gk, t); ground.style.background = rgb(gc);
+        glow.style.opacity = String(clamp(lin(lgk, t)[0], 0, 1));
+        const q = at(pk, t), al = clamp(lin(pk.map((r) => [r[0], r[6]]), t)[0], 0, 1);
+        note.style.opacity = String(al);
+        gsap.set(note, { x: q[0], y: q[1], rotation: q[2], scaleX: q[3], scaleY: q[4], force3D: true });
+        const pc = at(pck, t); paper.setAttribute("fill", rgb(pc));
+        const xq = lin(xk, t), gr = xq[1] || 170; bodyPaths.forEach((e) => { e.setAttribute("stroke", rgb([gr, gr, gr + 4])); }); bodyG.setAttribute("opacity", String(clamp(xq[0], 0, 1)));
+        if (orn2) orn2.setAttribute("opacity", String(clamp(lin(ok, t)[0] * 0.65, 0, 1)));
+        if (stain) stain.setAttribute("opacity", String(clamp(lin(stk, t)[0] * p.stainK, 0, 1)));
+        // the ink strokes and the title drift with the paper; the title slides in on its own
+        const ik = lin(sk, t); inkL.style.opacity = String(clamp(ik[0] * p.inkK, 0, 1)); gsap.set(inkL, { x: q[0], y: q[1], force3D: true });
+        const tq = at(tk, t), ta = clamp(lin(tk.map((r) => [r[0], r[2]]), t)[0], 0, 1); titleL.style.opacity = String(ta); gsap.set(titleL, { x: q[0] + tq[0], y: q[1], force3D: true });
+        closeL.style.opacity = String(clamp(lin(ck, t)[0], 0, 1)); gsap.set(closeL, { x: q[0], force3D: true });
+        shards.forEach((s, i) => { const rows = shardIdx[i + 1]; if (!rows || t < rows[0][0] - 1e-6) { s.g.setAttribute("opacity", 0); return; } const v = at(rows, t), a = clamp(lin(rows.map((r) => [r[0], r[5]]), t)[0] * p.shardK, 0, 1); s.g.setAttribute("opacity", String(a)); s.g.setAttribute("transform", `translate(${v[0]},${v[1]}) rotate(${v[3]}) scale(${v[2]},${v[2]})`); });
+        const lq = lin(lk, t); linesG.setAttribute("opacity", String(clamp(lq[0] * p.lineK, 0, 1))); linesG.setAttribute("transform", `translate(960,540) scale(${lq[1] || 1}) translate(-960,-540)`);
+        vig.style.opacity = String(clamp(lin(vk, t)[0], 0, 1));
+      };
+      update(0);
+      tl.fromTo(pr, { t: 0 }, { t: ctx.dur, duration: ctx.dur, ease: "none", onUpdate: () => update(pr.t + (p.film0 || 0)) }, t0);
+    },
+  });
+})();

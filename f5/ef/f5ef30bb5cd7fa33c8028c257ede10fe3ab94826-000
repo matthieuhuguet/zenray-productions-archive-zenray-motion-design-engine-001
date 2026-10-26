@@ -1,0 +1,107 @@
+"""Decalque of the foreground graphics of the Dishonored 2 loot note from the settled frame (26 October 2026), workflow Premier Plan Mesure.
+The organic shapes (ink strokes, curly ornaments, the red stain, the corner brackets, the paper shards, the speed lines) are traced on the reference as vector paths
+(masks by local contrast, potrace), so the motion moves real shapes; the lettering is NOT traced: it is written by the procedural note font.
+Writes motion/runtime/zs-templates-note-data-1.js (window.ZSNote) and a check sheet.  FR : decalque des formes organiques de la note de loot ; le texte est ecrit par la police procedurale.
+Usage: python3 Scripts/NoteTrace.py <settled frame.png> <check sheet.png>"""
+import json
+import sys
+from pathlib import Path
+
+import cv2
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from PotraceUtil import trace_mask  # noqa: E402
+
+ROOT = Path(__file__).resolve().parents[1]
+OUT = ROOT / "motion" / "runtime" / "zs-templates-note-data-1.js"
+img = cv2.imread(sys.argv[1]); H, W = img.shape[:2]
+G = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float32); B, Gc, R = [img[..., i].astype(np.float32) for i in range(3)]
+
+
+def box(m, x0, y0, x1, y1):
+    out = np.zeros_like(m); out[y0:y1, x0:x1] = m[y0:y1, x0:x1]; return out
+
+
+def blackhat(k): return cv2.morphologyEx(G, cv2.MORPH_BLACKHAT, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
+def tophat(k): return cv2.morphologyEx(G, cv2.MORPH_TOPHAT, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
+
+
+def mean_rgb(m):
+    k = m > 0
+    return [int(v) for v in (R[k].mean(), Gc[k].mean(), B[k].mean())] if k.sum() else [0, 0, 0]
+
+
+layers = {}; sheet = img.copy()
+def add(name, mask, color, scale=3, turd=8, opttol=0.4, alphamax=1.0, blur=0.0, fill=None):
+    m = (mask > 0).astype(np.uint8)
+    d = trace_mask(m, scale=scale, turd=turd, opttol=opttol, alphamax=alphamax, blur=blur)
+    layers[name] = {"d": d, "fill": fill or mean_rgb(m), "area": int(m.sum())}
+    sheet[m > 0] = (0.4 * sheet[m > 0] + 0.6 * np.array(color[::-1])).astype(np.uint8)
+    print(name, "area", int(m.sum()), "path", len(d), "fill", layers[name]["fill"])
+
+
+# 1. ink strokes across the top: dark and wide, black-hat with a big kernel, above the panel, away from the title
+bh = blackhat(81)
+strokes = (bh > 12).astype(np.uint8); strokes = box(strokes, 170, 0, 1400, 192); strokes[150:, 1080:] = 0   # the title letters are bright, so they leave holes that the closing fills
+strokes = cv2.morphologyEx(strokes, cv2.MORPH_OPEN, np.ones((7, 7), np.uint8)); strokes = cv2.morphologyEx(strokes, cv2.MORPH_CLOSE, np.ones((13, 13), np.uint8))
+add("strokes", strokes, (255, 0, 255), turd=30)
+# 2. thin curly ornaments: black-hat with a small kernel in the places where they live
+orn = ((blackhat(13) > 3.2) | (blackhat(7) > 4.5)).astype(np.uint8)
+orn = box(orn, 440, 0, 900, 130) | box(orn, 330, 270, 560, 470) | box(orn, 520, 860, 820, 1020) | box(orn, 1250, 20, 1420, 130)
+orn[strokes > 0] = 0; orn[100:172, 765:1115] = 0
+orn_top = orn.copy(); orn_top[135:, :] = 0; orn_side = orn.copy(); orn_side[:135, :] = 0   # the top curls are there from the start, the side and bottom curls come in later
+add("orn", orn_top, (0, 255, 255), turd=4, alphamax=1.2)
+add("orn2", orn_side, (0, 200, 255), turd=4, alphamax=1.2)
+# 3. the red stain on the right edge of the panel
+stain = ((R - (Gc + B) / 2) > 8).astype(np.uint8); stain = box(stain, 1300, 200, 1450, 520)
+stain = cv2.morphologyEx(stain, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+add("stain", stain, (255, 60, 60), turd=40)
+# 4. corner brackets: thin bright strokes in four boxes
+br = (tophat(9) > 28).astype(np.uint8)
+brk = box(br, 525, 175, 660, 300) | box(br, 1225, 175, 1350, 300) | box(br, 525, 840, 660, 960) | box(br, 1225, 840, 1350, 960)
+add("brackets", brk, (0, 255, 0), turd=2, alphamax=0.8)
+# 5. paper shards: bright and thick (the opening removes the speed lines); one traced shape per shard, with its white facets
+bright = (G > 118).astype(np.uint8)
+open_ = cv2.morphologyEx(bright, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)))
+sh = box(open_, 140, 300, 470, 720) | box(open_, 1440, 230, 1680, 720)
+sh_wide = cv2.morphologyEx(sh, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8)); sh_wide = cv2.dilate(sh_wide, np.ones((9, 9), np.uint8))
+n, lab = cv2.connectedComponents(sh_wide)
+shard_list = []
+for i_ in range(1, n):
+    comp = ((lab == i_) & (sh > 0)).astype(np.uint8)
+    if comp.sum() < 120: continue
+    ys, xs = np.where(comp); cx, cy = float(xs.mean()), float(ys.mean())
+    whitec = ((G > 190) & (comp > 0)).astype(np.uint8)
+    # a wider grey halo: the silhouette of the paper is a little larger than its bright facets
+    sil = cv2.dilate(comp, np.ones((5, 5), np.uint8))
+    cnts, _ = cv2.findContours(sil, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    cnt = max(cnts, key=cv2.contourArea); poly = cv2.approxPolyDP(cnt, 3.2, True).reshape(-1, 2).astype(float)
+    tris = []
+    for j in range(len(poly)):   # a fan from the centroid: each facet takes the mean colour of the reference under it
+        tri = np.array([[cx, cy], poly[j], poly[(j + 1) % len(poly)]]); tm = np.zeros((H, W), np.uint8); cv2.fillConvexPoly(tm, tri.astype(np.int32), 1); tm &= sil
+        if tm.sum() < 4: continue
+        tris.append({"p": [round(float(v), 1) for v in tri.reshape(-1)], "c": mean_rgb(tm)})
+    shard_list.append({"tris": tris, "cx": round(cx, 1), "cy": round(cy, 1), "area": int(comp.sum()), "d": trace_mask(sil, scale=4, turd=4, opttol=0.3, alphamax=0.6), "dw": trace_mask(whitec, scale=4, turd=2, opttol=0.3, alphamax=0.6) if whitec.sum() > 30 else "", "fill": mean_rgb(comp)})
+    sheet[comp > 0] = (0.4 * sheet[comp > 0] + 0.6 * np.array((0, 255, 255)[::-1])).astype(np.uint8)
+    print("shard", len(shard_list), "centre", round(cx), round(cy), "area", int(comp.sum()))
+layers["shardList"] = shard_list
+# 6. speed lines: thin bright segments by Hough (the shards, the text, the title and the brackets are masked out)
+th = tophat(7); thin = (th > 22).astype(np.uint8)
+thin[cv2.dilate(sh, np.ones((11, 11), np.uint8)) > 0] = 0
+mask_out = np.ones_like(thin); mask_out[100:175, 765:1115] = 0; mask_out[440:690, 575:1300] = 0; mask_out[940:1030, 860:1000] = 0
+for (x0, y0, x1, y1) in ((525, 175, 660, 300), (1225, 175, 1350, 300), (525, 840, 660, 960), (1225, 840, 1350, 960)): mask_out[y0:y1, x0:x1] = 0
+thin = thin * mask_out
+segs = cv2.HoughLinesP(thin * 255, 1, np.pi / 720, threshold=40, minLineLength=70, maxLineGap=12)
+lines = []
+if segs is not None:
+    for s in segs.reshape(-1, 4):
+        x0, y0, x1, y1 = [int(v) for v in s]
+        # keep the lines of the left and right groups, away from the panel interior
+        if (min(x0, x1) > 560 and max(x0, x1) < 1320 and 220 < min(y0, y1) < 940): continue
+        lines.append([x0, y0, x1, y1]); cv2.line(sheet, (x0, y0), (x1, y1), (0, 128, 255), 2)
+print("speed line segments", len(lines))
+layers["lines"] = {"segs": lines}
+OUT.write_text("// 26 October 2026: foreground shapes of the Dishonored 2 loot note traced on the settled frame by Scripts/NoteTrace.py (potrace, plane = 1920x1080). FR : formes decalquees de la note de loot.\nwindow.ZSNote = " + json.dumps(layers) + ";\n")
+cv2.imwrite(sys.argv[2], sheet)
+print("wrote", OUT)

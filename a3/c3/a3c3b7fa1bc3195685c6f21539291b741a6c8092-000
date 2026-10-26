@@ -11,6 +11,7 @@ import sony_logo as SONY
 from ppm import T
 
 PID = "zenray-sony-playstation-ppm"
+PID_FULL = "zenray-sony-playstation-10s-ppm"   # 26 October 2026 (Matthieu): the full 10 s of the ZenRay reveal (rest and camera push included), then act 2
 # the five colour versions as separate films (23 October 2026, Matthieu): the same film with the palette stored in the project (post.palette), each its own project
 PALETTE_IDS = {"zenray-sony-playstation-rouge-ppm": "Rouge vif", "zenray-sony-playstation-vert-ppm": "Vert", "zenray-sony-playstation-turquoise-ppm": "Turquoise", "zenray-sony-playstation-jaune-ppm": "Jaune", "zenray-sony-playstation-magenta-ppm": "Magenta"}
 SLUG = SONY.SLUG
@@ -28,11 +29,16 @@ def build_one(pid: str = PID) -> dict:
     sony = SONY.build_one("zenray-sony-reveal-ppm")
     sp = sony["scenes"][0]["params"]
     ps = dict(PS_PARAMS)
+    handoff = HANDOFF
+    if pid == PID_FULL:   # act 1 ends on the camera push of the reveal (scale 1.0917 at 10 s): act 2 starts from that scale and settles to the entry scale of the PlayStation opening
+        handoff = SONY.LENGTH
+        ps["groupKeys"] = ["0 | 0 | 0 | 0 | 1.0917 | 0 | 0 | 1", "0.5 | 0 | 0 | 0 | 1.01 | 0 | 0 | 1"] + PS_PARAMS["groupKeys"][2:]
     palette = {"id": "palette", "label": "Palette du design (le bleu devient…)", "type": "select", "group": "Design", "options": ["Bleu", "Rouge vif", "Vert", "Turquoise", "Jaune", "Magenta"], "default": "Bleu", "targets": [{"post": True, "key": "palette"}]}   # one toggle for the whole film: the post-process palette
     controls = [palette] + SONY.controls(["b01"]) + [dict(c, id="ps_" + c["id"], label="PlayStation : " + c["label"], group="PlayStation · " + c.get("group", "")) for c in PSS.controls(["b02"])]
-    pr = ppm.build("ZenRay : Sony puis PlayStation", SLUG, [(0.0, "sony-open", dict(sp)), (HANDOFF, "ps-open", ps)], HANDOFF + 8.0, controls, fmt="16x9", bg="#000000", ink="#e8f0ff", accent="#2f55f5",
+    pr = ppm.build("ZenRay : Sony puis PlayStation", SLUG, [(0.0, "sony-open", dict(sp)), (handoff, "ps-open", ps)], handoff + 8.0, controls, fmt="16x9", bg="#000000", ink="#e8f0ff", accent="#2f55f5",
                    doc="23 October 2026: ZenRay, the Sony logo reveal (procedural capitals) then the PlayStation Studios opening where the four buttons are replaced by the word ZENRAY (workflow Premier Plan Mesuré).")
     pr["scenes"][0]["ref"] = {"start": 0.0}; pr["referenceOffset"] = 0.0
+    if pid == PID_FULL: pr["title"] = "ZenRay : Sony 10 s puis PlayStation"
     if pid in PALETTE_IDS:
         pr["post"] = {"palette": PALETTE_IDS[pid]}; pr["title"] = f"ZenRay : Sony puis PlayStation, {PALETTE_IDS[pid]}"
         for c in pr["controls"]:
@@ -41,5 +47,5 @@ def build_one(pid: str = PID) -> dict:
 
 
 if __name__ == "__main__":
-    for pid in sys.argv[1:] or [PID] + list(PALETTE_IDS):
+    for pid in sys.argv[1:] or [PID, PID_FULL] + list(PALETTE_IDS):
         ppm.run(pid, build_one(pid))

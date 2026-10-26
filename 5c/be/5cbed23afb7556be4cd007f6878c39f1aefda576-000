@@ -1,0 +1,46 @@
+"""Reproduction of the Dishonored 2 loot note (youtube 91qamm6oUoA, 1:25:11 to 1:25:13, 1920x1080), workflow Premier Plan Mesure (26 October 2026).
+Foreground only: the note paper, its title and body in the procedural note font, the Close prompt, ink strokes, paper shards, speed lines and the red stain; the ground is a plain colour.
+The reference lives in the refcache slug `dishonored2-loot-note` (an 8 s window of the video starting at 1:25:08; project time 0 = window time 3.0 s).
+FR : la note de loot de Dishonored 2 ; un motion de 2 s sur la fenetre 3.0 a 5.0 s. Usage: python3 motion/reproductions/dishonored2_note.py [projet ...]"""
+import sys
+
+import ppm
+from ppm import T
+
+SLUG = "dishonored2-loot-note"
+PID = "dishonored2-loot-note-ppm"
+START, END = 3.0, 5.0
+VARIANTS = {PID: {"title": "Dishonored 2 : note de loot", "params": {}}}
+
+
+def controls(ids=None) -> list:
+    ids = ids or ["b01"]
+    tg = lambda k: [T(i, k) for i in ids]  # noqa: E731
+    num = lambda i, label, g, lo, hi, st: {"id": i, "label": label, "type": "number", "group": g, "min": lo, "max": hi, "step": st, "targets": tg(i)}  # noqa: E731
+    return [
+        {"id": "title", "label": "Titre de la note", "type": "text", "group": "Phrases", "targets": tg("title")},
+        {"id": "body", "label": "Texte (une ligne par rang : texte | largeur | ligne de base)", "type": "lines", "group": "Phrases", "targets": tg("body")},
+        {"id": "closeLabel", "label": "Libellé du bouton", "type": "text", "group": "Phrases", "targets": tg("closeLabel")},
+        {"id": "accent", "label": "Couleur du code", "type": "color", "group": "Couleurs", "targets": tg("accent")},
+        num("bodyXh", "Texte : hauteur d'x", "Police", 6, 20, 0.1), num("bodyWeight", "Texte : épaisseur du trait", "Police", 0.5, 4, 0.05), num("bodySlant", "Texte : inclinaison", "Police", 0, 0.6, 0.01),
+        num("titleXh", "Titre : hauteur d'x", "Police", 8, 30, 0.1), num("titleWeight", "Titre : épaisseur du trait", "Police", 0.5, 5, 0.05), num("titleSlant", "Titre : inclinaison", "Police", 0, 0.7, 0.01),
+        num("edgeJitter", "Papier : irrégularité du bord", "Papier", 0, 60, 0.5), num("seed", "Graine du papier", "Papier", 1, 999, 1),
+        num("inkK", "Traits d'encre", "Effets", 0, 2, 0.01), num("shardK", "Éclats", "Effets", 0, 2, 0.01), num("lineK", "Lignes de vitesse", "Effets", 0, 2, 0.01), num("stainK", "Tache rouge", "Effets", 0, 2, 0.01),
+        {"id": "panelKeys", "label": "Papier : temps | dx | dy | rotation | échelle x | échelle y | opacité", "type": "lines", "group": "Rythme", "targets": tg("panelKeys")},
+        {"id": "titleKeys", "label": "Titre : temps | dx | opacité", "type": "lines", "group": "Rythme", "targets": tg("titleKeys")},
+        {"id": "groundKeys", "label": "Fond : temps | rouge | vert | bleu", "type": "lines", "group": "Rythme", "targets": tg("groundKeys")},
+        {"id": "shardKeys", "label": "Éclats : temps | numéro | x | y | échelle | rotation | opacité", "type": "lines", "group": "Rythme", "targets": tg("shardKeys")},
+    ]
+
+
+def build_one(pid: str = PID) -> dict:
+    v = VARIANTS[pid]
+    pr = ppm.build(v["title"], SLUG, [(START, "d2-note", dict(v["params"]))], END, controls(), fmt="16x9", bg="#000000", ink="#ececf0", accent="#78b9af",
+                   doc=f"26 October 2026: {v['title']}, reproduction of the Dishonored 2 loot note (1:25:11 to 1:25:13), foreground only (workflow Premier Plan Mesuré).")
+    pr["scenes"][0]["ref"] = {"start": START}; pr["referenceOffset"] = START
+    return pr
+
+
+if __name__ == "__main__":
+    for pid in sys.argv[1:] or list(VARIANTS):
+        ppm.run(pid, build_one(pid))

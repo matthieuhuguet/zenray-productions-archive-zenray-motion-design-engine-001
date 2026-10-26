@@ -313,6 +313,11 @@
       "reference": "sony-logo-2021"
     },
     {
+      "id": "zenray-sony-playstation-10s-ppm",
+      "group": "Sony",
+      "reference": "sony-logo-2021"
+    },
+    {
       "id": "zenray-sony-playstation-rouge-ppm",
       "group": "Sony",
       "reference": "sony-logo-2021"
@@ -336,6 +341,11 @@
       "id": "zenray-sony-playstation-magenta-ppm",
       "group": "Sony",
       "reference": "sony-logo-2021"
+    },
+    {
+      "id": "dishonored2-loot-note-ppm",
+      "group": "Dishonored 2",
+      "reference": "dishonored2-loot-note"
     }
   ],
   "formats": [

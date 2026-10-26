@@ -1,0 +1,45 @@
+"""Trace a binary mask into ONE SVG path in the pixel coordinates of the mask (26 October 2026).
+The mask is zoomed (cubic), cut at 0.5 and traced by potrace; the relative commands of potrace are made absolute and scaled back to mask pixels.
+FR : decalque d'un masque en un seul chemin SVG en pixels du masque. Usage: from PotraceUtil import trace_mask"""
+import re
+import subprocess
+import tempfile
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+from scipy import ndimage
+
+
+def trace_mask(mask, scale=3, turd=6, opttol=0.4, alphamax=1.0, blur=0.0):
+    m = (np.asarray(mask) > 0).astype(float)
+    if blur: m = ndimage.gaussian_filter(m, blur)
+    big = ndimage.zoom(m, scale, order=3) > 0.5
+    with tempfile.TemporaryDirectory() as d:
+        pbm = Path(d) / "m.pbm"; Image.fromarray((~big * 255).astype("uint8")).convert("1").save(pbm)
+        svg = Path(d) / "m.svg"
+        subprocess.run(["potrace", str(pbm), "-b", "svg", "-o", str(svg), "-t", str(turd * scale * scale // 3 or 1), "-a", str(alphamax), "-O", str(opttol), "-u", "10"], check=True)
+        text = svg.read_text()
+    mt = re.search(r'<g transform="translate\(([-\d.]+),([-\d.]+)\) scale\(([-\d.]+),([-\d.]+)\)"', text)
+    tx, ty, sx, sy = (float(v) for v in mt.groups())
+    dd = " ".join(" ".join(re.findall(r'<path d="([^"]+)"', text)).split())
+    toks = re.findall(r"[MmLlCcZz]|-?\d+(?:\.\d+)?", dd); i = 0; cur = (0.0, 0.0); start = cur; out = []
+    f = lambda v: ("%.1f" % v).rstrip("0").rstrip(".")   # noqa: E731
+    tr = lambda x, y: ((tx + sx * x) / scale, (ty + sy * y) / scale)   # noqa: E731
+    while i < len(toks):
+        c = toks[i]; i += 1
+        if c in "Mm":
+            x, y = float(toks[i]), float(toks[i + 1]); i += 2; cur = (x, y) if c == "M" else (cur[0] + x, cur[1] + y); start = cur; q = tr(*cur); out.append(f"M{f(q[0])},{f(q[1])}")
+            while i < len(toks) and re.match(r"-?\d", toks[i]):
+                x, y = float(toks[i]), float(toks[i + 1]); i += 2; cur = (cur[0] + x, cur[1] + y) if c == "m" else (x, y); q = tr(*cur); out.append(f"L{f(q[0])},{f(q[1])}")
+        elif c in "Ll":
+            while i < len(toks) and re.match(r"-?\d", toks[i]):
+                x, y = float(toks[i]), float(toks[i + 1]); i += 2; cur = (x, y) if c == "L" else (cur[0] + x, cur[1] + y); q = tr(*cur); out.append(f"L{f(q[0])},{f(q[1])}")
+        elif c in "Cc":
+            while i < len(toks) and re.match(r"-?\d", toks[i]):
+                v = [float(t) for t in toks[i:i + 6]]; i += 6
+                pts = [(v[j], v[j + 1]) if c == "C" else (cur[0] + v[j], cur[1] + v[j + 1]) for j in (0, 2, 4)]
+                out.append("C" + " ".join(f"{f(tr(*q)[0])},{f(tr(*q)[1])}" for q in pts)); cur = pts[2]
+        else:
+            out.append("z"); cur = start
+    return "".join(out)
