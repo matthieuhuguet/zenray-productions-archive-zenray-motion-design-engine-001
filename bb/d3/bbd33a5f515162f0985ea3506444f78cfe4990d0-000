@@ -1,0 +1,42 @@
+# 26 October 2026: proofs of the two galleries (motion/gallery_data.py, params/gallery.json). Run: PYTHONPATH=motion /Users/zenray/.venvs/zenray-motion/bin/python -W ignore motion/tests/test_gallery.py
+# Green: every project is in exactly one film card, every card has a poster, every sound id is unique and its file exists, every group and every card says where it comes from. Red: a project dropped from
+# the grouping, a duplicated sound id and a missing poster must each be CAUGHT by the same checks. FR : preuves des galeries, vert sur le vrai, rouge sur du cassé exprès.
+import copy, os, sys
+from pathlib import Path
+import server, gallery_data as G
+
+fails = []
+def check(name, ok, detail=""):
+    print(("ok   " if ok else "FAIL ") + name + ("" if ok else "  " + detail)); 
+    if not ok: fails.append(name)
+
+def verdict(fams, projects, snd, poster_exists):
+    out = []
+    ids = [m["id"] for f in fams for m in f["members"]]
+    if sorted(ids) != sorted(p["id"] for p in projects): out.append("a project is missing or duplicated in the cards")
+    if any(not f["note"] or not f["title"] for f in fams): out.append("a card has no title or note")
+    if any(not poster_exists(f["poster"]) for f in fams): out.append("a card has no poster")
+    sid = [s["id"] for g in snd["groups"] for s in g["items"]]
+    if len(sid) != len(set(sid)): out.append("duplicated sound id")
+    if any(not Path(snd["_index"][i]).is_file() for i in sid): out.append("a sound file is missing")
+    if any(not g["note"] or not g["project"] for g in snd["groups"]): out.append("a sound group has no description or origin project")
+    if any(s["duration"] <= 0 for g in snd["groups"] for s in g["items"]): out.append("a sound has no duration")
+    return out
+
+projects = server.list_projects(); fams = G.families(projects, server.read_project); snd = G.sounds()
+pexists = lambda pid: (G.poster_dir() / f"{pid}.jpg").is_file()
+v = verdict(fams, projects, snd, pexists)
+check("green: the real data pass every check", not v, "; ".join(v))
+check("one card gathers many projects", len(fams) < len(projects) and max(f["count"] for f in fams) >= 12, f"{len(fams)} cards for {len(projects)} projects")
+check("the validated rhythm F is in the Sony card", any(f["id"] == "zenray-sony-playstation" and any(m["id"] == "zenray-sony-playstation-f-ppm" for m in f["members"]) for f in fams))
+check("a -ppm and its -motion twin share one card", any({"fin-4-ppm", "fin-4-motion"} <= {m["id"] for m in f["members"]} for f in fams))
+check("the final F tracks are described (validated version named)", any("logo-flare" in g["note"] for g in snd["groups"] if g["id"] == "finales"))
+# red cases
+lost = [f for f in copy.deepcopy(fams)]; lost[0]["members"] = lost[0]["members"][1:]
+check("red: a project missing from the cards is caught", "a project is missing or duplicated in the cards" in verdict(lost, projects, snd, pexists))
+dup = copy.deepcopy(snd); dup["groups"][0]["items"].append(dict(dup["groups"][0]["items"][0]))
+check("red: a duplicated sound id is caught", "duplicated sound id" in verdict(fams, projects, dup, pexists))
+check("red: a missing poster is caught", "a card has no poster" in verdict(fams, projects, snd, lambda pid: False))
+gone = copy.deepcopy(snd); i0 = gone["groups"][0]["items"][0]["id"]; gone["_index"][i0] = "/nonexistent/x.wav"
+check("red: a missing sound file is caught", "a sound file is missing" in verdict(fams, projects, gone, pexists))
+print(f"\n{len(fails)} failure(s)"); sys.exit(1 if fails else 0)

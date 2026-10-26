@@ -50,6 +50,16 @@
       for (let x = 0; x < w; x++) { let mx = 0; for (let i = 0; i < step; i += 8) mx = Math.max(mx, Math.abs(d[x * step + i] || 0)); const bh = Math.max(1, mx * h * 0.9); c.globalAlpha = 0.9; c.fillRect(x, (h - bh) / 2, 1, bh); }
     } catch (e) { console.warn('wave', canvas.dataset.src, e); /* a sound that cannot be decoded keeps an empty frame */ }
   };
-  const io = "IntersectionObserver" in window ? new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { io.unobserve(e.target); G.wave(e.target, e.target.dataset.src); } }), { rootMargin: "300px" }) : null;
-  G.lazyWave = (canvas) => { if (io) io.observe(canvas); else G.wave(canvas, canvas.dataset.src); };
+  // lazy waveforms: a canvas is drawn when it is within 300 px of the screen. A plain position check on scroll, resize and a short timer (neither an IntersectionObserver nor requestAnimationFrame fired in the embedded browser pane, so neither is relied on).
+  const pending = new Set(); let queued = false, busy = 0;
+  const check = () => {
+    queued = false;
+    for (const c of [...pending]) {
+      if (busy >= 4) break; const r = c.getBoundingClientRect();
+      if (r.bottom > -300 && r.top < innerHeight + 300) { pending.delete(c); busy++; G.wave(c, c.dataset.src).finally(() => { busy--; if (pending.size) soon(); }); }
+    }
+  };
+  const soon = () => { if (!queued) { queued = true; setTimeout(check, 30); } };   // a timer, not requestAnimationFrame: a pane without frames never calls it
+  addEventListener("scroll", soon, { passive: true }); addEventListener("resize", soon);
+  G.lazyWave = (canvas) => { pending.add(canvas); soon(); setTimeout(soon, 300); setTimeout(soon, 1200); };
 })();
