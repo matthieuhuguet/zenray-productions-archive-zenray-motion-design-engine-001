@@ -1,0 +1,159 @@
+"""Fit the procedural note font to the reference (26 October 2026), workflow Premier Plan Mesure.
+The body text and the title are drawn by the skeleton font (motion/runtime/zs-templates-notefont-1.js); this script moves their PARAMETERS (size, slant, stroke weight, tracking, word space, position, then a nudge per line and per letter)
+by coordinate descent until the rendered strokes overlap the reference mask as much as possible (score = 0.7 IoU + 0.3 tolerant overlap), the render being the same SVG as the motion's (rsvg-convert).
+Prints the best values; with --apply writes them into the template defaults, the font styles and the reproduction script.  FR : ajuste la police procedurale sur la reference par descente de coordonnees.
+Usage: /Users/zenray/.venvs/zenray-motion/bin/python -W ignore -I Scripts/NoteFontFit.py body|title [--rounds 4] [--apply]"""
+import argparse
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+import cv2
+import numpy as np
+
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "Scripts"))
+import NoteSheet  # noqa: E402
+
+TPL = REPO / "motion" / "runtime" / "zs-templates-note-1.js"
+FONTJS = REPO / "motion" / "runtime" / "zs-templates-notefont-1.js"
+PYREPRO = REPO / "motion" / "reproductions" / "dishonored2_note.py"
+BODY0 = ["I know I'm dying, haunted by failure. I couldn't save Dr. Hypatia from | 660 | 478", "herself. | 69 | 502", "If someone finds this note, please don't blame her. She has no idea what | 686 | 550", "her other self is doing. She doesn't know the monster she has become. | 662 | 574", "If only I had been braver, maybe I could have cured her. If it's not too late, | 700 | 622", "please, I beg of you, prepare the antidote and save her. The instructions | 684 | 646", "are in my personal safe. The code is 488. | 388 | 670"]
+TITLE = "To Whomever Finds my Body"
+
+
+class Font:
+    def __init__(self):
+        self.p = subprocess.Popen(["node", str(REPO / "Scripts" / "NoteFontPath.mjs")], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
+
+    def ask(self, req):
+        self.p.stdin.write(json.dumps(req) + "\n"); self.p.stdin.flush(); return json.loads(self.p.stdout.readline())
+
+
+def raster(svg_body):
+    svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080"><rect width="1920" height="1080" fill="#000"/>{svg_body}</svg>'
+    r = subprocess.run(["rsvg-convert", "-w", "1920", "-h", "1080"], input=svg.encode(), capture_output=True)
+    img = cv2.imdecode(np.frombuffer(r.stdout, np.uint8), cv2.IMREAD_GRAYSCALE)
+    return (img > 50).astype(np.uint8)
+
+
+def score(ref, mine, tol=2):
+    iou, ts = NoteSheet.scores(ref, mine, tol)
+    return 0.7 * iou + 0.3 * ts, iou, ts
+
+
+def body_svg(font, P, lines):
+    L = font.ask({"kind": "body", "p": {"bodyXh": P["xh"], "bodySlant": P["slant"]}, "lines": lines, "styles": {"track": P["track"], "space": P["space"]}})
+    out = [f'<g fill="none" stroke="#fff" stroke-width="{P["weight"]}" stroke-linecap="round" stroke-linejoin="round">']
+    for ln in L:
+        out.append(f'<g transform="translate({P["textX"] + ln["dx"]},{ln["base"]})">' + "".join(f'<path d="{q["d"]}" transform="translate({q["dx"]},0)"/>' for q in ln["parts"]) + "</g>")
+    return "".join(out) + "</g>"
+
+
+def title_svg(font, P, adj):
+    L = font.ask({"kind": "title", "p": {"title": TITLE, "titleXh": P["xh"], "titleSlant": P["slant"], "titleFit": P["fit"]}, "styles": {"track": P["track"], "space": P["space"]}, "adj": adj})
+    return f'<g transform="translate({P["x"]},{P["y"]}) rotate({P["tilt"]})"><path d="{L["d"]}" fill="none" stroke="#fff" stroke-width="{P["weight"]}" stroke-linecap="round" stroke-linejoin="round"/></g>'
+
+
+def descent(P, steps, evalf, rounds, bounds=None):
+    best = evalf(P)[0]
+    for r in range(rounds):
+        moved = False
+        for k, st in steps.items():
+            for sgn in (+1, -1):
+                for mult in (1.0, 2.0):
+                    Q = dict(P); Q[k] = P[k] + sgn * st * mult
+                    if bounds and k in bounds: Q[k] = min(max(Q[k], bounds[k][0]), bounds[k][1])
+                    s = evalf(Q)[0]
+                    if s > best + 1e-6: best, P, moved = s, Q, True; break
+                else: continue
+                break
+        steps = {k: v * 0.55 for k, v in steps.items()}
+        print(f"  round {r + 1}: {best:.4f}  " + json.dumps({k: round(v, 3) for k, v in P.items()}), flush=True)
+        if not moved and r > 1: break
+    return P, best
+
+
+def fit_body(font, ref, rounds):
+    P = {"xh": 11.0, "weight": 1.35, "slant": 0.2, "textX": 584.0, "track": 0.07, "space": 0.5}
+    lines = list(BODY0)
+    ev = lambda Q: score(ref, raster(body_svg(font, Q, lines)))  # noqa: E731
+    print("start", ev(P))
+    P, best = descent(P, {"xh": 0.3, "weight": 0.12, "slant": 0.04, "textX": 1.0, "track": 0.012, "space": 0.06}, ev, rounds, {"weight": (0.5, 3.5), "xh": (6, 18)})
+    # per line: a nudge of the baseline and of the left edge
+    out = []
+    for i, raw in enumerate(lines):
+        t, fit, base = [x.strip() for x in raw.split("|")]; base = float(base); dx = 0.0
+        def evl(Q, i=i, t=t, fit=fit):
+            ls = list(lines); ls[i] = f"{t} | {Q['fit']} | {Q['base']} | {Q['dx']}"; return score(ref, raster(body_svg(font, P, ls)))
+        Q = {"fit": float(fit), "base": base, "dx": dx}
+        Q, s = descent(Q, {"fit": 3.0, "base": 1.0, "dx": 1.0}, evl, 3)
+        lines[i] = f"{t} | {round(Q['fit'], 1)} | {round(Q['base'], 1)} | {round(Q['dx'], 1)}"; out.append(lines[i])
+    final = score(ref, raster(body_svg(font, P, lines)))
+    print("FINAL body", final, P); print(json.dumps(lines, ensure_ascii=False))
+    return P, lines, final
+
+
+def fit_title(font, ref, rounds):
+    P = {"x": 778.0, "y": 138.0, "xh": 15.0, "slant": 0.3, "tilt": 2.1, "weight": 2.1, "fit": 322.0, "track": 0.05, "space": 0.45}
+    ev = lambda Q: score(ref, raster(title_svg(font, Q, None)))  # noqa: E731
+    print("start", ev(P))
+    P, best = descent(P, {"x": 2.0, "y": 2.0, "xh": 0.4, "slant": 0.04, "tilt": 0.4, "weight": 0.12, "fit": 3.0, "track": 0.01, "space": 0.05}, ev, rounds, {"weight": (0.5, 3.5)})
+    n = len(TITLE); adj = [[0.0, 0.0, 1.0] for _ in range(n)]
+    for rnd in range(3):
+        for i, ch in enumerate(TITLE):
+            if ch == " ": continue
+            def evl(Q, i=i):
+                a = [list(x) for x in adj]; a[i] = [Q["dx"], Q["dy"], Q["s"]]; return score(ref, raster(title_svg(font, P, a)))
+            Q = {"dx": adj[i][0], "dy": adj[i][1], "s": adj[i][2]}
+            Q, s = descent(Q, {"dx": 0.12, "dy": 0.12, "s": 0.06}, evl, 3, {"s": (0.6, 1.6)})
+            adj[i] = [round(Q["dx"], 3), round(Q["dy"], 3), round(Q["s"], 3)]
+        print(f"  letters pass {rnd + 1}: {score(ref, raster(title_svg(font, P, adj)))}", flush=True)
+    final = score(ref, raster(title_svg(font, P, adj)))
+    print("FINAL title", final, P); print(json.dumps(adj))
+    return P, adj, final
+
+
+def sub(path, old, new, count=1):
+    s = path.read_text(encoding="utf-8")
+    if old not in s: raise SystemExit(f"{path.name}: pattern not found: {old[:70]}")
+    path.write_text(s.replace(old, new, count), encoding="utf-8")
+
+
+def main():
+    ap = argparse.ArgumentParser(); ap.add_argument("what", choices=["body", "title"]); ap.add_argument("--rounds", type=int, default=4); ap.add_argument("--apply", action="store_true")
+    a = ap.parse_args()
+    ref = cv2.imread(str(NoteSheet.REF_FRAME)); masks = NoteSheet.reference_masks(ref); font = Font()
+    if a.what == "body":
+        P, lines, final = fit_body(font, masks["body"], a.rounds)
+        if a.apply:
+            s = TPL.read_text(encoding="utf-8")
+            body_default = json.dumps(lines, ensure_ascii=False)
+            s = re.sub(r'P\("body", "Texte : [^"]*", "lines", \[.*?\], 1\)', lambda m: m.group(0).split('"lines",')[0] + '"lines", ' + body_default + ", 1)", s, count=1, flags=re.S)
+            s = re.sub(r'N\("bodyXh", "([^"]*)", [\d.]+,', lambda m: f'N("bodyXh", "{m.group(1)}", {round(P["xh"], 2)},', s, count=1)
+            s = re.sub(r'N\("bodyWeight", "([^"]*)", [\d.]+,', lambda m: f'N("bodyWeight", "{m.group(1)}", {round(P["weight"], 2)},', s, count=1)
+            s = re.sub(r'N\("bodySlant", "([^"]*)", [\d.]+,', lambda m: f'N("bodySlant", "{m.group(1)}", {round(P["slant"], 3)},', s, count=1)
+            s = re.sub(r'N\("textX", "([^"]*)", [\d.]+,', lambda m: f'N("textX", "{m.group(1)}", {round(P["textX"], 1)},', s, count=1)
+            TPL.write_text(s, encoding="utf-8")
+            f = FONTJS.read_text(encoding="utf-8")
+            f = re.sub(r"body: \{ track: [\d.]+, space: [\d.]+ \}", f'body: {{ track: {round(P["track"], 3)}, space: {round(P["space"], 3)} }}', f, count=1)
+            FONTJS.write_text(f, encoding="utf-8"); print("applied")
+    else:
+        P, adj, final = fit_title(font, masks["title"], a.rounds)
+        if a.apply:
+            s = TPL.read_text(encoding="utf-8")
+            for key, val in (("titleXh", P["xh"]), ("titleSlant", P["slant"]), ("titleTilt", P["tilt"]), ("titleWeight", P["weight"]), ("titleX", P["x"]), ("titleY", P["y"])):
+                s = re.sub(rf'N\("{key}", "([^"]*)", [-\d.]+,', lambda m, key=key, val=val: f'N("{key}", "{m.group(1)}", {round(val, 3)},', s, count=1)
+            if 'N("titleFit"' not in s and "titleFit" not in s: pass
+            TPL.write_text(s, encoding="utf-8")
+            f = FONTJS.read_text(encoding="utf-8")
+            f = re.sub(r"title: \{ track: [\d.]+, space: [\d.]+ \}", f'title: {{ track: {round(P["track"], 3)}, space: {round(P["space"], 3)} }}', f, count=1)
+            f = re.sub(r"F\.fits = \{.*?\};", lambda m: 'F.fits = ' + json.dumps({TITLE: adj}) + ';', f, count=1)
+            f = f.replace("fit: p.titleFit || 322", f"fit: p.titleFit || {round(P['fit'], 1)}")
+            FONTJS.write_text(f, encoding="utf-8"); print("applied")
+
+
+if __name__ == "__main__":
+    main()

@@ -62,7 +62,7 @@
   };
   F.glyphs = G;
   // measured style constants of each use (tracking and word space in x-height units), the single place to change them (Scripts/NoteFontFit.py writes the fitted values here)
-  F.styles = { body: { track: 0.07, space: 0.5 }, title: { track: 0.05, space: 0.45 } };
+  F.styles = { body: { track: 0.068, space: 0.518 }, title: { track: 0.05, space: 0.45 } };
   F.fits = {};   // per-letter nudges measured on the reference, keyed by the exact text: { "<text>": [[dx, dy, size] per character] }
   F.has = (ch) => ch === " " || !!G[ch];
   // tokens of a path string -> absolute points sampled as a polyline is not needed: the path is emitted as SVG with the transform applied to every coordinate (shear, scale, flip)
