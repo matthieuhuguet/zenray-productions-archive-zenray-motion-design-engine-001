@@ -1,4 +1,6 @@
 #!/bin/zsh
+# 26 October 2026: DEPRECATED SHELL. The default build is now a LAUNCHER (shell/ZenRayMotionDesign.sh): the bundle starts the engine and opens the page in a Chrome app window with a private profile, because the
+# WKWebView shell (shell/ZenRayMotionDesign.swift, `--webkit`) does not paint some page effects in a live window. Same name, same icon, same Dock entry, same `open`.
 # 14 October 2026: builds "ZenRay Motion Design.app" (the native shell, shell/ZenRayMotionDesign.swift) next to the engine. No Xcode project: one
 # swiftc call, an Info.plist, the engine and python paths written beside the binary. Usage: Scripts/BuildApp.sh [--check]  (--check runs the page's
 # self-test inside the shell, in WebKit, and prints the result). FR : construit la coque native.
@@ -8,7 +10,11 @@ APP="$ENGINE/ZenRay Motion Design.app"
 PYTHON="$(python3 -c "import json;print(json.load(open('$ENGINE/settings.json'))['paths']['python'])")"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-swiftc -O -framework Cocoa -framework WebKit "$ENGINE/shell/ZenRayMotionDesign.swift" -o "$APP/Contents/MacOS/ZenRayMotionDesign"
+if [[ "${1:-}" == "--webkit" || "${2:-}" == "--webkit" ]]; then
+  swiftc -O -framework Cocoa -framework WebKit "$ENGINE/shell/ZenRayMotionDesign.swift" -o "$APP/Contents/MacOS/ZenRayMotionDesign"
+else
+  cp "$ENGINE/shell/ZenRayMotionDesign.sh" "$APP/Contents/MacOS/ZenRayMotionDesign"; chmod +x "$APP/Contents/MacOS/ZenRayMotionDesign"
+fi
 [[ -f "$ENGINE/shell/icon/AppIcon.icns" ]] || python3 "$ENGINE/Scripts/BuildIcon.py" >/dev/null
 cp "$ENGINE/shell/icon/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 print -rn -- "$ENGINE" > "$APP/Contents/Resources/engine-path.txt"
@@ -32,4 +38,4 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 PLIST
 codesign --force --sign - "$APP" >/dev/null 2>&1 || true
 echo "{\"ok\":true,\"app\":\"$APP\"}"
-if [[ "${1:-}" == "--check" ]]; then "$APP/Contents/MacOS/ZenRayMotionDesign" --check; fi
+if [[ "${1:-}" == "--check" && ( "${2:-}" == "--webkit" || "${1:-}" == "--webkit" ) ]]; then "$APP/Contents/MacOS/ZenRayMotionDesign" --check; fi
