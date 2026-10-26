@@ -19,11 +19,10 @@ if not PROBE.exists(): subprocess.run(["swiftc", "-O", str(REPO / "Scripts" / "W
 url = f"http://127.0.0.1:3104/motion/web/bench.html#ids={','.join(a.ids)}&t={a.t}"
 r = subprocess.run([str(PROBE), url, str(REPO / "Scripts" / "WebKitManyCards.js"), a.out, "1000", "700"], capture_output=True, text=True, timeout=240)
 info = json.loads(r.stdout.splitlines()[0]); print(json.dumps(info))
-im = np.asarray(Image.open(a.out).convert("RGB")).astype(int); n = len(a.ids) - 1
-x0, y0 = (n % 2) * 2 * 484 if False else 0, 0
-# the last card is the n-th float of 480x270 css px (dpr 2): find it by scanning the page for the saturated colours anywhere
-red = int(((im[..., 0] > 200) & (im[..., 1] < 70) & (im[..., 2] < 70)).sum()); blue = int(((im[..., 2] > 200) & (im[..., 0] < 70) & (im[..., 1] < 70)).sum())
-print(f"saturated red px {red}, blue px {blue}   PNG {a.out}")
+im = np.asarray(Image.open(a.out).convert("RGB")).astype(int); k = im.shape[1] / info["vw"]   # snapshot pixels per css pixel (2 on a retina display)
+x, y, w, h = [int(v * k) for v in info["rect"]]; card = im[max(0, y):y + h, max(0, x):x + w]
+red = int(((card[..., 0] > 200) & (card[..., 1] < 70) & (card[..., 2] < 70)).sum()); blue = int(((card[..., 2] > 200) & (card[..., 0] < 70) & (card[..., 1] < 70)).sum())
+print(f"last card {info['rect']}: saturated red px {red}, blue px {blue}   PNG {a.out}")
 ok = red > 200 and blue > 200
 print("FRINGES ON SCREEN" if ok else "NO FRINGES ON SCREEN")
 if a.expect_fringes and not ok: sys.exit(1)

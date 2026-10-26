@@ -13,8 +13,8 @@ return (async () => {
     const b = ZS.build(proj, inner, { preview: true, assetBase: '/motion/files/' + ids[i] + '/', hideRefs: true }); if (window.__timelines) window.__timelines.main = keep;
     b.tl.seek(i === ids.length - 1 ? t : b.duration * 0.5, false); builds.push({ id: ids[i], b, host });
   }
-  await new Promise(r => setTimeout(r, 900));
-  const last = builds[builds.length - 1].host;
+  const last = builds[builds.length - 1].host; last.scrollIntoView({ block: 'start' }); await new Promise(r => setTimeout(r, 1200));
+  const rc = last.getBoundingClientRect();
   const dup = {}; document.querySelectorAll('filter[id]').forEach(f => { dup[f.id] = (dup[f.id] || 0) + 1; });
-  return JSON.stringify({ cards: builds.length, filtersOnLast: [...last.querySelectorAll('.zs-scene')].map(e => e.style.filter), dxOnLast: [...last.querySelectorAll('feOffset')].map(f => f.getAttribute('dx')), duplicateFilterIds: Object.entries(dup).filter(([, n]) => n > 1).map(([k, n]) => k + 'x' + n) });
+  return JSON.stringify({ rect: [rc.x, rc.y, rc.width, rc.height], vw: innerWidth, cards: builds.length, filtersOnLast: [...last.querySelectorAll('.zs-scene')].map(e => e.style.filter), dxOnLast: [...last.querySelectorAll('feOffset')].map(f => f.getAttribute('dx')), duplicateFilterIds: Object.entries(dup).filter(([, n]) => n > 1).map(([k, n]) => k + 'x' + n) });
 })()
