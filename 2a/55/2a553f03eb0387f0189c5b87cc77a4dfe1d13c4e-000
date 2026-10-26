@@ -8,6 +8,7 @@
   "use strict";
   const ZS = window.ZS;
   const LOOKS = ["Original", "Vivid", "Vivid Warm", "Vivid Cool", "Dramatic", "Dramatic Warm", "Dramatic Cool", "Mono", "Silvertone", "Noir", "Teal Orange", "Faded Film"];
+  const PULSE_EASES = ["Palier (ancien)", "Linéaire", "Exponentiel out"];   // curves of the aberration pulse; the first is the old one (a fixed 12 % rise, a plateau, a smooth release), kept so that older films render the same
   const N = (key, label, def, min, max, step, tier, unit, scope) => ({ key, label, type: "number", default: def, min, max, step, tier, unit, scope: scope || "colour" });
   // at most 4 essential, 8 advanced, 16 expert values (the HDA law); `scope: "film"` values act on the whole frame, not per scene
   const PARAMS = [
@@ -34,6 +35,8 @@
     N("abPx", "Aberration en impulsion : intensité (rouge et bleu écartés)", 0, 0, 40, 0.5, 3, "px", "film"),   // 26 October 2026: a timed pulse of chromatic aberration on the whole frame (0 = none)
     N("abStart", "Aberration en impulsion : début dans le film", 0, 0, 120, 0.01, 3, "s", "film"),
     N("abLen", "Aberration en impulsion : durée", 0.5, 0.05, 5, 0.01, 3, "s", "film"),
+    { key: "abEase", label: "Aberration en impulsion : courbe (montée et descente)", type: "select", options: PULSE_EASES, default: PULSE_EASES[0], tier: 3, scope: "film" },   // 26 October 2026, Matthieu: the pulse must be a tween, not a frame that appears and a frame that disappears
+    N("abAttack", "Aberration en impulsion : part de la montée", 12, 0, 60, 1, 3, "%", "film"),   // share of the pulse spent rising; the rest is the fall; ignored by the first curve (the old stepped one keeps its fixed 12 %)
     N("blur", "Flou", 0, 0, 30, 0.5, 3, "px"),
     N("sharpen", "Netteté", 0, 0, 100, 1, 3),
     N("vignetteSoftness", "Douceur de la vignette", 55, 10, 100, 1, 3, "", "film"),
@@ -201,7 +204,7 @@
         }
         return { el, levels, base: el.style.filter || "", on: 0 };
       });
-      const env = (t) => { const k = (t - film.abStart) / film.abLen, ss = (x) => x * x * (3 - 2 * x); return k <= 0 || k >= 1 ? 0 : (k < 0.12 ? ss(k / 0.12) : k < 0.7 ? 1 : ss((1 - k) / 0.3)); };   // 0..1: quick attack (12 %), a plateau to 70 % of the pulse, then a smooth release
+      const env = (t) => pulseEnv(film, t);   // 0..1, see pulseEnv above (the curve is the abEase value)
       const pulse = { t: 0 };
       tl.fromTo(pulse, { t: 0 }, { t: duration, duration, ease: "none", onUpdate: () => {
         const lvl = Math.round(env(pulse.t) * LEVELS);
@@ -232,5 +235,20 @@
     }
     return { graded, vignette: film.vignette > 0, grain: film.grain > 0 };
   }
-  ZS.post = { PARAMS, LOOKS, PALETTES, values, apply, lookMatrix, toneTable };
+  // The aberration pulse, 0..1 over time (26 October 2026). Pure: the runtime, the tests and the curve sheet all call it.
+  // "Linéaire": a straight rise over abAttack % of the pulse, then a straight fall. "Exponentiel out": the same split, both halves with an exponential ease-out
+  // (rise: fast then settling; fall: 2^(-10u), a hit followed by a long soft tail); normalised so that it is exactly 0 and 1 at the ends. "Palier (ancien)": the old curve.
+  const expoOut = (u) => (1 - Math.pow(2, -10 * u)) / (1 - Math.pow(2, -10));
+  const pulseEnv = (film, t) => {
+    const k = (t - film.abStart) / film.abLen;
+    if (k <= 0 || k >= 1) return 0;
+    if (film.abEase === PULSE_EASES[1] || film.abEase === PULSE_EASES[2]) {
+      const e = film.abEase === PULSE_EASES[1] ? (u) => u : expoOut, a = Math.min(Math.max((film.abAttack || 0) / 100, 0), 0.95);
+      return a > 0 && k < a ? e(k / a) : 1 - e((k - a) / (1 - a));
+    }
+    const ss = (x) => x * x * (3 - 2 * x);
+    return k < 0.12 ? ss(k / 0.12) : k < 0.7 ? 1 : ss((1 - k) / 0.3);
+  };
+  PARAMS.forEach((d) => { if (/^ab[A-Z]/.test(d.key)) d.group = "pulse"; });   // the pulse is its own category (at most 8 values), apart from the 16 expert values of the grade
+  ZS.post = { PARAMS, LOOKS, PALETTES, PULSE_EASES, values, apply, lookMatrix, toneTable, pulseEnv };
 })();

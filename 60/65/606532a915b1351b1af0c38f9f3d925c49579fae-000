@@ -16,6 +16,8 @@ VARIANTS = {
     # D: 6 s in total (it was 5.47 s) and an aberration of 1 s (Matthieu, 26 October 2026: shorter, it cannot be seen); the fade starts at 5.15 s of the film, 0.15 s before the pulse ends
     "zenray-sony-playstation-d-ppm": {"title": "ZenRay : Sony puis PlayStation, rythme D (6 s)", "s1": 3.0, "s2": 2.0, "total": 6.0, "ab_len": 1.0, "fade_from": 5.15},
     # E: D with a shorter and softer aberration (Matthieu, 26 October 2026, after seeing D in his Chrome window: "it stays too long": twice shorter, three times weaker in scaling and offset): 1.0 s -> 0.5 s, 28 px -> 28 / 3 px; the timing, the fade and the 6 s total are those of D
+    # F: E with the aberration as a tween (Matthieu, 26 October 2026: "it appears on one frame and disappears on one frame, it needs an easing, an exponential ease-out, on the aberration only"); the rise takes 20 % of the pulse
+    "zenray-sony-playstation-f-ppm": {"title": "ZenRay : Sony puis PlayStation, rythme F (6 s, aberration en ease out exponentiel)", "s1": 3.0, "s2": 2.0, "total": 6.0, "ab_len": 0.5, "ab_px": 28.0 / 3.0, "ab_ease": "Exponentiel out", "ab_attack": 20, "fade_from": 5.15},
     "zenray-sony-playstation-e-ppm": {"title": "ZenRay : Sony puis PlayStation, rythme E (6 s, aberration douce)", "s1": 3.0, "s2": 2.0, "total": 6.0, "ab_len": 0.5, "ab_px": 28.0 / 3.0, "fade_from": 5.15},
 }
 ACT1 = BASE.HANDOFF            # reference seconds of act 1 that are played (the word has reached its paper white)
@@ -41,6 +43,7 @@ def build_one(pid: str) -> dict:
     a2["params"]["speed"] = s2; a2["params"]["fadeKeys"] = fade_keys(fs, fl); a2["duration"] = round((fs + fl) / s2, 4)
     start = d1 + LOGO_UP / s2
     pr["post"] = {"abPx": round(v.get("ab_px", AB_PX), 3), "abStart": round(start, 3), "abLen": ab_len}
+    if "ab_ease" in v: pr["post"]["abEase"] = v["ab_ease"]; pr["post"]["abAttack"] = v.get("ab_attack", 12)   # only the variants that ask for a curve carry it: D and E keep the old one
     pr["doc"] = (f"26 October 2026: timing variation of the ZenRay film: act 1 x{s1}, act 2 x{s2}, logo fade from {fs:.2f} s of act 2, "
                  f"chromatic aberration pulse {ab_len} s at {start:.2f} s of the film (workflow Premier Plan Mesuré).")
     return pr
