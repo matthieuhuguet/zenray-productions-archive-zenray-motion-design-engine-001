@@ -151,6 +151,7 @@ class Handler(BaseHTTPRequestHandler):
     # versions, banks, export). FR : le module motion monte dans l'application.
     def _motion(self, method, path, q):
         ms = motion_module()
+        if path == "/api/motion/runtime-version": ms.note_client(self.headers.get("User-Agent", ""))   # who is polling: see /api/motion/runtime-clients
         try:
             r = ms.handle(method, path, q, self.rfile.read, int(self.headers.get("Content-Length") or 0))
         except ms.Refusal as e:
