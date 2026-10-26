@@ -1,0 +1,43 @@
+"""Storyboard sheet of one or several motion projects (26 October 2026): one row per project, key instants as columns, each labelled with its time and what it shows.
+Low resolution, one HyperFrames snapshot call per project; no film is rendered. FR : planche de storyboard (images cles) pour valider un rythme avant tout rendu.
+Usage: PYTHONPATH=motion /Users/zenray/.venvs/zenray-motion/bin/python -I Scripts/StoryboardSheet.py <project> [...] --marks "label=fraction,..." [--out FILE] [--width 300]
+A mark is `label=fraction of the film duration` or `label=@seconds`; all projects use the same labels, placed as given (fractions follow the film length).
+"""
+import argparse
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+
+from PIL import Image, ImageDraw, ImageFont
+
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "motion"))
+import server  # noqa: E402
+
+ap = argparse.ArgumentParser(); ap.add_argument("projects", nargs="+"); ap.add_argument("--marks", required=True); ap.add_argument("--out", default=""); ap.add_argument("--width", type=int, default=300)
+ap.add_argument("--times", default="", help="per project times: 'id=t1,t2,...;id2=...' (seconds), overrides --marks")
+a = ap.parse_args()
+font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 13); big = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 15)
+marks = [m.split("=") for m in a.marks.split(",")]; custom = {}
+for chunk in filter(None, a.times.split(";")):
+    k, v = chunk.split("="); custom[k] = [float(x) for x in v.split(",")]
+rows = []
+for pid in a.projects:
+    p = server.read_project(pid); W, H = server.FORMATS[p["format"]]; dur = sum(s["duration"] for s in p["scenes"])
+    ts = custom.get(pid) or [min(dur - 0.02, float(v[1:])) if v.startswith("@") else dur * float(v) for _, v in marks]
+    work = Path(tempfile.mkdtemp(prefix="zrmd-story-"))
+    try:
+        page = server.cook(pid, work / "page"); snaps = work / "snaps"
+        server.hyperframes(page, "snapshot", "--at", ",".join(f"{t:.3f}" for t in ts), "--no-end", "-o", str(snaps), timeout=600)
+        files = sorted(snaps.glob("frame-*.png")); w = a.width; h = round(w * H / W)
+        ims = [Image.open(f).convert("RGB").resize((w, h)) for f in files]
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    row = Image.new("RGB", (len(ims) * (w + 6), h + 38), (18, 18, 20)); ImageDraw.Draw(row).text((4, 3), f"{p.get('title', pid)}   ({dur:.2f} s)", fill=(240, 240, 240), font=big)
+    for i, (im, t) in enumerate(zip(ims, ts)):
+        row.paste(im, (i * (w + 6), 24)); ImageDraw.Draw(row).text((i * (w + 6) + 3, 24 + h + 2), f"{t:.2f} s  {marks[i][0] if i < len(marks) else ''}", fill=(170, 200, 255), font=font)
+    rows.append(row)
+sheet = Image.new("RGB", (max(r.width for r in rows), sum(r.height for r in rows) + 6 * len(rows)), (8, 8, 10)); y = 0
+for r in rows: sheet.paste(r, (0, y)); y += r.height + 6
+out = Path(a.out) if a.out else Path("/Users/zenray/.claude/tmp/tmp-zenray-motion-design/storyboard.png"); out.parent.mkdir(parents=True, exist_ok=True); sheet.save(out); print(out)

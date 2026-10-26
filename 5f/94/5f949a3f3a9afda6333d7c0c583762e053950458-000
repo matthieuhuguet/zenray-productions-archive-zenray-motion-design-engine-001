@@ -34,7 +34,7 @@
     id: "sony-open", label: "Sony 2021 : révélation du mot", group: "Sony", duration: 10,
     params: [
       P("word", "Mot", "text", "SONY", 1), P("font", "Lettres", "select", "traced", 1, { options: ["traced", "procedural"] }), P("paper", "Blanc du mot (0 à 255)", "number", 220, 1, { min: 120, max: 255, step: 1 }), P("glowColor", "Teinte de la lumière", "color", "#9cc8ff", 1),
-      N("glowK", "Lueur autour de la lumière", 1, 0, 3, 0.01, 2), N("starK", "Étoile et traînée", 1, 0, 3, 0.01, 2), N("ghostK", "Reflets d'objectif", 1, 0, 3, 0.01, 2), N("pushK", "Poussée de caméra (part de la mesure)", 1, 0, 3, 0.01, 2),
+      N("speed", "Vitesse de lecture (× de la référence)", 1, 0.25, 4, 0.01, 4, "×"), N("glowK", "Lueur autour de la lumière", 1, 0, 3, 0.01, 2), N("starK", "Étoile et traînée", 1, 0, 3, 0.01, 2), N("ghostK", "Reflets d'objectif", 1, 0, 3, 0.01, 2), N("pushK", "Poussée de caméra (part de la mesure)", 1, 0, 3, 0.01, 2),
       N("litK", "Force de la révélation", 1, 0, 2, 0.01, 2), N("gap", "Espace entre lettres, lettres procédurales (px de la référence)", 14, 0, 80, 0.5, 2, "px"),
       P("lightLetter", "Lettre qui porte la lumière", "text", "O", 3), N("lightDx", "Lumière : décalage x depuis le centre de la lettre", 28.5, -80, 80, 0.5, 3, "px"), N("lightDy", "Lumière : décalage y depuis le centre de la lettre", 15, -80, 80, 0.5, 3, "px"),
       N("lightPathK", "Lumière : amplitude du trajet mesuré (1 = SONY)", 1, 0, 2, 0.01, 3), N("distScale", "Révélation : échelle des distances (1 = SONY)", 1, 0.3, 4, 0.01, 3), N("wordCx", "Centre du mot (x de la référence)", 647.5, 300, 900, 0.5, 3, "px"), N("capTop", "Haut des capitales (y de la référence)", 315, 200, 500, 0.5, 3, "px"), N("pushOx", "Poussée : origine x", 599, 300, 1000, 1, 3, "px"), N("pushOy", "Poussée : origine y", 359, 200, 500, 1, 3, "px"), N("tallZoom", "Format haut : échelle", 1.1, 0.5, 2, 0.01, 3),
@@ -129,7 +129,7 @@
         gsap.set(plane, { scale: sc, force3D: true, transformOrigin: `${p.pushOx}px ${p.pushOy}px` });
       };
       update(0);
-      tl.fromTo(pr, { t: 0 }, { t: ctx.dur, duration: ctx.dur, ease: "none", onUpdate: () => update(pr.t) }, t0);
+      tl.fromTo(pr, { t: 0 }, { t: ctx.dur, duration: ctx.dur, ease: "none", onUpdate: () => update(pr.t * (p.speed || 1)) }, t0);   // speed: the scene plays the reference time faster (26 October 2026); its length in the film is the source length / speed
     },
   });
 })();

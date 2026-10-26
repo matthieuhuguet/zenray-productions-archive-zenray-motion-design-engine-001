@@ -13,7 +13,7 @@ from ppm import T
 PID = "zenray-sony-playstation-ppm"
 PID_FULL = "zenray-sony-playstation-10s-ppm"   # 26 October 2026 (Matthieu): the full 10 s of the ZenRay reveal (rest and camera push included), then act 2
 # the five colour versions as separate films (23 October 2026, Matthieu): the same film with the palette stored in the project (post.palette), each its own project
-PALETTE_IDS = {"zenray-sony-playstation-rouge-ppm": "Rouge vif", "zenray-sony-playstation-vert-ppm": "Vert", "zenray-sony-playstation-turquoise-ppm": "Turquoise", "zenray-sony-playstation-jaune-ppm": "Jaune", "zenray-sony-playstation-magenta-ppm": "Magenta"}
+PALETTE_IDS = {}   # the five colour films were removed on 26 October 2026 (Matthieu: they did not work in the app); the blue film is the only one
 SLUG = SONY.SLUG
 HANDOFF = 6.5   # act 2 starts once the word has reached its paper white (6.5 s of the reveal): the 6 to 10 s of rest and camera push of the Sony reference are cut (Matthieu, 23 October 2026)
 # act 2 starts from the end state of act 1 (the white paper, no camera push), so the cut is invisible

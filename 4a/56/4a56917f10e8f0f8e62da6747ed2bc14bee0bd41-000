@@ -46,8 +46,8 @@
   ZS.register({
     id: "ps-open", label: "PlayStation Studios : ouverture", group: "PlayStation", duration: 8,
     params: [
-      P("studios", "Mot sous la tuile", "text", "STUDIOS", 1), P("blue", "Bleu des symboles", "color", "#0a3cfa", 1), P("glowColor", "Couleur de la lumière", "color", "#3aa0ff", 1), N("fadeStart", "Début du fondu final (s)", 6.0, 3, 8, 0.01, 1, "s"),
-      N("fadeEnd", "Fin du fondu final (s)", 8.0, 4, 10, 0.01, 2, "s"), N("tallZoom", "Agrandissement en format haut", 1.6, 0.5, 4, 0.05, 2), N("glowK", "Force de la lumière", 1, 0, 2, 0.01, 2), N("rimK", "Liseré clair des symboles", 1, 0, 2, 0.01, 2),
+      P("studios", "Mot sous la tuile", "text", "STUDIOS", 1), P("blue", "Bleu des symboles", "color", "#0a3cfa", 1), P("glowColor", "Couleur de la lumière", "color", "#3aa0ff", 1),
+      N("speed", "Vitesse de lecture (× de la référence)", 1, 0.25, 4, 0.01, 2, "×"), N("tallZoom", "Agrandissement en format haut", 1.6, 0.5, 4, 0.05, 2), N("glowK", "Force de la lumière", 1, 0, 2, 0.01, 2), N("rimK", "Liseré clair des symboles", 1, 0, 2, 0.01, 2),
       N("flareK", "Taille de l'éclat", 1, 0.2, 3, 0.01, 2), N("flareStretch", "Éclat : allongement horizontal", 2.25, 1, 5, 0.05, 3), N("washK", "Lueur de fond", 0.92, 0, 2, 0.01, 2), N("streakK", "Force de la traînée horizontale", 1.35, 0, 2, 0.01, 2), N("film0", "Début dans le film (s)", 9, 0, 60, 0.01, 2, "s"),
       P("ground", "Fond avant l'éclat", "color", "#000311", 3), P("fontMetrics", "Police du mot : montant | barre | diagonale | hauteur des capitales (px)", "lines", ["14 | 11 | 17 | 63"], 3), N("wordW", "Largeur du mot (px)", 432, 100, 1000, 1, 3, "px"), P("wordFont", "Police du mot", "select", "traced", 4, { options: ["traced", "inter"] }), N("wordTrack", "Espacement des lettres, police Inter (em)", 0.12, 0, 0.6, 0.005, 4, "em"), N("wordY", "Haut des capitales du mot (px)", 733, 600, 1000, 1, 3, "px"),
       N("tileX", "Tuile : centre x", 960, 0, 1920, 1, 3, "px"), N("tileY", "Tuile : centre y", 492, 0, 1080, 1, 3, "px"), N("tileW", "Tuile : largeur", 432, 100, 900, 1, 3, "px"), N("tileH", "Tuile : hauteur", 420, 100, 900, 1, 3, "px"), N("frags", "Éclats de lumière (nombre)", 9, 0, 30, 1, 3), P("logo", "Logo de la tuile", "select", "playstation", 3, { options: ["playstation", "zenray"] }), P("symWord", "Mot à la place des quatre boutons (vide = boutons)", "text", "", 3), P("contour", "Couleur des contours extérieurs (cadre de la tuile, halo, mot)", "color", "#eaf9ff", 3), N("outlinePx", "Contour lumineux du logo (px)", 3.2, 0.5, 16, 0.1, 3, "px"), N("seed", "Graine des éclats", 7, 1, 999, 1, 3), N("persp", "Perspective (px)", 1500, 400, 4000, 10, 3, "px"),
@@ -221,7 +221,7 @@
         frags.forEach((f) => { const lt = (t - f.born) / f.life, a = lt <= 0 || lt >= 1 ? 0 : Math.sin(Math.PI * lt); f.e.style.opacity = String(clamp(a * 0.9 * p.glowK, 0, 1)); if (a > 0) gsap.set(f.e, { x: f.x + lt * 30, y: f.y - lt * 12, rotation: f.rot, scaleX: f.len, transformOrigin: "0 50%", force3D: true }); });
       };
       update(0);
-      tl.fromTo(pr, { t: 0 }, { t: ctx.dur, duration: ctx.dur, ease: "none", onUpdate: () => update(pr.t) }, t0);
+      tl.fromTo(pr, { t: 0 }, { t: ctx.dur, duration: ctx.dur, ease: "none", onUpdate: () => update(pr.t * (p.speed || 1)) }, t0);   // speed: the scene plays the reference time faster (26 October 2026); its length in the film is the source length / speed
     },
   });
 })();
