@@ -36,4 +36,23 @@ check("a line sets version, start and level", r2.ok && q.clips[0].choice === "v2
 const bads = ["", "son1=v3@0,0", "ZRSON1 son9=v3@0,0", "ZRSON1 son1=v9@0,0", "ZRSON1 son1=v3@abc,0", "ZRSON1 son1=v3@0,0 son1=v2@1,0", "ZRSON1 son1=v1@1.000,0 son2=v9@3,0"];
 bads.forEach((b) => { const z = film(), before = JSON.stringify(z), rr = C.apply(z, b, 6); check(`red: refused and nothing moved: ${JSON.stringify(b)}`, !rr.ok && rr.errors.length > 0 && JSON.stringify(z) === before, JSON.stringify(rr)); });
 check("muted clips are not loaded", (() => { const z = film(); z.clips[0].mute = true; return JSON.stringify(C.needed(z)) === JSON.stringify(["son2-v3.wav"]); })());
+
+// 27 October 2026: several sound tracks (a clip with no track is on track 0; the line carries #track only above 0; addClip and the track count)
+{
+  const assert = require("assert");
+  const mk = () => ({ clips: [{ id: "a", variants: { v1: { file: "a.wav" } }, choice: "v1", start: 0, duration: 2 }, { id: "b", variants: { v1: { file: "b.wav" } }, choice: "v1", start: 3, duration: 2 }] });
+  const p = mk();
+  assert.strictEqual(C.track(p.clips[0]), 0); assert.strictEqual(C.trackCount(p), 1);
+  assert.strictEqual(C.line(p), "ZRSON1 a=v1@0.000,0 b=v1@3.000,0");                 // old projects: the line is unchanged
+  C.setTrack(p, p.clips[1], 2); assert.strictEqual(C.trackCount(p), 3); assert.strictEqual(C.line(p), "ZRSON1 a=v1@0.000,0 b=v1@3.000,0#2");
+  const q = mk(); assert.ok(C.apply(q, C.line(p), 10).ok); assert.strictEqual(C.track(q.clips[1]), 2);                 // a pasted line restores the track
+  assert.ok(!C.parse(q, "ZRSON1 a=v1@0.000,0#x").ok);
+  const n = C.addClip(p, { file: "n.wav", start: 1.5, duration: 1, track: 3 }); assert.strictEqual(n.id, "s1"); assert.strictEqual(C.trackCount(p), 4);
+  assert.strictEqual(C.addClip(p, { file: "m.wav" }).id, "s2");
+  assert.strictEqual(C.addTrack(p), 4); assert.strictEqual(C.trackCount(p), 5);
+  // red: a track-less line must not move a clip off its track
+  const r = mk(); C.setTrack(r, r.clips[0], 1); C.apply(r, "ZRSON1 a=v1@0.500,0", 10); assert.strictEqual(C.track(r.clips[0]), 1);
+  console.log("ok tracks");
+}
+
 console.log(fails.length ? `\n${fails.length} FAIL` : "\nall ok"); process.exit(fails.length ? 1 : 0);

@@ -37,7 +37,7 @@ def run(pid: str, project: dict) -> dict:
         if v:
             project["validation"] = v
         if old.get("clips"):   # 27 October 2026: the sound clips (capsules of the Sons lane) and their choices survive a rebuild, otherwise the film comes back mute
-            project["clips"] = old["clips"]; project["music"] = old.get("music", project.get("music")); project["sfx"] = old.get("sfx", project.get("sfx"))
+            project["clips"] = old["clips"]; project["soundTracks"] = old.get("soundTracks", 1); project["music"] = old.get("music", project.get("music")); project["sfx"] = old.get("sfx", project.get("sfx"))
     server.write_project(pid, project)
     out = {"id": pid, "scenes": len(project["scenes"]), "duration": round(sum(s["duration"] for s in project["scenes"]), 2)}
     print(json.dumps(out))

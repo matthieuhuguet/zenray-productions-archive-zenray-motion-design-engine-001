@@ -58,10 +58,11 @@
         <span class="hint keys" title="Curseur sur l'image : la vidéo se lit · Espace : pause / lecture · glisser dans la piste : parcourir · ← → : une image (maintenir : défilement rapide) · Maj + ← → : une seconde · Cmd + molette : zoom · Début / Fin · réglages : bouton Survol">Raccourcis ⓘ</span>
       </div>
       <div class="timeline">
-        <div class="labels"><span>Temps</span><span>Scènes</span><span>Sous-scènes</span><span>Musique</span><span>Effets</span><span>Sons</span></div>
+        <div class="labels" id="tlLabels"></div>
         <div id="tlScroll" class="tlScroll"><div id="track" class="track">
           <div id="ruler" class="lane ruler"></div>
-          <div id="segments" class="lane segments"></div><div id="childLane" class="lane"></div><div id="musicLane" class="lane"></div><div id="sfxLane" class="lane"></div><div id="clipLane" class="lane"></div>
+          <div id="frameRuler" class="lane ruler frames"></div>
+          <div id="segments" class="lane segments"></div><div id="childLane" class="lane"></div><div id="musicLane" class="lane"></div><div id="sfxLane" class="lane"></div><div id="clipLanes"></div>
           <div id="playhead" class="playhead"><i></i></div><div id="hoverLine" class="hoverLine" hidden><b></b></div>
         </div></div>
       </div>

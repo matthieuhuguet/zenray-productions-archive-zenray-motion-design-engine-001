@@ -25,7 +25,8 @@ def main(pid):
         old = next((c for c in (p.get("clips") or []) if c.get("id") == s["id"]), {})      # what Matthieu already chose is kept (version, start, level, mute)
         clips.append({"id": s["id"], "label": s["label"], "variants": variants, "choice": old.get("choice", s["choice"]), "start": old.get("start", start), "duration": 3.0, "anchor": {"cue": s["cue"], "cueT": cue_t, "hit": s["hit"]},
                       "offsetMs": old.get("offsetMs", 0), "gainDb": old.get("gainDb", 0), "mute": old.get("mute", False)})
-    p["clips"] = clips; p["music"] = {"mode": "none"}; p["sfx"] = {**(p.get("sfx") or {}), "enabled": False}
+    others = [c for c in (p.get("clips") or []) if c.get("id") not in {x["id"] for x in SOUNDS}]      # 27 October 2026: other capsules (the Ghibli note, sounds added by hand) are kept
+    p["clips"] = clips + others; p["music"] = {"mode": "none"}; p["sfx"] = {**(p.get("sfx") or {}), "enabled": False}
     p["updated"] = time.strftime("%d %B %Y, %H:%M")
     pf.write_text(json.dumps(p, indent=1, ensure_ascii=False), encoding="utf-8")
     print(pid, [(c["id"], c["choice"], c["start"], c["anchor"]) for c in clips])

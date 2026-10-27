@@ -128,6 +128,14 @@
         ]
       ],
       "note": "Vogun Regular by Yukita Creative (17 October 2026)"
+    },
+    "GTUltra": {
+      "files": [
+        [
+          "~/Library/Fonts/GT-Ultra-Standard-Regular.otf",
+          400
+        ]
+      ]
     }
   },
   "uploads": {

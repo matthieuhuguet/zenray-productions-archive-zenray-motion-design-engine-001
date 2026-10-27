@@ -436,7 +436,7 @@
       if (g.alpha) {  // a letter of the ALPHABET of the face (a real typeface fitted to the traced letters): same cap height, stretch, weight and distress
         const A = g.A, ag = g.ag, u = g.u * k, bw = ag.a * A.sx * u, hh = 1000 * u, c = abs(parent, { left: x + "px", top: y + "px", width: bw + "px", height: hh + "px", overflow: "visible" }); c.className += " ch"; c.dataset.i = String(i);
         const v = svgEl("svg", { width: bw, height: hh, viewBox: `0 0 ${ag.a * A.sx} 1000`, style: "position:absolute;left:0;top:0;overflow:visible" }, c), gr = svgEl("g", { transform: `scale(${A.sx} 1)` }, v), cl = col || defCol;
-        svgEl("path", { d: ag.d, fill: cl, stroke: g.dilU > 0 ? cl : "none", "stroke-width": g.dilU > 0 ? 2 * g.dilU : 0, "stroke-linejoin": "miter", "stroke-miterlimit": 2.5 }, gr);
+        svgEl("path", { d: ag.d, fill: cl, "fill-rule": "evenodd", stroke: g.dilU > 0 ? cl : "none", "stroke-width": g.dilU > 0 ? 2 * g.dilU : 0, "stroke-linejoin": "miter", "stroke-miterlimit": 2.5 }, gr);
         distress(v, hh, g.dilU < 0 ? -g.dilU * u : 0, g.rough * hh, i);  // a thinner weight erodes, the distress displaces the edge by a noise: both are filters of this letter only
         if (acc) { const va = svgEl("svg", { width: bw, height: hh, viewBox: `0 0 ${bw} ${hh}`, style: "position:absolute;left:0;top:0;overflow:visible" }, c); svgEl("path", { d: window.ZSBlock.mark(acc.m, bw, hh, acc.o), fill: "none", stroke: cl, "stroke-width": (acc.o.sw || 0.14) * hh * 0.55, "stroke-linejoin": "miter", "stroke-miterlimit": 2.5 }, va); }
         return;
@@ -556,6 +556,8 @@
         g.forEach((ln, i) => { x += (i ? g[i].gb + 8 : 0) * k; flow[ln.k] = { x, k, fx: ft.fx, ax: gcx }; x += rows[i].tot1 * k; });
       });
       Z.lines.forEach((ln) => {
+        // 28 October 2026 00:10: Allow a card variant to hide a fixed emblem.
+        if (ln.fixed && tw(ln.k + "Hide", 0) >= 0.5) return;
         const holder = abs(pl, { left: "0", top: "0", width: Z.w + "px", height: Z.h + "px" }), col = cols[ln.ci] || cols[0], inD = ln.k in D0.l, text = inD ? String(p[ln.k]) : ln.text;
         if (ln.type === "text") {  // a small line set in a real face fitted to the measured cap height and width: it is live text, so editing it never breaks anything
           const size = tw(ln.k + "Size", ln.size); it.push({ n: T(pl, { text, x: tw(ln.k + "X", ln.x), y: tw(ln.k + "Y", ln.y) - ln.dy * size, size, font: ln.font, weight: ln.weight, color: col, ls: (tw(ln.k + "Ls", ln.ls)) + "em", lh: 1, align: ln.align }), aux: !!ln.aux, key: ln.k, name: ln.name, anchor: ln.align }); return; }

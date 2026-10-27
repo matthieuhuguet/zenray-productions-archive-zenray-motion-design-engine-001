@@ -201,7 +201,7 @@
     syncRef();
     const k = pps();
     if (document.activeElement !== $("#timeIn")) $("#timeIn").value = fmtT(S.time);
-    $("#timeTot").textContent = "/ " + fmtT(S.built.duration);
+    $("#timeTot").textContent = "/ " + fmtT(S.built.duration) + " · image " + Math.round(S.time * fps()) + " / " + Math.round(S.built.duration * fps());
     $("#playhead").style.left = S.time * k + "px";
     const i = S.built.spans.findIndex((sp) => S.time >= sp.start && S.time < sp.end);
     [...$("#segments").children].forEach((d, j) => d.classList.toggle("on", j === i));
@@ -284,6 +284,20 @@
       if (isMajor) sp.textContent = major < 1 ? fmtT(t).replace(/0$/, "") : fmtT(t).replace(/\.00$/, ""); else sp.className = "minor";
       ru.appendChild(sp);
     }
+    // frame grid (27 October 2026): a second ruler in IMAGES at the project frame rate; a tick per image when there is room, a number at least every 56 px
+    const fr = $("#frameRuler"), F = fps(); fr.innerHTML = "";
+    const FSTEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600], fMajor = FSTEPS.find((x) => (x / F) * k >= 56) || 600, perImage = k / F >= 5;
+    const nF = Math.ceil(D * F - 1e-6);
+    for (let n = 0, guard = 0; n <= nF && guard < 20000; n++, guard++) {
+      const isMajor = n % fMajor === 0; if (!isMajor && !perImage) continue;
+      const sp = document.createElement("span"); sp.style.left = pc(n / F);
+      if (isMajor) sp.textContent = "image " + n; else sp.className = "minor";
+      fr.appendChild(sp);
+    }
+    const labels = ["Temps", "Images", "Scènes", "Sous-scènes", "Musique", "Effets"].concat(Array.from({ length: ZSClips.trackCount(S.project) }, (_, i) => "Sons " + (i + 1)));
+    const lb = $("#tlLabels"); lb.innerHTML = labels.map((t, i) => `<span${i < 2 ? "" : ""}>${esc(t)}</span>`).join("")
+      + `<button type="button" class="addTrack" id="addTrackBtn" title="Ajoute une piste de sons : on y glisse un son sans toucher aux autres">+ Piste</button>`;
+    $("#addTrackBtn").onclick = () => change((p) => { ZSClips.addTrack(p); });
     const seg = $("#segments"); seg.innerHTML = "";
     S.built.spans.forEach((sp) => {
       const d = document.createElement("div");
@@ -318,34 +332,39 @@
     renderClipLane(pc, k);
     updateTime();
   }
-  // the Sons lane: one capsule per clip, dragged with the pointer (Shift = ten times finer), magnetic to its cue within 12 ms (26 October 2026)
+  // the Sons lanes (27 October 2026: one lane per sound track): one capsule per clip, dragged with the pointer (Shift = ten times finer), magnetic to its cue within 12 ms,
+  // and dragged UP or DOWN to another sound track
   function renderClipLane(pc, k) {
-    const lane = $("#clipLane"); if (!lane) return; lane.innerHTML = "";
+    const host = $("#clipLanes"); if (!host) return; host.innerHTML = "";
+    const n = ZSClips.trackCount(S.project), lanes = [];
+    for (let t = 0; t < n; t++) { const lane = document.createElement("div"); lane.className = "lane clipLane"; lane.dataset.track = t; host.appendChild(lane); lanes.push(lane); }
     ZSClips.list(S.project).forEach((c) => {
-      if (c.anchor && Number.isFinite(c.anchor.cueT)) { const u = document.createElement("u"); u.className = "cue"; u.style.left = pc(c.anchor.cueT); u.innerHTML = `<em>${esc(c.anchor.cue)}</em>`; lane.appendChild(u); }
+      if (c.anchor && Number.isFinite(c.anchor.cueT)) { const u = document.createElement("u"); u.className = "cue"; u.style.left = pc(c.anchor.cueT); u.innerHTML = `<em>${esc(c.anchor.cue)}</em>`; lanes[ZSClips.track(c)].appendChild(u); }
     });
     ZSClips.list(S.project).forEach((c) => {
       const d = document.createElement("div"), start = Number(c.start) || 0;
       d.className = "clip" + (S.clipSel === c.id ? " on" : "") + (c.mute ? " mute" : ""); d.dataset.id = c.id;
       d.style.left = pc(start); d.style.width = Math.max(12, (Number(c.duration) || 3) * k) + "px";
       d.innerHTML = `<b>${esc(c.label || c.id)}</b><span>${esc(c.choice)}</span>` + (c.anchor ? `<i class="hit" style="left:${(Number(c.anchor.hit) || 0) * k}px"></i>` : "");
-      d.title = `${c.label || c.id} · ${c.choice} · début ${fmtT(start)} · décalage ${ZSClips.offsetMs(c)} ms`;
+      d.title = `${c.label || c.id} · ${c.choice} · piste ${ZSClips.track(c) + 1} · début ${fmtT(start)} · décalage ${ZSClips.offsetMs(c)} ms`;
       d.onpointerdown = (e) => {
         e.preventDefault(); e.stopPropagation(); d.setPointerCapture(e.pointerId);
-        const x0 = e.clientX, s0 = Number(c.start) || 0; let moved = false, cur = s0;
+        const x0 = e.clientX, y0 = e.clientY, s0 = Number(c.start) || 0, t0 = ZSClips.track(c), laneH = lanes[0].getBoundingClientRect().height || 26; let moved = false, cur = s0, curT = t0;
         d.onpointermove = (ev) => {
-          if (Math.abs(ev.clientX - x0) > 2) moved = true;
+          if (Math.abs(ev.clientX - x0) > 2 || Math.abs(ev.clientY - y0) > 2) moved = true;
           cur = Math.round((s0 + (ev.clientX - x0) / k / (ev.shiftKey ? 10 : 1)) * 1000) / 1000;
           if (Math.abs(cur - ZSClips.home(c)) < 0.012) cur = ZSClips.home(c);
-          d.style.left = pc(cur); d.title = `début ${fmtT(cur)} · décalage ${Math.round((cur - ZSClips.home(c)) * 1000)} ms`;
+          curT = Math.min(lanes.length - 1, Math.max(0, t0 + Math.round((ev.clientY - y0) / laneH)));
+          d.style.left = pc(cur); d.style.transform = `translateY(${(curT - t0) * laneH}px)`;
+          d.title = `début ${fmtT(cur)} · piste ${curT + 1} · décalage ${Math.round((cur - ZSClips.home(c)) * 1000)} ms`;
         };
         d.onpointerup = () => {
           d.onpointermove = d.onpointerup = null;
-          if (moved) change((p) => ZSClips.setStart(p.clips.find((x) => x.id === c.id), cur, S.built.duration));
+          if (moved) change((p) => { const x = p.clips.find((q) => q.id === c.id); ZSClips.setStart(x, cur, S.built.duration); ZSClips.setTrack(p, x, curT); });
           else { S.clipSel = c.id; if (S.tab !== "sons") setTab("sons"); else renderPanel(); renderTrack(); }
         };
       };
-      lane.appendChild(d);
+      lanes[ZSClips.track(c)].appendChild(d);
     });
   }
   function renderScenes() {
@@ -646,14 +665,27 @@
   function sonsPanel() {
     const clips = ZSClips.list(S.project), D = S.built.duration;
     panel.insertAdjacentHTML("beforeend", `<h3>Sons du film</h3><p class="hint">Une capsule par son sur la piste « Sons » : on la fait glisser (Maj pour plus fin) ou on la décale ici à la milliseconde. Le trait noir dans la capsule est l'instant fort du son, le trait orange le repère du film où il doit tomber. Les choix sont enregistrés avec le projet.</p>`);
+    const sounds = S.assets.filter((x) => x.kind === "audio"), add = document.createElement("div"); add.className = "addSound";
+    add.innerHTML = `<select class="addFile">${sounds.map((x) => `<option value="${esc(x.name)}">${esc(x.name)}</option>`).join("") || `<option value="">(aucun son : dépose-en dans l'onglet Médias)</option>`}</select>
+      <select class="addTrk">${Array.from({ length: ZSClips.trackCount(S.project) }, (_, i) => `<option value="${i}">Sons ${i + 1}</option>`).join("")}</select>
+      <button type="button" class="addBtn">Ajouter ce son à la playhead</button><button type="button" class="addTrk2">Nouvelle piste</button>`;
+    add.querySelector(".addBtn").onclick = async () => {
+      const file = add.querySelector(".addFile").value; if (!file) return;
+      let dur = 3; try { if (!S.audio.ctx) S.audio.ctx = new AudioContext(); const b = await ZS.audio.decode(S.audio.ctx, { x: `/motion/files/${S.project.id}/${encodeURIComponent(file)}` }); dur = Math.round(b.x.duration * 1000) / 1000; } catch (e) { /* keep 3 s */ }
+      change((p) => { const c = ZSClips.addClip(p, { file, label: file.replace(/\.[^.]+$/, ""), start: Math.round(S.time * 1000) / 1000, duration: dur, track: Number(add.querySelector(".addTrk").value) }); S.clipSel = c.id; });
+      toast("Son ajouté sur la piste " + (Number(add.querySelector(".addTrk").value) + 1));
+    };
+    add.querySelector(".addTrk2").onclick = () => change((p) => { ZSClips.addTrack(p); });
+    panel.appendChild(add);
     if (!clips.length) { panel.insertAdjacentHTML("beforeend", `<p class="hint">Aucune capsule dans ce film.</p>`); return; }
     clips.forEach((c) => {
       const card = document.createElement("div"), off = ZSClips.offsetMs(c);
       card.className = "sonCard" + (S.clipSel === c.id ? " on" : "");
       card.innerHTML = `<div class="lbl"><b>${esc(c.label || c.id)}</b> <span class="hint num">${esc(c.id)}${c.anchor ? ` · repère ${esc(c.anchor.cue)} ${Number(c.anchor.cueT).toFixed(3)} s` : ""}</span></div>
         <div class="vers">${Object.keys(c.variants || {}).map((v) => `<button type="button" data-v="${esc(v)}" class="${v === c.choice ? "on" : ""}" title="${esc((c.variants[v] || {}).name || v)}">${esc(v)}${(c.variants[v] || {}).name ? " · " + esc(c.variants[v].name) : ""}</button>`).join("")}</div>
+        <div class="row"><label class="hint">Piste</label><select class="trk">${Array.from({ length: ZSClips.trackCount(S.project) }, (_, i) => `<option value="${i}"${i === ZSClips.track(c) ? " selected" : ""}>Sons ${i + 1}</option>`).join("")}</select></div>
         <div class="row"><label class="hint">Début (s)</label><input type="number" step="0.001" class="val st" value="${(Number(c.start) || 0).toFixed(3)}" style="width:90px"><span class="hint num">décalage au repère : ${off > 0 ? "+" : ""}${off} ms</span></div>
-        <div class="nudges">${[-100, -10, -1, 1, 10, 100].map((m) => `<button type="button" data-n="${m}">${m > 0 ? "+" : ""}${m} ms</button>`).join("")}<button type="button" data-a="recall" title="Remet la capsule exactement sur son repère">Recaler</button><button type="button" data-a="mute">${c.mute ? "Réactiver" : "Muet"}</button></div>
+        <div class="nudges">${[-100, -10, -1, 1, 10, 100].map((m) => `<button type="button" data-n="${m}">${m > 0 ? "+" : ""}${m} ms</button>`).join("")}<button type="button" data-a="recall" title="Remet la capsule exactement sur son repère">Recaler</button><button type="button" data-a="mute">${c.mute ? "Réactiver" : "Muet"}</button>${/^s\d+$/.test(c.id) ? `<button type="button" data-a="del" title="Retire ce son ajouté à la main">Retirer</button>` : ""}</div>
         <div class="row"><label class="hint">Niveau (dB)</label><input type="range" min="-30" max="12" step="0.5" class="lv" value="${Number(c.gainDb) || 0}"><span class="hint num lvv">${Number(c.gainDb) || 0} dB</span></div>`;
       const set = (fn) => change((p) => fn(p.clips.find((x) => x.id === c.id)));
       card.onclick = (e) => {
@@ -663,7 +695,9 @@
         else if (b.dataset.n) set((x) => ZSClips.nudge(x, Number(b.dataset.n), D));
         else if (b.dataset.a === "recall") set((x) => ZSClips.recall(x));
         else if (b.dataset.a === "mute") set((x) => { x.mute = !x.mute; });
+        else if (b.dataset.a === "del") change((p) => { p.clips = p.clips.filter((x) => x.id !== c.id); if (S.clipSel === c.id) S.clipSel = null; });
       };
+      card.querySelector(".trk").onchange = (e) => change((p) => ZSClips.setTrack(p, p.clips.find((x) => x.id === c.id), Number(e.target.value)));
       card.querySelector(".st").onchange = (e) => set((x) => ZSClips.setStart(x, Number(e.target.value) || 0, D));
       const lv = card.querySelector(".lv"); lv.oninput = () => { card.querySelector(".lvv").textContent = lv.value + " dB"; };
       lv.onchange = () => set((x) => ZSClips.gain(x, Number(lv.value)));

@@ -7,10 +7,24 @@
   if (typeof module === "object" && module.exports) module.exports = factory(); else root.ZSClips = factory();
 })(typeof self !== "undefined" ? self : this, function () {
   "use strict";
+  // 27 October 2026: SEVERAL SOUND TRACKS. Each clip has a `track` (0, 1, 2...); the film keeps `soundTracks` (how many lanes are shown), so sounds can be placed
+  // asynchronously on their own lane, like the audio tracks of DaVinci Resolve. A clip with no `track` is on track 0 (old projects keep working). FR : plusieurs pistes de sons.
   const FORMAT = "ZRSON1";
   const r3 = (x) => Math.round(Number(x) * 1000) / 1000;
   const num = (x, d) => (Number.isFinite(Number(x)) && x !== "" && x !== null && x !== undefined ? Number(x) : d);
   const list = (p) => (p && Array.isArray(p.clips) ? p.clips : []);
+  const track = (c) => Math.max(0, Math.floor(num(c && c.track, 0)));
+  const trackCount = (p) => Math.max(1, Math.floor(num(p && p.soundTracks, 1)), ...list(p).map((c) => track(c) + 1));
+  const addTrack = (p) => { p.soundTracks = trackCount(p) + 1; return p.soundTracks - 1; };
+  function setTrack(p, c, n) { const t = Math.max(0, Math.floor(num(n, 0))); c.track = t; p.soundTracks = Math.max(trackCount(p), t + 1); return c; }
+  // a new capsule from a sound file of the project: one version (v1), at `start`, on `trk`; the id is the first free sNN
+  function addClip(p, o) {
+    p.clips = list(p).slice();
+    let n = 1; while (p.clips.some((c) => c.id === "s" + n)) n++;
+    const c = { id: "s" + n, label: o.label || o.file, variants: { v1: { file: o.file, name: o.name || o.label || o.file } }, choice: "v1",
+      start: r3(num(o.start, 0)), duration: r3(num(o.duration, 3)), offsetMs: 0, gainDb: num(o.gainDb, 0), track: Math.max(0, Math.floor(num(o.track, 0))) };
+    p.clips.push(c); p.soundTracks = Math.max(trackCount(p), c.track + 1); return c;
+  }
   const active = (c) => (c && c.variants && c.variants[c.choice]) || null;
   // where the sound starts when it sits exactly on its cue (offset 0)
   const home = (c) => (c.anchor && Number.isFinite(c.anchor.cueT) ? r3(c.anchor.cueT - num(c.anchor.hit, 0)) : r3(num(c.start, 0)));
@@ -24,22 +38,22 @@
   const nudge = (c, ms, filmDur) => setStart(c, num(c.start, 0) + ms / 1000, filmDur);
   const recall = (c) => { c.start = home(c); c.offsetMs = 0; return c; };
   const gain = (c, db) => { c.gainDb = Math.min(12, Math.max(-60, Math.round(num(db, 0) * 10) / 10)); return c; };
-  // the one-line text of ALL the choices: ZRSON1 son1=v3@0.000,0 son2=v3@3.000,0   (id=version@start in seconds,level in dB)
+  // the one-line text of ALL the choices: ZRSON1 son1=v3@0.000,0 son2=v3@3.000,0#1   (id=version@start in seconds,level in dB, then #track only when it is not track 0)
   function line(p) {
-    return [FORMAT].concat(list(p).map((c) => `${c.id}=${c.choice}@${r3(num(c.start, 0)).toFixed(3)},${num(c.gainDb, 0)}`)).join(" ");
+    return [FORMAT].concat(list(p).map((c) => `${c.id}=${c.choice}@${r3(num(c.start, 0)).toFixed(3)},${num(c.gainDb, 0)}${track(c) ? "#" + track(c) : ""}`)).join(" ");
   }
   // read a line without touching anything: { ok, items: [{id, choice, start, gainDb}], errors }
   function parse(p, text) {
     const errors = [], items = [], parts = String(text || "").trim().split(/\s+/).filter(Boolean);
     if (parts[0] !== FORMAT) return { ok: false, items, errors: [`la ligne doit commencer par ${FORMAT}`] };
     parts.slice(1).forEach((tok) => {
-      const m = /^([A-Za-z0-9-]+)=([A-Za-z0-9-]+)@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/.exec(tok);
+      const m = /^([A-Za-z0-9-]+)=([A-Za-z0-9-]+)@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)(?:#(\d+))?$/.exec(tok);
       if (!m) return errors.push(`« ${tok} » n'est pas de la forme id=version@début,niveau`);
       const c = list(p).find((x) => x.id === m[1]);
       if (!c) return errors.push(`pas de capsule « ${m[1]} » dans ce film`);
       if (!c.variants || !c.variants[m[2]]) return errors.push(`la capsule ${m[1]} n'a pas de version « ${m[2]} »`);
       if (items.some((x) => x.id === m[1])) return errors.push(`la capsule ${m[1]} est donnée deux fois`);
-      items.push({ id: m[1], choice: m[2], start: r3(m[3]), gainDb: Number(m[4]) });
+      items.push({ id: m[1], choice: m[2], start: r3(m[3]), gainDb: Number(m[4]), track: m[5] === undefined ? undefined : Number(m[5]) });
     });
     if (!items.length && !errors.length) errors.push("la ligne ne contient aucune capsule");
     return { ok: !errors.length, items, errors };
@@ -48,10 +62,10 @@
   function apply(p, text, filmDur) {
     const r = parse(p, text);
     if (!r.ok) return r;
-    r.items.forEach((it) => { const c = list(p).find((x) => x.id === it.id); c.choice = it.choice; setStart(c, it.start, filmDur); gain(c, it.gainDb); });
+    r.items.forEach((it) => { const c = list(p).find((x) => x.id === it.id); c.choice = it.choice; setStart(c, it.start, filmDur); gain(c, it.gainDb); if (it.track !== undefined) setTrack(p, c, it.track); });
     return r;
   }
   // the sounds the page must decode: the active version of every clip that is not muted
   const needed = (p) => list(p).filter((c) => !c.mute && active(c)).map((c) => active(c).file);
-  return { FORMAT, list, active, home, offsetMs, setStart, nudge, recall, gain, line, parse, apply, needed };
+  return { FORMAT, list, track, trackCount, addTrack, setTrack, addClip, active, home, offsetMs, setStart, nudge, recall, gain, line, parse, apply, needed };
 });

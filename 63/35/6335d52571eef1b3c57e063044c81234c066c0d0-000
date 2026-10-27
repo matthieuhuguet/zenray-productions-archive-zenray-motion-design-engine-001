@@ -1,0 +1,40 @@
+# 27 October 2026: puts Matthieu's VALIDATED sound of rhythm F ("logo-flare") into the Motion project as clips on their own sound tracks, so that the film in Motion IS the validated F:
+#   track 1 (Sons 1): sound 1 and sound 2, each at the level that normalises it to the stem level (-23 LUFS) like the ZenRay SFX final mix;
+#   track 2 (Sons 2): the Ghibli note (trailer Q2aTi0BQXek, 1.5 to 3 s, no voice), its body starting 20 ms before the flare cue (3.15 s), 9 dB under the sounds.
+# The note file is written from the SAME code as the validated track (ZenRaySFX Scripts/AssembleTrack.py), then the script PROVES the Motion mix equals the validated premaster
+# (clips summed in Python against AssembleTrack.layers) to under 1e-4. The master (high-pass, gain to -14 LUFS, limiter) stays the export's job. Usage: python3 Scripts/AddGhibliNote.py [project-id]
+# FR : pose dans le projet Motion le vrai F validé (sons 1 et 2 + note Ghibli à 3,15 s sur sa propre piste) et prouve qu'il égale la piste validée.
+import json, sys, time
+from pathlib import Path
+import numpy as np, soundfile as sf
+SFX = Path("/Users/zenray/Create/Build/Productions/GithubProductions/ZenRaySFX")
+PROJECTS = Path("/Users/zenray/.claude/tmp/tmp-zenray-motion-design/motion-projects")
+sys.path.insert(0, str(SFX)); sys.path.insert(0, str(SFX / "Scripts"))
+import AssembleTrack as T
+FLARE_CUE = "flarePeak"; NOTE_FILE = "ghibli-note-logo-flare.wav"; TRACK_SOUNDS, TRACK_NOTE = 0, 1
+
+def main(pid="zenray-sony-playstation-f-ppm"):
+    d = PROJECTS / pid; pf = d / "project.json"; assert pf.is_file(), pid
+    p = json.loads(pf.read_text()); cues = json.loads((d / "cues.json").read_text())["cues"]; cue_t = float(cues[FLARE_CUE])
+    log = {}; body, s1n, s2n, _ = (lambda r: (r[0], r[1], r[2], r[3]))(T.stems(log)); SR = T.SR
+    # the note file: the normalised body of the validated track, at its own level (the -9 dB is the clip's level, as in the track)
+    sf.write(d / "assets" / NOTE_FILE, body, SR, subtype="FLOAT")
+    lead = T.NP["lead"]; start = round(cue_t - lead, 3)
+    by = {c["id"]: c for c in p.get("clips", [])}
+    for cid in ("son1", "son2"):
+        c = by[cid]; g = log["son1-v3" if cid == "son1" else "son2-v3"]["gainDb"]; c["gainDb"] = round(g, 2); c["track"] = TRACK_SOUNDS
+    note = {"id": "note", "label": "Note Ghibli · sur la lueur du logo", "variants": {"v1": {"file": NOTE_FILE, "name": "note du bande-annonce, 1,5 à 3 s"}}, "choice": "v1", "start": start,
+            "duration": round(len(body) / SR, 3), "anchor": {"cue": FLARE_CUE, "cueT": cue_t, "hit": lead}, "offsetMs": 0, "gainDb": T.TR["noteDb"], "mute": False, "track": TRACK_NOTE}
+    p["clips"] = [by["son1"], by["son2"], note]; p["soundTracks"] = 2; p["music"] = {"mode": "none"}; p["sfx"] = {**(p.get("sfx") or {}), "enabled": False}
+    p["updated"] = time.strftime("%d %B %Y, %H:%M"); pf.write_text(json.dumps(p, indent=1, ensure_ascii=False), encoding="utf-8")
+    # proof: the clips summed here against the validated premaster (note + sound 1 + sound 2, delay 0, note on the flare cue)
+    N = 6 * SR; mix = np.zeros((N, 2), np.float32)
+    for c in p["clips"]:
+        y, sr = sf.read(d / "assets" / c["variants"][c["choice"]]["file"], dtype="float32", always_2d=True); assert sr == SR
+        a = int(round(c["start"] * SR)); seg = y[:max(0, N - a)] * 10 ** (c["gainDb"] / 20); mix[a:a + len(seg)] += seg
+    nt, a1, a2, _ = T.layers(0.0, cue_t); ref = nt + a1 + a2
+    err = float(np.abs(mix - ref).max()); print(f"{pid}: max difference to the validated premaster = {err:.2e}"); assert err < 1e-4, "the Motion mix differs from the validated F"
+    print([(c["id"], c["track"], c["start"], c["gainDb"]) for c in p["clips"]])
+
+if __name__ == "__main__":
+    main(*sys.argv[1:])
