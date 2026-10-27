@@ -17,7 +17,7 @@
     const apply = () => {
       root.style.setProperty("--gal-cols", set.cols); root.style.setProperty("--gal-gap", set.gap + "px"); root.style.setProperty("--gal-radius", set.radius + "px");
       root.style.setProperty("--gal-ratio", set.ratio); root.style.setProperty("--gal-fit", set.fit); root.setAttribute("data-theme", set.theme); root.setAttribute("data-body-font", set.font);
-      $("#fGt").classList.toggle("on", set.font !== "literata"); $("#fLit").classList.toggle("on", set.font === "literata");
+      $("#fGt").classList.toggle("on", set.font === "gtstandard"); $("#fLit").classList.toggle("on", set.font !== "gtstandard");
       [["cols", "#colV", ""], ["gap", "#gapV", "px"], ["radius", "#radV", "px"]].forEach(([k, id, u]) => { $(id).textContent = set[k] + u; });
     };
     const bind = (id, k, ev) => { const e = $(id); e.value = set[k]; e.addEventListener(ev || "input", () => { set[k] = e.value; LS(key(k), set[k]); apply(); }); };
@@ -25,7 +25,7 @@
     $("#fGt").onclick = () => { set.font = "gtstandard"; LS(key("font"), set.font); apply(); }; $("#fLit").onclick = () => { set.font = "literata"; LS(key("font"), set.font); apply(); };
     $("#themeB").onclick = () => { set.theme = set.theme === "dark" ? "light" : "dark"; LS(key("theme"), set.theme); apply(); };
     $("#cssB").onclick = () => {
-      const css = `:root {\n  --gallery-columns: ${set.cols};\n  --gallery-gap: ${set.gap}px;\n  --gallery-radius: ${set.radius}px;\n  --gallery-image-ratio: ${set.ratio};\n  --gallery-image-fit: ${set.fit};\n  --font-title: 'GT Ultra', sans-serif;\n  --font-num: 'GT Ultra', sans-serif;\n  --font-body: ${set.font === "literata" ? "'Literata', serif" : "'GT Standard L', sans-serif"};\n  --font-ui: 'GT Standard L', sans-serif;\n}`;
+      const css = `:root {\n  --gallery-columns: ${set.cols};\n  --gallery-gap: ${set.gap}px;\n  --gallery-radius: ${set.radius}px;\n  --gallery-image-ratio: ${set.ratio};\n  --gallery-image-fit: ${set.fit};\n  --font-title: 'GT Ultra', sans-serif;\n  --font-num: 'GT Ultra', sans-serif;\n  --font-body: ${set.font === "gtstandard" ? "'GT Standard L', sans-serif" : "'Literata', serif"};\n  --font-ui: 'GT Ultra', sans-serif;\n}`;
       navigator.clipboard.writeText(css).then(() => G.toast("Réglages copiés"));
     };
     apply();

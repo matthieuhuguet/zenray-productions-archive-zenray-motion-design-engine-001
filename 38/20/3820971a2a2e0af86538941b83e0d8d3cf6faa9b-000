@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="fr" data-theme="dark" data-body-font="gtstandard"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<html lang="fr" data-theme="dark" data-body-font="literata"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>ZenRay Motion Design · Galerie Motion</title><link rel="stylesheet" href="/motion/web/gallery.css" /></head><body>
 <header class="deck"><div class="deck-top">
   <nav class="nav"><a href="/motion/">Éditeur</a><a href="/motion/validate">Validate</a><a class="on" href="/motion/gallery">Galerie Motion</a><a href="/motion/gallery-sfx">Galerie SFX</a><a href="/motion/threads">Threads</a><a href="/motion/previous">Previous Videos</a></nav>
   <div class="actions"><input id="q" class="search" type="search" placeholder="Chercher un film" />
-    <div class="seg"><span class="tag">Corps :</span><button id="fGt" class="on" type="button">GT Standard L</button><button id="fLit" type="button">Literata</button></div>
+    <div class="seg"><span class="tag">Corps :</span><button id="fLit" class="on" type="button">Literata</button><button id="fGt" type="button">GT Standard L</button></div>
     <button id="themeB" class="btn" type="button">🌓 Thème</button><button id="cssB" class="btn" type="button">📋 Copier CSS</button></div></div>
   <div class="sliders"><div class="g"><label for="colS">Colonnes :</label><input id="colS" type="range" min="2" max="6" step="1" /><span class="v" id="colV"></span></div>
     <div class="g"><label for="gapS">Espacement :</label><input id="gapS" type="range" min="8" max="36" step="2" /><span class="v" id="gapV"></span></div>
@@ -28,9 +28,9 @@
       const dur = f.minDuration === f.maxDuration ? G.mmss(f.maxDuration) : `${G.mmss(f.minDuration)} à ${G.mmss(f.maxDuration)}`;
       return `<article class="tile" data-id="${esc(f.id)}"><div class="media"><img loading="lazy" src="/motion/gallery/poster/${esc(f.poster)}.jpg" alt="${esc(f.title)}" onerror="this.style.opacity=.15">
         <span class="badge num">${f.count} ${f.count > 1 ? "versions" : "version"}</span></div>
-        <div class="caption"><div class="caption-title">${esc(f.title)}</div><div class="caption-note">${esc(f.note)}</div>
+        <div class="caption"><div class="caption-title">${esc(f.title)}</div><div class="caption-note">${esc(f.note)}</div>${f.validatedTitles.length ? `<div class="validated">★ Validé : ${f.validatedTitles.map(esc).join(" · ")}</div>` : ""}
         <div class="tags"><span class="pill-tag num">${dur}</span><span class="pill-tag num">${fps} FPS</span><span class="pill-tag">${esc(fmts)}</span>${f.clips ? `<span class="pill-tag">${f.clips} SONS</span>` : ""}${f.validated ? `<span class="pill-tag ok">${f.validated} VALIDÉ${f.validated > 1 ? "S" : ""}</span>` : ""}${f.tags.map((t) => `<span class="pill-tag">${esc(t)}</span>`).join("")}</div>
-        <div class="members">${f.members.map((m) => `<a class="member" href="#" data-open="${esc(m.id)}"><span>${esc(m.title)}</span><span class="num">${G.mmss(m.duration)}${m.validation === "validated" ? " ✓" : ""}</span></a>`).join("")}</div></div></article>`;
+        <div class="members">${f.members.map((m) => `<a class="member${m.validation === "validated" ? " ok" : ""}" href="#" data-open="${esc(m.id)}"><span>${m.validation === "validated" ? "★ " : ""}${esc(m.title)}</span><span class="num">${G.mmss(m.duration)}${m.clips ? " · son" : ""}</span></a>`).join("")}</div></div></article>`;
     }).join("") || `<div class="empty">Aucun film ne correspond.</div>`;
   };
   grid.addEventListener("click", (e) => {

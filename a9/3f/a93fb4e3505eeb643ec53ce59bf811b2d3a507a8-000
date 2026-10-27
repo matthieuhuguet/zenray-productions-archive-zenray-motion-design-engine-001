@@ -2,11 +2,12 @@
    (body can swap to Literata). Every size, colour and radius is a variable of :root, set by the sliders of the deck. FR : les deux galeries, vue 0.3 Studio, polices GT Ultra et GT Standard L. */
 @font-face { font-family: 'GT Ultra'; src: url('/motion/web/GT-Ultra-Regular.woff2') format('woff2'); font-weight: 400; font-display: swap; }
 @font-face { font-family: 'GT Standard L'; src: url('/motion/web/GT-Standard-L-Regular.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Literata'; src: url('/motion/web/Literata-latin.woff2') format('woff2'); font-weight: 200 900; font-display: swap; }
 @font-face { font-family: 'GT Standard L'; src: url('/motion/web/GT-Standard-L-Bold.woff2') format('woff2'); font-weight: 700; font-display: swap; }
-:root { --font-title: 'GT Ultra', -apple-system, sans-serif; --font-num: 'GT Ultra', -apple-system, sans-serif; --font-body: 'GT Standard L', -apple-system, sans-serif; --font-ui: 'GT Standard L', -apple-system, sans-serif;
+:root { --font-title: 'GT Ultra', -apple-system, sans-serif; --font-num: 'GT Ultra', -apple-system, sans-serif; --font-body: 'Literata', Georgia, serif; --font-ui: 'GT Ultra', -apple-system, sans-serif;
   --bg: #121214; --surface: #1c1c20; --surface-subtle: #24242a; --border: rgba(255,255,255,.08); --ink: #f4f4f6; --muted: #9a9aa2; --accent: #0a84ff; --accent-soft: rgba(10,132,255,.16); --letterbox: rgba(255,255,255,.03);
   --gal-cols: 4; --gal-gap: 18px; --gal-radius: 8px; --gal-ratio: 16 / 9; --gal-fit: cover; }
-html[data-body-font="literata"] { --font-body: 'Literata', Georgia, serif; }
+html[data-body-font="gtstandard"] { --font-body: 'GT Standard L', -apple-system, sans-serif; }
 [data-theme="light"] { --bg: #f7f7f9; --surface: #fff; --surface-subtle: #f0f0f3; --border: rgba(0,0,0,.08); --ink: #16161a; --muted: #6e6e76; --accent: #0071e3; --accent-soft: rgba(0,113,227,.12); --letterbox: rgba(0,0,0,.03); }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 14px; line-height: 1.5; padding-bottom: 80px; -webkit-font-smoothing: antialiased; }
@@ -55,10 +56,12 @@ button, label, input, select { font-family: var(--font-ui); font-size: 13px; }
 .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .pill-tag { font-size: 10px; font-weight: 600; background: var(--surface-subtle); border: 1px solid var(--border); color: var(--muted); padding: 2px 7px; border-radius: 4px; letter-spacing: .04em; text-transform: uppercase; }
 .pill-tag.ok { color: #34c759; border-color: rgba(52,199,89,.4); }
-.members { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; display: none; flex-direction: column; gap: 4px; max-height: 260px; overflow: auto; }
+.members { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; display: none; flex-direction: column; gap: 4px; }   /* 27 October 2026: never clipped, the validated version was hidden below a 260 px scroll */
 .tile.open .members { display: flex; }
 .member { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; color: var(--muted); text-decoration: none; padding: 3px 6px; border-radius: 5px; }
 .member:hover { background: var(--accent-soft); color: var(--ink); } .member span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.validated { margin-top: 8px; font-family: var(--font-ui); font-size: 12px; color: #34c759; }
+.member.ok { color: #34c759; font-weight: 600; }
 .section { margin: 34px 0 14px; display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .section h2 { font-size: 22px; } .section .meta { color: var(--muted); font-size: 12px; }
 .section p { color: var(--muted); font-size: 13px; max-width: 900px; margin-top: 4px; }

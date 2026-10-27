@@ -31,6 +31,24 @@ check("one card gathers many projects", len(fams) < len(projects) and max(f["cou
 check("the validated rhythm F is in the Sony card", any(f["id"] == "zenray-sony-playstation" and any(m["id"] == "zenray-sony-playstation-f-ppm" for m in f["members"]) for f in fams))
 check("a -ppm and its -motion twin share one card", any({"fin-4-ppm", "fin-4-motion"} <= {m["id"] for m in f["members"]} for f in fams))
 check("the final F tracks are described (validated version named)", any("logo-flare" in g["note"] for g in snd["groups"] if g["id"] == "finales"))
+# 27 October 2026: the validated film is never hidden (it was below the fold of a clipped list) and its sound clips survive a rebuild of the script
+val = [(f, m) for f in fams for m in f["members"] if m["validation"] == "validated"]
+first_ok = all([x["validation"] for x in f["members"]] == sorted([x["validation"] for x in f["members"]], key=lambda v: v != "validated") for f in fams)
+check("the validated versions come BEFORE the others in every card", first_ok and any(m["id"] == "zenray-sony-playstation-f-ppm" for _, m in val))
+check("rhythm F is the first version of the Sony card", next(f for f in fams if f["id"] == "zenray-sony-playstation")["members"][0]["id"] == "zenray-sony-playstation-f-ppm")
+check("the card names its validated version", all(f["validatedTitles"] for f, _ in val))
+import json, tempfile, importlib
+tmp = tempfile.mkdtemp(); os.environ["ZRMD_MOTION_PROJECTS"] = tmp
+srv = importlib.reload(server); sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "reproductions")); import ppm; importlib.reload(ppm)
+base = server.read_project  # the real project, read before the folder switch below
+real = json.loads((Path(os.path.expanduser("~/.claude/tmp/tmp-zenray-motion-design/motion-projects/zenray-sony-playstation-f-ppm/project.json"))).read_text())
+(Path(tmp) / "t-ppm").mkdir(); (Path(tmp) / "t-ppm" / "project.json").write_text(json.dumps(real))
+fresh = {k: v for k, v in real.items() if k not in ("clips", "validation")}
+ppm.run("t-ppm", dict(fresh))
+back = json.loads((Path(tmp) / "t-ppm" / "project.json").read_text())
+check("a rebuild keeps the sound clips and the validation", len(back.get("clips") or []) == len(real.get("clips") or []) > 0 and back.get("validation", {}).get("state") == "validated")
+(Path(tmp) / "t-ppm" / "project.json").write_text(json.dumps(real)); srv.write_project("t-ppm", fresh)
+check("red: a plain write WITHOUT the guard would lose the clips", not json.loads((Path(tmp) / "t-ppm" / "project.json").read_text()).get("clips"))
 # red cases
 lost = [f for f in copy.deepcopy(fams)]; lost[0]["members"] = lost[0]["members"][1:]
 check("red: a project missing from the cards is caught", "a project is missing or duplicated in the cards" in verdict(lost, projects, snd, pexists))

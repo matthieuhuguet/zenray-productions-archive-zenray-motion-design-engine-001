@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="fr" data-theme="dark" data-body-font="gtstandard"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<html lang="fr" data-theme="dark" data-body-font="literata"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>ZenRay Motion Design · Galerie SFX</title><link rel="stylesheet" href="/motion/web/gallery.css" /></head><body>
 <header class="deck"><div class="deck-top">
   <nav class="nav"><a href="/motion/">Éditeur</a><a href="/motion/validate">Validate</a><a href="/motion/gallery">Galerie Motion</a><a class="on" href="/motion/gallery-sfx">Galerie SFX</a><a href="/motion/threads">Threads</a><a href="/motion/previous">Previous Videos</a></nav>
   <div class="actions"><input id="q" class="search" type="search" placeholder="Chercher un son" />
-    <div class="seg"><span class="tag">Corps :</span><button id="fGt" class="on" type="button">GT Standard L</button><button id="fLit" type="button">Literata</button></div>
+    <div class="seg"><span class="tag">Corps :</span><button id="fLit" class="on" type="button">Literata</button><button id="fGt" type="button">GT Standard L</button></div>
     <button id="themeB" class="btn" type="button">🌓 Thème</button><button id="cssB" class="btn" type="button">📋 Copier CSS</button></div></div>
   <div class="sliders"><div class="g"><label for="colS">Colonnes :</label><input id="colS" type="range" min="2" max="6" step="1" /><span class="v" id="colV"></span></div>
     <div class="g"><label for="gapS">Espacement :</label><input id="gapS" type="range" min="8" max="36" step="2" /><span class="v" id="gapV"></span></div>

@@ -47,14 +47,15 @@ def families(projects: list[dict], read_project) -> list[dict]:
                                "workflow": (full.get("workflow") or {}).get("id", ""), "updated": p.get("updated")})
     out = []
     for fid, f in by.items():
-        spec = f["spec"] or {}; mem = sorted(f["members"], key=lambda m: m["id"])
+        spec = f["spec"] or {}; mem = sorted(f["members"], key=lambda m: (m["validation"] != "validated", m["id"]))   # the validated version(s) first: never lost below the fold
         ppm = [m for m in mem if m["id"].endswith("-ppm")] or mem
         poster = spec.get("poster") or (ppm[-1]["id"])
         title = spec.get("title") or re.sub(r",? premier plan mesuré|,? trois apparitions|,? trois couleurs| reproduit| · base motion", "", (ppm[0]["title"])).strip()
         durs = [m["duration"] for m in mem]
         out.append({"id": fid, "title": title, "note": spec.get("note", "Une seule carte pour toutes les versions de ce film."), "tags": spec.get("tags", []), "poster": poster,
                     "posterAt": spec.get("posterAt", CONF.get("posterAtById", {}).get(poster, CONF["posterAt"])), "members": mem, "count": len(mem), "minDuration": min(durs), "maxDuration": max(durs),
-                    "clips": sum(m["clips"] for m in mem), "validated": sum(1 for m in mem if m["validation"] == "validated")})
+                    "clips": sum(m["clips"] for m in mem), "validated": sum(1 for m in mem if m["validation"] == "validated"),
+                    "validatedTitles": [m["title"] for m in mem if m["validation"] == "validated"]})
     return sorted(out, key=lambda f: (-f["count"] if f["count"] > 3 else 0, f["title"].lower()))
 
 

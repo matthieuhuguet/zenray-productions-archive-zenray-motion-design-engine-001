@@ -7,7 +7,7 @@
     "ratio": "16 / 9",
     "fit": "cover",
     "theme": "dark",
-    "bodyFont": "gtstandard"
+    "bodyFont": "literata"
   },
   "posterDir": "~/.claude/tmp/tmp-zenray-motion-design/posters",
   "posterAt": 0.7,
