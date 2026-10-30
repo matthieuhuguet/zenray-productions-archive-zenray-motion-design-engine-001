@@ -134,8 +134,20 @@
         [
           "~/Library/Fonts/GT-Ultra-Standard-Regular.otf",
           400
+        ],
+        [
+          "~/Library/Fonts/GT-Ultra-Standard-Bold.otf",
+          700
         ]
       ]
+    },
+    "Literata": {
+      "file": "motion/fonts/Literata-latin.woff2",
+      "weights": "200 900"
+    },
+    "LiterataItalic": {
+      "file": "motion/fonts/Literata-Italic-latin.woff2",
+      "weights": "200 900"
     }
   },
   "uploads": {

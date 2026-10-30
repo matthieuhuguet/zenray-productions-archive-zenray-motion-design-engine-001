@@ -351,6 +351,36 @@
       "id": "dishonored2-loot-note-ppm",
       "group": "Dishonored 2",
       "reference": "dishonored2-loot-note"
+    },
+    {
+      "id": "louisiana-bayou-church-module-02-ppm",
+      "group": "Variations · Louisiana Bayou",
+      "reference": "still-inox1"
+    },
+    {
+      "id": "louisiana-bayou-church-module-03-ppm",
+      "group": "Variations · Louisiana Bayou",
+      "reference": "still-inox1"
+    },
+    {
+      "id": "louisiana-bayou-church-module-04-ppm",
+      "group": "Variations · Louisiana Bayou",
+      "reference": "still-inox1"
+    },
+    {
+      "id": "louisiana-bayou-church-module-05-ppm",
+      "group": "Variations · Louisiana Bayou",
+      "reference": "still-inox1"
+    },
+    {
+      "id": "louisiana-bayou-church-module-06-ppm",
+      "group": "Variations · Louisiana Bayou",
+      "reference": "still-inox1"
+    },
+    {
+      "id": "louisiana-bayou-church-module-07-ppm",
+      "group": "Variations · Louisiana Bayou",
+      "reference": "still-inox1"
     }
   ],
   "formats": [
